@@ -1,1 +1,1 @@
-# Taiko preconfirmation AVS Node
+# Taiko preconfirmation AVS
