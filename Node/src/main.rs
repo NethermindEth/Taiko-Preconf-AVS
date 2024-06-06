@@ -1,8 +1,30 @@
-mod eigen_layer;
+mod ethereum_l1;
 mod mev_boost;
+mod node;
 mod p2p_network;
 mod taiko;
 
-fn main() {
-    println!("Hello, world!");
+use tokio::sync::mpsc;
+
+const MESSAGE_QUEUE_SIZE: usize = 100;
+
+#[tokio::main]
+async fn main() {
+    init_logging();
+
+    let (avs_p2p_tx, avs_p2p_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
+    let (node_tx, node_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
+    let mut p2p = p2p_network::AVSp2p::new(node_tx.clone(), avs_p2p_rx);
+    tokio::spawn(async move {
+        p2p.start().await;
+    });
+
+    let node = node::Node::new(node_rx, avs_p2p_tx);
+    node.start();
+}
+
+fn init_logging() {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
 }
