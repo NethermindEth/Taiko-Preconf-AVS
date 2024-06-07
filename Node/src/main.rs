@@ -14,10 +14,8 @@ async fn main() {
 
     let (avs_p2p_tx, avs_p2p_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
     let (node_tx, node_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
-    let mut p2p = p2p_network::AVSp2p::new(node_tx.clone(), avs_p2p_rx);
-    tokio::spawn(async move {
-        p2p.start().await;
-    });
+    let p2p = p2p_network::AVSp2p::new(node_tx.clone(), avs_p2p_rx);
+    p2p.start();
 
     let node = node::Node::new(node_rx, avs_p2p_tx);
     node.start();
