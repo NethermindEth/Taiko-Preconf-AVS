@@ -14,5 +14,5 @@ interface IDelegationManager {
         returns (uint256[] memory);
 
     /// @dev This is not present in EL's Delegation Manager yet. Will be called by Slasher in our MVP.
-    function slash() external;
+    function slash(address operator) external;
 }
