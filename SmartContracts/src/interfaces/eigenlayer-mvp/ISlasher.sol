@@ -10,4 +10,6 @@ interface ISlasher {
 
     /// @dev Called internally by the AVS (specifically the Service Manager) to slash the operator
     function slashOperator(address operator) external;
+
+    function isOperatorSlashed(address operator) external view returns (bool);
 }

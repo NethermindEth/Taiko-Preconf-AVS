@@ -12,6 +12,15 @@ interface PreconfTaskManager {
         uint256 validatorId;
     }
 
+    struct PreconfirmationHeader {
+        // The block height for which the preconfirmation is provided
+        uint256 blockId;
+        // The chain id of the target chain on which the preconfirmed transactions are settled
+        uint256 chainId;
+        // The keccak hash of the RLP encoded transaction list
+        bytes32 txListHash;
+    }
+
     /// @dev Accepts block proposal by an operator and forwards it to TaikoL1 contract
     function newBlockProposal(
         bytes calldata blockParams,
@@ -20,7 +29,7 @@ interface PreconfTaskManager {
     ) external;
 
     /// @dev Slashes a preconfer if the txn and ordering in a signed preconf does not match the actual block
-    function proveIncorrectPreconfirmation(uint256 blockId, bytes32 txListHash, bytes memory signature) external;
+    function proveIncorrectPreconfirmation(PreconfirmationHeader memory header, bytes memory signature) external;
 
     /// @dev Slashes a preconfer if the validator lookahead pushed by them has an incorrect entry
     function proveIncorrectLookahead(
