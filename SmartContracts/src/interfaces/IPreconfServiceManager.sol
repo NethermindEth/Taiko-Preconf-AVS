@@ -3,7 +3,7 @@ pragma solidity 0.8.25;
 
 import {ServiceManagerBase} from "eigenlayer-middleware/ServiceManagerBase.sol";
 
-interface IPreconfServiceManager is ServiceManagerBase {
+interface IPreconfServiceManager {
     event StakeLockedUntil(address indexed operator, uint256 timestamp);
 
     /// @dev Called by PreconfTaskManager to prevent withdrawals of stake during preconf or lookahead dispute period
