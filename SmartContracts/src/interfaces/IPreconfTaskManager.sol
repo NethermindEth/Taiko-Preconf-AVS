@@ -2,6 +2,7 @@
 pragma solidity 0.8.25;
 
 interface PreconfTaskManager {
+    event LookaheadUpdated(bytes lookahead);
     event ProvedIncorrectPreconfirmation(address indexed preconfer, uint256 indexed blockId, address indexed disputer);
     event ProvedIncorrectLookahead(address indexed poster, uint256 indexed slot, address indexed disputer);
 
@@ -46,4 +47,6 @@ interface PreconfTaskManager {
         bytes32 beaconStateRoot,
         bytes32[] memory beaconBlockProof
     ) external;
+
+    function isLookaheadRequired() external view returns (bool);
 }

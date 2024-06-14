@@ -6,6 +6,9 @@ import {ServiceManagerBase} from "eigenlayer-middleware/ServiceManagerBase.sol";
 interface IPreconfServiceManager {
     event StakeLockedUntil(address indexed operator, uint256 timestamp);
 
+    error SenderIsNotPreconfTaskManager(address);
+    error OperatorAlreadySlashed(address);
+
     /// @dev Called by PreconfTaskManager to prevent withdrawals of stake during preconf or lookahead dispute period
     function lockStakeUntil(address operator, uint256 timestamp) external;
 
