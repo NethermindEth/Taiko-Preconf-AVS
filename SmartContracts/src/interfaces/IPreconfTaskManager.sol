@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.25;
 
-interface PreconfTaskManager {
+interface IPreconfTaskManager {
     event LookaheadUpdated(bytes lookahead);
     event ProvedIncorrectPreconfirmation(address indexed preconfer, uint256 indexed blockId, address indexed disputer);
     event ProvedIncorrectLookahead(address indexed poster, uint256 indexed slot, address indexed disputer);
