@@ -9,7 +9,7 @@ pub struct Node {
 
 impl Node {
     pub fn new(node_rx: Receiver<String>, avs_p2p_tx: Sender<String>) -> Self {
-        let taiko = Taiko::new();
+        let taiko = Taiko::new("http://127.0.0.1:1234");
         Self {
             taiko,
             node_rx: Some(node_rx),
@@ -19,15 +19,21 @@ impl Node {
 
     /// Consumes the Node and starts two loops:
     /// one for handling incoming messages and one for the block preconfirmation
-    pub fn start(mut self) {
+    pub async fn start(mut self) {
         tracing::info!("Starting node");
         self.start_new_msg_receiver_thread();
-        self.main_block_preconfirmation_loop()
+        self.main_block_preconfirmation_loop().await;
     }
 
-    fn main_block_preconfirmation_loop(&self) {
+    async fn main_block_preconfirmation_loop(&self) {
         loop {
-            self.taiko.get_pending_l2_tx_lists();
+            let _tx_lists = match self.taiko.get_pending_l2_tx_lists().await {
+                Ok(lists) => lists,
+                Err(err) => {
+                    tracing::error!("Failed to get pending l2 tx lists: {}", err);
+                    continue;
+                }
+            };
             self.commit_to_the_tx_lists();
             self.send_preconfirmations_to_the_avs_p2p();
             self.taiko.submit_new_l2_blocks();

@@ -3,6 +3,7 @@ mod mev_boost;
 mod node;
 mod p2p_network;
 mod taiko;
+mod utils;
 
 use tokio::sync::mpsc;
 
@@ -18,7 +19,7 @@ async fn main() {
     p2p.start();
 
     let node = node::Node::new(node_rx, avs_p2p_tx);
-    node.start();
+    node.start().await;
 }
 
 fn init_logging() {
