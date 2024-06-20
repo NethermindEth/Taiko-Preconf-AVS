@@ -1,9 +1,13 @@
-name: test
+name: sc_tests
 
 on: workflow_dispatch
 
 env:
   FOUNDRY_PROFILE: ci
+
+defaults:
+  run:
+    working-directory: SmartContracts
 
 jobs:
   check:
