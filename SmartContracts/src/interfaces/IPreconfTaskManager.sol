@@ -2,15 +2,11 @@
 pragma solidity 0.8.25;
 
 interface IPreconfTaskManager {
-    event LookaheadUpdated(bytes lookahead);
-    event ProvedIncorrectPreconfirmation(address indexed preconfer, uint256 indexed blockId, address indexed disputer);
-    event ProvedIncorrectLookahead(address indexed poster, uint256 indexed slot, address indexed disputer);
-
-    struct LookaheadEntry {
-        // The timestamp of the slot
-        uint256 timestamp;
-        // The id of the AVS operator who is also the L1 validator for the slot
-        uint256 validatorId;
+    struct ProposedBlock {
+        // Proposer of the L2 block
+        address proposer;
+        // Keccak hash of the RLP transaction list of the block
+        bytes32 txListHash;
     }
 
     struct PreconfirmationHeader {
@@ -22,11 +18,46 @@ interface IPreconfTaskManager {
         bytes32 txListHash;
     }
 
+    struct LookaheadEntry {
+        // Timestamp of the slot at which the provided preconfer is the L1 validator
+        uint48 timestamp;
+        // Timestamp of the last slot that had a valid preconfer
+        uint48 prevTimestamp;
+        // Address of the preconfer who is also the L1 validator
+        // The preconfer will have rights to propose a block in the range (prevTimestamp, timestamp]
+        address preconfer;
+    }
+
+    struct LookaheadSetParam {
+        // The timestamp of the slot
+        uint256 timestamp;
+        // The AVS operator who is also the L1 validator for the slot and will preconf L2 transactions
+        address preconfer;
+    }
+
+    event LookaheadUpdated(LookaheadSetParam[]);
+    event ProvedIncorrectPreconfirmation(address indexed preconfer, uint256 indexed blockId, address indexed disputer);
+    event ProvedIncorrectLookahead(address indexed poster, uint256 indexed slot, address indexed disputer);
+
+    /// @dev The block proposer is not the randomly chosen fallback preconfer for the current slot/timestamp
+    error SenderIsNotTheFallbackPreconfer();
+    /// @dev The current timestamp does not fall in the range provided by the lookahead pointer
+    error InvalidLookaheadPointer();
+    /// @dev The block proposer is not the assigned preconfer for the current slot/timestamp
+    error SenderIsNotThePreconfer();
+    /// @dev The block proposer has not set themselves as first preconfer in the lookahead they are updating
+    error SenderMustBeTheFirstEntryInLookaheadSetParams();
+    /// @dev The preconfer in the lookahead set params is not registered to the AVS
+    error SenderNotRegisteredInAVS();
+    /// @dev The timestamp in the lookahead is not of a valid future slot in the present epoch
+    error InvalidSlotTimestamp();
+
     /// @dev Accepts block proposal by an operator and forwards it to TaikoL1 contract
     function newBlockProposal(
         bytes calldata blockParams,
         bytes calldata txList,
-        LookaheadEntry[] calldata lookaheadEntries
+        uint256 lookaheadHint,
+        LookaheadSetParam[] calldata lookaheadSetParams
     ) external;
 
     /// @dev Slashes a preconfer if the txn and ordering in a signed preconf does not match the actual block
@@ -48,5 +79,5 @@ interface IPreconfTaskManager {
         bytes32[] memory beaconBlockProof
     ) external;
 
-    function isLookaheadRequired() external view returns (bool);
+    function isLookaheadRequired(uint256 epochTimestamp) external view returns (bool);
 }
