@@ -45,8 +45,6 @@ interface IPreconfTaskManager {
     error InvalidLookaheadPointer();
     /// @dev The block proposer is not the assigned preconfer for the current slot/timestamp
     error SenderIsNotThePreconfer();
-    /// @dev The block proposer has not set themselves as first preconfer in the lookahead they are updating
-    error SenderMustBeTheFirstEntryInLookaheadSetParams();
     /// @dev The preconfer in the lookahead set params is not registered to the AVS
     error SenderNotRegisteredInAVS();
     /// @dev The timestamp in the lookahead is not of a valid future slot in the present epoch
