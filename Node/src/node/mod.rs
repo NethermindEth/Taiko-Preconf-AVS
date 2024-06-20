@@ -1,9 +1,10 @@
 use crate::taiko::Taiko;
+use anyhow::{anyhow as err, Context, Error};
 use tokio::sync::mpsc::{Receiver, Sender};
 
 pub struct Node {
     taiko: Taiko,
-    node_rx: Option<Receiver<String>>,
+    node_rx: Receiver<String>,
     avs_p2p_tx: Sender<String>,
 }
 
@@ -12,67 +13,55 @@ impl Node {
         let taiko = Taiko::new("http://127.0.0.1:1234");
         Self {
             taiko,
-            node_rx: Some(node_rx),
+            node_rx,
             avs_p2p_tx,
         }
     }
 
     /// Consumes the Node and starts two loops:
     /// one for handling incoming messages and one for the block preconfirmation
-    pub async fn start(mut self) {
+    pub async fn entrypoint(mut self) -> Result<(), Error> {
         tracing::info!("Starting node");
-        self.start_new_msg_receiver_thread();
-        self.main_block_preconfirmation_loop().await;
+        loop {
+            if let Err(err) = self.step().await {
+                tracing::debug!("Node processing step failed: {}", err);
+            }
+        }
     }
 
-    async fn main_block_preconfirmation_loop(&self) {
-        loop {
-            let _tx_lists = match self.taiko.get_pending_l2_tx_lists().await {
-                Ok(lists) => lists,
-                Err(err) => {
-                    tracing::error!("Failed to get pending l2 tx lists: {}", err);
-                    continue;
-                }
-            };
-            self.commit_to_the_tx_lists();
-            self.send_preconfirmations_to_the_avs_p2p();
-            self.taiko.submit_new_l2_blocks();
-
-            //TODO: remove after implementation of above methods
-            std::thread::sleep(std::time::Duration::from_secs(1));
+    async fn step(&mut self) -> Result<(), Error> {
+        if let Ok(msg) = self.node_rx.try_recv() {
+            self.process_incoming_message(msg).await?;
+        } else {
+            self.main_block_preconfirmation_step().await?;
         }
+        Ok(())
+    }
+
+    async fn main_block_preconfirmation_step(&self) -> Result<(), Error> {
+        self.taiko
+            .get_pending_l2_tx_lists()
+            .await
+            .context("Failed to get pending l2 tx lists")?;
+        self.commit_to_the_tx_lists();
+        self.send_preconfirmations_to_the_avs_p2p().await?;
+        self.taiko.submit_new_l2_blocks();
+        Ok(())
+    }
+
+    async fn process_incoming_message(&mut self, msg: String) -> Result<(), Error> {
+        tracing::debug!("Node received message: {}", msg);
+        Ok(())
     }
 
     fn commit_to_the_tx_lists(&self) {
         //TODO: implement
     }
 
-    fn send_preconfirmations_to_the_avs_p2p(&self) {
-        let avs_p2p_tx = self.avs_p2p_tx.clone();
-        tokio::spawn(async move {
-            if let Err(e) = avs_p2p_tx.send("Hello from node!".to_string()).await {
-                tracing::error!("Failed to send message to avs_p2p_tx: {}", e);
-            }
-        });
-    }
-
-    fn start_new_msg_receiver_thread(&mut self) {
-        if let Some(node_rx) = self.node_rx.take() {
-            tokio::spawn(async move {
-                Self::handle_incoming_messages(node_rx).await;
-            });
-        } else {
-            tracing::error!("node_rx has already been moved");
-        }
-    }
-
-    async fn handle_incoming_messages(mut node_rx: Receiver<String>) {
-        loop {
-            tokio::select! {
-                Some(message) = node_rx.recv() => {
-                    tracing::debug!("Node received message: {}", message);
-                }
-            }
-        }
+    async fn send_preconfirmations_to_the_avs_p2p(&self) -> Result<(), Error> {
+        self.avs_p2p_tx
+            .send("Hello from node!".to_string())
+            .await
+            .map_err(|e| err!("Failed to send message to avs_p2p_tx: {}", e))
     }
 }
