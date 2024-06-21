@@ -7,3 +7,6 @@
 [submodule "SmartContracts/lib/openzeppelin-contracts-upgradeable"]
 	path = SmartContracts/lib/openzeppelin-contracts-upgradeable
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable
+[submodule "SmartContracts/lib/openzeppelin-contracts"]
+	path = SmartContracts/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts

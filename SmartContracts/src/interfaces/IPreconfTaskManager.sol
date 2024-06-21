@@ -51,6 +51,12 @@ interface IPreconfTaskManager {
     error SenderNotRegisteredInAVS();
     /// @dev The timestamp in the lookahead is not of a valid future slot in the present epoch
     error InvalidSlotTimestamp();
+    /// @dev The chain id on which the preconfirmation was signed is different from the current chain's id
+    error PreconfirmationChainIdMismatch();
+    /// @dev The dispute window for proving incorretc lookahead or preconfirmation is over
+    error MissedDisputeWindow();
+    /// @dev The disputed preconfirmation is correct
+    error PreconfirmationIsCorrect();
 
     /// @dev Accepts block proposal by an operator and forwards it to TaikoL1 contract
     function newBlockProposal(

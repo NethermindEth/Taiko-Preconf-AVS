@@ -6,6 +6,7 @@ import {IPreconfTaskManager} from "../interfaces/IPreconfTaskManager.sol";
 import {IPreconfServiceManager} from "../interfaces/IPreconfServiceManager.sol";
 import {IRegistryCoordinator} from "eigenlayer-middleware/interfaces/IRegistryCoordinator.sol";
 import {IIndexRegistry} from "eigenlayer-middleware/interfaces/IIndexRegistry.sol";
+import {ECDSA} from "openzeppelin-contracts/utils/cryptography/ECDSA.sol";
 
 contract PreconfTaskManager is IPreconfTaskManager {
     IPreconfServiceManager internal immutable preconfServiceManager;
@@ -131,7 +132,38 @@ contract PreconfTaskManager is IPreconfTaskManager {
         taikoL1.proposeBlock(blockParams, txList);
     }
 
-    function proveIncorrectPreconfirmation(PreconfirmationHeader memory header, bytes memory signature) external {}
+    /**
+     * @notice Slashes an operator if their preconfirmation has not been respected onchain
+     * @dev The ECDSA signature expected by this function must be from a library that prevents malleable
+     * signatures i.e `s` value is in the lower half order, and the `v` value is either 27 or 28.
+     * @param header The header of the preconfirmation sent to the AVS P2P
+     * @param signature ECDSA-signed hash of the preconfirmation header
+     */
+    function proveIncorrectPreconfirmation(PreconfirmationHeader calldata header, bytes calldata signature) external {
+        IPreconfTaskManager.ProposedBlock memory proposedBlock = proposedBlocks[header.blockId];
+
+        if (block.timestamp - proposedBlock.timestamp >= DISPUTE_PERIOD) {
+            // Revert if the dispute window has been missed
+            revert IPreconfTaskManager.MissedDisputeWindow();
+        } else if (header.chainId != block.chainid) {
+            // Revert if the preconfirmation was provided on another chain
+            revert IPreconfTaskManager.PreconfirmationChainIdMismatch();
+        }
+
+        bytes32 headerHash = keccak256(abi.encodePacked(header.blockId, header.chainId, header.txListHash));
+        address preconfSigner = ECDSA.recover(headerHash, signature);
+
+        // Note: It is not required to verify that the preconfSigner is a valid operator. That is implicitly
+        // verified by EL.
+
+        // Slash if the preconfirmation was given offchain, but block proposal was missed OR
+        // the preconfirmed set of transactions is different from the transactions in the proposed block.
+        if (preconfSigner != proposedBlock.proposer || header.txListHash != proposedBlock.txListHash) {
+            preconfServiceManager.slashOperator(preconfSigner);
+        } else {
+            revert IPreconfTaskManager.PreconfirmationIsCorrect();
+        }
+    }
 
     function proveIncorrectLookahead(
         uint256 offset,
