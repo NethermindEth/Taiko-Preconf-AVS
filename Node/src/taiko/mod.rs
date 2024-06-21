@@ -1,11 +1,6 @@
 use crate::utils::rpc_client::RpcClient;
+use anyhow::Error;
 use serde_json::Value;
-
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("RPC Error  {0}")]
-    RpcError(#[from] Box<dyn std::error::Error>),
-}
 
 pub struct Taiko {
     rpc_client: RpcClient,
@@ -20,10 +15,9 @@ impl Taiko {
 
     pub async fn get_pending_l2_tx_lists(&self) -> Result<Value, Error> {
         tracing::debug!("Getting L2 tx lists");
-        Ok(self
-            .rpc_client
+        self.rpc_client
             .call_method("RPC.GetL2TxLists", vec![])
-            .await?)
+            .await
     }
 
     pub fn submit_new_l2_blocks(&self) {

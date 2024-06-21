@@ -1,7 +1,7 @@
+use anyhow::Error;
 use jsonrpsee::core::client::ClientT;
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use serde_json::Value;
-use std::error::Error;
 use std::time::Duration;
 
 pub struct RpcClient {
@@ -19,12 +19,10 @@ impl RpcClient {
         RpcClient { client }
     }
 
-    pub async fn call_method(
-        &self,
-        method: &str,
-        params: Vec<Value>,
-    ) -> Result<Value, Box<dyn Error>> {
-        let response: Value = self.client.request(method, params).await?;
-        Ok(response)
+    pub async fn call_method(&self, method: &str, params: Vec<Value>) -> Result<Value, Error> {
+        self.client
+            .request(method, params)
+            .await
+            .map_err(Error::from)
     }
 }

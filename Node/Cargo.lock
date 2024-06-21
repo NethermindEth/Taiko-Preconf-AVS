@@ -1131,11 +1131,11 @@ dependencies = [
 name = "taiko_preconf_avs_node"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "jsonrpsee",
  "lazy_static",
  "serde",
  "serde_json",
- "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",

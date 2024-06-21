@@ -5,12 +5,13 @@ mod p2p_network;
 mod taiko;
 mod utils;
 
+use anyhow::Error;
 use tokio::sync::mpsc;
 
 const MESSAGE_QUEUE_SIZE: usize = 100;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Error> {
     init_logging();
 
     let (avs_p2p_tx, avs_p2p_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
@@ -19,7 +20,8 @@ async fn main() {
     p2p.start();
 
     let node = node::Node::new(node_rx, avs_p2p_tx);
-    node.start().await;
+    node.entrypoint().await?;
+    Ok(())
 }
 
 fn init_logging() {
