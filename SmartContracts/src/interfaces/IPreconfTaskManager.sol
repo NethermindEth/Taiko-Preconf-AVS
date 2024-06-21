@@ -5,6 +5,8 @@ interface IPreconfTaskManager {
     struct ProposedBlock {
         // Proposer of the L2 block
         address proposer;
+        // L1 block timestamp
+        uint96 timestamp;
         // Keccak hash of the RLP transaction list of the block
         bytes32 txListHash;
     }

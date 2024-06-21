@@ -116,8 +116,11 @@ contract PreconfTaskManager is IPreconfTaskManager {
 
         // Store the hash of the transaction list and the proposer of the proposed block.
         // The hash is later used to verify transaction inclusion/ordering in a preconfirmation.
-        proposedBlocks[_nextBlockId % PROPOSED_BLOCK_BUFFER_SIZE] =
-            IPreconfTaskManager.ProposedBlock({proposer: msg.sender, txListHash: keccak256(txList)});
+        proposedBlocks[_nextBlockId % PROPOSED_BLOCK_BUFFER_SIZE] = IPreconfTaskManager.ProposedBlock({
+            proposer: msg.sender,
+            timestamp: uint96(block.timestamp),
+            txListHash: keccak256(txList)
+        });
 
         nextBlockId = _nextBlockId + 1;
 
