@@ -58,7 +58,7 @@ interface IPreconfTaskManager {
         bytes calldata txList,
         uint256 lookaheadHint,
         LookaheadSetParam[] calldata lookaheadSetParams
-    ) external;
+    ) external payable;
 
     /// @dev Slashes a preconfer if the txn and ordering in a signed preconf does not match the actual block
     function proveIncorrectPreconfirmation(PreconfirmationHeader memory header, bytes memory signature) external;

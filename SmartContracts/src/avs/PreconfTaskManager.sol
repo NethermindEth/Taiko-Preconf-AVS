@@ -66,7 +66,7 @@ contract PreconfTaskManager is IPreconfTaskManager {
         bytes calldata txList,
         uint256 lookaheadPointer,
         IPreconfTaskManager.LookaheadSetParam[] calldata lookaheadSetParams
-    ) external {
+    ) external payable {
         uint256 currentEpochTimestamp = _getEpochTimestamp();
         address randomPreconfer = randomPreconfers[currentEpochTimestamp];
 
@@ -128,7 +128,7 @@ contract PreconfTaskManager is IPreconfTaskManager {
         preconfServiceManager.lockStakeUntil(msg.sender, block.timestamp + DISPUTE_PERIOD);
 
         // Forward the block to Taiko's L1 contract
-        taikoL1.proposeBlock(blockParams, txList);
+        taikoL1.proposeBlock{value: msg.value}(blockParams, txList);
     }
 
     function proveIncorrectPreconfirmation(PreconfirmationHeader memory header, bytes memory signature) external {}
