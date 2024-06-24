@@ -39,7 +39,8 @@ impl Node {
     }
 
     async fn main_block_preconfirmation_step(&self) -> Result<(), Error> {
-        let pending_tx_lists = self.taiko
+        let pending_tx_lists = self
+            .taiko
             .get_pending_l2_tx_lists()
             .await
             .context("Failed to get pending l2 tx lists")?;

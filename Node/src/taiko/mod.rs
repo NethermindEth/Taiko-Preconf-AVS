@@ -39,12 +39,7 @@ mod test {
     async fn test_get_pending_l2_tx_lists() {
         tracing_subscriber::fmt::init();
 
-        // Start the RPC server
-        let mut rpc_server = RpcServer::new();
-        let addr: SocketAddr = "127.0.0.1:3030".parse().unwrap();
-        rpc_server.start_test_responses(addr).await.unwrap();
-
-        let taiko = Taiko::new("http://127.0.0.1:3030");
+        let (mut rpc_server, taiko) = setup_rpc_server_and_taiko(3030).await;
         let json = taiko.get_pending_l2_tx_lists().await.unwrap();
 
         assert_eq!(json["result"]["TxLists"].as_array().unwrap().len(), 1);
@@ -69,14 +64,7 @@ mod test {
 
     #[tokio::test]
     async fn test_submit_new_l2_blocks() {
-        tracing_subscriber::fmt::init();
-
-        // Start the RPC server
-        let mut rpc_server = RpcServer::new();
-        let addr: SocketAddr = "127.0.0.1:3030".parse().unwrap();
-        rpc_server.start_test_responses(addr).await.unwrap();
-
-        let taiko = Taiko::new("http://127.0.0.1:3030");
+        let (mut rpc_server, taiko) = setup_rpc_server_and_taiko(3040).await;
         let value = serde_json::json!({
             "TxLists": [
                 [
@@ -101,7 +89,20 @@ mod test {
         });
 
         let response = taiko.submit_new_l2_blocks(value).await.unwrap();
-        assert_eq!(response["result"], "Request received and processed successfully");
+        assert_eq!(
+            response["result"],
+            "Request received and processed successfully"
+        );
         rpc_server.stop().await;
+    }
+
+    async fn setup_rpc_server_and_taiko(port: u16) -> (RpcServer, Taiko) {
+        // Start the RPC server
+        let mut rpc_server = RpcServer::new();
+        let addr: SocketAddr = format!("127.0.0.1:{}", port).parse().unwrap();
+        rpc_server.start_test_responses(addr).await.unwrap();
+
+        let taiko = Taiko::new(&format!("http://127.0.0.1:{}", port));
+        (rpc_server, taiko)
     }
 }
