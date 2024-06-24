@@ -24,7 +24,7 @@ impl Node {
         tracing::info!("Starting node");
         loop {
             if let Err(err) = self.step().await {
-                tracing::debug!("Node processing step failed: {}", err);
+                tracing::error!("Node processing step failed: {}", err);
             }
         }
     }
