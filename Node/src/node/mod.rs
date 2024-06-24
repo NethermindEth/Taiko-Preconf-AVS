@@ -39,13 +39,13 @@ impl Node {
     }
 
     async fn main_block_preconfirmation_step(&self) -> Result<(), Error> {
-        self.taiko
+        let pending_tx_lists = self.taiko
             .get_pending_l2_tx_lists()
             .await
             .context("Failed to get pending l2 tx lists")?;
         self.commit_to_the_tx_lists();
         self.send_preconfirmations_to_the_avs_p2p().await?;
-        self.taiko.submit_new_l2_blocks();
+        self.taiko.submit_new_l2_blocks(pending_tx_lists).await?;
         Ok(())
     }
 

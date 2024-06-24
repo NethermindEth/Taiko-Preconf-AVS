@@ -29,6 +29,16 @@ pub mod test {
             module.register_async_method("RPC.GetL2TxLists", |_, _, _| async {
                 TX_LISTS_RESPONSE.clone()
             })?;
+            module.register_async_method(
+                "RPC.AdvanceL2ChainHeadWithNewBlocks",
+                |_, _, _| async {
+                    json!({
+                        "result": "Request received and processed successfully",
+                        "error": null,
+                        "id": 1
+                    })
+                },
+            )?;
 
             let handle = server.start(module);
             tokio::spawn(handle.clone().stopped());
