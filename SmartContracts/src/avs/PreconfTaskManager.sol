@@ -2,6 +2,7 @@
 pragma solidity 0.8.25;
 
 import {ITaikoL1} from "../interfaces/taiko/ITaikoL1.sol";
+import {MerkleUtils} from "../libraries/MerkleUtils.sol";
 import {IPreconfTaskManager} from "../interfaces/IPreconfTaskManager.sol";
 import {IPreconfServiceManager} from "../interfaces/IPreconfServiceManager.sol";
 import {IRegistryCoordinator} from "eigenlayer-middleware/interfaces/IRegistryCoordinator.sol";
@@ -14,8 +15,12 @@ contract PreconfTaskManager is IPreconfTaskManager {
     IIndexRegistry internal immutable indexRegistry;
     ITaikoL1 internal immutable taikoL1;
 
+    // EIP-4788
+    address internal immutable beaconBlockRootContract;
+
     // Dec-01-2020 12:00:23 PM +UTC
     uint256 internal constant BEACON_GENESIS_TIMESTAMP = 1606824023;
+    uint256 internal constant SECONDS_IN_SLOT = 12;
     // 12 seconds for each slot, with 32 slots in each epoch
     uint256 internal constant SECONDS_IN_EPOCH = 384;
     // Span time within which a preconfirmation or posted lookahead may be disputed
@@ -38,16 +43,22 @@ contract PreconfTaskManager is IPreconfTaskManager {
     uint256 internal constant PROPOSED_BLOCK_BUFFER_SIZE = 256;
     mapping(uint256 blockId => IPreconfTaskManager.ProposedBlock proposedBlock) proposedBlocks;
 
+    // Maps the preconfer's wallet address to the hash tree root of their consensus layer
+    // BLS pub key (48  bytes)
+    mapping(address preconfer => bytes32 BLSPubKeyHashTreeRoot) internal consensusBLSPubKeyHashTreeRoots;
+
     constructor(
         IPreconfServiceManager _serviceManager,
         IRegistryCoordinator _registryCoordinator,
         IIndexRegistry _indexRegistry,
-        ITaikoL1 _taikoL1
+        ITaikoL1 _taikoL1,
+        address _beaconBlockRootContract
     ) {
         preconfServiceManager = _serviceManager;
         registryCoordinator = _registryCoordinator;
         indexRegistry = _indexRegistry;
         taikoL1 = _taikoL1;
+        beaconBlockRootContract = _beaconBlockRootContract;
 
         nextBlockId = 1;
     }
@@ -68,7 +79,13 @@ contract PreconfTaskManager is IPreconfTaskManager {
         uint256 lookaheadPointer,
         IPreconfTaskManager.LookaheadSetParam[] calldata lookaheadSetParams
     ) external payable {
-        uint256 currentEpochTimestamp = _getEpochTimestamp();
+        // Do not allow block proposals if the preconfer has not registered the hash tree root of their
+        // consensus BLS pub key
+        if (consensusBLSPubKeyHashTreeRoots[msg.sender] == bytes32(0)) {
+            revert IPreconfTaskManager.ConsensusBLSPubKeyHashTreeRootNotRegistered();
+        }
+
+        uint256 currentEpochTimestamp = _getEpochTimestamp(block.timestamp);
         address randomPreconfer = randomPreconfers[currentEpochTimestamp];
 
         // Verify that the sender is a valid preconfer for the slot and has the right to propose an L2 block
@@ -165,20 +182,124 @@ contract PreconfTaskManager is IPreconfTaskManager {
         }
     }
 
+    /**
+     * @notice lashes an operator if the lookahead posted by them is incorrect
+     * @param lookaheadPointer Index at which the entry for the lookahead is incorrect
+     * @param slotTimestamp Timestamp of the slot for which the lookahead entry is incorrect
+     * @param expectedValidator Chunks for the validator present in the lookahead
+     * @param expectedValidatorIndex Index of the expected validator in beacon state validators list
+     * @param expectedValidatorProof Merkle proof of expected validator being a part of validators list
+     * @param actualValidatorIndex Index of the actual validator in beacon state validators list
+     * @param validatorsRoot Hash tree root of the beacon state validators list
+     * @param nr_validators Length of the validators list
+     * @param beaconStateProof Merkle proof of validators list being a part of the beacon state
+     * @param beaconStateRoot Hash tree root of the beacon state
+     * @param beaconBlockProofForState Merkle proof of beacon state root being a part of the beacon block
+     * @param beaconBlockProofForProposerIndex Merkle proof of actual validator's index being a part of the beacon block
+     */
     function proveIncorrectLookahead(
-        uint256 offset,
-        bytes32[] memory expectedValidator,
+        uint256 lookaheadPointer,
+        uint256 slotTimestamp,
+        bytes32[8] memory expectedValidator,
         uint256 expectedValidatorIndex,
         bytes32[] memory expectedValidatorProof,
-        bytes32[] memory actualValidator,
         uint256 actualValidatorIndex,
-        bytes32[] memory actualValidatorProof,
         bytes32 validatorsRoot,
         uint256 nr_validators,
         bytes32[] memory beaconStateProof,
         bytes32 beaconStateRoot,
-        bytes32[] memory beaconBlockProof
-    ) external {}
+        bytes32[] memory beaconBlockProofForState,
+        bytes32[] memory beaconBlockProofForProposerIndex
+    ) external {
+        // Prove that the expected validator has not been slashed on consensus layer
+        if (expectedValidator[3] == bytes32(0)) {
+            revert IPreconfTaskManager.ExpectedValidatorMustNotBeSlashed();
+        }
+
+        uint256 epochTimestamp = _getEpochTimestamp(slotTimestamp);
+
+        // The poster must not already be slashed
+        if (lookaheadPosters[epochTimestamp] == address(0)) {
+            revert IPreconfTaskManager.PosterAlreadySlashedForTheEpoch();
+        }
+
+        {
+            IPreconfTaskManager.LookaheadEntry memory lookaheadEntry =
+                lookahead[lookaheadPointer % LOOKAHEAD_BUFFER_SIZE];
+
+            // Timestamp of the slot that contains the incorrect entry must be in the correct range and within the
+            // dispute window.
+            if (block.timestamp - slotTimestamp > DISPUTE_PERIOD) {
+                revert IPreconfTaskManager.MissedDisputeWindow();
+            } else if (slotTimestamp > lookaheadEntry.timestamp || slotTimestamp <= lookaheadEntry.prevTimestamp) {
+                revert IPreconfTaskManager.InvalidLookaheadPointer();
+            }
+
+            if (consensusBLSPubKeyHashTreeRoots[lookaheadEntry.preconfer] != expectedValidator[0]) {
+                // Revert if the expected validator's consensus BLS pub key's hash tree root does not match
+                // the one registered by the preconfer
+                revert IPreconfTaskManager.ExpectedValidatorIsIncorrect();
+            } else if (expectedValidatorIndex == actualValidatorIndex) {
+                revert IPreconfTaskManager.ExpectedAndActualValidatorAreSame();
+            }
+        }
+
+        {
+            bytes32 expectedValidatorHashTreeRoot = MerkleUtils.merkleize(expectedValidator);
+            if (
+                !MerkleUtils.verifyProof(
+                    expectedValidatorProof, validatorsRoot, expectedValidatorHashTreeRoot, expectedValidatorIndex
+                )
+            ) {
+                // Revert if the proof that the expected validator is a part of the validator
+                // list in beacon state fails
+                revert IPreconfTaskManager.ValidatorProofFailed();
+            }
+        }
+
+        {
+            bytes32 stateValidatorsHashTreeRoot = MerkleUtils.mixInLength(validatorsRoot, nr_validators);
+            if (MerkleUtils.verifyProof(beaconStateProof, beaconStateRoot, stateValidatorsHashTreeRoot, 11)) {
+                // Revert if the proof that the validator list is a part of the beacon state fails
+                revert IPreconfTaskManager.BeaconStateProofFailed();
+            }
+        }
+
+        bytes32 beaconBlockRoot = _getBeaconBlockRoot(slotTimestamp);
+
+        if (MerkleUtils.verifyProof(beaconBlockProofForState, beaconBlockRoot, beaconStateRoot, 3)) {
+            // Revert if the proof for the beacon state being a part of the beacon block fails
+            revert IPreconfTaskManager.BeaconBlockProofForStateFailed();
+        }
+
+        if (
+            MerkleUtils.verifyProof(
+                beaconBlockProofForProposerIndex, beaconBlockRoot, MerkleUtils.toLittleEndian(actualValidatorIndex), 1
+            )
+        ) {
+            // Revert if the proof that the proposer index is a part of the beacon block fails
+            revert IPreconfTaskManager.BeaconBlockProofForProposerIndex();
+        }
+
+        // Slash the original lookahead poster
+        address poster = lookaheadPosters[epochTimestamp];
+        lookaheadPosters[epochTimestamp] = address(0);
+        preconfServiceManager.slashOperator(poster);
+
+        emit ProvedIncorrectLookahead(poster, slotTimestamp, msg.sender);
+    }
+
+    function registerConsensusBLSPubKeyHashTreeRoot(bytes32 consensusBLSPubKeyHashTreeRoot) external {
+        // The sender must be a registered preconfer in the AVS registry
+        if (registryCoordinator.getOperatorStatus(msg.sender) != IRegistryCoordinator.OperatorStatus.REGISTERED) {
+            revert IPreconfTaskManager.SenderNotRegisteredInAVS();
+        } else if (consensusBLSPubKeyHashTreeRoots[msg.sender] != bytes32(0)) {
+            // The hash tree root must not be already registered
+            revert IPreconfTaskManager.SenderNotRegisteredInAVS();
+        }
+
+        consensusBLSPubKeyHashTreeRoots[msg.sender] = consensusBLSPubKeyHashTreeRoot;
+    }
 
     //=========
     // Helpers
@@ -212,7 +333,7 @@ contract PreconfTaskManager is IPreconfTaskManager {
 
             // Each entry must be a registered AVS operator
             if (registryCoordinator.getOperatorStatus(preconfer) != IRegistryCoordinator.OperatorStatus.REGISTERED) {
-                revert IPreconfTaskManager.SenderNotRegisteredInAVS();
+                revert IPreconfTaskManager.EntryNotRegisteredInAVS();
             }
 
             // Ensure that the timestamps belong to a valid slot in the next epoch
@@ -236,12 +357,33 @@ contract PreconfTaskManager is IPreconfTaskManager {
     }
 
     /**
-     * @notice Computes the timestamp at which the ongoing epoch started.
+     * @notice Computes the timestamp of the epoch containing the provided slot timestamp
      */
-    function _getEpochTimestamp() private view returns (uint256) {
-        uint256 timePassedSinceGenesis = block.timestamp - BEACON_GENESIS_TIMESTAMP;
+    function _getEpochTimestamp(uint256 slotTimestamp) private pure returns (uint256) {
+        uint256 timePassedSinceGenesis = slotTimestamp - BEACON_GENESIS_TIMESTAMP;
         uint256 timeToCurrentEpochFromGenesis = (timePassedSinceGenesis / SECONDS_IN_EPOCH) * SECONDS_IN_EPOCH;
         return BEACON_GENESIS_TIMESTAMP + timeToCurrentEpochFromGenesis;
+    }
+
+    /**
+     * @notice Retrieves the beacon block root for the block at the specified timestamp
+     */
+    function _getBeaconBlockRoot(uint256 timestamp) private view returns (bytes32) {
+        // At block N, we get the beacon block root for block N - 1. So, to get the block root of the Nth block,
+        // we query the root at block N + 1. If N + 1 is a missed slot, we keep querying until we find a block N + x
+        // that has the block root for Nth block.
+        uint256 targetTimestamp = timestamp + SECONDS_IN_SLOT;
+        while (true) {
+            (bool success, bytes memory result) = beaconBlockRootContract.staticcall(abi.encode(targetTimestamp));
+            if (success && result.length > 0) {
+                return abi.decode(result, (bytes32));
+            }
+
+            unchecked {
+                targetTimestamp += SECONDS_IN_SLOT;
+            }
+        }
+        return bytes32(0);
     }
 
     //=======

@@ -39,15 +39,17 @@ interface IPreconfTaskManager {
 
     event LookaheadUpdated(LookaheadSetParam[]);
     event ProvedIncorrectPreconfirmation(address indexed preconfer, uint256 indexed blockId, address indexed disputer);
-    event ProvedIncorrectLookahead(address indexed poster, uint256 indexed slot, address indexed disputer);
+    event ProvedIncorrectLookahead(address indexed poster, uint256 indexed timestamp, address indexed disputer);
 
     /// @dev The block proposer is not the randomly chosen fallback preconfer for the current slot/timestamp
     error SenderIsNotTheFallbackPreconfer();
-    /// @dev The current timestamp does not fall in the range provided by the lookahead pointer
+    /// @dev The current (or provided) timestamp does not fall in the range provided by the lookahead pointer
     error InvalidLookaheadPointer();
     /// @dev The block proposer is not the assigned preconfer for the current slot/timestamp
     error SenderIsNotThePreconfer();
-    /// @dev The preconfer in the lookahead set params is not registered to the AVS
+    /// @dev The preconfer in the lookahead set params is not registered in the AVS
+    error EntryNotRegisteredInAVS();
+    /// @dev The sender is not registered in the AVS
     error SenderNotRegisteredInAVS();
     /// @dev The timestamp in the lookahead is not of a valid future slot in the present epoch
     error InvalidSlotTimestamp();
@@ -57,6 +59,26 @@ interface IPreconfTaskManager {
     error MissedDisputeWindow();
     /// @dev The disputed preconfirmation is correct
     error PreconfirmationIsCorrect();
+    /// @dev The preconfer is yet to register the hash tree root of their consensus BLS pub key
+    error ConsensusBLSPubKeyHashTreeRootNotRegistered();
+    /// @dev The preconfer has already registered the hash tree root of their consensus BLS pub key
+    error ConsensusBLSPubKeyHashTreeRootAlreadyRegistered();
+    /// @dev The expected validator has been slashed on CL
+    error ExpectedValidatorMustNotBeSlashed();
+    /// @dev The lookahead poster for the epoch has already been slashed
+    error PosterAlreadySlashedForTheEpoch();
+    /// @dev The registered hash tree root of preconfer's consensus BLS pub key does not match with expected validator
+    error ExpectedValidatorIsIncorrect();
+    /// @dev The validator list indices for both expected and actual validators are same
+    error ExpectedAndActualValidatorAreSame();
+    /// @dev The proof that the expected validator is a part of the validator list is invalid.
+    error ValidatorProofFailed();
+    /// @dev The proof that the validator list is a part of the beacon state is invalid.
+    error BeaconStateProofFailed();
+    /// @dev The proof that the beacon state is a part of the beacon block is invalid.
+    error BeaconBlockProofForStateFailed();
+    /// @dev The proof that the actual validator index is a part of the beacon is invalid.
+    error BeaconBlockProofForProposerIndex();
 
     /// @dev Accepts block proposal by an operator and forwards it to TaikoL1 contract
     function newBlockProposal(
@@ -71,19 +93,22 @@ interface IPreconfTaskManager {
 
     /// @dev Slashes a preconfer if the validator lookahead pushed by them has an incorrect entry
     function proveIncorrectLookahead(
-        uint256 offset,
-        bytes32[] memory expectedValidator,
+        uint256 lookaheadPointer,
+        uint256 slotTimestamp,
+        bytes32[8] memory expectedValidator,
         uint256 expectedValidatorIndex,
         bytes32[] memory expectedValidatorProof,
-        bytes32[] memory actualValidator,
         uint256 actualValidatorIndex,
-        bytes32[] memory actualValidatorProof,
         bytes32 validatorsRoot,
         uint256 nr_validators,
         bytes32[] memory beaconStateProof,
         bytes32 beaconStateRoot,
-        bytes32[] memory beaconBlockProof
+        bytes32[] memory beaconBlockProofForState,
+        bytes32[] memory beaconBlockProofForProposerIndex
     ) external;
+
+    /// @dev Records the hash tree root of the BLS pub key that the preconfer uses on the consensus layer
+    function registerConsensusBLSPubKeyHashTreeRoot(bytes32 consensusBLSPubKeyHashTreeRoot) external;
 
     function isLookaheadRequired(uint256 epochTimestamp) external view returns (bool);
 }
