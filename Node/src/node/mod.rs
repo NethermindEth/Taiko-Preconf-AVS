@@ -1,5 +1,5 @@
 use crate::taiko::Taiko;
-use anyhow::{anyhow as err, Context, Error, Ok};
+use anyhow::{anyhow as any_err, Error, Ok};
 use tokio::sync::mpsc::{Receiver, Sender};
 
 pub struct Node {
@@ -45,7 +45,7 @@ impl Node {
                 Some(message) = node_rx.recv() => {
                     tracing::debug!("Node received message: {}", message);
                 },
-            }   
+            }
         }
     }
 
@@ -83,6 +83,6 @@ impl Node {
         self.avs_p2p_tx
             .send("Hello from node!".to_string())
             .await
-            .map_err(|e| err!("Failed to send message to avs_p2p_tx: {}", e))
+            .map_err(|e| any_err!("Failed to send message to avs_p2p_tx: {}", e))
     }
 }
