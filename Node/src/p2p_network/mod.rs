@@ -26,7 +26,7 @@ impl AVSp2p {
                     .send("Hello from avs p2p!".to_string())
                     .await
                     .unwrap();
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
             }
         });
 
