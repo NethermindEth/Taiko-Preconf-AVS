@@ -34,7 +34,6 @@ pub mod test {
                 |_, _, _| async {
                     json!({
                         "result": "Request received and processed successfully",
-                        "error": null,
                         "id": 1
                     })
                 },
