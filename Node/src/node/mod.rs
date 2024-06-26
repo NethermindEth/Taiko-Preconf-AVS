@@ -6,15 +6,17 @@ pub struct Node {
     taiko: Taiko,
     node_rx: Receiver<String>,
     avs_p2p_tx: Sender<String>,
+    gas_used: u64,
 }
 
 impl Node {
     pub fn new(node_rx: Receiver<String>, avs_p2p_tx: Sender<String>) -> Self {
-        let taiko = Taiko::new("http://127.0.0.1:1234");
+        let taiko = Taiko::new("http://127.0.0.1:1234", "http://127.0.0.1:1235");
         Self {
             taiko,
             node_rx,
             avs_p2p_tx,
+            gas_used: 0,
         }
     }
 
@@ -43,10 +45,12 @@ impl Node {
             .taiko
             .get_pending_l2_tx_lists()
             .await
-            .context("Failed to get pending l2 tx lists")?;
+            .map_err(Error::from)?;
         self.commit_to_the_tx_lists();
         self.send_preconfirmations_to_the_avs_p2p().await?;
-        self.taiko.submit_new_l2_blocks(pending_tx_lists).await?;
+        self.taiko
+            .advance_head_to_new_l2_block(pending_tx_lists, self.gas_used)
+            .await?;
         Ok(())
     }
 

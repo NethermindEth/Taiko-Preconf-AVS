@@ -3,28 +3,37 @@ use anyhow::Error;
 use serde_json::Value;
 
 pub struct Taiko {
-    rpc_client: RpcClient,
+    rpc_proposer: RpcClient,
+    rpc_driver: RpcClient,
 }
 
 impl Taiko {
-    pub fn new(url: &str) -> Self {
+    pub fn new(proposer_url: &str, driver_url: &str) -> Self {
         Self {
-            rpc_client: RpcClient::new(url),
+            rpc_proposer: RpcClient::new(proposer_url),
+            rpc_driver: RpcClient::new(driver_url),
         }
     }
 
     pub async fn get_pending_l2_tx_lists(&self) -> Result<Value, Error> {
         tracing::debug!("Getting L2 tx lists");
-        self.rpc_client
+        self.rpc_proposer
             .call_method("RPC.GetL2TxLists", vec![])
             .await
     }
 
-    pub async fn submit_new_l2_blocks(&self, value: Value) -> Result<Value, Error> {
+    pub async fn advance_head_to_new_l2_block(
+        &self,
+        tx_lists: Value,
+        gas_used: u64,
+    ) -> Result<Value, Error> {
         tracing::debug!("Submitting new L2 blocks");
-
-        self.rpc_client
-            .call_method("RPC.AdvanceL2ChainHeadWithNewBlocks", vec![value])
+        let payload = serde_json::json!({
+            "TxLists": tx_lists["TxLists"],
+            "gasUsed": gas_used,
+        });
+        self.rpc_driver
+            .call_method("RPC.AdvanceL2ChainHeadWithNewBlocks", vec![payload])
             .await
     }
 }
@@ -42,28 +51,28 @@ mod test {
         let (mut rpc_server, taiko) = setup_rpc_server_and_taiko(3030).await;
         let json = taiko.get_pending_l2_tx_lists().await.unwrap();
 
-        assert_eq!(json["result"]["TxLists"].as_array().unwrap().len(), 1);
-        assert_eq!(json["result"]["TxLists"][0].as_array().unwrap().len(), 3);
-        assert_eq!(json["result"]["TxLists"][0][0]["type"], "0x0");
+        assert_eq!(json["TxLists"].as_array().unwrap().len(), 1);
+        assert_eq!(json["TxLists"][0].as_array().unwrap().len(), 3);
+        assert_eq!(json["TxLists"][0][0]["type"], "0x0");
         assert_eq!(
-            json["result"]["TxLists"][0][0]["hash"],
+            json["TxLists"][0][0]["hash"],
             "0x7c76b9906579e54df54fe77ad1706c47aca706b3eb5cfd8a30ccc3c5a19e8ecd"
         );
-        assert_eq!(json["result"]["TxLists"][0][1]["type"], "0x2");
+        assert_eq!(json["TxLists"][0][1]["type"], "0x2");
         assert_eq!(
-            json["result"]["TxLists"][0][1]["hash"],
+            json["TxLists"][0][1]["hash"],
             "0xece2a3c6ca097cfe5d97aad4e79393240f63865210f9c763703d1136f065298b"
         );
-        assert_eq!(json["result"]["TxLists"][0][2]["type"], "0x2");
+        assert_eq!(json["TxLists"][0][2]["type"], "0x2");
         assert_eq!(
-            json["result"]["TxLists"][0][2]["hash"],
+            json["TxLists"][0][2]["hash"],
             "0xb105d9f16e8fb913093c8a2c595bf4257328d256f218a05be8dcc626ddeb4193"
         );
         rpc_server.stop().await;
     }
 
     #[tokio::test]
-    async fn test_submit_new_l2_blocks() {
+    async fn test_advance_head_to_new_l2_block() {
         let (mut rpc_server, taiko) = setup_rpc_server_and_taiko(3040).await;
         let value = serde_json::json!({
             "TxLists": [
@@ -88,7 +97,10 @@ mod test {
             ]
         });
 
-        let response = taiko.submit_new_l2_blocks(value).await.unwrap();
+        let response = taiko
+            .advance_head_to_new_l2_block(value, 1234)
+            .await
+            .unwrap();
         assert_eq!(
             response["result"],
             "Request received and processed successfully"
@@ -102,7 +114,10 @@ mod test {
         let addr: SocketAddr = format!("127.0.0.1:{}", port).parse().unwrap();
         rpc_server.start_test_responses(addr).await.unwrap();
 
-        let taiko = Taiko::new(&format!("http://127.0.0.1:{}", port));
+        let taiko = Taiko::new(
+            &format!("http://127.0.0.1:{}", port),
+            &format!("http://127.0.0.1:{}", port),
+        );
         (rpc_server, taiko)
     }
 }
