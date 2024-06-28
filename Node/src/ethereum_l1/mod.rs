@@ -1,5 +1,10 @@
 #![allow(unused)] //TODO remove after the EthereumL1 is used in release code
 
+use alloy::network::Ethereum;
+use alloy::providers::{Provider, RootProvider};
+use alloy::transports::http::reqwest::{Client, Url};
+use alloy::transports::http::Http;
+use alloy::transports::BoxTransport;
 use alloy::{
     network::EthereumWallet,
     primitives::{Address, U256},
@@ -11,30 +16,26 @@ use anyhow::Error;
 use std::str::FromStr;
 
 pub struct EthereumL1 {
-    rpc_url: reqwest::Url,
-    wallet: EthereumWallet,
+    provider: RootProvider<Http<Client>, Ethereum>,
 }
 
 impl EthereumL1 {
     pub fn new(rpc_url: &str, private_key: &str) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_str(private_key)?;
         let wallet = EthereumWallet::from(signer);
-
-        Ok(Self {
-            rpc_url: rpc_url.parse()?,
-            wallet,
-        })
+        let provider = RootProvider::new_http(rpc_url.parse()?);
+        Ok(Self { provider })
     }
 
     #[cfg(test)]
     fn new_from_pk(
-        rpc_url: reqwest::Url,
+        rpc_url: Url,
         private_key: elliptic_curve::SecretKey<k256::Secp256k1>,
     ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_signing_key(private_key.into());
         let wallet = EthereumWallet::from(signer);
-
-        Ok(Self { rpc_url, wallet })
+        let provider = RootProvider::new_http(rpc_url);
+        Ok(Self { provider })
     }
 
     #[cfg(test)]
@@ -55,12 +56,7 @@ impl EthereumL1 {
             }
         }
 
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone());
-
-        let contract = Counter::deploy(&provider).await?;
+        let contract = Counter::deploy(&self.provider).await?;
         let address = contract.address().clone();
 
         let builder = contract.setNumber(U256::from(42));
@@ -89,7 +85,7 @@ mod tests {
     async fn test_call_contract() {
         // Ensure `anvil` is available in $PATH.
         let anvil = Anvil::new().try_spawn().unwrap();
-        let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
+        let rpc_url: Url = anvil.endpoint().parse().unwrap();
         let private_key = anvil.keys()[0].clone();
         let ethereum_l1 = EthereumL1::new_from_pk(rpc_url, private_key).unwrap();
         ethereum_l1.call_test_contract().await.unwrap();
