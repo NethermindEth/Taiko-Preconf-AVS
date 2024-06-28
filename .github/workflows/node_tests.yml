@@ -20,6 +20,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - name: Install Foundry
+      uses: foundry-rs/foundry-toolchain@v1
     - name: Build
       run: cargo build --verbose
     - name: Run tests
