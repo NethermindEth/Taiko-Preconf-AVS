@@ -2,7 +2,7 @@
 
 use alloy::{
     network::EthereumWallet,
-    primitives::{Address, U256},
+    primitives::{Address, Bytes, U256},
     providers::ProviderBuilder,
     signers::local::PrivateKeySigner,
     sol,
@@ -15,6 +15,13 @@ pub struct EthereumL1 {
     wallet: EthereumWallet,
 }
 
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    PreconfTaskManager,
+    "src/ethereum_l1/abi/PreconfTaskManager.json"
+);
+
 impl EthereumL1 {
     pub fn new(rpc_url: &str, private_key: &str) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_str(private_key)?;
@@ -24,6 +31,24 @@ impl EthereumL1 {
             rpc_url: rpc_url.parse()?,
             wallet,
         })
+    }
+
+    pub async fn propose_new_block(&self, address: Address) -> Result<(), Error> {
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.wallet.clone())
+            .on_http(self.rpc_url.clone());
+
+        let contract = PreconfTaskManager::new(address, provider);
+        let block_params = Bytes::from(vec![0; 32]);
+        let tx_list = Bytes::from(vec![0; 32]);
+        let lookahead_set_param: Vec<PreconfTaskManager::LookaheadSetParam> = Vec::new();
+        let builder =
+            contract.newBlockProposal(block_params, tx_list, U256::from(0), lookahead_set_param);
+        let tx_hash = builder.send().await?.watch().await?;
+        tracing::debug!("Proposed new block: {tx_hash}");
+
+        Ok(())
     }
 
     #[cfg(test)]
@@ -83,7 +108,10 @@ impl EthereumL1 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy::hex;
     use alloy::node_bindings::{Anvil, AnvilInstance};
+    use alloy::providers::Provider;
+    use alloy::rpc::types::TransactionRequest;
 
     #[tokio::test]
     async fn test_call_contract() {
@@ -93,5 +121,23 @@ mod tests {
         let private_key = anvil.keys()[0].clone();
         let ethereum_l1 = EthereumL1::new_from_pk(rpc_url, private_key).unwrap();
         ethereum_l1.call_test_contract().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_propose_new_block() {
+        let anvil = Anvil::new().try_spawn().unwrap();
+        let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
+        let private_key = anvil.keys()[0].clone();
+        let ethereum_l1 = EthereumL1::new_from_pk(rpc_url, private_key).unwrap();
+
+        // some random address for test
+        ethereum_l1
+            .propose_new_block(
+                "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+                    .parse()
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
     }
 }
