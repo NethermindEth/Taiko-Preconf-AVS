@@ -1,7 +1,7 @@
 #![allow(unused)] //TODO remove after the EthereumL1 is used in release code
 
 use alloy::{
-    network::EthereumWallet,
+    network::{Ethereum, EthereumWallet, NetworkWallet},
     primitives::{Address, Bytes, FixedBytes, U256, U32, U64},
     providers::ProviderBuilder,
     signers::local::PrivateKeySigner,
@@ -54,19 +54,26 @@ impl EthereumL1 {
         })
     }
 
-    pub async fn propose_new_block(&self, address: Address, tx_list: Vec<u8>) -> Result<(), Error> {
+    pub async fn propose_new_block(
+        &self,
+        contract_address: Address,
+        tx_list: Vec<u8>,
+        parent_meta_hash: [u8; 32],
+    ) -> Result<(), Error> {
         let provider = ProviderBuilder::new()
             .with_recommended_fillers()
             .wallet(self.wallet.clone())
             .on_http(self.rpc_url.clone());
 
-        let contract = PreconfTaskManager::new(address, provider);
+        let contract = PreconfTaskManager::new(contract_address, provider);
 
         let block_params = BlockParams {
-            assignedProver: address,
-            coinbase: address,
+            assignedProver: Address::ZERO,
+            coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(
+                &self.wallet,
+            ),
             extraData: FixedBytes::from(&[0u8; 32]),
-            parentMetaHash: FixedBytes::from(&[0u8; 32]),
+            parentMetaHash: FixedBytes::from(&parent_meta_hash),
             hookCalls: vec![],
             signature: Bytes::from(vec![0; 32]),
             l1StateBlockNumber: 0,
@@ -83,6 +90,7 @@ impl EthereumL1 {
             U256::from(0),
             lookahead_set_param,
         );
+
         let tx_hash = builder.send().await?.watch().await?;
         tracing::debug!("Proposed new block: {tx_hash}");
 
@@ -175,6 +183,7 @@ mod tests {
                     .parse()
                     .unwrap(),
                 vec![0; 32],
+                [0; 32],
             )
             .await
             .unwrap();
