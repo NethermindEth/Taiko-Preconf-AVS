@@ -2,10 +2,11 @@
 
 use alloy::{
     network::EthereumWallet,
-    primitives::{Address, Bytes, U256},
+    primitives::{Address, Bytes, FixedBytes, U256, U32, U64},
     providers::ProviderBuilder,
     signers::local::PrivateKeySigner,
     sol,
+    sol_types::SolValue,
 };
 use anyhow::Error;
 use std::str::FromStr;
@@ -22,6 +23,26 @@ sol!(
     "src/ethereum_l1/abi/PreconfTaskManager.json"
 );
 
+sol! {
+    /// @dev Hook and it's data (currently used only during proposeBlock)
+    struct HookCall {
+        address hook;
+        bytes data;
+    }
+
+    /// @dev Represents proposeBlock's _data input parameter
+    struct BlockParams {
+        address assignedProver; // DEPRECATED, value ignored.
+        address coinbase;
+        bytes32 extraData;
+        bytes32 parentMetaHash;
+        HookCall[] hookCalls; // DEPRECATED, value ignored.
+        bytes signature;
+        uint32 l1StateBlockNumber;
+        uint64 timestamp;
+    }
+}
+
 impl EthereumL1 {
     pub fn new(rpc_url: &str, private_key: &str) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_str(private_key)?;
@@ -33,18 +54,35 @@ impl EthereumL1 {
         })
     }
 
-    pub async fn propose_new_block(&self, address: Address) -> Result<(), Error> {
+    pub async fn propose_new_block(&self, address: Address, tx_list: Vec<u8>) -> Result<(), Error> {
         let provider = ProviderBuilder::new()
             .with_recommended_fillers()
             .wallet(self.wallet.clone())
             .on_http(self.rpc_url.clone());
 
         let contract = PreconfTaskManager::new(address, provider);
-        let block_params = Bytes::from(vec![0; 32]);
-        let tx_list = Bytes::from(vec![0; 32]);
+
+        let block_params = BlockParams {
+            assignedProver: address,
+            coinbase: address,
+            extraData: FixedBytes::from(&[0u8; 32]),
+            parentMetaHash: FixedBytes::from(&[0u8; 32]),
+            hookCalls: vec![],
+            signature: Bytes::from(vec![0; 32]),
+            l1StateBlockNumber: 0,
+            timestamp: 0,
+        };
+
+        let encoded_block_params = Bytes::from(BlockParams::abi_encode_sequence(&block_params));
+
+        let tx_list = Bytes::from(tx_list);
         let lookahead_set_param: Vec<PreconfTaskManager::LookaheadSetParam> = Vec::new();
-        let builder =
-            contract.newBlockProposal(block_params, tx_list, U256::from(0), lookahead_set_param);
+        let builder = contract.newBlockProposal(
+            encoded_block_params,
+            tx_list,
+            U256::from(0),
+            lookahead_set_param,
+        );
         let tx_hash = builder.send().await?.watch().await?;
         tracing::debug!("Proposed new block: {tx_hash}");
 
@@ -136,6 +174,7 @@ mod tests {
                 "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
                     .parse()
                     .unwrap(),
+                vec![0; 32],
             )
             .await
             .unwrap();
