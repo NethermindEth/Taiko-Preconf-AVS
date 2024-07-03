@@ -19,11 +19,33 @@ impl Taiko {
 
     pub async fn get_pending_l2_tx_lists(&self) -> Result<l2_tx_lists::RPCReplyL2TxLists, Error> {
         tracing::debug!("Getting L2 tx lists");
-        l2_tx_lists::decompose_pending_lists_json(
+        let result = l2_tx_lists::decompose_pending_lists_json(
             self.rpc_proposer
                 .call_method("RPC.GetL2TxLists", vec![])
                 .await?,
-        )
+        )?;
+
+        if result.tx_list_bytes.len() > 0 {
+            Self::print_number_of_received_txs(&result);
+        }
+
+        Ok(result)
+    }
+
+    fn print_number_of_received_txs(result: &l2_tx_lists::RPCReplyL2TxLists) {
+        if let Some(tx_lists) = result.tx_lists.as_array() {
+            let mut hashes = Vec::new();
+            for (_, tx_list) in tx_lists.iter().enumerate() {
+                if let Some(tx_list_array) = tx_list.as_array() {
+                    for (_, tx) in tx_list_array.iter().enumerate() {
+                        if let Some(hash) = tx.get("hash") {
+                            hashes.push(hash.as_str().unwrap_or("").get(0..8).unwrap_or(""));
+                        }
+                    }
+                }
+            }
+            tracing::debug!("Received L2 txs: [{}]", hashes.join(" "));
+        }
     }
 
     pub async fn advance_head_to_new_l2_block(
