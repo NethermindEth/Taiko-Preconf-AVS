@@ -18,8 +18,8 @@ async fn main() -> Result<(), Error> {
     let (node_tx, node_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
     let p2p = p2p_network::AVSp2p::new(node_tx.clone(), avs_p2p_rx);
     p2p.start();
-
-    let node = node::Node::new(node_rx, avs_p2p_tx);
+    let ethereum_l1 = ethereum_l1::EthereumL1::new("http://localhost:8545", "private_key")?;
+    let node = node::Node::new(node_rx, avs_p2p_tx, ethereum_l1);
     node.entrypoint().await?;
     Ok(())
 }

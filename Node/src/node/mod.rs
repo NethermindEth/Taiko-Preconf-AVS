@@ -1,3 +1,4 @@
+use crate::ethereum_l1::EthereumL1;
 use crate::taiko::Taiko;
 use anyhow::{anyhow as any_err, Error, Ok};
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -7,16 +8,22 @@ pub struct Node {
     node_rx: Option<Receiver<String>>,
     avs_p2p_tx: Sender<String>,
     gas_used: u64,
+    ethereum_l1: EthereumL1,
 }
 
 impl Node {
-    pub fn new(node_rx: Receiver<String>, avs_p2p_tx: Sender<String>) -> Self {
+    pub fn new(
+        node_rx: Receiver<String>,
+        avs_p2p_tx: Sender<String>,
+        ethereum_l1: EthereumL1,
+    ) -> Self {
         let taiko = Taiko::new("http://127.0.0.1:1234", "http://127.0.0.1:1235");
         Self {
             taiko,
             node_rx: Some(node_rx),
             avs_p2p_tx,
             gas_used: 0,
+            ethereum_l1,
         }
     }
 
@@ -70,8 +77,9 @@ impl Node {
         self.commit_to_the_tx_lists();
         self.send_preconfirmations_to_the_avs_p2p().await?;
         self.taiko
-            .advance_head_to_new_l2_block(pending_tx_lists, self.gas_used)
+            .advance_head_to_new_l2_block(pending_tx_lists.tx_lists, self.gas_used)
             .await?;
+        // self.ethereum_l1.propose_new_block(pending_tx_lists).await?;
         Ok(())
     }
 
