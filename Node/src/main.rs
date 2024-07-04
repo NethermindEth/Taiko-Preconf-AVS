@@ -23,7 +23,7 @@ async fn main() -> Result<(), Error> {
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
         &config.mev_boost_url,
         &config.ethereum_private_key,
-        &config.new_block_proposal_contract_address,
+        &config.taiko_preconfirming_address,
     )?;
     let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url);
     let node = node::Node::new(node_rx, avs_p2p_tx, taiko, ethereum_l1, mev_boost);

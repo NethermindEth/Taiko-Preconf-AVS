@@ -12,7 +12,7 @@ use std::str::FromStr;
 pub struct EthereumL1 {
     rpc_url: reqwest::Url,
     wallet: EthereumWallet,
-    new_block_proposal_contract_address: Address,
+    taiko_preconfirming_address: Address,
 }
 
 sol!(
@@ -46,7 +46,7 @@ impl EthereumL1 {
     pub fn new(
         rpc_url: &str,
         private_key: &str,
-        new_block_proposal_contract_address: &str,
+        taiko_preconfirming_address: &str,
     ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_str(private_key)?;
         let wallet = EthereumWallet::from(signer);
@@ -54,7 +54,7 @@ impl EthereumL1 {
         Ok(Self {
             rpc_url: rpc_url.parse()?,
             wallet,
-            new_block_proposal_contract_address: new_block_proposal_contract_address.parse()?,
+            taiko_preconfirming_address: taiko_preconfirming_address.parse()?,
         })
     }
 
@@ -68,7 +68,7 @@ impl EthereumL1 {
             .wallet(self.wallet.clone())
             .on_http(self.rpc_url.clone());
 
-        let contract = PreconfTaskManager::new(self.new_block_proposal_contract_address, provider);
+        let contract = PreconfTaskManager::new(self.taiko_preconfirming_address, provider);
 
         let block_params = BlockParams {
             assignedProver: Address::ZERO,
@@ -111,7 +111,7 @@ impl EthereumL1 {
         Ok(Self {
             rpc_url,
             wallet,
-            new_block_proposal_contract_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
+            taiko_preconfirming_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
                 .parse()?,
         })
     }
