@@ -21,4 +21,4 @@ anyhow = "1.0.86"
 k256 = "0.13"
 elliptic-curve = "0.13"
 reqwest = "0.12"
-
+hex = "0.4"

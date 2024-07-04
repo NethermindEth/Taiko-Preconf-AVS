@@ -1,9 +1,11 @@
 #![allow(unused)] //TODO remove after the EthereumL1 is used in release code
 
 use alloy::{
+    consensus::transaction::TypedTransaction,
     network::{Ethereum, EthereumWallet, NetworkWallet},
     primitives::{Address, Bytes, FixedBytes, U256, U32, U64},
     providers::ProviderBuilder,
+    rpc::types::{TransactionInput, TransactionRequest},
     signers::local::PrivateKeySigner,
     sol,
     sol_types::SolValue,
@@ -14,6 +16,7 @@ use std::str::FromStr;
 pub struct EthereumL1 {
     rpc_url: reqwest::Url,
     wallet: EthereumWallet,
+    new_block_proposal_contract_address: Address,
 }
 
 sol!(
@@ -44,28 +47,32 @@ sol! {
 }
 
 impl EthereumL1 {
-    pub fn new(rpc_url: &str, private_key: &str) -> Result<Self, Error> {
+    pub fn new(
+        rpc_url: &str,
+        private_key: &str,
+        new_block_proposal_contract_address: &str,
+    ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_str(private_key)?;
         let wallet = EthereumWallet::from(signer);
 
         Ok(Self {
             rpc_url: rpc_url.parse()?,
             wallet,
+            new_block_proposal_contract_address: new_block_proposal_contract_address.parse()?,
         })
     }
 
-    pub async fn propose_new_block(
+    pub async fn create_propose_new_block_tx(
         &self,
-        contract_address: Address,
         tx_list: Vec<u8>,
         parent_meta_hash: [u8; 32],
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<u8>, Error> {
         let provider = ProviderBuilder::new()
             .with_recommended_fillers()
             .wallet(self.wallet.clone())
             .on_http(self.rpc_url.clone());
 
-        let contract = PreconfTaskManager::new(contract_address, provider);
+        let contract = PreconfTaskManager::new(self.new_block_proposal_contract_address, provider);
 
         let block_params = BlockParams {
             assignedProver: Address::ZERO,
@@ -84,17 +91,34 @@ impl EthereumL1 {
 
         let tx_list = Bytes::from(tx_list);
         let lookahead_set_param: Vec<PreconfTaskManager::LookaheadSetParam> = Vec::new();
-        let builder = contract.newBlockProposal(
-            encoded_block_params,
-            tx_list,
-            U256::from(0),
-            lookahead_set_param,
-        );
 
-        let tx_hash = builder.send().await?.watch().await?;
-        tracing::debug!("Proposed new block: {tx_hash}");
+        let builder = contract
+            .newBlockProposal(
+                encoded_block_params,
+                tx_list,
+                U256::from(0),
+                lookahead_set_param,
+            )
+            .nonce(1) //TODO how to get it?
+            .gas(100000)
+            .max_fee_per_gas(10000000000000000)
+            .max_priority_fee_per_gas(10000000000000000);
 
-        Ok(())
+        let tx = builder.as_ref().clone().build_typed_tx();
+        let Ok(TypedTransaction::Eip1559(mut tx)) = tx else {
+            return Err(anyhow::anyhow!("expect tx in EIP1559"));
+        };
+
+        let signature = self
+            .wallet
+            .default_signer()
+            .sign_transaction(&mut tx)
+            .await?;
+
+        let mut buf = vec![];
+        tx.encode_with_signature(&signature, &mut buf, false);
+
+        Ok(buf)
     }
 
     #[cfg(test)]
@@ -105,7 +129,12 @@ impl EthereumL1 {
         let signer = PrivateKeySigner::from_signing_key(private_key.into());
         let wallet = EthereumWallet::from(signer);
 
-        Ok(Self { rpc_url, wallet })
+        Ok(Self {
+            rpc_url,
+            wallet,
+            new_block_proposal_contract_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+                .parse()?,
+        })
     }
 
     #[cfg(test)]
@@ -177,15 +206,11 @@ mod tests {
         let ethereum_l1 = EthereumL1::new_from_pk(rpc_url, private_key).unwrap();
 
         // some random address for test
-        ethereum_l1
-            .propose_new_block(
-                "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-                    .parse()
-                    .unwrap(),
-                vec![0; 32],
-                [0; 32],
-            )
+        let encoded_tx = ethereum_l1
+            .create_propose_new_block_tx(vec![0; 32], [0; 32])
             .await
             .unwrap();
+
+        assert!(encoded_tx.len() > 0);
     }
 }
