@@ -25,7 +25,7 @@ impl Taiko {
                 .await?,
         )?;
 
-        if result.tx_list_bytes.len() > 0 {
+        if !result.tx_list_bytes.is_empty() {
             Self::print_number_of_received_txs(&result);
         }
 
@@ -35,9 +35,9 @@ impl Taiko {
     fn print_number_of_received_txs(result: &l2_tx_lists::RPCReplyL2TxLists) {
         if let Some(tx_lists) = result.tx_lists.as_array() {
             let mut hashes = Vec::new();
-            for (_, tx_list) in tx_lists.iter().enumerate() {
+            for tx_list in tx_lists {
                 if let Some(tx_list_array) = tx_list.as_array() {
-                    for (_, tx) in tx_list_array.iter().enumerate() {
+                    for tx in tx_list_array {
                         if let Some(hash) = tx.get("hash") {
                             hashes.push(hash.as_str().unwrap_or("").get(0..8).unwrap_or(""));
                         }

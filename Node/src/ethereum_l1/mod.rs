@@ -16,6 +16,7 @@ use std::str::FromStr;
 pub struct EthereumL1 {
     rpc_url: reqwest::Url,
     wallet: EthereumWallet,
+    new_block_proposal_contract_address: Address,
 }
 
 sol!(
@@ -46,19 +47,23 @@ sol! {
 }
 
 impl EthereumL1 {
-    pub fn new(rpc_url: &str, private_key: &str) -> Result<Self, Error> {
+    pub fn new(
+        rpc_url: &str,
+        private_key: &str,
+        new_block_proposal_contract_address: &str,
+    ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_str(private_key)?;
         let wallet = EthereumWallet::from(signer);
 
         Ok(Self {
             rpc_url: rpc_url.parse()?,
             wallet,
+            new_block_proposal_contract_address: new_block_proposal_contract_address.parse()?,
         })
     }
 
     pub async fn create_propose_new_block_tx(
         &self,
-        contract_address: Address,
         tx_list: Vec<u8>,
         parent_meta_hash: [u8; 32],
     ) -> Result<Vec<u8>, Error> {
@@ -67,7 +72,7 @@ impl EthereumL1 {
             .wallet(self.wallet.clone())
             .on_http(self.rpc_url.clone());
 
-        let contract = PreconfTaskManager::new(contract_address, provider);
+        let contract = PreconfTaskManager::new(self.new_block_proposal_contract_address, provider);
 
         let block_params = BlockParams {
             assignedProver: Address::ZERO,
@@ -124,7 +129,12 @@ impl EthereumL1 {
         let signer = PrivateKeySigner::from_signing_key(private_key.into());
         let wallet = EthereumWallet::from(signer);
 
-        Ok(Self { rpc_url, wallet })
+        Ok(Self {
+            rpc_url,
+            wallet,
+            new_block_proposal_contract_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+                .parse()?,
+        })
     }
 
     #[cfg(test)]
@@ -197,13 +207,7 @@ mod tests {
 
         // some random address for test
         let encoded_tx = ethereum_l1
-            .create_propose_new_block_tx(
-                "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-                    .parse()
-                    .unwrap(),
-                vec![0; 32],
-                [0; 32],
-            )
+            .create_propose_new_block_tx(vec![0; 32], [0; 32])
             .await
             .unwrap();
 

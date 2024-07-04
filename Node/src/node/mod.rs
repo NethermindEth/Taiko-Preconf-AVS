@@ -76,7 +76,7 @@ impl Node {
             .get_pending_l2_tx_lists()
             .await
             .map_err(Error::from)?;
-        if pending_tx_lists.tx_list_bytes.len() == 0 {
+        if pending_tx_lists.tx_list_bytes.is_empty() {
             return Ok(());
         }
 
@@ -88,9 +88,6 @@ impl Node {
         let tx = self
             .ethereum_l1
             .create_propose_new_block_tx(
-                "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-                    .parse()
-                    .unwrap(),
                 pending_tx_lists.tx_list_bytes[0].clone(), //TODO: handle rest tx lists
                 pending_tx_lists.parent_meta_hash,
             )
