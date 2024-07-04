@@ -8,7 +8,7 @@ pub struct Node {
     avs_p2p_tx: Sender<String>,
     gas_used: u64,
     ethereum_l1: EthereumL1,
-    mev_boost: MevBoost,
+    _mev_boost: MevBoost, // temporary unused
 }
 
 impl Node {
@@ -25,7 +25,7 @@ impl Node {
             avs_p2p_tx,
             gas_used: 0,
             ethereum_l1,
-            mev_boost,
+            _mev_boost: mev_boost,
         }
     }
 
@@ -85,14 +85,12 @@ impl Node {
         self.taiko
             .advance_head_to_new_l2_block(pending_tx_lists.tx_lists, self.gas_used)
             .await?;
-        let tx = self
-            .ethereum_l1
-            .create_propose_new_block_tx(
+        self.ethereum_l1
+            .propose_new_block(
                 pending_tx_lists.tx_list_bytes[0].clone(), //TODO: handle rest tx lists
                 pending_tx_lists.parent_meta_hash,
             )
             .await?;
-        self.mev_boost.send_transaction(&tx, 1, 1);
         Ok(())
     }
 

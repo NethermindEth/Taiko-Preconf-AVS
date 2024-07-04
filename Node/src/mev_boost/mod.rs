@@ -1,3 +1,5 @@
+#![allow(unused)] //TODO remove after the EthereumL1 is used in release code
+
 use crate::utils::rpc_client::RpcClient;
 
 pub struct MevBoost {
