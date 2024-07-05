@@ -1,8 +1,6 @@
-#![allow(unused)] //TODO remove after the EthereumL1 is used in release code
-
 use alloy::{
     network::{Ethereum, EthereumWallet, NetworkWallet},
-    primitives::{Address, Bytes, FixedBytes, U256, U32, U64},
+    primitives::{Address, Bytes, FixedBytes, U256},
     providers::ProviderBuilder,
     signers::local::PrivateKeySigner,
     sol,
@@ -14,6 +12,7 @@ use std::str::FromStr;
 pub struct EthereumL1 {
     rpc_url: reqwest::Url,
     wallet: EthereumWallet,
+    taiko_preconfirming_address: Address,
 }
 
 sol!(
@@ -44,19 +43,23 @@ sol! {
 }
 
 impl EthereumL1 {
-    pub fn new(rpc_url: &str, private_key: &str) -> Result<Self, Error> {
+    pub fn new(
+        rpc_url: &str,
+        private_key: &str,
+        taiko_preconfirming_address: &str,
+    ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_str(private_key)?;
         let wallet = EthereumWallet::from(signer);
 
         Ok(Self {
             rpc_url: rpc_url.parse()?,
             wallet,
+            taiko_preconfirming_address: taiko_preconfirming_address.parse()?,
         })
     }
 
     pub async fn propose_new_block(
         &self,
-        contract_address: Address,
         tx_list: Vec<u8>,
         parent_meta_hash: [u8; 32],
     ) -> Result<(), Error> {
@@ -65,7 +68,7 @@ impl EthereumL1 {
             .wallet(self.wallet.clone())
             .on_http(self.rpc_url.clone());
 
-        let contract = PreconfTaskManager::new(contract_address, provider);
+        let contract = PreconfTaskManager::new(self.taiko_preconfirming_address, provider);
 
         let block_params = BlockParams {
             assignedProver: Address::ZERO,
@@ -105,7 +108,12 @@ impl EthereumL1 {
         let signer = PrivateKeySigner::from_signing_key(private_key.into());
         let wallet = EthereumWallet::from(signer);
 
-        Ok(Self { rpc_url, wallet })
+        Ok(Self {
+            rpc_url,
+            wallet,
+            taiko_preconfirming_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
+                .parse()?,
+        })
     }
 
     #[cfg(test)]
@@ -132,7 +140,6 @@ impl EthereumL1 {
             .on_http(self.rpc_url.clone());
 
         let contract = Counter::deploy(&provider).await?;
-        let address = contract.address().clone();
 
         let builder = contract.setNumber(U256::from(42));
         let tx_hash = builder.send().await?.watch().await?;
@@ -154,10 +161,7 @@ impl EthereumL1 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::hex;
-    use alloy::node_bindings::{Anvil, AnvilInstance};
-    use alloy::providers::Provider;
-    use alloy::rpc::types::TransactionRequest;
+    use alloy::node_bindings::Anvil;
 
     #[tokio::test]
     async fn test_call_contract() {
@@ -176,15 +180,8 @@ mod tests {
         let private_key = anvil.keys()[0].clone();
         let ethereum_l1 = EthereumL1::new_from_pk(rpc_url, private_key).unwrap();
 
-        // some random address for test
         ethereum_l1
-            .propose_new_block(
-                "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-                    .parse()
-                    .unwrap(),
-                vec![0; 32],
-                [0; 32],
-            )
+            .propose_new_block(vec![0; 32], [0; 32])
             .await
             .unwrap();
     }

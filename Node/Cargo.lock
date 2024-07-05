@@ -3052,6 +3052,7 @@ dependencies = [
  "alloy",
  "anyhow",
  "elliptic-curve",
+ "hex",
  "jsonrpsee",
  "k256",
  "lazy_static",

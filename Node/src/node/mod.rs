@@ -1,4 +1,4 @@
-use crate::taiko::Taiko;
+use crate::{ethereum_l1::EthereumL1, mev_boost::MevBoost, taiko::Taiko};
 use anyhow::{anyhow as any_err, Error, Ok};
 use tokio::sync::mpsc::{Receiver, Sender};
 
@@ -7,16 +7,25 @@ pub struct Node {
     node_rx: Option<Receiver<String>>,
     avs_p2p_tx: Sender<String>,
     gas_used: u64,
+    ethereum_l1: EthereumL1,
+    _mev_boost: MevBoost, // temporary unused
 }
 
 impl Node {
-    pub fn new(node_rx: Receiver<String>, avs_p2p_tx: Sender<String>) -> Self {
-        let taiko = Taiko::new("http://127.0.0.1:1234", "http://127.0.0.1:1235");
+    pub fn new(
+        node_rx: Receiver<String>,
+        avs_p2p_tx: Sender<String>,
+        taiko: Taiko,
+        ethereum_l1: EthereumL1,
+        mev_boost: MevBoost,
+    ) -> Self {
         Self {
             taiko,
             node_rx: Some(node_rx),
             avs_p2p_tx,
             gas_used: 0,
+            ethereum_l1,
+            _mev_boost: mev_boost,
         }
     }
 
@@ -67,10 +76,20 @@ impl Node {
             .get_pending_l2_tx_lists()
             .await
             .map_err(Error::from)?;
+        if pending_tx_lists.tx_list_bytes.is_empty() {
+            return Ok(());
+        }
+
         self.commit_to_the_tx_lists();
         self.send_preconfirmations_to_the_avs_p2p().await?;
         self.taiko
-            .advance_head_to_new_l2_block(pending_tx_lists, self.gas_used)
+            .advance_head_to_new_l2_block(pending_tx_lists.tx_lists, self.gas_used)
+            .await?;
+        self.ethereum_l1
+            .propose_new_block(
+                pending_tx_lists.tx_list_bytes[0].clone(), //TODO: handle rest tx lists
+                pending_tx_lists.parent_meta_hash,
+            )
             .await?;
         Ok(())
     }

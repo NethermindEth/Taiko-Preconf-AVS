@@ -2,6 +2,8 @@ use crate::utils::rpc_client::RpcClient;
 use anyhow::Error;
 use serde_json::Value;
 
+pub mod l2_tx_lists;
+
 pub struct Taiko {
     rpc_proposer: RpcClient,
     rpc_driver: RpcClient,
@@ -15,11 +17,35 @@ impl Taiko {
         }
     }
 
-    pub async fn get_pending_l2_tx_lists(&self) -> Result<Value, Error> {
+    pub async fn get_pending_l2_tx_lists(&self) -> Result<l2_tx_lists::RPCReplyL2TxLists, Error> {
         tracing::debug!("Getting L2 tx lists");
-        self.rpc_proposer
-            .call_method("RPC.GetL2TxLists", vec![])
-            .await
+        let result = l2_tx_lists::decompose_pending_lists_json(
+            self.rpc_proposer
+                .call_method("RPC.GetL2TxLists", vec![])
+                .await?,
+        )?;
+
+        if !result.tx_list_bytes.is_empty() {
+            Self::print_number_of_received_txs(&result);
+        }
+
+        Ok(result)
+    }
+
+    fn print_number_of_received_txs(result: &l2_tx_lists::RPCReplyL2TxLists) {
+        if let Some(tx_lists) = result.tx_lists.as_array() {
+            let mut hashes = Vec::new();
+            for tx_list in tx_lists {
+                if let Some(tx_list_array) = tx_list.as_array() {
+                    for tx in tx_list_array {
+                        if let Some(hash) = tx.get("hash") {
+                            hashes.push(hash.as_str().unwrap_or("").get(0..8).unwrap_or(""));
+                        }
+                    }
+                }
+            }
+            tracing::debug!("Received L2 txs: [{}]", hashes.join(" "));
+        }
     }
 
     pub async fn advance_head_to_new_l2_block(
@@ -29,7 +55,7 @@ impl Taiko {
     ) -> Result<Value, Error> {
         tracing::debug!("Submitting new L2 blocks");
         let payload = serde_json::json!({
-            "TxLists": tx_lists["TxLists"],
+            "TxLists": tx_lists,
             "gasUsed": gas_used,
         });
         self.rpc_driver
@@ -49,24 +75,19 @@ mod test {
         tracing_subscriber::fmt::init();
 
         let (mut rpc_server, taiko) = setup_rpc_server_and_taiko(3030).await;
-        let json = taiko.get_pending_l2_tx_lists().await.unwrap();
+        let json = taiko.get_pending_l2_tx_lists().await.unwrap().tx_lists;
 
-        assert_eq!(json["TxLists"].as_array().unwrap().len(), 1);
-        assert_eq!(json["TxLists"][0].as_array().unwrap().len(), 3);
-        assert_eq!(json["TxLists"][0][0]["type"], "0x0");
+        assert_eq!(json.as_array().unwrap().len(), 1);
+        assert_eq!(json[0].as_array().unwrap().len(), 2);
+        assert_eq!(json[0][0]["type"], "0x0");
         assert_eq!(
-            json["TxLists"][0][0]["hash"],
-            "0x7c76b9906579e54df54fe77ad1706c47aca706b3eb5cfd8a30ccc3c5a19e8ecd"
+            json[0][0]["hash"],
+            "0xc653e446eafe51eea1f46e6e351adbd1cc8a3271e6935f1441f613a58d441f6a"
         );
-        assert_eq!(json["TxLists"][0][1]["type"], "0x2");
+        assert_eq!(json[0][1]["type"], "0x2");
         assert_eq!(
-            json["TxLists"][0][1]["hash"],
-            "0xece2a3c6ca097cfe5d97aad4e79393240f63865210f9c763703d1136f065298b"
-        );
-        assert_eq!(json["TxLists"][0][2]["type"], "0x2");
-        assert_eq!(
-            json["TxLists"][0][2]["hash"],
-            "0xb105d9f16e8fb913093c8a2c595bf4257328d256f218a05be8dcc626ddeb4193"
+            json[0][1]["hash"],
+            "0xffbcd2fab90f1bf314ca2da1bf83eeab3d17fd58a0393d29a697b2ff05d0e65c"
         );
         rpc_server.stop().await;
     }
