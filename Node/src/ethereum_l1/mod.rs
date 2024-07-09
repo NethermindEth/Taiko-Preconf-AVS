@@ -1,9 +1,9 @@
 #![allow(unused)] //TODO remove after the EthereumL1 is used in release code
 
 use alloy::{
-    consensus::transaction::TypedTransaction,
+    consensus::transaction::{TxLegacy, TypedTransaction},
     network::{Ethereum, EthereumWallet, NetworkWallet},
-    primitives::{Address, Bytes, FixedBytes, U256, U32, U64},
+    primitives::{Address, Bytes, FixedBytes, TxKind, U256, U32, U64},
     providers::ProviderBuilder,
     rpc::types::{TransactionInput, TransactionRequest},
     signers::local::PrivateKeySigner,
@@ -119,6 +119,48 @@ impl EthereumL1 {
         tx.encode_with_signature(&signature, &mut buf, false);
 
         Ok(buf)
+    }
+
+    pub async fn sing_tx_list(&self) {
+        //     // Example transaction list (replace with your actual transaction list)
+        //     let tx_list = vec![
+        //         Transaction {
+        //             to: "0xrecipient_address".to_string(),
+        //             value: 1000,
+        //             // Add other fields as needed
+        //         },
+        //         // Add more transactions as needed
+        //     ];
+
+        //   // Serialize the transaction list to JSON
+        //     let serialized_tx_list = serde_json::to_vec(&tx_list).expect("Failed to serialize transaction list");
+
+        // Serialize the transaction list to JSON
+        let serialized_tx_list: Vec<u8> = vec![1, 2, 3];
+
+        // Create a hash of the serialized transaction list
+        let tx_list_hash = serialized_tx_list; // keccak256(&serialized_tx_list);
+
+        // Create a dummy transaction with the hash as data
+        let dummy_tx = TypedTransaction::Legacy(TxLegacy {
+            nonce: 0,
+            gas_price: 0,
+            to: TxKind::Call(Address::ZERO),
+            value: U256::ZERO,
+            input: Bytes::from(tx_list_hash.to_vec()),
+            chain_id: None, // Added this line
+            gas_limit: 0,
+        });
+
+        // Sign the dummy transaction
+        let signed_tx = self
+            .wallet
+            .default_signer()
+            .sign_transaction(&mut dummy_tx)
+            .await;
+
+        // Here you can do something with the signed transaction, e.g., store it or send it
+        println!("Signed transaction: {:?}", signed_tx);
     }
 
     #[cfg(test)]
