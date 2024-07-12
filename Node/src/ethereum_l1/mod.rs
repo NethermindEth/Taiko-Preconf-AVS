@@ -121,48 +121,6 @@ impl EthereumL1 {
         Ok(buf)
     }
 
-    pub async fn sing_tx_list(&self) {
-        //     // Example transaction list (replace with your actual transaction list)
-        //     let tx_list = vec![
-        //         Transaction {
-        //             to: "0xrecipient_address".to_string(),
-        //             value: 1000,
-        //             // Add other fields as needed
-        //         },
-        //         // Add more transactions as needed
-        //     ];
-
-        //   // Serialize the transaction list to JSON
-        //     let serialized_tx_list = serde_json::to_vec(&tx_list).expect("Failed to serialize transaction list");
-
-        // Serialize the transaction list to JSON
-        let serialized_tx_list: Vec<u8> = vec![1, 2, 3];
-
-        // Create a hash of the serialized transaction list
-        let tx_list_hash = serialized_tx_list; // keccak256(&serialized_tx_list);
-
-        // Create a dummy transaction with the hash as data
-        let dummy_tx = TypedTransaction::Legacy(TxLegacy {
-            nonce: 0,
-            gas_price: 0,
-            to: TxKind::Call(Address::ZERO),
-            value: U256::ZERO,
-            input: Bytes::from(tx_list_hash.to_vec()),
-            chain_id: None, // Added this line
-            gas_limit: 0,
-        });
-
-        // Sign the dummy transaction
-        let signed_tx = self
-            .wallet
-            .default_signer()
-            .sign_transaction(&mut dummy_tx)
-            .await;
-
-        // Here you can do something with the signed transaction, e.g., store it or send it
-        println!("Signed transaction: {:?}", signed_tx);
-    }
-
     #[cfg(test)]
     fn new_from_pk(
         rpc_url: reqwest::Url,
