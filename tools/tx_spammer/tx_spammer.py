@@ -18,7 +18,11 @@ Setup:
    RECIPIENT_ADDRESS=<recipient_address>
 
 5. Run the script:
-   python tx_spammer.py
+   python tx_spammer.py [--count COUNT] [--amount AMOUNT]
+
+CLI Parameters:
+--count: Number of transactions to send (default: 1)
+--amount: Amount of ETH to send per transaction (default: 0.006)
 """
 
 
