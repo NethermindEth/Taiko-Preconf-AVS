@@ -21,3 +21,4 @@ reqwest = "0.12"
 hex = "0.4"
 tiny-keccak = "2.0"
 secp256k1 = "0.29"
+beacon-api-client = { git = "https://github.com/ralexstokes/ethereum-consensus", package = "beacon-api-client" }

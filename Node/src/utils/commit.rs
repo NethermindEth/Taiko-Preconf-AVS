@@ -1,3 +1,4 @@
+#![allow(dead_code)] // TODO: remove
 use crate::taiko::l2_tx_lists::RPCReplyL2TxLists;
 use anyhow::Error;
 use secp256k1::{ecdsa::Signature, Message, Secp256k1, SecretKey};

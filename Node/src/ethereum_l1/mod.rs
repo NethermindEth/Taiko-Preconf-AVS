@@ -1,3 +1,5 @@
+pub mod beacon_node;
+
 use alloy::{
     network::{Ethereum, EthereumWallet, NetworkWallet},
     primitives::{Address, Bytes, FixedBytes, U256},
