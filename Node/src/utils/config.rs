@@ -6,6 +6,7 @@ pub struct Config {
     pub ethereum_private_key: String,
     pub mev_boost_url: String,
     pub taiko_preconfirming_address: String,
+    pub l1_beacon_url: String,
 }
 
 impl Config {
@@ -36,6 +37,8 @@ impl Config {
             }),
             mev_boost_url: std::env::var("MEV_BOOST_URL")
                 .unwrap_or_else(|_| "http://127.0.0.1:8080".to_string()),
+            l1_beacon_url: std::env::var("L1_BEACON_URL")
+                .unwrap_or_else(|_| "http://127.0.0.1:30303".to_string()),
         };
 
         info!(

@@ -85,10 +85,17 @@ impl Node {
         self.taiko
             .advance_head_to_new_l2_block(pending_tx_lists.tx_lists, self.gas_used)
             .await?;
+        let lookahead = self
+            .ethereum_l1
+            .consensus_layer
+            .get_latest_lookahead()
+            .await?;
         self.ethereum_l1
+            .execution_layer
             .propose_new_block(
                 pending_tx_lists.tx_list_bytes[0].clone(), //TODO: handle rest tx lists
                 pending_tx_lists.parent_meta_hash,
+                lookahead,
             )
             .await?;
         Ok(())
