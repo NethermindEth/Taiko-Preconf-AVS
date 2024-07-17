@@ -39,7 +39,7 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_get_lookahead() {
-        let mut server = setup_server().await;
+        let server = setup_server().await;
         let cl = ConsensusLayer::new(server.url().as_str()).unwrap();
         let duties = cl.get_lookahead(1).await.unwrap();
 
@@ -49,7 +49,7 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_get_genesis_data() {
-        let mut server = setup_server().await;
+        let server = setup_server().await;
         let cl = ConsensusLayer::new(server.url().as_str()).unwrap();
         let genesis_data = cl.get_genesis_data().await.unwrap();
 

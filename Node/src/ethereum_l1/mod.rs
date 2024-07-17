@@ -15,6 +15,7 @@ impl EthereumL1 {
         private_key: &str,
         taiko_preconfirming_address: &str,
         consensus_rpc_url: &str,
+        slot_duration_sec: u64,
     ) -> Result<Self, anyhow::Error> {
         let consensus_layer = ConsensusLayer::new(consensus_rpc_url)?;
         let genesis_data = consensus_layer.get_genesis_data().await?;
@@ -23,6 +24,7 @@ impl EthereumL1 {
             private_key,
             taiko_preconfirming_address,
             genesis_data.genesis_time,
+            slot_duration_sec,
         )?;
         Ok(Self {
             consensus_layer,
@@ -35,12 +37,11 @@ impl EthereumL1 {
 mod tests {
     use super::*;
     use alloy::node_bindings::Anvil;
-    use beacon_api_client::ProposerDuty;
     use consensus_layer::tests::setup_server;
 
     #[tokio::test]
     async fn test_propose_new_block_with_lookahead() {
-        let mut server = setup_server().await;
+        let server = setup_server().await;
         let cl = ConsensusLayer::new(server.url().as_str()).unwrap();
         let duties = cl.get_lookahead(1).await.unwrap();
 

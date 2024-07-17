@@ -15,6 +15,7 @@ pub struct ExecutionLayer {
     wallet: EthereumWallet,
     taiko_preconfirming_address: Address,
     genesis_timestamp_sec: u64,
+    slot_duration_sec: u64,
 }
 
 sol!(
@@ -50,6 +51,7 @@ impl ExecutionLayer {
         private_key: &str,
         taiko_preconfirming_address: &str,
         genesis_timestamp_sec: u64,
+        slot_duration_sec: u64,
     ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_str(private_key)?;
         let wallet = EthereumWallet::from(signer);
@@ -59,6 +61,7 @@ impl ExecutionLayer {
             wallet,
             taiko_preconfirming_address: taiko_preconfirming_address.parse()?,
             genesis_timestamp_sec,
+            slot_duration_sec,
         })
     }
 
@@ -102,7 +105,7 @@ impl ExecutionLayer {
         let builder = contract.newBlockProposal(
             encoded_block_params,
             tx_list,
-            U256::from(0),
+            U256::from(0), //TODO: Replace it with the proper lookaheadPointer when the contract is ready.
             lookahead_set_param,
         );
 
@@ -113,8 +116,7 @@ impl ExecutionLayer {
     }
 
     fn calculate_slot_timestamp(&self, slot: u64) -> u64 {
-        const SECONDS_PER_SLOT: u64 = 12;
-        self.genesis_timestamp_sec + slot * SECONDS_PER_SLOT
+        self.genesis_timestamp_sec + slot * self.slot_duration_sec
     }
 
     #[cfg(test)]
@@ -131,6 +133,7 @@ impl ExecutionLayer {
             taiko_preconfirming_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
                 .parse()?,
             genesis_timestamp_sec: 0,
+            slot_duration_sec: 12,
         })
     }
 
