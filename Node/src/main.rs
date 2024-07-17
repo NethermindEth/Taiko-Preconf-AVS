@@ -24,9 +24,12 @@ async fn main() -> Result<(), Error> {
         &config.mev_boost_url,
         &config.ethereum_private_key,
         &config.taiko_preconfirming_address,
-    )?;
+        &config.l1_beacon_url,
+        config.l1_slot_duration_sec,
+    )
+    .await?;
     let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url);
-    let node = node::Node::new(node_rx, avs_p2p_tx, taiko, ethereum_l1, mev_boost);
+    let node = node::Node::new(node_rx, avs_p2p_tx, taiko, ethereum_l1, mev_boost).await?;
     node.entrypoint().await?;
     Ok(())
 }
