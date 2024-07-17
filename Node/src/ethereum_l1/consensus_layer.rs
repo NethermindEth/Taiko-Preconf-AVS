@@ -19,10 +19,10 @@ impl ConsensusLayer {
         let header = self.client.get_beacon_header_at_head().await?;
         let slot = header.header.message.slot;
         let epoch = slot / 32;
-        self.get_lookeahead(epoch + 1).await
+        self.get_lookahead(epoch + 1).await
     }
 
-    async fn get_lookeahead(&self, epoch: u64) -> Result<Vec<ProposerDuty>, Error> {
+    pub async fn get_lookahead(&self, epoch: u64) -> Result<Vec<ProposerDuty>, Error> {
         let (_, duties) = self.client.get_proposer_duties(epoch).await?;
         Ok(duties)
     }
@@ -33,19 +33,15 @@ impl ConsensusLayer {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use tokio;
 
     #[tokio::test]
-    async fn test_get_lookeahead() {
-        let mut server = mockito::Server::new_async().await;
-        server
-            .mock("GET", "/eth/v1/validator/duties/proposer/1")
-            .with_body(include_str!("lookahead_test_response.json"))
-            .create();
+    async fn test_get_lookahead() {
+        let mut server = setup_server().await;
         let cl = ConsensusLayer::new(server.url().as_str()).unwrap();
-        let duties = cl.get_lookeahead(1).await.unwrap();
+        let duties = cl.get_lookahead(1).await.unwrap();
 
         assert_eq!(duties.len(), 32);
         assert_eq!(duties[0].slot, 32);
@@ -53,6 +49,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_genesis_data() {
+        let mut server = setup_server().await;
+        let cl = ConsensusLayer::new(server.url().as_str()).unwrap();
+        let genesis_data = cl.get_genesis_data().await.unwrap();
+
+        assert_eq!(genesis_data.genesis_time, 1590832934);
+        assert_eq!(
+            genesis_data.genesis_validators_root.to_string(),
+            "0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2"
+        );
+        assert_eq!(genesis_data.genesis_fork_version, [0; 4]);
+    }
+
+    pub async fn setup_server() -> mockito::ServerGuard {
         let mut server = mockito::Server::new_async().await;
         server
             .mock("GET", "/eth/v1/beacon/genesis")
@@ -64,14 +73,10 @@ mod tests {
                 }
               }"#)
             .create();
-        let cl = ConsensusLayer::new(server.url().as_str()).unwrap();
-        let genesis_data = cl.get_genesis_data().await.unwrap();
-
-        assert_eq!(genesis_data.genesis_time, 1590832934);
-        assert_eq!(
-            genesis_data.genesis_validators_root.to_string(),
-            "0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2"
-        );
-        assert_eq!(genesis_data.genesis_fork_version, [0; 4]);
+        server
+            .mock("GET", "/eth/v1/validator/duties/proposer/1")
+            .with_body(include_str!("lookahead_test_response.json"))
+            .create();
+        server
     }
 }

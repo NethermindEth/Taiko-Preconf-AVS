@@ -95,7 +95,7 @@ impl ExecutionLayer {
             .iter()
             .map(|duty| PreconfTaskManager::LookaheadSetParam {
                 timestamp: U256::from(self.calculate_slot_timestamp(duty.slot)),
-                preconfer: Address::from_raw_public_key(lookahead_set[0].public_key.as_slice()),
+                preconfer: Address::ZERO, //TODO: Replace it with a BLS key when the contract is ready.
             })
             .collect();
 
@@ -118,7 +118,7 @@ impl ExecutionLayer {
     }
 
     #[cfg(test)]
-    fn new_from_pk(
+    pub fn new_from_pk(
         rpc_url: reqwest::Url,
         private_key: elliptic_curve::SecretKey<k256::Secp256k1>,
     ) -> Result<Self, Error> {

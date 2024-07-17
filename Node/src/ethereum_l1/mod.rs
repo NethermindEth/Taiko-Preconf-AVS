@@ -30,3 +30,27 @@ impl EthereumL1 {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::node_bindings::Anvil;
+    use beacon_api_client::ProposerDuty;
+    use consensus_layer::tests::setup_server;
+
+    #[tokio::test]
+    async fn test_propose_new_block_with_lookahead() {
+        let mut server = setup_server().await;
+        let cl = ConsensusLayer::new(server.url().as_str()).unwrap();
+        let duties = cl.get_lookahead(1).await.unwrap();
+
+        let anvil = Anvil::new().try_spawn().unwrap();
+        let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
+        let private_key = anvil.keys()[0].clone();
+        let el = ExecutionLayer::new_from_pk(rpc_url, private_key).unwrap();
+
+        el.propose_new_block(vec![0; 32], [0; 32], duties)
+            .await
+            .unwrap();
+    }
+}
