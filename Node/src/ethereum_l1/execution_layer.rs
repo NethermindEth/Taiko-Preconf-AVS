@@ -14,6 +14,7 @@ pub struct ExecutionLayer {
     rpc_url: reqwest::Url,
     wallet: EthereumWallet,
     taiko_preconfirming_address: Address,
+    genesis_timestamp_sec: u64,
 }
 
 sol!(
@@ -48,6 +49,7 @@ impl ExecutionLayer {
         rpc_url: &str,
         private_key: &str,
         taiko_preconfirming_address: &str,
+        genesis_timestamp_sec: u64,
     ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_str(private_key)?;
         let wallet = EthereumWallet::from(signer);
@@ -56,6 +58,7 @@ impl ExecutionLayer {
             rpc_url: rpc_url.parse()?,
             wallet,
             taiko_preconfirming_address: taiko_preconfirming_address.parse()?,
+            genesis_timestamp_sec,
         })
     }
 
@@ -91,10 +94,11 @@ impl ExecutionLayer {
         let lookahead_set_param: Vec<PreconfTaskManager::LookaheadSetParam> = lookahead_set
             .iter()
             .map(|duty| PreconfTaskManager::LookaheadSetParam {
-                timestamp: U256::from(duty.slot),
-                preconfer: Address::from_raw_public_key(&lookahead_set[0].public_key.as_slice()),
+                timestamp: U256::from(self.calculate_slot_timestamp(duty.slot)),
+                preconfer: Address::from_raw_public_key(lookahead_set[0].public_key.as_slice()),
             })
             .collect();
+
         let builder = contract.newBlockProposal(
             encoded_block_params,
             tx_list,
@@ -106,6 +110,11 @@ impl ExecutionLayer {
         tracing::debug!("Proposed new block: {tx_hash}");
 
         Ok(())
+    }
+
+    fn calculate_slot_timestamp(&self, slot: u64) -> u64 {
+        const SECONDS_PER_SLOT: u64 = 12;
+        self.genesis_timestamp_sec + slot * SECONDS_PER_SLOT
     }
 
     #[cfg(test)]
@@ -121,6 +130,7 @@ impl ExecutionLayer {
             wallet,
             taiko_preconfirming_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
                 .parse()?,
+            genesis_timestamp_sec: 0,
         })
     }
 

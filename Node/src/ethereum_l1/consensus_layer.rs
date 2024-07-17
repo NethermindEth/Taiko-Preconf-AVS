@@ -1,6 +1,6 @@
 #![allow(dead_code)] // TODO: remove
 use anyhow::Error;
-use beacon_api_client::{mainnet::MainnetClientTypes, Client, ProposerDuty};
+use beacon_api_client::{mainnet::MainnetClientTypes, Client, GenesisDetails, ProposerDuty};
 use reqwest;
 
 pub struct ConsensusLayer {
@@ -19,12 +19,16 @@ impl ConsensusLayer {
         let header = self.client.get_beacon_header_at_head().await?;
         let slot = header.header.message.slot;
         let epoch = slot / 32;
-        self.get_lookeahead(epoch+1).await
+        self.get_lookeahead(epoch + 1).await
     }
 
     async fn get_lookeahead(&self, epoch: u64) -> Result<Vec<ProposerDuty>, Error> {
         let (_, duties) = self.client.get_proposer_duties(epoch).await?;
         Ok(duties)
+    }
+
+    pub async fn get_genesis_data(&self) -> Result<GenesisDetails, Error> {
+        self.client.get_genesis_details().await.map_err(Error::new)
     }
 }
 
@@ -38,7 +42,6 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
         server
             .mock("GET", "/eth/v1/validator/duties/proposer/1")
-            // .match_header("content-type", "application/json")
             .with_body(include_str!("lookahead_test_response.json"))
             .create();
         let cl = ConsensusLayer::new(server.url().as_str()).unwrap();
@@ -46,5 +49,29 @@ mod tests {
 
         assert_eq!(duties.len(), 32);
         assert_eq!(duties[0].slot, 32);
+    }
+
+    #[tokio::test]
+    async fn test_get_genesis_data() {
+        let mut server = mockito::Server::new_async().await;
+        server
+            .mock("GET", "/eth/v1/beacon/genesis")
+            .with_body(r#"{
+                "data": {
+                  "genesis_time": "1590832934",
+                  "genesis_validators_root": "0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2",
+                  "genesis_fork_version": "0x00000000"
+                }
+              }"#)
+            .create();
+        let cl = ConsensusLayer::new(server.url().as_str()).unwrap();
+        let genesis_data = cl.get_genesis_data().await.unwrap();
+
+        assert_eq!(genesis_data.genesis_time, 1590832934);
+        assert_eq!(
+            genesis_data.genesis_validators_root.to_string(),
+            "0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2"
+        );
+        assert_eq!(genesis_data.genesis_fork_version, [0; 4]);
     }
 }

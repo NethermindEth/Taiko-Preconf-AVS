@@ -53,10 +53,8 @@ mod tests {
 
     #[test]
     fn test_decompose_pending_lists_json() {
-        let json_data = serde_json::from_str(
-            include_str!("../utils/tx_lists_test_response.json")
-        )
-        .unwrap();
+        let json_data =
+            serde_json::from_str(include_str!("../utils/tx_lists_test_response.json")).unwrap();
 
         let result = decompose_pending_lists_json(json_data).unwrap();
 
