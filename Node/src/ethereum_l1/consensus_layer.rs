@@ -13,13 +13,10 @@ impl ConsensusLayer {
         Ok(Self { client })
     }
 
-    // First iteration we get the next lookahead by checking the actual epoch number
-    // this will be improved so we keep synchronization with the CL
-    pub async fn get_latest_lookahead(&self) -> Result<Vec<ProposerDuty>, Error> {
+    pub async fn get_current_epoch(&self) -> Result<u64, Error> {
         let header = self.client.get_beacon_header_at_head().await?;
         let slot = header.header.message.slot;
-        let epoch = slot / 32;
-        self.get_lookahead(epoch + 1).await
+        Ok(slot / 32)
     }
 
     pub async fn get_lookahead(&self, epoch: u64) -> Result<Vec<ProposerDuty>, Error> {

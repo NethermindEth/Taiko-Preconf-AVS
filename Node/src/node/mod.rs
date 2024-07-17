@@ -9,24 +9,27 @@ pub struct Node {
     gas_used: u64,
     ethereum_l1: EthereumL1,
     _mev_boost: MevBoost, // temporary unused
+    epoch: u64,
 }
 
 impl Node {
-    pub fn new(
+    pub async fn new(
         node_rx: Receiver<String>,
         avs_p2p_tx: Sender<String>,
         taiko: Taiko,
         ethereum_l1: EthereumL1,
         mev_boost: MevBoost,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, Error> {
+        let epoch = ethereum_l1.consensus_layer.get_current_epoch().await?;
+        Ok(Self {
             taiko,
             node_rx: Some(node_rx),
             avs_p2p_tx,
             gas_used: 0,
             ethereum_l1,
             _mev_boost: mev_boost,
-        }
+            epoch,
+        })
     }
 
     /// Consumes the Node and starts two loops:
@@ -58,7 +61,7 @@ impl Node {
         }
     }
 
-    async fn preconfirmation_loop(&self) {
+    async fn preconfirmation_loop(&mut self) {
         loop {
             let start_time = tokio::time::Instant::now();
             if let Err(err) = self.main_block_preconfirmation_step().await {
@@ -70,7 +73,7 @@ impl Node {
         }
     }
 
-    async fn main_block_preconfirmation_step(&self) -> Result<(), Error> {
+    async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
         let pending_tx_lists = self
             .taiko
             .get_pending_l2_tx_lists()
@@ -85,11 +88,17 @@ impl Node {
         self.taiko
             .advance_head_to_new_l2_block(pending_tx_lists.tx_lists, self.gas_used)
             .await?;
-        let lookahead = self
-            .ethereum_l1
-            .consensus_layer
-            .get_latest_lookahead()
-            .await?;
+
+        let current_epoch = self.ethereum_l1.consensus_layer.get_current_epoch().await?;
+        let lookahead = if current_epoch != self.epoch {
+            self.epoch = current_epoch;
+            self.ethereum_l1
+                .consensus_layer
+                .get_lookahead(self.epoch + 1)
+                .await?
+        } else {
+            vec![]
+        };
         self.ethereum_l1
             .execution_layer
             .propose_new_block(
