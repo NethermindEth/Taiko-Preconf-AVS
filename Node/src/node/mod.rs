@@ -81,15 +81,14 @@ impl Node {
     }
 
     async fn preconfirmation_loop(&mut self) {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(self.l2_slot_duration_sec));
+
         loop {
-            let start_time = tokio::time::Instant::now();
+            interval.tick().await;
+
             if let Err(err) = self.main_block_preconfirmation_step().await {
                 tracing::error!("Failed to execute main block preconfirmation step: {}", err);
             }
-            let elapsed = start_time.elapsed();
-            let sleep_duration =
-                std::time::Duration::from_secs(self.l2_slot_duration_sec).saturating_sub(elapsed);
-            tokio::time::sleep(sleep_duration).await;
         }
     }
 
