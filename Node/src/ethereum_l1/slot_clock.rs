@@ -11,8 +11,6 @@ pub struct SlotClock {
     genesis_slot: Slot,
     /// Duration from UNIX epoch to genesis.
     genesis_duration: Duration,
-    /// Duration from UNIX epoch to right now.
-    // current_time: Arc<RwLock<Duration>>,
     /// The length of each slot.
     slot_duration: Duration,
     slots_per_epoch: u64,
