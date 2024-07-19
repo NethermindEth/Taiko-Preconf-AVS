@@ -12,6 +12,9 @@ pub struct Config {
 
 impl Config {
     pub fn read_env_variables() -> Self {
+        // Load environment variables from .env file
+        dotenv::dotenv().ok();
+
         const ETHEREUM_PRIVATE_KEY: &str = "ETHEREUM_PRIVATE_KEY";
         const TAIKO_PRECONFIRMING_ADDRESS: &str = "TAIKO_PRECONFIRMING_ADDRESS";
 
