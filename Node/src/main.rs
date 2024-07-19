@@ -26,6 +26,7 @@ async fn main() -> Result<(), Error> {
         &config.taiko_preconfirming_address,
         &config.l1_beacon_url,
         config.l1_slot_duration_sec,
+        config.l1_slots_per_epoch,
     )
     .await?;
     let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url);

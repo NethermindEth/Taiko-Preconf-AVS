@@ -1,5 +1,8 @@
-use crate::{ethereum_l1::EthereumL1, mev_boost::MevBoost, taiko::Taiko};
-use anyhow::{anyhow as any_err, Error, Ok};
+use crate::{
+    ethereum_l1::slot_clock::Epoch, ethereum_l1::EthereumL1, mev_boost::MevBoost, taiko::Taiko,
+};
+use anyhow::{anyhow as any_err, Error};
+use beacon_api_client::ProposerDuty;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 pub struct Node {
@@ -9,7 +12,8 @@ pub struct Node {
     gas_used: u64,
     ethereum_l1: EthereumL1,
     _mev_boost: MevBoost, // temporary unused
-    epoch: u64,
+    epoch: Epoch,
+    lookahead: Vec<ProposerDuty>,
 }
 
 impl Node {
@@ -20,7 +24,6 @@ impl Node {
         ethereum_l1: EthereumL1,
         mev_boost: MevBoost,
     ) -> Result<Self, Error> {
-        let epoch = ethereum_l1.consensus_layer.get_current_epoch().await?;
         Ok(Self {
             taiko,
             node_rx: Some(node_rx),
@@ -28,7 +31,8 @@ impl Node {
             gas_used: 0,
             ethereum_l1,
             _mev_boost: mev_boost,
-            epoch,
+            epoch: Epoch::MAX, // it'll be updated in the first preconfirmation loop
+            lookahead: vec![],
         })
     }
 
@@ -74,11 +78,22 @@ impl Node {
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
-        let pending_tx_lists = self
-            .taiko
-            .get_pending_l2_tx_lists()
-            .await
-            .map_err(Error::from)?;
+        let current_epoch = self.ethereum_l1.slot_clock.get_current_epoch()?;
+        if current_epoch != self.epoch {
+            tracing::debug!(
+                "Current epoch changed from {} to {}",
+                self.epoch,
+                current_epoch
+            );
+            self.epoch = current_epoch;
+            self.lookahead = self
+                .ethereum_l1
+                .consensus_layer
+                .get_lookahead(self.epoch + 1)
+                .await?
+        }
+
+        let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;
         if pending_tx_lists.tx_list_bytes.is_empty() {
             return Ok(());
         }
@@ -88,25 +103,15 @@ impl Node {
         self.taiko
             .advance_head_to_new_l2_block(pending_tx_lists.tx_lists, self.gas_used)
             .await?;
-
-        let current_epoch = self.ethereum_l1.consensus_layer.get_current_epoch().await?;
-        let lookahead = if current_epoch != self.epoch {
-            self.epoch = current_epoch;
-            self.ethereum_l1
-                .consensus_layer
-                .get_lookahead(self.epoch + 1)
-                .await?
-        } else {
-            vec![]
-        };
         self.ethereum_l1
             .execution_layer
             .propose_new_block(
                 pending_tx_lists.tx_list_bytes[0].clone(), //TODO: handle rest tx lists
                 pending_tx_lists.parent_meta_hash,
-                lookahead,
+                std::mem::take(&mut self.lookahead),
             )
             .await?;
+
         Ok(())
     }
 

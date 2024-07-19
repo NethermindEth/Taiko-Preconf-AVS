@@ -8,6 +8,7 @@ pub struct Config {
     pub taiko_preconfirming_address: String,
     pub l1_beacon_url: String,
     pub l1_slot_duration_sec: u64,
+    pub l1_slots_per_epoch: u64,
 }
 
 impl Config {
@@ -28,6 +29,17 @@ impl Config {
                 val
             })
             .expect("L1_SLOT_DURATION_SEC must be a number");
+
+        let l1_slots_per_epoch = std::env::var("L1_SLOTS_PER_EPOCH")
+            .unwrap_or_else(|_| "32".to_string())
+            .parse::<u64>()
+            .map(|val| {
+                if val == 0 {
+                    panic!("L1_SLOTS_PER_EPOCH must be a positive number");
+                }
+                val
+            })
+            .expect("L1_SLOTS_PER_EPOCH must be a number");
 
         let config = Self {
             taiko_proposer_url: std::env::var("TAIKO_PROPOSER_URL")
@@ -55,6 +67,7 @@ impl Config {
             l1_beacon_url: std::env::var("L1_BEACON_URL")
                 .unwrap_or_else(|_| "http://127.0.0.1:4000".to_string()),
             l1_slot_duration_sec,
+            l1_slots_per_epoch,
         };
 
         info!(
@@ -66,13 +79,15 @@ MEV Boost URL: {},
 New block proposal contract address: {}
 Consensus layer URL: {}
 L1 slot duration: {}
+L1 slots per epoch: {}
 "#,
             config.taiko_proposer_url,
             config.taiko_driver_url,
             config.mev_boost_url,
             config.taiko_preconfirming_address,
             config.l1_beacon_url,
-            config.l1_slot_duration_sec
+            config.l1_slot_duration_sec,
+            config.l1_slots_per_epoch
         );
 
         config

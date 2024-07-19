@@ -1,3 +1,4 @@
+use super::slot_clock::SlotClock;
 use alloy::{
     network::{Ethereum, EthereumWallet, NetworkWallet},
     primitives::{Address, Bytes, FixedBytes, U256},
@@ -8,14 +9,14 @@ use alloy::{
 };
 use anyhow::Error;
 use beacon_api_client::ProposerDuty;
+use std::rc::Rc;
 use std::str::FromStr;
 
 pub struct ExecutionLayer {
     rpc_url: reqwest::Url,
     wallet: EthereumWallet,
     taiko_preconfirming_address: Address,
-    genesis_timestamp_sec: u64,
-    slot_duration_sec: u64,
+    slot_clock: Rc<SlotClock>,
 }
 
 sol!(
@@ -50,8 +51,7 @@ impl ExecutionLayer {
         rpc_url: &str,
         private_key: &str,
         taiko_preconfirming_address: &str,
-        genesis_timestamp_sec: u64,
-        slot_duration_sec: u64,
+        slot_clock: Rc<SlotClock>,
     ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_str(private_key)?;
         let wallet = EthereumWallet::from(signer);
@@ -60,8 +60,7 @@ impl ExecutionLayer {
             rpc_url: rpc_url.parse()?,
             wallet,
             taiko_preconfirming_address: taiko_preconfirming_address.parse()?,
-            genesis_timestamp_sec,
-            slot_duration_sec,
+            slot_clock,
         })
     }
 
@@ -94,13 +93,15 @@ impl ExecutionLayer {
         let encoded_block_params = Bytes::from(BlockParams::abi_encode_sequence(&block_params));
 
         let tx_list = Bytes::from(tx_list);
-        let lookahead_set_param: Vec<PreconfTaskManager::LookaheadSetParam> = lookahead_set
+        let lookahead_set_param = lookahead_set
             .iter()
-            .map(|duty| PreconfTaskManager::LookaheadSetParam {
-                timestamp: U256::from(self.calculate_slot_timestamp(duty.slot)),
-                preconfer: Address::ZERO, //TODO: Replace it with a BLS key when the contract is ready.
+            .map(|duty| {
+                Ok(PreconfTaskManager::LookaheadSetParam {
+                    timestamp: U256::from(self.slot_clock.start_of(duty.slot)?.as_millis()),
+                    preconfer: Address::ZERO, //TODO: Replace it with a BLS key when the contract is ready.
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, Error>>()?;
 
         let builder = contract.newBlockProposal(
             encoded_block_params,
@@ -115,10 +116,6 @@ impl ExecutionLayer {
         Ok(())
     }
 
-    fn calculate_slot_timestamp(&self, slot: u64) -> u64 {
-        self.genesis_timestamp_sec + slot * self.slot_duration_sec
-    }
-
     #[cfg(test)]
     pub fn new_from_pk(
         rpc_url: reqwest::Url,
@@ -126,14 +123,14 @@ impl ExecutionLayer {
     ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_signing_key(private_key.into());
         let wallet = EthereumWallet::from(signer);
+        let clock = SlotClock::new(0u64, 0u64, 12u64, 32u64);
 
         Ok(Self {
             rpc_url,
             wallet,
             taiko_preconfirming_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
                 .parse()?,
-            genesis_timestamp_sec: 0,
-            slot_duration_sec: 12,
+            slot_clock: Rc::new(clock),
         })
     }
 
