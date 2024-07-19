@@ -9,6 +9,8 @@ pub struct Config {
     pub l1_beacon_url: String,
     pub l1_slot_duration_sec: u64,
     pub l1_slots_per_epoch: u64,
+    pub l2_slot_duration_sec: u64,
+    pub validator_pubkey: String,
 }
 
 impl Config {
@@ -41,6 +43,26 @@ impl Config {
             })
             .expect("L1_SLOTS_PER_EPOCH must be a number");
 
+        let l2_slot_duration_sec = std::env::var("L2_SLOT_DURATION_SEC")
+            .unwrap_or_else(|_| "3".to_string())
+            .parse::<u64>()
+            .map(|val| {
+                if val == 0 {
+                    panic!("L2_SLOT_DURATION_SEC must be a positive number");
+                }
+                val
+            })
+            .expect("L2_SLOT_DURATION_SEC must be a number");
+
+        const VALIDATOR_PUBKEY: &str = "VALIDATOR_PUBKEY";
+        let validator_pubkey = std::env::var(VALIDATOR_PUBKEY).unwrap_or_else(|_| {
+            warn!(
+                "No validator pubkey found in {} env var, using default",
+                VALIDATOR_PUBKEY
+            );
+            "0x0".to_string()
+        });
+
         let config = Self {
             taiko_proposer_url: std::env::var("TAIKO_PROPOSER_URL")
                 .unwrap_or_else(|_| "http://127.0.0.1:1234".to_string()),
@@ -68,6 +90,8 @@ impl Config {
                 .unwrap_or_else(|_| "http://127.0.0.1:4000".to_string()),
             l1_slot_duration_sec,
             l1_slots_per_epoch,
+            l2_slot_duration_sec,
+            validator_pubkey,
         };
 
         info!(
@@ -80,6 +104,8 @@ New block proposal contract address: {}
 Consensus layer URL: {}
 L1 slot duration: {}
 L1 slots per epoch: {}
+L2 slot duration: {}
+Validator pubkey: {}
 "#,
             config.taiko_proposer_url,
             config.taiko_driver_url,
@@ -87,7 +113,9 @@ L1 slots per epoch: {}
             config.taiko_preconfirming_address,
             config.l1_beacon_url,
             config.l1_slot_duration_sec,
-            config.l1_slots_per_epoch
+            config.l1_slots_per_epoch,
+            config.l2_slot_duration_sec,
+            config.validator_pubkey
         );
 
         config

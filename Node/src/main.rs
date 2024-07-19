@@ -30,7 +30,16 @@ async fn main() -> Result<(), Error> {
     )
     .await?;
     let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url);
-    let node = node::Node::new(node_rx, avs_p2p_tx, taiko, ethereum_l1, mev_boost).await?;
+    let node = node::Node::new(
+        node_rx,
+        avs_p2p_tx,
+        taiko,
+        ethereum_l1,
+        mev_boost,
+        config.l2_slot_duration_sec,
+        config.validator_pubkey,
+    )
+    .await?;
     node.entrypoint().await?;
     Ok(())
 }
