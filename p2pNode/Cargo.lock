@@ -3615,7 +3615,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "p2p_node"
+name = "p2p-node"
 version = "0.0.1"
 dependencies = [
  "discv5",

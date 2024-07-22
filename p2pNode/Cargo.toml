@@ -1,5 +1,5 @@
 [package]
-name = "p2p_node"
+name = "p2p-node"
 version = "0.0.1"
 edition = "2021"
 license = "MIT"
