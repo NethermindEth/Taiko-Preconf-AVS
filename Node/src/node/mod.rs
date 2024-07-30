@@ -1,5 +1,13 @@
-use crate::{ethereum_l1::EthereumL1, mev_boost::MevBoost, taiko::Taiko};
-use anyhow::{anyhow as any_err, Error, Ok};
+use crate::{
+    ethereum_l1::{
+        slot_clock::{Epoch, Slot},
+        EthereumL1,
+    },
+    mev_boost::MevBoost,
+    taiko::Taiko,
+};
+use anyhow::{anyhow as any_err, Error};
+use beacon_api_client::ProposerDuty;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 pub struct Node {
@@ -9,7 +17,12 @@ pub struct Node {
     gas_used: u64,
     ethereum_l1: EthereumL1,
     _mev_boost: MevBoost, // temporary unused
-    epoch: u64,
+    epoch: Epoch,
+    lookahead: Vec<ProposerDuty>,
+    l2_slot_duration_sec: u64,
+    validator_pubkey: String,
+    current_slot_to_preconf: Option<Slot>,
+    next_slot_to_preconf: Option<Slot>,
 }
 
 impl Node {
@@ -19,8 +32,9 @@ impl Node {
         taiko: Taiko,
         ethereum_l1: EthereumL1,
         mev_boost: MevBoost,
+        l2_slot_duration_sec: u64,
+        validator_pubkey: String,
     ) -> Result<Self, Error> {
-        let epoch = ethereum_l1.consensus_layer.get_current_epoch().await?;
         Ok(Self {
             taiko,
             node_rx: Some(node_rx),
@@ -28,7 +42,12 @@ impl Node {
             gas_used: 0,
             ethereum_l1,
             _mev_boost: mev_boost,
-            epoch,
+            epoch: Epoch::MAX, // it'll be updated in the first preconfirmation loop
+            lookahead: vec![],
+            l2_slot_duration_sec,
+            validator_pubkey,
+            current_slot_to_preconf: None,
+            next_slot_to_preconf: None,
         })
     }
 
@@ -62,23 +81,56 @@ impl Node {
     }
 
     async fn preconfirmation_loop(&mut self) {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(self.l2_slot_duration_sec));
+
         loop {
-            let start_time = tokio::time::Instant::now();
+            interval.tick().await;
+
             if let Err(err) = self.main_block_preconfirmation_step().await {
                 tracing::error!("Failed to execute main block preconfirmation step: {}", err);
             }
-            let elapsed = start_time.elapsed();
-            let sleep_duration = std::time::Duration::from_secs(4).saturating_sub(elapsed);
-            tokio::time::sleep(sleep_duration).await;
         }
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
-        let pending_tx_lists = self
-            .taiko
-            .get_pending_l2_tx_lists()
-            .await
-            .map_err(Error::from)?;
+        let current_epoch = self.ethereum_l1.slot_clock.get_current_epoch()?;
+        if current_epoch != self.epoch {
+            tracing::debug!(
+                "Current epoch changed from {} to {}",
+                self.epoch,
+                current_epoch
+            );
+            self.epoch = current_epoch;
+            self.current_slot_to_preconf = self.next_slot_to_preconf;
+            self.lookahead = self
+                .ethereum_l1
+                .consensus_layer
+                .get_lookahead(self.epoch + 1)
+                .await?;
+            self.next_slot_to_preconf = self.check_for_the_slot_to_preconf(&self.lookahead);
+        }
+
+        if let Some(slot) = self.current_slot_to_preconf {
+            if slot == self.ethereum_l1.slot_clock.get_current_slot()? {
+                self.preconfirm_block().await?;
+            }
+        } else {
+            tracing::debug!(
+                "Not my slot to preconfirm: {}",
+                self.ethereum_l1.slot_clock.get_current_slot()?
+            );
+        }
+
+        Ok(())
+    }
+
+    async fn preconfirm_block(&mut self) -> Result<(), Error> {
+        tracing::debug!(
+            "Preconfirming for the slot: {:?}",
+            self.current_slot_to_preconf
+        );
+
+        let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;
         if pending_tx_lists.tx_list_bytes.is_empty() {
             return Ok(());
         }
@@ -88,26 +140,23 @@ impl Node {
         self.taiko
             .advance_head_to_new_l2_block(pending_tx_lists.tx_lists, self.gas_used)
             .await?;
-
-        let current_epoch = self.ethereum_l1.consensus_layer.get_current_epoch().await?;
-        let lookahead = if current_epoch != self.epoch {
-            self.epoch = current_epoch;
-            self.ethereum_l1
-                .consensus_layer
-                .get_lookahead(self.epoch + 1)
-                .await?
-        } else {
-            vec![]
-        };
         self.ethereum_l1
             .execution_layer
             .propose_new_block(
                 pending_tx_lists.tx_list_bytes[0].clone(), //TODO: handle rest tx lists
                 pending_tx_lists.parent_meta_hash,
-                lookahead,
+                std::mem::take(&mut self.lookahead),
             )
             .await?;
+
         Ok(())
+    }
+
+    fn check_for_the_slot_to_preconf(&self, lookahead: &Vec<ProposerDuty>) -> Option<Slot> {
+        lookahead
+            .iter()
+            .find(|duty| duty.public_key.to_string() == self.validator_pubkey)
+            .map(|duty| duty.slot)
     }
 
     fn commit_to_the_tx_lists(&self) {

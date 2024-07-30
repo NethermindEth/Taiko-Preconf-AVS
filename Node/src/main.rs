@@ -26,10 +26,20 @@ async fn main() -> Result<(), Error> {
         &config.taiko_preconfirming_address,
         &config.l1_beacon_url,
         config.l1_slot_duration_sec,
+        config.l1_slots_per_epoch,
     )
     .await?;
     let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url);
-    let node = node::Node::new(node_rx, avs_p2p_tx, taiko, ethereum_l1, mev_boost).await?;
+    let node = node::Node::new(
+        node_rx,
+        avs_p2p_tx,
+        taiko,
+        ethereum_l1,
+        mev_boost,
+        config.l2_slot_duration_sec,
+        config.validator_pubkey,
+    )
+    .await?;
     node.entrypoint().await?;
     Ok(())
 }
