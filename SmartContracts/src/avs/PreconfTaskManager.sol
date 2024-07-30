@@ -8,8 +8,10 @@ import {IPreconfServiceManager} from "../interfaces/IPreconfServiceManager.sol";
 import {IRegistryCoordinator} from "eigenlayer-middleware/interfaces/IRegistryCoordinator.sol";
 import {IIndexRegistry} from "eigenlayer-middleware/interfaces/IIndexRegistry.sol";
 import {ECDSA} from "openzeppelin-contracts/utils/cryptography/ECDSA.sol";
+import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
+import {Initializable} from "openzeppelin-contracts-upgradeable/proxy/utils/Initializable.sol";
 
-contract PreconfTaskManager is IPreconfTaskManager {
+contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     IPreconfServiceManager internal immutable preconfServiceManager;
     IRegistryCoordinator internal immutable registryCoordinator;
     IIndexRegistry internal immutable indexRegistry;
@@ -59,8 +61,11 @@ contract PreconfTaskManager is IPreconfTaskManager {
         indexRegistry = _indexRegistry;
         taikoL1 = _taikoL1;
         beaconBlockRootContract = _beaconBlockRootContract;
+    }
 
+    function initialize(IERC20 _taikoToken) external initializer {
         nextBlockId = 1;
+        _taikoToken.approve(address(taikoL1), type(uint256).max);
     }
 
     /**
