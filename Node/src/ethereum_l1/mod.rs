@@ -21,6 +21,7 @@ impl EthereumL1 {
         consensus_rpc_url: &str,
         slot_duration_sec: u64,
         slots_per_epoch: u64,
+        avs_service_manager_contract_address: &str,
     ) -> Result<Self, anyhow::Error> {
         let consensus_layer = ConsensusLayer::new(consensus_rpc_url)?;
         let genesis_details = consensus_layer.get_genesis_details().await?;
@@ -36,6 +37,7 @@ impl EthereumL1 {
             private_key,
             taiko_preconfirming_address,
             slot_clock.clone(),
+            avs_service_manager_contract_address,
         )?;
 
         Ok(Self {

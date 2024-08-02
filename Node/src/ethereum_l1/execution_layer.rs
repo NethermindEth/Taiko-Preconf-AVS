@@ -17,6 +17,7 @@ pub struct ExecutionLayer {
     wallet: EthereumWallet,
     taiko_preconfirming_address: Address,
     slot_clock: Rc<SlotClock>,
+    avs_service_manager_contract_address: Address,
 }
 
 sol!(
@@ -46,12 +47,27 @@ sol! {
     }
 }
 
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    StrategyManager,
+    "src/ethereum_l1/abi/StrategyManager.json"
+);
+
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    Slasher,
+    "src/ethereum_l1/abi/Slasher.json"
+);
+
 impl ExecutionLayer {
     pub fn new(
         rpc_url: &str,
         private_key: &str,
         taiko_preconfirming_address: &str,
         slot_clock: Rc<SlotClock>,
+        avs_service_manager_contract_address: &str,
     ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_str(private_key)?;
         let wallet = EthereumWallet::from(signer);
@@ -61,6 +77,7 @@ impl ExecutionLayer {
             wallet,
             taiko_preconfirming_address: taiko_preconfirming_address.parse()?,
             slot_clock,
+            avs_service_manager_contract_address: avs_service_manager_contract_address.parse()?,
         })
     }
 
@@ -112,6 +129,36 @@ impl ExecutionLayer {
 
         let tx_hash = builder.send().await?.watch().await?;
         tracing::debug!("Proposed new block: {tx_hash}");
+
+        Ok(())
+    }
+
+    pub async fn register(&self) -> Result<(), Error> {
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.wallet.clone())
+            .on_http(self.rpc_url.clone());
+
+        let strategy_manager =
+            StrategyManager::new(self.taiko_preconfirming_address, provider.clone());
+        let tx_hash = strategy_manager
+            .depositIntoStrategy(Address::ZERO, Address::ZERO, U256::from(1))
+            .send()
+            .await?
+            .watch()
+            .await?;
+        tracing::debug!("Deposited into strategy: {tx_hash}");
+
+        let slasher = Slasher::new(self.taiko_preconfirming_address, provider);
+        let tx_hash = slasher
+            .optIntoSlashing(self.avs_service_manager_contract_address)
+            .send()
+            .await?
+            .watch()
+            .await?;
+        tracing::debug!("Opted into slashing: {tx_hash}");
+
+        
 
         Ok(())
     }
