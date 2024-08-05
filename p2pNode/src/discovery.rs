@@ -8,7 +8,7 @@ use libp2p::identity::Keypair;
 use libp2p::multiaddr::Protocol;
 use libp2p::swarm::{NetworkBehaviour, NetworkBehaviourAction, PollParameters};
 use libp2p::{Multiaddr, PeerId};
-use log::{debug, warn};
+use log::{debug, warn, info};
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -16,6 +16,10 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use std::net::Ipv4Addr;
+use std::str::FromStr;
+use std::fs::File;
+use std::io::Write;
+use std::io::{self, Read};
 
 pub struct Discovery {
     discv5: Discv5,
@@ -33,12 +37,43 @@ pub struct DiscoveredPeers {
     pub peers: HashMap<PeerId, Option<Multiaddr>>,
 }
 
+const BOOT_NODE_PATH: &str = "/shared/enr.txt";
+
+fn read_boot_node()-> Result<String, io::Error> {
+    info!("Reading boot node from {}", BOOT_NODE_PATH);
+    let mut file = File::open(BOOT_NODE_PATH)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    info!("Boot node: {}", contents);
+    Ok(contents)
+}
+
+fn write_boot_node(enr: &str)-> Result<(), io::Error> {
+    info!("Writing boot node to {} end {}", BOOT_NODE_PATH, enr);
+    let mut file = File::create(BOOT_NODE_PATH)?;
+    file.write_all(enr.as_bytes())?;
+    Ok(())
+}
+
 impl Discovery {
     pub async fn new(local_key: &Keypair) -> Self {
         // Generate ENR
         let enr_key: CombinedKey = key_from_libp2p(local_key).unwrap();
 
         let local_enr = build_enr(&enr_key);
+
+        // Print ENR
+        info!("Node Id: {:?}", local_enr.node_id());
+        if local_enr.udp4_socket().is_some() {
+            info!("Base64 ENR: {}", local_enr.to_base64());
+            info!(
+                "IP: {}, UDP_PORT:{}",
+                local_enr.ip4().unwrap(),
+                local_enr.udp4().unwrap()
+            );
+        } else {
+            warn!("ENR is not printed as no IP:PORT was specified");
+        }
 
         // listening address and port
         let listen_config = ListenConfig::Ipv4 {
@@ -49,8 +84,8 @@ impl Discovery {
         // Setup default config
         let config = ConfigBuilder::new(listen_config)
             .enable_packet_filter()
-            .request_timeout(Duration::from_secs(1))
-            .query_peer_timeout(Duration::from_secs(2))
+            .request_timeout(Duration::from_secs(30))
+            .query_peer_timeout(Duration::from_secs(30))
             .query_timeout(Duration::from_secs(30))
             .request_retries(1)
             .enr_peer_update_min(10)
@@ -64,11 +99,15 @@ impl Discovery {
         // Create discv5 instance
         let mut discv5 = Discv5::new(local_enr.clone(), enr_key, config).unwrap();
 
-        // Add bootnode
-        /*for bootnode in BOOTNODES {
-            let ef_bootnode_enr = Enr::from_str(bootnode).unwrap();
-            discv5.add_enr(ef_bootnode_enr).expect("bootnode error");
-        }*/
+        // Process bootnode
+        let load_boot = std::env::var("LOADBOOT");
+        if load_boot.is_ok() {
+            let bootnode = read_boot_node();
+            let bootnode_enr = Enr::from_str(&bootnode.unwrap()).unwrap();
+            discv5.add_enr(bootnode_enr).expect("bootnode error");
+        } else {
+            let _ = write_boot_node(&local_enr.to_base64());
+        }
 
         // Start the discv5 service
         discv5.start().await.unwrap();
@@ -127,8 +166,8 @@ impl Discovery {
                     peers.insert(peer_id, multiaddr);
                 }
 
-                println!("Found {} peers", peers.len());
-                println!("Peers: {:#?}", &peers);
+                debug!("Found {} peers", peers.len());
+                debug!("Peers: {:#?}", &peers);
                 return Some(DiscoveredPeers { peers });
             }
         }
@@ -167,10 +206,8 @@ impl NetworkBehaviour for Discovery {
         // println!("Discovery polled : {}", self.poll_count);
         if self.peers_to_discover > 0 {
             self.started = true;
-            println!("Finding Peers");
             self.find_peers(self.peers_to_discover);
             self.peers_to_discover = 0;
-
             return Poll::Pending;
         }
 
@@ -185,11 +222,11 @@ impl NetworkBehaviour for Discovery {
                 if let Poll::Ready(event_stream) = fut.poll_unpin(cx) {
                     match event_stream {
                         Ok(stream) => {
-                            println!("Discv5 event stream ready");
+                            debug!("Discv5 event stream ready");
                             self.event_stream = EventStream::Present(stream);
                         }
                         Err(_) => {
-                            println!("Discv5 event stream failed");
+                            debug!("Discv5 event stream failed");
                             self.event_stream = EventStream::InActive;
                         }
                     }
@@ -200,7 +237,7 @@ impl NetworkBehaviour for Discovery {
                 while let Poll::Ready(Some(event)) = stream.poll_recv(cx) {
                     match event {
                         Event::SessionEstablished(_enr, _) => {
-                            // println!("Session Established: {:?}", enr);
+                            debug!("Session Established: {:?}", _enr);
                         }
                         _ => (),
                     }

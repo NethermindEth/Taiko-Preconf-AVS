@@ -10,9 +10,6 @@ use libp2p::{
 use serde::{Deserialize, Serialize};
 
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::prelude::*;
-use std::path::Path;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
@@ -80,9 +77,9 @@ pub enum ConnectionStatus {
 }
 
 // Interval for which to check if we need to dial new peers
-const HEARTBEAT_INTERVAL: u64 = 500;
+const HEARTBEAT_INTERVAL: u64 = 30000;
 // Consider connection attempt timed out if it takes longer than this duration (in ms)
-const DIAL_TIMEOUT: u64 = 5000;
+const DIAL_TIMEOUT: u64 = 120000;
 
 impl NetworkBehaviour for PeerManager {
     type ConnectionHandler = ConnectionHandler;
@@ -268,12 +265,22 @@ impl PeerManager {
         info!("Connection established with peer {}", peer_id);
         let peer_data = self.peer_data.get_mut(&peer_id).unwrap();
         // TODO check connection_data
-        let connection_data = peer_data
-            .connection_history
-            .last_mut()
-            .expect("Missing connectio_data entry for established peer");
-        connection_data.established_timestamp = Some(Instant::now());
-        connection_data.connection_status = ConnectionStatus::Connected;
+        if peer_data.connection_history.is_empty() {
+            peer_data.connection_history.push(ConnectionData {
+                established_timestamp: Some(Instant::now()),
+                failure_timestamp: None,
+                disconnect_timestamp: None,
+                connection_status: ConnectionStatus::Connected,
+                dial_timestamp: Instant::now(),
+            });
+        } else {
+            let connection_data = peer_data
+                .connection_history
+                .last_mut()
+                .expect("Missing connectio_data entry for established peer");
+            connection_data.established_timestamp = Some(Instant::now());
+            connection_data.connection_status = ConnectionStatus::Connected;
+        }
 
         self.connected_peers.insert(peer_id);
         self.dialling_peers.remove(&peer_id);
@@ -283,13 +290,23 @@ impl PeerManager {
         info!("Connection closed with peer {}", peer_id);
         let peer_data = self.peer_data.get_mut(&peer_id).unwrap();
         // TODO check connection_data
-        let connection_data = peer_data
-            .connection_history
-            .last_mut()
-            .expect("Missing connectio_data entry for established peer");
-        connection_data.connection_status = ConnectionStatus::Disconnected;
-        connection_data.disconnect_timestamp = Some(Instant::now());
-        PeerManager::update_average_connection_duration(peer_data);
+        if peer_data.connection_history.is_empty() {
+            peer_data.connection_history.push(ConnectionData {
+                established_timestamp: None,
+                failure_timestamp: None,
+                disconnect_timestamp: Some(Instant::now()),
+                connection_status: ConnectionStatus::Disconnected,
+                dial_timestamp: Instant::now(),
+            })
+        } else {
+            let connection_data = peer_data
+                .connection_history
+                .last_mut()
+                .expect("Missing connectio_data entry for established peer");
+            connection_data.connection_status = ConnectionStatus::Disconnected;
+            connection_data.disconnect_timestamp = Some(Instant::now());
+            PeerManager::update_average_connection_duration(peer_data);
+        }
         self.connected_peers.remove(&peer_id);
     }
 
@@ -402,72 +419,5 @@ impl PeerManager {
 
     pub fn add_peer_identity(&mut self, peer_id: PeerId, identity: Info) {
         self.peer_identities.insert(peer_id, identity);
-    }
-
-    pub fn log_identities(&self) {
-        info!("Peer identities: {:#?}", self.peer_identities);
-    }
-
-    pub fn log_metrics(&self) {
-        let mut number_and_average_time_by_peer = self
-            .peer_data
-            .iter()
-            .map(|(peer_id, peer_data)| {
-                let num_connections = peer_data.connection_history.len();
-                let average_connection_duration =
-                    peer_data.average_connection_duration.unwrap_or(0);
-                let connection_status = peer_data
-                    .connection_history
-                    .last()
-                    .map(|connection_data| &connection_data.connection_status);
-                (
-                    peer_id,
-                    num_connections,
-                    Duration::from_millis(average_connection_duration as u64),
-                    connection_status,
-                )
-            })
-            .collect::<Vec<_>>();
-        number_and_average_time_by_peer.sort_by(|(_, _, a, _), (_, _, b, _)| b.cmp(a));
-        info!(
-            "Number and average time by peer: {:#?}",
-            number_and_average_time_by_peer
-        );
-
-        info!("Connected peers: {:#?}", self.connected_peers);
-        info!("dialling Peers: {:#?}", self.dialling_peers);
-    }
-
-    pub fn save_peer_data(&mut self, filename: &str) {
-        self.disconnect_all_peers();
-        let mut file = File::create(filename).expect("Unable to create file");
-        file.write_all(
-            serde_json::to_string_pretty(&self.peer_data)
-                .expect("Unable to serialize peer data")
-                .as_bytes(),
-        )
-        .expect("Unable to write to file");
-    }
-
-    fn disconnect_all_peers(&mut self) {
-        let peers_to_disconnect = self.connected_peers.iter().cloned().collect::<Vec<_>>();
-        for peer_id in peers_to_disconnect {
-            self.on_connection_closed(peer_id);
-        }
-    }
-
-    pub fn load_peer_data(&mut self, filename: &str) {
-        if Path::new(filename).is_file() {
-            info!("Reading peer data from file");
-            let mut file = File::open(filename).expect("Unable to open file");
-            let mut contents = String::new();
-            file.read_to_string(&mut contents)
-                .expect("Unable to read file");
-            self.peer_data =
-                serde_json::from_str(&contents).expect("Unable to deserialize peer data");
-            debug!("Successfully loaded peer_data: {:#?}", self.peer_data);
-        } else {
-            info!("No peer data file found");
-        }
     }
 }

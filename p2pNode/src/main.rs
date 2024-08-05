@@ -1,6 +1,8 @@
 use crate::discovery::Discovery;
 use crate::peer_manager::PeerManager;
 use libp2p::futures::StreamExt;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use libp2p::gossipsub::{
      Gossipsub,  MessageAuthenticity, 
      ValidationMode,
@@ -10,17 +12,20 @@ use libp2p::{
     core, dns, gossipsub, identify, identity, mplex, noise, tcp, websocket, yamux, PeerId,
     Transport,
 };
-use log::{debug, info};
+use tracing::{info, warn, debug};
 use std::time::Duration;
 mod discovery;
 mod enr;
 mod peer_manager;
 
-const PEER_DATA_FILE: &str = "peer_data.json";
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
+    let filter_layer = tracing_subscriber::EnvFilter::try_from_default_env()
+        .or_else(|_| tracing_subscriber::EnvFilter::try_new("info"))
+        .unwrap();
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter_layer)
+        .try_init();
     // Create a random PeerId
     let local_key = identity::Keypair::generate_secp256k1();
     let local_peer_id = PeerId::from(local_key.public());
@@ -30,11 +35,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set up an encrypted DNS-enabled TCP Transport over the Mplex protocol.
     let transport = build_transport(&local_key)?;
 
+    // Create discovery
     let discovery = Discovery::new(&local_key).await;
 
     let target_num_peers = 16;
-    let mut peer_manager = PeerManager::new(target_num_peers);
-    peer_manager.load_peer_data(PEER_DATA_FILE);
+    let peer_manager = PeerManager::new(target_num_peers);
+    let message_id_fn = |message: &gossipsub::GossipsubMessage| {
+        let mut s = DefaultHasher::new();
+        message.data.hash(&mut s);
+        gossipsub::MessageId::from(s.finish().to_string())
+    };
 
     // Set a custom gossipsub configuration
     let gossipsub_config = gossipsub::GossipsubConfigBuilder::default()
@@ -45,6 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .fanout_ttl(Duration::from_secs(60))
         .history_length(12)
         .max_messages_per_rpc(Some(500))
+        .message_id_fn(message_id_fn) 
         .build()
         .expect("Valid config");
 
@@ -87,25 +98,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .connection_event_buffer_size(64)
         .connection_limits(
             ConnectionLimits::default()
-            /*ConnectionLimits::default()
-                .with_max_pending_incoming(Some(64))
-                .with_max_pending_outgoing(Some(32))
-                .with_max_established_per_peer(Some(10)),*/
         )
         .build();
 
     // Listen
     swarm.listen_on("/ip4/0.0.0.0/tcp/9000".parse()?)?;
 
-    let time_to_stop = std::time::Instant::now() + std::time::Duration::from_secs(60 * 3);
+    // Load SEND from env
+    let send_prefix = std::env::var("SEND_PREFIX").unwrap();
+    info!("SEND PREFIX: {send_prefix}");
+    let mut send_count = 1;
+    let mut send_interval = tokio::time::interval(Duration::from_secs(20));
     // Run
-    while std::time::Instant::now() < time_to_stop {
+    loop {
         tokio::select! {
+            _ = send_interval.tick() => {
+                send_count += 1;
+                let data = format!("{send_prefix}-{send_count}");
+                info!("Sending message: {:#?}", &data);
+                if let Err(e) = swarm
+                    .behaviour_mut().gossipsub
+                    .publish(topic.clone(), data.as_bytes()) {
+                    warn!("Publish error: {e:?}");
+                }
+            }
             event = swarm.select_next_some() => match event {
                 SwarmEvent::Behaviour(behaviour_event) => match behaviour_event {
                     BehaviourEvent::Gossipsub(gs) =>
                     match gs {
-                        gossipsub::GossipsubEvent::Message { propagation_source: _, message_id: _, message } => debug!("Gossipsub Message: {:#?}", message),
+                        gossipsub::GossipsubEvent::Message { 
+                            propagation_source: peer_id,
+                            message_id: id,
+                            message, } => info!("Got message: '{}' with id: {id} from peer: {peer_id}", String::from_utf8_lossy(&message.data)),
                         _ => ()
                     },
                     BehaviourEvent::Discovery(discovered) => {
@@ -148,14 +172,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-
-    swarm.behaviour().peer_manager.log_identities();
-    swarm.behaviour().peer_manager.log_metrics();
-    swarm
-        .behaviour_mut()
-        .peer_manager
-        .save_peer_data(PEER_DATA_FILE);
-    Ok(())
 }
 
 pub fn build_transport(

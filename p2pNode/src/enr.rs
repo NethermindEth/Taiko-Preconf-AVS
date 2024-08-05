@@ -7,7 +7,9 @@ use libp2p::PeerId;
 pub fn build_enr(combined_key: &CombinedKey) -> Enr {
     let mut enr_builder = enr::Enr::builder();
 
-    enr_builder.ip4("0.0.0.0".parse().unwrap());
+    // Load ADDRESS from env
+    let address = std::env::var("ADDRESS").unwrap_or_else(|_| "0.0.0.0".to_string());
+    enr_builder.ip4(address.parse().unwrap());
 
     enr_builder.udp4(9000);
 
