@@ -21,6 +21,7 @@ pub struct ExecutionLayer {
 }
 
 sol!(
+    #[allow(clippy::too_many_arguments)]
     #[allow(missing_docs)]
     #[sol(rpc)]
     PreconfTaskManager,
@@ -158,8 +159,6 @@ impl ExecutionLayer {
             .await?;
         tracing::debug!("Opted into slashing: {tx_hash}");
 
-        
-
         Ok(())
     }
 
@@ -178,6 +177,8 @@ impl ExecutionLayer {
             taiko_preconfirming_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
                 .parse()?,
             slot_clock: Rc::new(clock),
+            avs_service_manager_contract_address: "0x1234567890abcdef1234567890abcdef12345678"
+                .parse()?, // some random address for test
         })
     }
 
@@ -248,5 +249,15 @@ mod tests {
         el.propose_new_block(vec![0; 32], [0; 32], vec![])
             .await
             .unwrap();
+    }
+    #[tokio::test]
+    async fn test_register() {
+        let anvil = Anvil::new().try_spawn().unwrap();
+        let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
+        let private_key = anvil.keys()[0].clone();
+        let el = ExecutionLayer::new_from_pk(rpc_url, private_key).unwrap();
+
+        let result = el.register().await;
+        assert!(result.is_ok(), "Register method failed: {:?}", result.err());
     }
 }

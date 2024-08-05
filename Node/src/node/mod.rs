@@ -81,7 +81,8 @@ impl Node {
     }
 
     async fn preconfirmation_loop(&mut self) {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(self.l2_slot_duration_sec));
+        let mut interval =
+            tokio::time::interval(std::time::Duration::from_secs(self.l2_slot_duration_sec));
 
         loop {
             interval.tick().await;
@@ -152,7 +153,7 @@ impl Node {
         Ok(())
     }
 
-    fn check_for_the_slot_to_preconf(&self, lookahead: &Vec<ProposerDuty>) -> Option<Slot> {
+    fn check_for_the_slot_to_preconf(&self, lookahead: &[ProposerDuty]) -> Option<Slot> {
         lookahead
             .iter()
             .find(|duty| duty.public_key.to_string() == self.validator_pubkey)
