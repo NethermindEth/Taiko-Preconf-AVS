@@ -17,9 +17,11 @@ pub struct ExecutionLayer {
     wallet: EthereumWallet,
     taiko_preconfirming_address: Address,
     slot_clock: Rc<SlotClock>,
+    avs_service_manager_contract_address: Address,
 }
 
 sol!(
+    #[allow(clippy::too_many_arguments)]
     #[allow(missing_docs)]
     #[sol(rpc)]
     PreconfTaskManager,
@@ -46,12 +48,27 @@ sol! {
     }
 }
 
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    StrategyManager,
+    "src/ethereum_l1/abi/StrategyManager.json"
+);
+
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    Slasher,
+    "src/ethereum_l1/abi/Slasher.json"
+);
+
 impl ExecutionLayer {
     pub fn new(
         rpc_url: &str,
         private_key: &str,
         taiko_preconfirming_address: &str,
         slot_clock: Rc<SlotClock>,
+        avs_service_manager_contract_address: &str,
     ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_str(private_key)?;
         let wallet = EthereumWallet::from(signer);
@@ -61,6 +78,7 @@ impl ExecutionLayer {
             wallet,
             taiko_preconfirming_address: taiko_preconfirming_address.parse()?,
             slot_clock,
+            avs_service_manager_contract_address: avs_service_manager_contract_address.parse()?,
         })
     }
 
@@ -116,6 +134,34 @@ impl ExecutionLayer {
         Ok(())
     }
 
+    pub async fn register(&self) -> Result<(), Error> {
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.wallet.clone())
+            .on_http(self.rpc_url.clone());
+
+        let strategy_manager =
+            StrategyManager::new(self.taiko_preconfirming_address, provider.clone());
+        let tx_hash = strategy_manager
+            .depositIntoStrategy(Address::ZERO, Address::ZERO, U256::from(1))
+            .send()
+            .await?
+            .watch()
+            .await?;
+        tracing::debug!("Deposited into strategy: {tx_hash}");
+
+        let slasher = Slasher::new(self.taiko_preconfirming_address, provider);
+        let tx_hash = slasher
+            .optIntoSlashing(self.avs_service_manager_contract_address)
+            .send()
+            .await?
+            .watch()
+            .await?;
+        tracing::debug!("Opted into slashing: {tx_hash}");
+
+        Ok(())
+    }
+
     #[cfg(test)]
     pub fn new_from_pk(
         rpc_url: reqwest::Url,
@@ -131,6 +177,8 @@ impl ExecutionLayer {
             taiko_preconfirming_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
                 .parse()?,
             slot_clock: Rc::new(clock),
+            avs_service_manager_contract_address: "0x1234567890abcdef1234567890abcdef12345678"
+                .parse()?, // some random address for test
         })
     }
 
@@ -201,5 +249,15 @@ mod tests {
         el.propose_new_block(vec![0; 32], [0; 32], vec![])
             .await
             .unwrap();
+    }
+    #[tokio::test]
+    async fn test_register() {
+        let anvil = Anvil::new().try_spawn().unwrap();
+        let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
+        let private_key = anvil.keys()[0].clone();
+        let el = ExecutionLayer::new_from_pk(rpc_url, private_key).unwrap();
+
+        let result = el.register().await;
+        assert!(result.is_ok(), "Register method failed: {:?}", result.err());
     }
 }

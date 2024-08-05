@@ -11,6 +11,7 @@ pub struct Config {
     pub l1_slots_per_epoch: u64,
     pub l2_slot_duration_sec: u64,
     pub validator_pubkey: String,
+    pub avs_service_manager_contract_address: String,
 }
 
 impl Config {
@@ -63,6 +64,11 @@ impl Config {
             "0x0".to_string()
         });
 
+        let avs_service_manager_contract_address = std::env::var("AVS_SERVICE_MANAGER_CONTRACT_ADDRESS").unwrap_or_else(|_| {
+            warn!("No AVS service manager contract address found in AVS_SERVICE_MANAGER_CONTRACT_ADDRESS env var, using default");
+            "0x0".to_string()
+        });
+
         let config = Self {
             taiko_proposer_url: std::env::var("TAIKO_PROPOSER_URL")
                 .unwrap_or_else(|_| "http://127.0.0.1:1234".to_string()),
@@ -92,6 +98,7 @@ impl Config {
             l1_slots_per_epoch,
             l2_slot_duration_sec,
             validator_pubkey,
+            avs_service_manager_contract_address,
         };
 
         info!(
@@ -106,6 +113,7 @@ L1 slot duration: {}
 L1 slots per epoch: {}
 L2 slot duration: {}
 Validator pubkey: {}
+AVS service manager contract address: {}
 "#,
             config.taiko_proposer_url,
             config.taiko_driver_url,
@@ -115,7 +123,8 @@ Validator pubkey: {}
             config.l1_slot_duration_sec,
             config.l1_slots_per_epoch,
             config.l2_slot_duration_sec,
-            config.validator_pubkey
+            config.validator_pubkey,
+            config.avs_service_manager_contract_address
         );
 
         config
