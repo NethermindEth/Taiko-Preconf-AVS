@@ -2,6 +2,7 @@ use crate::utils::rpc_client::RpcClient;
 use anyhow::Error;
 use serde_json::Value;
 
+pub mod block_proposed;
 pub mod l2_tx_lists;
 
 pub struct Taiko {
@@ -61,6 +62,17 @@ impl Taiko {
         self.rpc_driver
             .call_method("RPC.AdvanceL2ChainHeadWithNewBlocks", vec![payload])
             .await
+    }
+
+    pub async fn wait_for_block_proposed_event(
+        &self,
+    ) -> Result<block_proposed::BlockProposed, Error> {
+        tracing::debug!("Waiting for block proposed event");
+        let result = self
+            .rpc_driver
+            .call_method("RPC.WaitForBlockProposed", vec![])
+            .await?;
+        block_proposed::decompose_block_proposed_json(result)
     }
 }
 
