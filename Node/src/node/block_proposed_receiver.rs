@@ -33,11 +33,12 @@ impl BlockProposedEventReceiver {
                         .send(NodeMessage::BlockProposed(block_proposed))
                         .await
                     {
-                        error!("Error sending block proposed event: {:?}", e);
+                        error!("Error sending block proposed event by channel: {:?}", e);
                     }
                 }
                 Err(e) => {
                     error!("Error receiving block proposed event: {:?}", e);
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                 }
             }
         }
