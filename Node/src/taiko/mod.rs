@@ -155,6 +155,7 @@ mod test {
         let taiko = Taiko::new(
             &format!("http://127.0.0.1:{}", port),
             &format!("http://127.0.0.1:{}", port),
+            120,
         );
         (rpc_server, taiko)
     }
