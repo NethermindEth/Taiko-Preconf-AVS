@@ -3,11 +3,6 @@ FROM rust:1.77 as builder
 # Set the working directory inside the container
 WORKDIR /usr/src/p2p-node
 
-# Install the required dependencies
-RUN apt-get update -qq && \
-    apt-get install -y \
-        protobuf-compiler
-
 # Copy the entire project into the container
 COPY . .
 

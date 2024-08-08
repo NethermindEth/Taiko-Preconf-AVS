@@ -1,25 +1,27 @@
 use crate::enr::{build_enr, EnrAsPeerId};
 use discv5::enr::NodeId;
-use discv5::{enr::CombinedKey, Discv5, ConfigBuilder, Event, Enr, ListenConfig};
+use discv5::{enr::CombinedKey, ConfigBuilder, Discv5, Enr, Event, ListenConfig};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use libp2p::futures::FutureExt;
 use libp2p::identity::Keypair;
 use libp2p::multiaddr::Protocol;
-use libp2p::swarm::{NetworkBehaviour, NetworkBehaviourAction, PollParameters};
+use libp2p::swarm::behaviour::{DialFailure, FromSwarm};
+use libp2p::swarm::THandlerInEvent;
+use libp2p::swarm::{dummy::ConnectionHandler, ConnectionId};
+use libp2p::swarm::{NetworkBehaviour, ToSwarm}; //, NetworkBehaviourAction, PollParameters};
 use libp2p::{Multiaddr, PeerId};
-use log::{debug, warn, info};
+use log::{debug, info, warn};
 use std::collections::HashMap;
+use std::fs::File;
 use std::future::Future;
+use std::io::Write;
+use std::io::{self, Read};
 use std::pin::Pin;
+use std::str::FromStr;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::sync::mpsc;
-use std::net::Ipv4Addr;
-use std::str::FromStr;
-use std::fs::File;
-use std::io::Write;
-use std::io::{self, Read};
 
 pub struct Discovery {
     discv5: Discv5,
@@ -39,7 +41,7 @@ pub struct DiscoveredPeers {
 
 const BOOT_NODE_PATH: &str = "/shared/enr.txt";
 
-fn read_boot_node()-> Result<String, io::Error> {
+fn read_boot_node() -> Result<String, io::Error> {
     info!("Reading boot node from {}", BOOT_NODE_PATH);
     let mut file = File::open(BOOT_NODE_PATH)?;
     let mut contents = String::new();
@@ -48,7 +50,7 @@ fn read_boot_node()-> Result<String, io::Error> {
     Ok(contents)
 }
 
-fn write_boot_node(enr: &str)-> Result<(), io::Error> {
+fn write_boot_node(enr: &str) -> Result<(), io::Error> {
     info!("Writing boot node to {} end {}", BOOT_NODE_PATH, enr);
     let mut file = File::create(BOOT_NODE_PATH)?;
     file.write_all(enr.as_bytes())?;
@@ -58,11 +60,10 @@ fn write_boot_node(enr: &str)-> Result<(), io::Error> {
 impl Discovery {
     pub async fn new(local_key: &Keypair) -> Self {
         // Generate ENR
-        let enr_key: CombinedKey = key_from_libp2p(local_key).unwrap();
+        let enr_key: CombinedKey = key_from_libp2p(local_key.clone()).unwrap();
 
         let local_enr = build_enr(&enr_key);
 
-        // Print ENR
         info!("Node Id: {:?}", local_enr.node_id());
         if local_enr.udp4_socket().is_some() {
             info!("Base64 ENR: {}", local_enr.to_base64());
@@ -77,7 +78,7 @@ impl Discovery {
 
         // listening address and port
         let listen_config = ListenConfig::Ipv4 {
-            ip: Ipv4Addr::UNSPECIFIED,
+            ip: local_enr.ip4().unwrap(),
             port: 9000,
         };
 
@@ -166,8 +167,7 @@ impl Discovery {
                     peers.insert(peer_id, multiaddr);
                 }
 
-                debug!("Found {} peers", peers.len());
-                debug!("Peers: {:#?}", &peers);
+                debug!("Found peers: {:#?}", &peers);
                 return Some(DiscoveredPeers { peers });
             }
         }
@@ -179,40 +179,56 @@ impl Discovery {
 enum EventStream {
     Present(mpsc::Receiver<Event>),
     InActive,
-    Awaiting(
-        Pin<
-            Box<
-                dyn Future<Output = Result<mpsc::Receiver<Event>, discv5::Error>>
-                    + Send,
-            >,
-        >,
-    ),
+    Awaiting(Pin<Box<dyn Future<Output = Result<mpsc::Receiver<Event>, discv5::Error>> + Send>>),
 }
 
 impl NetworkBehaviour for Discovery {
     type ConnectionHandler = libp2p::swarm::dummy::ConnectionHandler;
-    type OutEvent = DiscoveredPeers;
+    type ToSwarm = DiscoveredPeers;
 
-    fn new_handler(&mut self) -> Self::ConnectionHandler {
-        libp2p::swarm::dummy::ConnectionHandler {}
+    fn handle_established_inbound_connection(
+        &mut self,
+        _connection_id: ConnectionId,
+        _peer: PeerId,
+        _local_addr: &Multiaddr,
+        _remote_addr: &Multiaddr,
+    ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
+        // TODO: we might want to check discovery's banned ips here in the future.
+        Ok(ConnectionHandler)
+    }
+
+    fn handle_established_outbound_connection(
+        &mut self,
+        _connection_id: ConnectionId,
+        _peer: PeerId,
+        _addr: &Multiaddr,
+        _role_override: libp2p::core::Endpoint,
+    ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
+        Ok(ConnectionHandler)
+    }
+
+    fn on_connection_handler_event(
+        &mut self,
+        _peer_id: PeerId,
+        _connection_id: ConnectionId,
+        _event: void::Void,
+    ) {
     }
 
     // Main execution loop to drive the behaviour
-    fn poll(
-        &mut self,
-        cx: &mut Context,
-        _: &mut impl PollParameters,
-    ) -> Poll<NetworkBehaviourAction<Self::OutEvent, Self::ConnectionHandler>> {
-        // println!("Discovery polled : {}", self.poll_count);
+    fn poll(&mut self, cx: &mut Context) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
         if self.peers_to_discover > 0 {
             self.started = true;
+            debug!("Finding Peers");
             self.find_peers(self.peers_to_discover);
             self.peers_to_discover = 0;
+
             return Poll::Pending;
         }
 
         if let Some(dp) = self.get_peers(cx) {
-            return Poll::Ready(NetworkBehaviourAction::GenerateEvent(dp));
+            //return Poll::Ready(NetworkBehaviourAction::GenerateEvent(dp));
+            return Poll::Ready(ToSwarm::GenerateEvent(dp));
         };
 
         // Process the discovery server event stream
@@ -226,7 +242,7 @@ impl NetworkBehaviour for Discovery {
                             self.event_stream = EventStream::Present(stream);
                         }
                         Err(_) => {
-                            debug!("Discv5 event stream failed");
+                            warn!("Discv5 event stream failed");
                             self.event_stream = EventStream::InActive;
                         }
                     }
@@ -235,24 +251,38 @@ impl NetworkBehaviour for Discovery {
             EventStream::InActive => {}
             EventStream::Present(ref mut stream) => {
                 while let Poll::Ready(Some(event)) = stream.poll_recv(cx) {
-                    match event {
-                        Event::SessionEstablished(_enr, _) => {
-                            debug!("Session Established: {:?}", _enr);
-                        }
-                        _ => (),
+                    if let Event::SessionEstablished(_enr, _) = event {
+                        debug!("Session Established: {:?}", _enr);
                     }
                 }
             }
         }
         Poll::Pending
     }
+
+    fn on_swarm_event(&mut self, event: FromSwarm) {
+        debug!("on_swarm_event event: {:?}", event);
+        match event {
+            FromSwarm::DialFailure(DialFailure { peer_id, .. }) => {
+                debug!("DialFailure event from swarm {:?}", peer_id);
+                //self.on_dial_failure(peer_id, error)
+            }
+            FromSwarm::NewListenAddr(ev) => {
+                debug!("Received NewListenAddr event from swarm ev = {ev:?}");
+            }
+            _ => {
+                // Ignore events not relevant to discovery
+            }
+        }
+    }
 }
 
 // Get CombinedKey from Secp256k1 libp2p Keypair
-pub fn key_from_libp2p(key: &libp2p::core::identity::Keypair) -> Result<CombinedKey, &'static str> {
-    match key {
-        Keypair::Secp256k1(key) => {
-            let secret = discv5::enr::k256::ecdsa::SigningKey::from_bytes(&key.secret().to_bytes().into())
+pub fn key_from_libp2p(key: libp2p::identity::Keypair) -> Result<CombinedKey, &'static str> {
+    match key.key_type() {
+        libp2p::identity::KeyType::Secp256k1 => {
+            let key = key.try_into_secp256k1().expect("right key type");
+            let secret = discv5::enr::k256::ecdsa::SigningKey::from_slice(&key.secret().to_bytes())
                 .expect("libp2p key must be valid");
             Ok(CombinedKey::Secp256k1(secret))
         }

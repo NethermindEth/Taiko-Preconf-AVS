@@ -1,12 +1,7 @@
-use libp2p::{
-    identify::Info,
-    swarm::{
-        behaviour::{ConnectionClosed, ConnectionEstablished, DialFailure, FromSwarm},
-        dummy::ConnectionHandler,
-        NetworkBehaviour, NetworkBehaviourAction, PollParameters,
-    },
-    Multiaddr, PeerId,
-};
+use libp2p::swarm::behaviour::{ConnectionClosed, ConnectionEstablished, DialFailure, FromSwarm};
+use libp2p::swarm::dummy::ConnectionHandler;
+use libp2p::swarm::{ConnectionDenied, ConnectionId, NetworkBehaviour, ToSwarm};
+use libp2p::{identify::Info, Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
 
 use std::collections::{HashMap, HashSet};
@@ -83,19 +78,14 @@ const DIAL_TIMEOUT: u64 = 120000;
 
 impl NetworkBehaviour for PeerManager {
     type ConnectionHandler = ConnectionHandler;
+    type ToSwarm = PeerManagerEvent;
 
-    type OutEvent = PeerManagerEvent;
-
-    fn poll(
-        &mut self,
-        cx: &mut Context<'_>,
-        _params: &mut impl PollParameters,
-    ) -> Poll<NetworkBehaviourAction<Self::OutEvent, Self::ConnectionHandler>> {
+    fn poll(&mut self, cx: &mut Context<'_>) -> Poll<ToSwarm<Self::ToSwarm, void::Void>> {
         // perform the heartbeat when necessary
         if !self.waiting_for_peer_discovery && self.peers_to_discover > 0 {
-            let ev = Poll::Ready(NetworkBehaviourAction::GenerateEvent(
-                PeerManagerEvent::DiscoverPeers(self.peers_to_discover),
-            ));
+            let ev = Poll::Ready(ToSwarm::GenerateEvent(PeerManagerEvent::DiscoverPeers(
+                self.peers_to_discover,
+            )));
             self.peers_to_discover = 0;
             self.waiting_for_peer_discovery = true;
             return ev;
@@ -109,20 +99,25 @@ impl NetworkBehaviour for PeerManager {
                 self.peers_to_discover = missing_peers - peers_to_dial.len() as u32;
 
                 if !peers_to_dial.is_empty() {
-                    return Poll::Ready(NetworkBehaviourAction::GenerateEvent(
-                        PeerManagerEvent::DialPeers(peers_to_dial),
-                    ));
+                    return Poll::Ready(ToSwarm::GenerateEvent(PeerManagerEvent::DialPeers(
+                        peers_to_dial,
+                    )));
                 }
             }
         }
         Poll::Pending
     }
 
-    fn new_handler(&mut self) -> Self::ConnectionHandler {
-        ConnectionHandler
+    fn on_connection_handler_event(
+        &mut self,
+        _peer_id: PeerId,
+        _connection_id: ConnectionId,
+        _event: libp2p::swarm::THandlerOutEvent<Self>,
+    ) {
+        // no events from the dummy handler
     }
 
-    fn on_swarm_event(&mut self, event: FromSwarm<Self::ConnectionHandler>) {
+    fn on_swarm_event(&mut self, event: FromSwarm) {
         match event {
             FromSwarm::ConnectionEstablished(ConnectionEstablished {
                 peer_id,
@@ -136,31 +131,33 @@ impl NetworkBehaviour for PeerManager {
                 ..
             }) => self.on_connection_closed(peer_id),
             FromSwarm::DialFailure(DialFailure { peer_id, .. }) => self.on_dial_failure(peer_id),
-            FromSwarm::AddressChange(_)
-            | FromSwarm::ListenFailure(_)
-            | FromSwarm::NewListener(_)
-            | FromSwarm::NewListenAddr(_)
-            | FromSwarm::ExpiredListenAddr(_)
-            | FromSwarm::ListenerError(_)
-            | FromSwarm::ListenerClosed(_)
-            | FromSwarm::NewExternalAddr(_)
-            | FromSwarm::ExpiredExternalAddr(_) => {
+            _ => {
                 // The rest of the events we ignore since they are handled in their associated
                 // `SwarmEvent`
             }
         }
     }
 
-    fn addresses_of_peer(&mut self, peer_id: &PeerId) -> Vec<Multiaddr> {
-        let mut peer_address: Vec<Multiaddr> = Vec::new();
+    fn handle_established_inbound_connection(
+        &mut self,
+        _connection_id: ConnectionId,
+        peer_id: PeerId,
+        _local_addr: &libp2p::Multiaddr,
+        remote_addr: &libp2p::Multiaddr,
+    ) -> Result<libp2p::swarm::THandler<Self>, ConnectionDenied> {
+        debug!("Inbound connection: {:?} -> {:?}", peer_id, remote_addr);
+        Ok(ConnectionHandler)
+    }
 
-        if let Some(peer_data) = self.peer_data.get(peer_id) {
-            if let Some(address) = &peer_data.multiaddr {
-                peer_address.push(address.clone());
-            }
-        }
-
-        peer_address
+    fn handle_established_outbound_connection(
+        &mut self,
+        _connection_id: ConnectionId,
+        peer_id: PeerId,
+        addr: &libp2p::Multiaddr,
+        _role_override: libp2p::core::Endpoint,
+    ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
+        debug!("Outbound connection: {:?} -> {:?}", peer_id, addr);
+        Ok(ConnectionHandler)
     }
 }
 impl PeerManager {
@@ -383,11 +380,10 @@ impl PeerManager {
             .peer_data
             .iter()
             .filter(|(_, peer_data)| match peer_data.connection_history.last() {
-                Some(connection_data) => match connection_data.connection_status {
-                    ConnectionStatus::Failed => true,
-                    ConnectionStatus::Disconnected => true,
-                    _ => false,
-                },
+                Some(connection_data) => matches!(
+                    connection_data.connection_status,
+                    ConnectionStatus::Failed | ConnectionStatus::Disconnected
+                ),
                 _ => false,
             })
             .filter(|(_, peer_data)| {
@@ -419,5 +415,17 @@ impl PeerManager {
 
     pub fn add_peer_identity(&mut self, peer_id: PeerId, identity: Info) {
         self.peer_identities.insert(peer_id, identity);
+    }
+
+    pub fn addresses_of_peer(&mut self, peer_id: &PeerId) -> Vec<Multiaddr> {
+        let mut peer_address: Vec<Multiaddr> = Vec::new();
+
+        if let Some(peer_data) = self.peer_data.get(peer_id) {
+            if let Some(address) = &peer_data.multiaddr {
+                peer_address.push(address.clone());
+            }
+        }
+
+        peer_address
     }
 }

@@ -2,6 +2,7 @@ use discv5::{
     enr::{self, CombinedKey, CombinedPublicKey},
     Enr,
 };
+use libp2p::identity::{ed25519, secp256k1, PublicKey};
 use libp2p::PeerId;
 
 pub fn build_enr(combined_key: &CombinedKey) -> Enr {
@@ -9,6 +10,7 @@ pub fn build_enr(combined_key: &CombinedKey) -> Enr {
 
     // Load ADDRESS from env
     let address = std::env::var("ADDRESS").unwrap_or_else(|_| "0.0.0.0".to_string());
+    println!("ADDRESS: {address:?}");
     enr_builder.ip4(address.parse().unwrap());
 
     enr_builder.udp4(9000);
@@ -30,18 +32,16 @@ impl EnrAsPeerId for Enr {
         match public_key {
             CombinedPublicKey::Secp256k1(pk) => {
                 let pk_bytes = pk.to_sec1_bytes();
-                let libp2p_pk = libp2p::core::PublicKey::Secp256k1(
-                    libp2p::core::identity::secp256k1::PublicKey::decode(&pk_bytes)
-                        .expect("valid public key"),
-                );
+                let libp2p_pk: PublicKey = secp256k1::PublicKey::try_from_bytes(&pk_bytes)
+                    .expect("valid public key")
+                    .into();
                 PeerId::from_public_key(&libp2p_pk)
             }
             CombinedPublicKey::Ed25519(pk) => {
                 let pk_bytes = pk.to_bytes();
-                let libp2p_pk = libp2p::core::PublicKey::Ed25519(
-                    libp2p::core::identity::ed25519::PublicKey::decode(&pk_bytes)
-                        .expect("valid public key"),
-                );
+                let libp2p_pk: PublicKey = ed25519::PublicKey::try_from_bytes(&pk_bytes)
+                    .expect("valid public key")
+                    .into();
                 PeerId::from_public_key(&libp2p_pk)
             }
         }
