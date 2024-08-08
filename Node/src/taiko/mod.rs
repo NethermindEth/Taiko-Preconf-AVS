@@ -1,20 +1,25 @@
-use crate::utils::rpc_client::RpcClient;
+use crate::utils::{block_proposed, rpc_client::RpcClient};
 use anyhow::Error;
 use serde_json::Value;
+use std::time::Duration;
 
-pub mod block_proposed;
 pub mod l2_tx_lists;
 
 pub struct Taiko {
     rpc_proposer: RpcClient,
     rpc_driver: RpcClient,
+    rpc_driver_long_timeout: RpcClient,
 }
 
 impl Taiko {
-    pub fn new(proposer_url: &str, driver_url: &str) -> Self {
+    pub fn new(proposer_url: &str, driver_url: &str, long_timeout_sec: u64) -> Self {
         Self {
             rpc_proposer: RpcClient::new(proposer_url),
             rpc_driver: RpcClient::new(driver_url),
+            rpc_driver_long_timeout: RpcClient::new_with_timeout(
+                driver_url,
+                Duration::from_secs(long_timeout_sec),
+            ),
         }
     }
 
@@ -69,7 +74,7 @@ impl Taiko {
     ) -> Result<block_proposed::BlockProposed, Error> {
         tracing::debug!("Waiting for block proposed event");
         let result = self
-            .rpc_driver
+            .rpc_driver_long_timeout
             .call_method("RPC.WaitForBlockProposed", vec![])
             .await?;
         block_proposed::decompose_block_proposed_json(result)
