@@ -11,6 +11,7 @@ pub struct Config {
     pub l1_slots_per_epoch: u64,
     pub l2_slot_duration_sec: u64,
     pub validator_pubkey: String,
+    pub block_proposed_receiver_timeout_sec: u64,
 }
 
 impl Config {
@@ -63,6 +64,12 @@ impl Config {
             "0x0".to_string()
         });
 
+        let block_proposed_receiver_timeout_sec =
+            std::env::var("BLOCK_PROPOSED_RECEIVER_TIMEOUT_SEC")
+                .unwrap_or_else(|_| "120".to_string())
+                .parse::<u64>()
+                .expect("BLOCK_PROPOSED_RECEIVER_TIMEOUT_SEC must be a number");
+
         let config = Self {
             taiko_proposer_url: std::env::var("TAIKO_PROPOSER_URL")
                 .unwrap_or_else(|_| "http://127.0.0.1:1234".to_string()),
@@ -92,6 +99,7 @@ impl Config {
             l1_slots_per_epoch,
             l2_slot_duration_sec,
             validator_pubkey,
+            block_proposed_receiver_timeout_sec,
         };
 
         info!(
@@ -106,6 +114,7 @@ L1 slot duration: {}
 L1 slots per epoch: {}
 L2 slot duration: {}
 Validator pubkey: {}
+Block proposed receiver timeout: {}
 "#,
             config.taiko_proposer_url,
             config.taiko_driver_url,
@@ -115,7 +124,8 @@ Validator pubkey: {}
             config.l1_slot_duration_sec,
             config.l1_slots_per_epoch,
             config.l2_slot_duration_sec,
-            config.validator_pubkey
+            config.validator_pubkey,
+            config.block_proposed_receiver_timeout_sec
         );
 
         config

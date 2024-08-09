@@ -5,14 +5,18 @@ use crate::{
     },
     mev_boost::MevBoost,
     taiko::Taiko,
+    utils::node_message::NodeMessage,
 };
 use anyhow::{anyhow as any_err, Error};
 use beacon_api_client::ProposerDuty;
+use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 
+pub mod block_proposed_receiver;
+
 pub struct Node {
-    taiko: Taiko,
-    node_rx: Option<Receiver<String>>,
+    taiko: Arc<Taiko>,
+    node_rx: Option<Receiver<NodeMessage>>,
     avs_p2p_tx: Sender<String>,
     gas_used: u64,
     ethereum_l1: EthereumL1,
@@ -27,9 +31,9 @@ pub struct Node {
 
 impl Node {
     pub async fn new(
-        node_rx: Receiver<String>,
+        node_rx: Receiver<NodeMessage>,
         avs_p2p_tx: Sender<String>,
-        taiko: Taiko,
+        taiko: Arc<Taiko>,
         ethereum_l1: EthereumL1,
         mev_boost: MevBoost,
         l2_slot_duration_sec: u64,
@@ -70,18 +74,26 @@ impl Node {
         }
     }
 
-    async fn handle_incoming_messages(mut node_rx: Receiver<String>) {
+    async fn handle_incoming_messages(mut node_rx: Receiver<NodeMessage>) {
         loop {
             tokio::select! {
                 Some(message) = node_rx.recv() => {
-                    tracing::debug!("Node received message: {}", message);
+                    match message {
+                        NodeMessage::BlockProposed(block_proposed) => {
+                            tracing::debug!("Node received block proposed event: {:?}", block_proposed);
+                        }
+                        NodeMessage::P2P(message) => {
+                            tracing::debug!("Node received P2P message: {:?}", message);
+                        }
+                    }
                 },
             }
         }
     }
 
     async fn preconfirmation_loop(&mut self) {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(self.l2_slot_duration_sec));
+        let mut interval =
+            tokio::time::interval(std::time::Duration::from_secs(self.l2_slot_duration_sec));
 
         loop {
             interval.tick().await;

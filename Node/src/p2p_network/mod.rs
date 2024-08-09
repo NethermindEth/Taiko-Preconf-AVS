@@ -1,13 +1,14 @@
+use crate::utils::node_message::NodeMessage;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::info;
 
 pub struct AVSp2p {
-    node_tx: Sender<String>,
+    node_tx: Sender<NodeMessage>,
     avs_p2p_rx: Receiver<String>,
 }
 
 impl AVSp2p {
-    pub fn new(node_tx: Sender<String>, avs_p2p_rx: Receiver<String>) -> Self {
+    pub fn new(node_tx: Sender<NodeMessage>, avs_p2p_rx: Receiver<String>) -> Self {
         AVSp2p {
             node_tx,
             avs_p2p_rx,
@@ -23,7 +24,7 @@ impl AVSp2p {
         tokio::spawn(async move {
             loop {
                 node_tx
-                    .send("Hello from avs p2p!".to_string())
+                    .send(NodeMessage::P2P("Hello from avs p2p!".to_string()))
                     .await
                     .unwrap();
                 tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;

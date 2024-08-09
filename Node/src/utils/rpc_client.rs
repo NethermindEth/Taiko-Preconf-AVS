@@ -10,10 +10,12 @@ pub struct RpcClient {
 
 impl RpcClient {
     pub fn new(url: &str) -> Self {
-        // let client = HttpClientBuilder::default().build(url).unwrap();
+        Self::new_with_timeout(url, Duration::from_secs(10))
+    }
 
+    pub fn new_with_timeout(url: &str, timeout: Duration) -> Self {
         let client = HttpClientBuilder::default()
-            .request_timeout(Duration::from_secs(1))
+            .request_timeout(timeout)
             .build(url)
             .unwrap();
         RpcClient { client }
