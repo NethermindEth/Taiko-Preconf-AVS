@@ -23,6 +23,8 @@ pub mod block_proposed_receiver;
 
 const OLDEST_BLOCK_DISTANCE: u64 = 256;
 
+pub mod block_proposed_receiver;
+
 pub struct Node {
     taiko: Arc<Taiko>,
     node_rx: Option<Receiver<NodeMessage>>,
