@@ -5,12 +5,19 @@ use crate::{
     },
     mev_boost::MevBoost,
     taiko::Taiko,
-    utils::node_message::NodeMessage,
+    utils::{block_proposed::BlockProposed, node_message::NodeMessage},
 };
 use anyhow::{anyhow as any_err, Error};
 use beacon_api_client::ProposerDuty;
-use std::sync::Arc;
-use tokio::sync::mpsc::{Receiver, Sender};
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::{
+    mpsc::{Receiver, Sender},
+    Mutex,
+};
+use tracing::info;
+
+mod block;
+pub use block::Block;
 
 pub mod block_proposed_receiver;
 
@@ -19,7 +26,7 @@ pub struct Node {
     node_rx: Option<Receiver<NodeMessage>>,
     avs_p2p_tx: Sender<String>,
     gas_used: u64,
-    ethereum_l1: EthereumL1,
+    ethereum_l1: Arc<EthereumL1>,
     _mev_boost: MevBoost, // temporary unused
     epoch: Epoch,
     lookahead: Vec<ProposerDuty>,
@@ -27,6 +34,7 @@ pub struct Node {
     validator_pubkey: String,
     current_slot_to_preconf: Option<Slot>,
     next_slot_to_preconf: Option<Slot>,
+    preconfirmed_blocks: Arc<Mutex<HashMap<u64, Block>>>,
 }
 
 impl Node {
@@ -34,7 +42,7 @@ impl Node {
         node_rx: Receiver<NodeMessage>,
         avs_p2p_tx: Sender<String>,
         taiko: Arc<Taiko>,
-        ethereum_l1: EthereumL1,
+        ethereum_l1: Arc<EthereumL1>,
         mev_boost: MevBoost,
         l2_slot_duration_sec: u64,
         validator_pubkey: String,
@@ -52,6 +60,7 @@ impl Node {
             validator_pubkey,
             current_slot_to_preconf: None,
             next_slot_to_preconf: None,
+            preconfirmed_blocks: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -65,22 +74,31 @@ impl Node {
     }
 
     fn start_new_msg_receiver_thread(&mut self) {
+        let preconfirmed_blocks = self.preconfirmed_blocks.clone();
+        let ethereum_l1 = self.ethereum_l1.clone();
         if let Some(node_rx) = self.node_rx.take() {
             tokio::spawn(async move {
-                Self::handle_incoming_messages(node_rx).await;
+                Self::handle_incoming_messages(node_rx, preconfirmed_blocks, ethereum_l1).await;
             });
         } else {
             tracing::error!("node_rx has already been moved");
         }
     }
 
-    async fn handle_incoming_messages(mut node_rx: Receiver<NodeMessage>) {
+    async fn handle_incoming_messages(
+        mut node_rx: Receiver<NodeMessage>,
+        preconfirmed_blocks: Arc<Mutex<HashMap<u64, Block>>>,
+        ethereum_l1: Arc<EthereumL1>,
+    ) {
         loop {
             tokio::select! {
                 Some(message) = node_rx.recv() => {
                     match message {
                         NodeMessage::BlockProposed(block_proposed) => {
                             tracing::debug!("Node received block proposed event: {:?}", block_proposed);
+                            if let Err(e) = Self::check_preconfirmed_blocks_correctness(&preconfirmed_blocks, block_proposed, ethereum_l1.clone()).await {
+                                tracing::error!("Failed to check preconfirmed blocks correctness: {}", e);
+                            }
                         }
                         NodeMessage::P2P(message) => {
                             tracing::debug!("Node received P2P message: {:?}", message);
@@ -89,6 +107,33 @@ impl Node {
                 },
             }
         }
+    }
+
+    async fn check_preconfirmed_blocks_correctness(
+        preconfirmed_blocks: &Arc<Mutex<HashMap<u64, Block>>>,
+        block_proposed: BlockProposed,
+        ethereum_l1: Arc<EthereumL1>,
+    ) -> Result<(), Error> {
+        let preconfirmed_blocks = preconfirmed_blocks.lock().await;
+        if let Some(block) = preconfirmed_blocks.get(&block_proposed.block_id) {
+            //TODO: verify the signature?
+
+            if block.tx_list_hash != block_proposed.tx_list_hash {
+                info!(
+                    "Block tx_list_hash is not correct for block_id: {}. Calling proof of incorrect preconfirmation.",
+                    block_proposed.block_id
+                );
+                ethereum_l1
+                    .execution_layer
+                    .prove_incorrect_preconfirmation(
+                        block_proposed.block_id,
+                        block.tx_list_hash,
+                        block.signature,
+                    )
+                    .await?;
+            }
+        }
+        Ok(())
     }
 
     async fn preconfirmation_loop(&mut self) {

@@ -9,14 +9,14 @@ use alloy::{
 };
 use anyhow::Error;
 use beacon_api_client::ProposerDuty;
-use std::rc::Rc;
 use std::str::FromStr;
+use std::sync::Arc;
 
 pub struct ExecutionLayer {
     rpc_url: reqwest::Url,
     wallet: EthereumWallet,
     taiko_preconfirming_address: Address,
-    slot_clock: Rc<SlotClock>,
+    slot_clock: Arc<SlotClock>,
 }
 
 sol!(
@@ -51,7 +51,7 @@ impl ExecutionLayer {
         rpc_url: &str,
         private_key: &str,
         taiko_preconfirming_address: &str,
-        slot_clock: Rc<SlotClock>,
+        slot_clock: Arc<SlotClock>,
     ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_str(private_key)?;
         let wallet = EthereumWallet::from(signer);
@@ -113,6 +113,26 @@ impl ExecutionLayer {
         let tx_hash = builder.send().await?.watch().await?;
         tracing::debug!("Proposed new block: {tx_hash}");
 
+        Ok(())
+    }
+
+    pub async fn prove_incorrect_preconfirmation(
+        &self,
+        _block_id: u64,
+        _tx_list_hash: [u8; 32],
+        _signture: [u8; 96],
+    ) -> Result<(), Error> {
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.wallet.clone())
+            .on_http(self.rpc_url.clone());
+
+        let _contract = PreconfTaskManager::new(self.taiko_preconfirming_address, provider);
+        // TODO: waiting for the new contract ABI
+        // let builder = contract.proveIncorrectPreconfirmation(U256::from(block_id), tx_list_hash, signature);
+
+        let tx_hash = FixedBytes::<32>::default(); // builder.send().await?.watch().await?;
+        tracing::debug!("Proved incorrect preconfirmation: {tx_hash}");
         Ok(())
     }
 
