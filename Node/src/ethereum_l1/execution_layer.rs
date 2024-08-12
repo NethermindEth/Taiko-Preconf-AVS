@@ -150,7 +150,7 @@ impl ExecutionLayer {
             wallet,
             taiko_preconfirming_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
                 .parse()?,
-            slot_clock: Rc::new(clock),
+            slot_clock: Arc::new(clock),
         })
     }
 

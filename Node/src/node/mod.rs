@@ -5,7 +5,7 @@ use crate::{
     },
     mev_boost::MevBoost,
     taiko::Taiko,
-    utils::{block_proposed::BlockProposed, node_message::NodeMessage},
+    utils::{block_proposed::BlockProposed, commit::L2TxListsCommit, node_message::NodeMessage},
 };
 use anyhow::{anyhow as any_err, Error};
 use beacon_api_client::ProposerDuty;
@@ -20,6 +20,8 @@ mod block;
 pub use block::Block;
 
 pub mod block_proposed_receiver;
+
+const OLDEST_BLOCK_DISTANCE: u64 = 256;
 
 pub struct Node {
     taiko: Arc<Taiko>,
@@ -96,8 +98,12 @@ impl Node {
                     match message {
                         NodeMessage::BlockProposed(block_proposed) => {
                             tracing::debug!("Node received block proposed event: {:?}", block_proposed);
-                            if let Err(e) = Self::check_preconfirmed_blocks_correctness(&preconfirmed_blocks, block_proposed, ethereum_l1.clone()).await {
+                            if let Err(e) = Self::check_preconfirmed_blocks_correctness(&preconfirmed_blocks, &block_proposed, ethereum_l1.clone()).await {
                                 tracing::error!("Failed to check preconfirmed blocks correctness: {}", e);
+                            }
+
+                            if let Err(e) = Self::clean_old_blocks(&preconfirmed_blocks, block_proposed.block_id).await {
+                                tracing::error!("Failed to clean old blocks: {}", e);
                             }
                         }
                         NodeMessage::P2P(message) => {
@@ -111,7 +117,7 @@ impl Node {
 
     async fn check_preconfirmed_blocks_correctness(
         preconfirmed_blocks: &Arc<Mutex<HashMap<u64, Block>>>,
-        block_proposed: BlockProposed,
+        block_proposed: &BlockProposed,
         ethereum_l1: Arc<EthereumL1>,
     ) -> Result<(), Error> {
         let preconfirmed_blocks = preconfirmed_blocks.lock().await;
@@ -192,7 +198,9 @@ impl Node {
             return Ok(());
         }
 
-        self.commit_to_the_tx_lists();
+        let new_block_height = pending_tx_lists.latest_l2_block_height + 1;
+        let commit = L2TxListsCommit::new(&pending_tx_lists, new_block_height);
+
         self.send_preconfirmations_to_the_avs_p2p().await?;
         self.taiko
             .advance_head_to_new_l2_block(pending_tx_lists.tx_lists, self.gas_used)
@@ -206,6 +214,24 @@ impl Node {
             )
             .await?;
 
+        self.preconfirmed_blocks.lock().await.insert(
+            new_block_height,
+            Block {
+                tx_list_hash: commit.hash()?,
+                signature: [0; 96], // TODO: get the signature from the web3signer
+            },
+        );
+
+        Ok(())
+    }
+
+    async fn clean_old_blocks(
+        preconfirmed_blocks: &Arc<Mutex<HashMap<u64, Block>>>,
+        current_block_height: u64,
+    ) -> Result<(), Error> {
+        let oldest_block_to_keep = current_block_height - OLDEST_BLOCK_DISTANCE;
+        let mut preconfirmed_blocks = preconfirmed_blocks.lock().await;
+        preconfirmed_blocks.retain(|block_height, _| block_height >= &oldest_block_to_keep);
         Ok(())
     }
 
@@ -214,10 +240,6 @@ impl Node {
             .iter()
             .find(|duty| duty.public_key.to_string() == self.validator_pubkey)
             .map(|duty| duty.slot)
-    }
-
-    fn commit_to_the_tx_lists(&self) {
-        //TODO: implement
     }
 
     async fn send_preconfirmations_to_the_avs_p2p(&self) -> Result<(), Error> {
