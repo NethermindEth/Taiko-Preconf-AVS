@@ -198,7 +198,7 @@ impl Node {
             return Ok(());
         }
 
-        let new_block_height = pending_tx_lists.latest_l2_block_height + 1;
+        let new_block_height = pending_tx_lists.parent_block_id + 1;
         let commit = L2TxListsCommit::new(&pending_tx_lists, new_block_height);
 
         self.send_preconfirmations_to_the_avs_p2p().await?;

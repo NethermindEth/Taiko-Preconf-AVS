@@ -10,7 +10,8 @@ pub struct RPCReplyL2TxLists {
     pub tx_list_bytes: Vec<Vec<u8>>,
     #[serde(deserialize_with = "deserialize_parent_meta_hash")]
     pub parent_meta_hash: [u8; 32],
-    pub latest_l2_block_height: u64,
+    #[serde(rename = "ParentBlockID")]
+    pub parent_block_id: u64,
 }
 
 fn deserialize_tx_lists_bytes<'de, D>(deserializer: D) -> Result<Vec<Vec<u8>>, D::Error>
@@ -70,6 +71,6 @@ mod tests {
         assert_eq!(result.tx_list_bytes.len(), 1);
         assert_eq!(result.tx_list_bytes[0].len(), 492);
         assert_eq!(result.parent_meta_hash.len(), 32);
-        assert_eq!(result.latest_l2_block_height, 1234);
+        assert_eq!(result.parent_block_id, 1234);
     }
 }
