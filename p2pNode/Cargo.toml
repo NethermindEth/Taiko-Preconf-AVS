@@ -6,7 +6,7 @@ license = "MIT"
 
 [dependencies]
 tokio = { version = "1.23.0", features = ["full"] }
-libp2p =  { version = "0.53.2", features = ["full", "tcp", "dns", "websocket", "tokio", "identify", "yamux", "noise", "gossipsub"] }
+libp2p =  { version = "0.54.0", features = ["full", "tcp", "dns", "websocket", "tokio", "identify", "yamux", "noise", "gossipsub"] }
 discv5 = { version = "0.6.0", features = ["libp2p"] }
 futures =  "0.3.25"
 serde = { version = "1.0.152", features = ["derive"] }

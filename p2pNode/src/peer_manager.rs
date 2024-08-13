@@ -155,6 +155,7 @@ impl NetworkBehaviour for PeerManager {
         peer_id: PeerId,
         addr: &libp2p::Multiaddr,
         _role_override: libp2p::core::Endpoint,
+        _port_use: libp2p::core::transport::PortUse,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
         debug!("Outbound connection: {:?} -> {:?}", peer_id, addr);
         Ok(ConnectionHandler)

@@ -4,7 +4,7 @@ use libp2p::futures::StreamExt;
 use libp2p::gossipsub::{MessageAuthenticity, ValidationMode};
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 use libp2p::SwarmBuilder;
-use libp2p::{core::upgrade, gossipsub, identify, identity, noise, PeerId};
+use libp2p::{gossipsub, identify, identity, noise, PeerId};
 use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -90,15 +90,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     mplex_config.set_max_buffer_size(256);
     mplex_config.set_max_buffer_behaviour(MaxBufferBehaviour::Block);
 
-    // yamux config
-    let yamux_config = libp2p::yamux::Config::default();
-
     let mut swarm = SwarmBuilder::with_existing_identity(local_key)
         .with_tokio()
         .with_tcp(
             libp2p::tcp::Config::default().nodelay(true),
             noise::Config::new,
-            || upgrade::SelectUpgrade::new(yamux_config, mplex_config),
+            libp2p::yamux::Config::default,
         )
         .expect("building p2p transport failed")
         .with_behaviour(|_| behaviour)
