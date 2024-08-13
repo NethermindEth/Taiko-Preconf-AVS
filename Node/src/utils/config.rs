@@ -12,6 +12,7 @@ pub struct Config {
     pub l2_slot_duration_sec: u64,
     pub validator_pubkey: String,
     pub avs_service_manager_contract_address: String,
+    pub block_proposed_receiver_timeout_sec: u64,
 }
 
 impl Config {
@@ -68,6 +69,11 @@ impl Config {
             warn!("No AVS service manager contract address found in AVS_SERVICE_MANAGER_CONTRACT_ADDRESS env var, using default");
             "0x0".to_string()
         });
+        let block_proposed_receiver_timeout_sec =
+            std::env::var("BLOCK_PROPOSED_RECEIVER_TIMEOUT_SEC")
+                .unwrap_or_else(|_| "120".to_string())
+                .parse::<u64>()
+                .expect("BLOCK_PROPOSED_RECEIVER_TIMEOUT_SEC must be a number");
 
         let config = Self {
             taiko_proposer_url: std::env::var("TAIKO_PROPOSER_URL")
@@ -99,6 +105,7 @@ impl Config {
             l2_slot_duration_sec,
             validator_pubkey,
             avs_service_manager_contract_address,
+            block_proposed_receiver_timeout_sec,
         };
 
         info!(
@@ -114,6 +121,7 @@ L1 slots per epoch: {}
 L2 slot duration: {}
 Validator pubkey: {}
 AVS service manager contract address: {}
+Block proposed receiver timeout: {}
 "#,
             config.taiko_proposer_url,
             config.taiko_driver_url,
@@ -124,7 +132,8 @@ AVS service manager contract address: {}
             config.l1_slots_per_epoch,
             config.l2_slot_duration_sec,
             config.validator_pubkey,
-            config.avs_service_manager_contract_address
+            config.avs_service_manager_contract_address,
+            config.block_proposed_receiver_timeout_sec
         );
 
         config
