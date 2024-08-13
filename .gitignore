@@ -1,4 +1,4 @@
 /Node/target
 .vscode
-tools/tx_spammer/.env
+.env
 tools/tx_spammer/venv

@@ -8,10 +8,17 @@ pub struct Config {
     pub taiko_preconfirming_address: String,
     pub l1_beacon_url: String,
     pub l1_slot_duration_sec: u64,
+    pub l1_slots_per_epoch: u64,
+    pub l2_slot_duration_sec: u64,
+    pub validator_pubkey: String,
+    pub block_proposed_receiver_timeout_sec: u64,
 }
 
 impl Config {
     pub fn read_env_variables() -> Self {
+        // Load environment variables from .env file
+        dotenv::dotenv().ok();
+
         const ETHEREUM_PRIVATE_KEY: &str = "ETHEREUM_PRIVATE_KEY";
         const TAIKO_PRECONFIRMING_ADDRESS: &str = "TAIKO_PRECONFIRMING_ADDRESS";
 
@@ -25,6 +32,43 @@ impl Config {
                 val
             })
             .expect("L1_SLOT_DURATION_SEC must be a number");
+
+        let l1_slots_per_epoch = std::env::var("L1_SLOTS_PER_EPOCH")
+            .unwrap_or_else(|_| "32".to_string())
+            .parse::<u64>()
+            .map(|val| {
+                if val == 0 {
+                    panic!("L1_SLOTS_PER_EPOCH must be a positive number");
+                }
+                val
+            })
+            .expect("L1_SLOTS_PER_EPOCH must be a number");
+
+        let l2_slot_duration_sec = std::env::var("L2_SLOT_DURATION_SEC")
+            .unwrap_or_else(|_| "3".to_string())
+            .parse::<u64>()
+            .map(|val| {
+                if val == 0 {
+                    panic!("L2_SLOT_DURATION_SEC must be a positive number");
+                }
+                val
+            })
+            .expect("L2_SLOT_DURATION_SEC must be a number");
+
+        const VALIDATOR_PUBKEY: &str = "VALIDATOR_PUBKEY";
+        let validator_pubkey = std::env::var(VALIDATOR_PUBKEY).unwrap_or_else(|_| {
+            warn!(
+                "No validator pubkey found in {} env var, using default",
+                VALIDATOR_PUBKEY
+            );
+            "0x0".to_string()
+        });
+
+        let block_proposed_receiver_timeout_sec =
+            std::env::var("BLOCK_PROPOSED_RECEIVER_TIMEOUT_SEC")
+                .unwrap_or_else(|_| "120".to_string())
+                .parse::<u64>()
+                .expect("BLOCK_PROPOSED_RECEIVER_TIMEOUT_SEC must be a number");
 
         let config = Self {
             taiko_proposer_url: std::env::var("TAIKO_PROPOSER_URL")
@@ -52,6 +96,10 @@ impl Config {
             l1_beacon_url: std::env::var("L1_BEACON_URL")
                 .unwrap_or_else(|_| "http://127.0.0.1:4000".to_string()),
             l1_slot_duration_sec,
+            l1_slots_per_epoch,
+            l2_slot_duration_sec,
+            validator_pubkey,
+            block_proposed_receiver_timeout_sec,
         };
 
         info!(
@@ -63,13 +111,21 @@ MEV Boost URL: {},
 New block proposal contract address: {}
 Consensus layer URL: {}
 L1 slot duration: {}
+L1 slots per epoch: {}
+L2 slot duration: {}
+Validator pubkey: {}
+Block proposed receiver timeout: {}
 "#,
             config.taiko_proposer_url,
             config.taiko_driver_url,
             config.mev_boost_url,
             config.taiko_preconfirming_address,
             config.l1_beacon_url,
-            config.l1_slot_duration_sec
+            config.l1_slot_duration_sec,
+            config.l1_slots_per_epoch,
+            config.l2_slot_duration_sec,
+            config.validator_pubkey,
+            config.block_proposed_receiver_timeout_sec
         );
 
         config

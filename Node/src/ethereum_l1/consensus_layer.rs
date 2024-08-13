@@ -13,18 +13,13 @@ impl ConsensusLayer {
         Ok(Self { client })
     }
 
-    pub async fn get_current_epoch(&self) -> Result<u64, Error> {
-        let header = self.client.get_beacon_header_at_head().await?;
-        let slot = header.header.message.slot;
-        Ok(slot / 32)
-    }
-
     pub async fn get_lookahead(&self, epoch: u64) -> Result<Vec<ProposerDuty>, Error> {
         let (_, duties) = self.client.get_proposer_duties(epoch).await?;
+        tracing::debug!("got duties len: {}", duties.len());
         Ok(duties)
     }
 
-    pub async fn get_genesis_data(&self) -> Result<GenesisDetails, Error> {
+    pub async fn get_genesis_details(&self) -> Result<GenesisDetails, Error> {
         self.client.get_genesis_details().await.map_err(Error::new)
     }
 }
@@ -48,7 +43,7 @@ pub mod tests {
     async fn test_get_genesis_data() {
         let server = setup_server().await;
         let cl = ConsensusLayer::new(server.url().as_str()).unwrap();
-        let genesis_data = cl.get_genesis_data().await.unwrap();
+        let genesis_data = cl.get_genesis_details().await.unwrap();
 
         assert_eq!(genesis_data.genesis_time, 1590832934);
         assert_eq!(

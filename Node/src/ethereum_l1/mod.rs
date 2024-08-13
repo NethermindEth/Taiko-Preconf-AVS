@@ -1,10 +1,14 @@
 pub mod consensus_layer;
 pub mod execution_layer;
+pub mod slot_clock;
 
 use consensus_layer::ConsensusLayer;
 use execution_layer::ExecutionLayer;
+use slot_clock::SlotClock;
+use std::sync::Arc;
 
 pub struct EthereumL1 {
+    pub slot_clock: Arc<SlotClock>,
     pub consensus_layer: ConsensusLayer,
     pub execution_layer: ExecutionLayer,
 }
@@ -16,17 +20,26 @@ impl EthereumL1 {
         taiko_preconfirming_address: &str,
         consensus_rpc_url: &str,
         slot_duration_sec: u64,
+        slots_per_epoch: u64,
     ) -> Result<Self, anyhow::Error> {
         let consensus_layer = ConsensusLayer::new(consensus_rpc_url)?;
-        let genesis_data = consensus_layer.get_genesis_data().await?;
+        let genesis_details = consensus_layer.get_genesis_details().await?;
+        let slot_clock = Arc::new(SlotClock::new(
+            0u64,
+            genesis_details.genesis_time,
+            slot_duration_sec,
+            slots_per_epoch,
+        ));
+
         let execution_layer = ExecutionLayer::new(
             execution_rpc_url,
             private_key,
             taiko_preconfirming_address,
-            genesis_data.genesis_time,
-            slot_duration_sec,
+            slot_clock.clone(),
         )?;
+
         Ok(Self {
+            slot_clock,
             consensus_layer,
             execution_layer,
         })
