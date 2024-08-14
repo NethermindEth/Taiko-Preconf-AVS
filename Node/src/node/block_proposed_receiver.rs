@@ -29,11 +29,7 @@ impl BlockProposedEventReceiver {
                         block_proposed.block_id
                     );
                     let node_message: Vec<u8> = NodeMessage::BlockProposed(block_proposed).into();
-                    if let Err(e) = self
-                        .node_tx
-                        .send(node_message)
-                        .await
-                    {
+                    if let Err(e) = self.node_tx.send(node_message).await {
                         error!("Error sending block proposed event by channel: {:?}", e);
                     }
                 }

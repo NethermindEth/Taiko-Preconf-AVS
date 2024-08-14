@@ -22,10 +22,10 @@ impl AVSp2p {
         info!("Starting P2P network");
 
         // Load ADDRESS from env
-        // TODO move to config
+        // TODO Move to a config file
         let address = std::env::var("ADDRESS").unwrap_or_else(|_| "0.0.0.0".to_string());
         let ipv4 = address.parse().unwrap();
-        info!("ADDRESS: {address:?}");
+        info!("Node ipv4 address: {address:?}");
 
         let config = P2PNetworkConfig {
             local_key: generate_secp256k1(),

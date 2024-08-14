@@ -10,7 +10,7 @@ use libp2p::multiaddr::Protocol;
 use libp2p::swarm::behaviour::{DialFailure, FromSwarm};
 use libp2p::swarm::THandlerInEvent;
 use libp2p::swarm::{dummy::ConnectionHandler, ConnectionId};
-use libp2p::swarm::{NetworkBehaviour, ToSwarm}; //, NetworkBehaviourAction, PollParameters};
+use libp2p::swarm::{NetworkBehaviour, ToSwarm};
 use libp2p::{Multiaddr, PeerId};
 use std::collections::HashMap;
 use std::fs::File;
@@ -103,6 +103,7 @@ impl Discovery {
         let mut discv5 = Discv5::new(local_enr.clone(), enr_key, config).unwrap();
 
         // Process bootnode
+        // TODO Move to a config file
         let path = Path::new(BOOT_NODE_PATH);
         if path.exists() {
             let bootnode = read_boot_node();
@@ -230,7 +231,6 @@ impl NetworkBehaviour for Discovery {
         }
 
         if let Some(dp) = self.get_peers(cx) {
-            //return Poll::Ready(NetworkBehaviourAction::GenerateEvent(dp));
             return Poll::Ready(ToSwarm::GenerateEvent(dp));
         };
 
@@ -268,7 +268,6 @@ impl NetworkBehaviour for Discovery {
         match event {
             FromSwarm::DialFailure(DialFailure { peer_id, .. }) => {
                 debug!("DialFailure event from swarm {:?}", peer_id);
-                //self.on_dial_failure(peer_id, error)
             }
             FromSwarm::NewListenAddr(ev) => {
                 debug!("Received NewListenAddr event from swarm ev = {ev:?}");
