@@ -5,7 +5,10 @@ use crate::{
     },
     mev_boost::MevBoost,
     taiko::Taiko,
-    utils::{block::Block, block_proposed::BlockProposed, commit::L2TxListsCommit, node_message::NodeMessage},
+    utils::{
+        block::Block, block_proposed::BlockProposed, commit::L2TxListsCommit,
+        node_message::NodeMessage,
+    },
 };
 use anyhow::{anyhow as any_err, Error};
 use beacon_api_client::ProposerDuty;
@@ -22,8 +25,8 @@ const OLDEST_BLOCK_DISTANCE: u64 = 256;
 
 pub struct Node {
     taiko: Arc<Taiko>,
-    node_rx: Option<Receiver<NodeMessage>>,
-    avs_p2p_tx: Sender<NodeMessage>,
+    node_rx: Option<Receiver<Vec<u8>>>,
+    avs_p2p_tx: Sender<Vec<u8>>,
     gas_used: u64,
     ethereum_l1: Arc<EthereumL1>,
     _mev_boost: MevBoost, // temporary unused
@@ -38,8 +41,8 @@ pub struct Node {
 
 impl Node {
     pub async fn new(
-        node_rx: Receiver<NodeMessage>,
-        avs_p2p_tx: Sender<NodeMessage>,
+        node_rx: Receiver<Vec<u8>>,
+        avs_p2p_tx: Sender<Vec<u8>>,
         taiko: Arc<Taiko>,
         ethereum_l1: Arc<EthereumL1>,
         mev_boost: MevBoost,
@@ -85,13 +88,14 @@ impl Node {
     }
 
     async fn handle_incoming_messages(
-        mut node_rx: Receiver<NodeMessage>,
+        mut node_rx: Receiver<Vec<u8>>,
         preconfirmed_blocks: Arc<Mutex<HashMap<u64, Block>>>,
         ethereum_l1: Arc<EthereumL1>,
     ) {
         loop {
             tokio::select! {
                 Some(message) = node_rx.recv() => {
+                    let message: NodeMessage = message.into();
                     match message {
                         NodeMessage::BlockProposed(block_proposed) => {
                             tracing::debug!("Node received block proposed event: {:?}", block_proposed);
@@ -205,7 +209,8 @@ impl Node {
             tx_list_hash: commit.hash()?,
             signature: [0; 96], // TODO: get the signature from the web3signer
         };
-        self.send_preconfirmations_to_the_avs_p2p(new_block.clone()).await?;
+        self.send_preconfirmations_to_the_avs_p2p(new_block.clone())
+            .await?;
         self.taiko
             .advance_head_to_new_l2_block(pending_tx_lists.tx_lists, self.gas_used)
             .await?;
@@ -218,10 +223,10 @@ impl Node {
             )
             .await?;
 
-        self.preconfirmed_blocks.lock().await.insert(
-            new_block_height,
-            new_block,
-        );
+        self.preconfirmed_blocks
+            .lock()
+            .await
+            .insert(new_block_height, new_block);
 
         Ok(())
     }
@@ -243,9 +248,10 @@ impl Node {
             .map(|duty| duty.slot)
     }
 
-    async fn send_preconfirmations_to_the_avs_p2p(&self, block:Block) -> Result<(), Error> {
+    async fn send_preconfirmations_to_the_avs_p2p(&self, block: Block) -> Result<(), Error> {
+        let node_message: Vec<u8> = NodeMessage::BlockPerconfirmation(block).into();
         self.avs_p2p_tx
-            .send(NodeMessage::BlockPerconfirmation(block))
+            .send(node_message)
             .await
             .map_err(|e| any_err!("Failed to send message to avs_p2p_tx: {}", e))
     }

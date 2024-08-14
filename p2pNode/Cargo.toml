@@ -1,18 +1,6 @@
-[package]
-name = "p2p-node"
-version = "0.0.1"
-edition = "2021"
-license = "MIT"
-
-[dependencies]
-tokio = { version = "1.23.0", features = ["full"] }
-libp2p =  { version = "0.54.0", features = ["full", "tcp", "dns", "websocket", "tokio", "identify", "yamux", "noise", "gossipsub"] }
-discv5 = { version = "0.6.0", features = ["libp2p"] }
-futures =  "0.3.25"
-serde = { version = "1.0.152", features = ["derive"] }
-log = "0.4.17"
-serde_millis = "0.1.1"
-tracing = { version = "0.1", features = ["log"] }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-libp2p-mplex = "0.41"
-void = "1.0.2"
+[workspace]
+members = [
+    "p2pNetwork",
+    "p2pIntegrationTest",
+]
+resolver = "2"

@@ -5,11 +5,11 @@ use tracing::{error, info};
 
 pub struct BlockProposedEventReceiver {
     taiko: Arc<Taiko>,
-    node_tx: Sender<NodeMessage>,
+    node_tx: Sender<Vec<u8>>,
 }
 
 impl BlockProposedEventReceiver {
-    pub fn new(taiko: Arc<Taiko>, node_tx: Sender<NodeMessage>) -> Self {
+    pub fn new(taiko: Arc<Taiko>, node_tx: Sender<Vec<u8>>) -> Self {
         Self { taiko, node_tx }
     }
 
@@ -28,9 +28,10 @@ impl BlockProposedEventReceiver {
                         "Received block proposed event for block: {}",
                         block_proposed.block_id
                     );
+                    let node_message: Vec<u8> = NodeMessage::BlockProposed(block_proposed).into();
                     if let Err(e) = self
                         .node_tx
-                        .send(NodeMessage::BlockProposed(block_proposed))
+                        .send(node_message)
                         .await
                     {
                         error!("Error sending block proposed event by channel: {:?}", e);

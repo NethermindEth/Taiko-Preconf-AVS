@@ -19,7 +19,6 @@ services:
     environment:
       - ADDRESS=172.16.1.202
       - SEND_PREFIX=node2
-      - LOADBOOT=load
     volumes:
       - shared_volume:/shared
     networks:
@@ -34,7 +33,6 @@ services:
     environment:
       - ADDRESS=172.16.1.203
       - SEND_PREFIX=node3
-      - LOADBOOT=load
     volumes:
       - shared_volume:/shared
     networks:

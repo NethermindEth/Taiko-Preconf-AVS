@@ -3093,7 +3093,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "p2p-network"
+name = "p2p-node"
 version = "0.0.1"
 dependencies = [
  "discv5",
@@ -3106,16 +3106,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "void",
-]
-
-[[package]]
-name = "p2p-node"
-version = "0.0.1"
-dependencies = [
- "p2p-network",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

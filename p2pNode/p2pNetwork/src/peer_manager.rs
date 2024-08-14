@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-use log::{debug, info};
+use tracing::{debug, info};
 
 pub struct PeerManager {
     connected_peers: HashSet<PeerId>,

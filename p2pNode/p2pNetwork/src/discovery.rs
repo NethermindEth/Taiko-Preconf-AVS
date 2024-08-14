@@ -1,4 +1,5 @@
-use super::enr::{build_enr, EnrAsPeerId};
+use crate::enr::{build_enr, EnrAsPeerId};
+use crate::network::P2PNetworkConfig;
 use discv5::enr::NodeId;
 use discv5::{enr::CombinedKey, ConfigBuilder, Discv5, Enr, Event, ListenConfig};
 use futures::stream::FuturesUnordered;
@@ -11,17 +12,18 @@ use libp2p::swarm::THandlerInEvent;
 use libp2p::swarm::{dummy::ConnectionHandler, ConnectionId};
 use libp2p::swarm::{NetworkBehaviour, ToSwarm}; //, NetworkBehaviourAction, PollParameters};
 use libp2p::{Multiaddr, PeerId};
-use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::fs::File;
 use std::future::Future;
 use std::io::Write;
 use std::io::{self, Read};
+use std::path::Path;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tracing::{debug, info, warn};
 
 pub struct Discovery {
     discv5: Discv5,
@@ -58,11 +60,11 @@ fn write_boot_node(enr: &str) -> Result<(), io::Error> {
 }
 
 impl Discovery {
-    pub async fn new(local_key: &Keypair) -> Self {
+    pub async fn new(config: &P2PNetworkConfig, local_key: &Keypair) -> Self {
         // Generate ENR
         let enr_key: CombinedKey = key_from_libp2p(local_key.clone()).unwrap();
 
-        let local_enr = build_enr(&enr_key);
+        let local_enr = build_enr(config, &enr_key);
 
         info!("Node Id: {:?}", local_enr.node_id());
         if local_enr.udp4_socket().is_some() {
@@ -101,8 +103,8 @@ impl Discovery {
         let mut discv5 = Discv5::new(local_enr.clone(), enr_key, config).unwrap();
 
         // Process bootnode
-        let load_boot = std::env::var("LOADBOOT");
-        if load_boot.is_ok() {
+        let path = Path::new(BOOT_NODE_PATH);
+        if path.exists() {
             let bootnode = read_boot_node();
             let bootnode_enr = Enr::from_str(&bootnode.unwrap()).unwrap();
             discv5.add_enr(bootnode_enr).expect("bootnode error");

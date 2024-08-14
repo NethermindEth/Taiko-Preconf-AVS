@@ -1,3 +1,4 @@
+use crate::network::P2PNetworkConfig;
 use discv5::{
     enr::{self, CombinedKey, CombinedPublicKey},
     Enr,
@@ -5,18 +6,11 @@ use discv5::{
 use libp2p::identity::{ed25519, secp256k1, PublicKey};
 use libp2p::PeerId;
 
-pub fn build_enr(combined_key: &CombinedKey) -> Enr {
+pub fn build_enr(config: &P2PNetworkConfig, combined_key: &CombinedKey) -> Enr {
     let mut enr_builder = enr::Enr::builder();
-
-    // Load ADDRESS from env
-    let address = std::env::var("ADDRESS").unwrap_or_else(|_| "0.0.0.0".to_string());
-    println!("ADDRESS: {address:?}");
-    enr_builder.ip4(address.parse().unwrap());
-
-    enr_builder.udp4(9000);
-
-    enr_builder.tcp4(9000);
-
+    enr_builder.ip4(config.ipv4);
+    enr_builder.udp4(config.udpv4);
+    enr_builder.tcp4(config.tcpv4);
     enr_builder.build(combined_key).unwrap()
 }
 

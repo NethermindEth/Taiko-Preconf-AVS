@@ -1,6 +1,6 @@
 use super::block::Block;
 use super::block_proposed::BlockProposed;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum NodeMessage {
@@ -9,9 +9,9 @@ pub enum NodeMessage {
     BlockPerconfirmation(Block),
 }
 
-impl Into<Vec<u8>> for NodeMessage {
-    fn into(self) -> Vec<u8> {
-        bincode::serialize(&self).expect("Serialization failed")
+impl From<NodeMessage> for Vec<u8> {
+    fn from(val: NodeMessage) -> Self {
+        bincode::serialize(&val).expect("Serialization failed")
     }
 }
 
