@@ -2,6 +2,7 @@ pub mod consensus_layer;
 pub mod execution_layer;
 pub mod slot_clock;
 
+use crate::utils::config::ContractAddresses;
 use consensus_layer::ConsensusLayer;
 use execution_layer::ExecutionLayer;
 use slot_clock::SlotClock;
@@ -16,12 +17,12 @@ pub struct EthereumL1 {
 impl EthereumL1 {
     pub async fn new(
         execution_rpc_url: &str,
-        private_key: &str,
-        taiko_preconfirming_address: &str,
+        avs_node_ecdsa_private_key: &str,
+        contract_addresses: &ContractAddresses,
         consensus_rpc_url: &str,
         slot_duration_sec: u64,
         slots_per_epoch: u64,
-        avs_service_manager_contract_address: &str,
+        preconf_registry_expiry_sec: u64,
     ) -> Result<Self, anyhow::Error> {
         let consensus_layer = ConsensusLayer::new(consensus_rpc_url)?;
         let genesis_details = consensus_layer.get_genesis_details().await?;
@@ -34,10 +35,10 @@ impl EthereumL1 {
 
         let execution_layer = ExecutionLayer::new(
             execution_rpc_url,
-            private_key,
-            taiko_preconfirming_address,
+            avs_node_ecdsa_private_key,
+            contract_addresses,
             slot_clock.clone(),
-            avs_service_manager_contract_address,
+            preconf_registry_expiry_sec,
         )?;
 
         Ok(Self {

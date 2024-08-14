@@ -1,24 +1,49 @@
 use super::slot_clock::SlotClock;
+use crate::utils::config;
 use alloy::{
     network::{Ethereum, EthereumWallet, NetworkWallet},
     primitives::{Address, Bytes, FixedBytes, U256},
     providers::ProviderBuilder,
-    signers::local::PrivateKeySigner,
+    signers::{
+        local::{LocalSigner, PrivateKeySigner},
+        SignerSync,
+    },
     sol,
     sol_types::SolValue,
 };
 use anyhow::Error;
 use beacon_api_client::ProposerDuty;
+use ecdsa::SigningKey;
+use k256::Secp256k1;
 use rand_core::{OsRng, RngCore};
 use std::rc::Rc;
 use std::str::FromStr;
 
 pub struct ExecutionLayer {
     rpc_url: reqwest::Url,
+    signer: LocalSigner<SigningKey<Secp256k1>>,
     wallet: EthereumWallet,
-    taiko_preconfirming_address: Address,
+    avs_node_address: Address,
+    contract_addresses: ContractAddresses,
     slot_clock: Rc<SlotClock>,
-    avs_service_manager_contract_address: Address,
+    preconf_registry_expiry_sec: u64,
+}
+
+pub struct ContractAddresses {
+    pub eigen_layer: EigenLayerContractAddresses,
+    pub avs: AvsContractAddresses,
+}
+
+pub struct EigenLayerContractAddresses {
+    pub strategy_manager: Address,
+    pub slasher: Address,
+}
+
+pub struct AvsContractAddresses {
+    pub preconf_task_manager: Address,
+    pub directory: Address,
+    pub service_manager: Address,
+    pub preconf_registry: Address,
 }
 
 sol!(
@@ -80,21 +105,49 @@ sol!(
 impl ExecutionLayer {
     pub fn new(
         rpc_url: &str,
-        private_key: &str,
-        taiko_preconfirming_address: &str,
+        avs_node_ecdsa_private_key: &str,
+        contract_addresses: &config::ContractAddresses,
         slot_clock: Rc<SlotClock>,
-        avs_service_manager_contract_address: &str,
+        preconf_registry_expiry_sec: u64,
     ) -> Result<Self, Error> {
-        let signer = PrivateKeySigner::from_str(private_key)?;
-        let wallet = EthereumWallet::from(signer);
+        tracing::debug!("Creating ExecutionLayer with RPC URL: {}", rpc_url);
+
+        let signer = PrivateKeySigner::from_str(avs_node_ecdsa_private_key)?;
+        let avs_node_address: Address = signer.address();
+        tracing::info!("AVS node address: {}", avs_node_address);
+
+        let wallet = EthereumWallet::from(signer.clone());
+
+        let contract_addresses = Self::parse_contract_addresses(contract_addresses)
+            .map_err(|e| Error::msg(format!("Failed to parse contract addresses: {}", e)))?;
 
         Ok(Self {
             rpc_url: rpc_url.parse()?,
+            signer,
             wallet,
-            taiko_preconfirming_address: taiko_preconfirming_address.parse()?,
+            avs_node_address,
+            contract_addresses,
             slot_clock,
-            avs_service_manager_contract_address: avs_service_manager_contract_address.parse()?,
+            preconf_registry_expiry_sec,
         })
+    }
+
+    fn parse_contract_addresses(
+        contract_addresses: &config::ContractAddresses,
+    ) -> Result<ContractAddresses, Error> {
+        let eigen_layer = EigenLayerContractAddresses {
+            strategy_manager: contract_addresses.eigen_layer.strategy_manager.parse()?,
+            slasher: contract_addresses.eigen_layer.slasher.parse()?,
+        };
+
+        let avs = AvsContractAddresses {
+            preconf_task_manager: contract_addresses.avs.preconf_task_manager.parse()?,
+            directory: contract_addresses.avs.directory.parse()?,
+            service_manager: contract_addresses.avs.service_manager.parse()?,
+            preconf_registry: contract_addresses.avs.preconf_registry.parse()?,
+        };
+
+        Ok(ContractAddresses { eigen_layer, avs })
     }
 
     pub async fn propose_new_block(
@@ -108,7 +161,8 @@ impl ExecutionLayer {
             .wallet(self.wallet.clone())
             .on_http(self.rpc_url.clone());
 
-        let contract = PreconfTaskManager::new(self.taiko_preconfirming_address, provider);
+        let contract =
+            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
 
         let block_params = BlockParams {
             assignedProver: Address::ZERO,
@@ -155,8 +209,10 @@ impl ExecutionLayer {
             .wallet(self.wallet.clone())
             .on_http(self.rpc_url.clone());
 
-        let strategy_manager =
-            StrategyManager::new(self.taiko_preconfirming_address, provider.clone());
+        let strategy_manager = StrategyManager::new(
+            self.contract_addresses.eigen_layer.strategy_manager,
+            provider.clone(),
+        );
         let tx_hash = strategy_manager
             .depositIntoStrategy(Address::ZERO, Address::ZERO, U256::from(1))
             .send()
@@ -165,34 +221,50 @@ impl ExecutionLayer {
             .await?;
         tracing::debug!("Deposited into strategy: {tx_hash}");
 
-        let slasher = Slasher::new(self.taiko_preconfirming_address, provider);
+        let slasher = Slasher::new(
+            self.contract_addresses.eigen_layer.slasher,
+            provider.clone(),
+        );
         let tx_hash = slasher
-            .optIntoSlashing(self.avs_service_manager_contract_address)
+            .optIntoSlashing(self.contract_addresses.avs.service_manager)
             .send()
             .await?
             .watch()
             .await?;
         tracing::debug!("Opted into slashing: {tx_hash}");
 
-        let mut os_rng = OsRng {};
-        let salt: [u8; 32] = os_rng.next_u32().to_le_bytes();
-        let avs_directory = AVSDirectory::new(self.taiko_preconfirming_address, provider);
-        let digest_hash = avs_directory.calculateOperatorAVSRegistrationDigestHash(
-            self.taiko_preconfirming_address, //?
-            self.avs_service_manager_contract_address,
-        );
+        let salt = Self::create_random_salt();
+        let avs_directory =
+            AVSDirectory::new(self.contract_addresses.avs.directory, provider.clone());
+        let digest_hash = avs_directory
+            .calculateOperatorAVSRegistrationDigestHash(
+                self.avs_node_address,
+                self.contract_addresses.avs.service_manager,
+                salt,
+                U256::from(0),
+            )
+            .send()
+            .await?
+            .watch()
+            .await?;
+
+        let digest_hash_bytes = digest_hash.to_vec();
 
         // sign the digest hash with private key
+        let signature = self.signer.sign_message_sync(&digest_hash_bytes)?;
 
-        let signature = PreconfRegistry::SignatureWithSaltAndExpiry {
-            signature: Bytes::from(vec![0; 32]),
-            salt: FixedBytes::from(&[0u8; 32]),
-            expiry: U256::from(0),
+        let signature_with_salt_and_expiry = PreconfRegistry::SignatureWithSaltAndExpiry {
+            signature: Bytes::from(signature.as_bytes()),
+            salt,
+            expiry: U256::from(
+                chrono::Utc::now().timestamp() as u64 + self.preconf_registry_expiry_sec,
+            ),
         };
 
-        let preconf_registry = PreconfRegistry::new(self.taiko_preconfirming_address, provider);
+        let preconf_registry =
+            PreconfRegistry::new(self.contract_addresses.avs.preconf_registry, provider);
         let tx_hash = preconf_registry
-            .registerPreconfer(signature)
+            .registerPreconfer(signature_with_salt_and_expiry)
             .send()
             .await?
             .watch()
@@ -202,23 +274,42 @@ impl ExecutionLayer {
         Ok(())
     }
 
+    fn create_random_salt() -> FixedBytes<32> {
+        let mut salt: [u8; 32] = [0u8; 32];
+        let mut os_rng = OsRng {};
+        os_rng.fill_bytes(&mut salt);
+        FixedBytes::from(&salt)
+    }
+
     #[cfg(test)]
     pub fn new_from_pk(
         rpc_url: reqwest::Url,
         private_key: elliptic_curve::SecretKey<k256::Secp256k1>,
     ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_signing_key(private_key.into());
-        let wallet = EthereumWallet::from(signer);
+        let wallet = EthereumWallet::from(signer.clone());
         let clock = SlotClock::new(0u64, 0u64, 12u64, 32u64);
 
         Ok(Self {
             rpc_url,
+            signer,
             wallet,
-            taiko_preconfirming_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
+            avs_node_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
                 .parse()?,
             slot_clock: Rc::new(clock),
-            avs_service_manager_contract_address: "0x1234567890abcdef1234567890abcdef12345678"
-                .parse()?, // some random address for test
+            contract_addresses: ContractAddresses {
+                eigen_layer: EigenLayerContractAddresses {
+                    strategy_manager: Address::ZERO,
+                    slasher: Address::ZERO,
+                },
+                avs: AvsContractAddresses {
+                    preconf_task_manager: Address::ZERO,
+                    directory: Address::ZERO,
+                    service_manager: Address::ZERO,
+                    preconf_registry: Address::ZERO,
+                },
+            },
+            preconf_registry_expiry_sec: 120,
         })
     }
 

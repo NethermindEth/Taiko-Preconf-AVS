@@ -29,12 +29,12 @@ async fn main() -> Result<(), Error> {
     ));
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
         &config.mev_boost_url,
-        &config.ethereum_private_key,
-        &config.taiko_preconfirming_address,
+        &config.avs_node_ecdsa_private_key,
+        &config.contract_addresses,
         &config.l1_beacon_url,
         config.l1_slot_duration_sec,
         config.l1_slots_per_epoch,
-        &config.avs_service_manager_contract_address,
+        config.preconf_registry_expiry_sec,
     )
     .await?;
     let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url);
@@ -48,7 +48,7 @@ async fn main() -> Result<(), Error> {
         ethereum_l1,
         mev_boost,
         config.l2_slot_duration_sec,
-        config.validator_pubkey,
+        config.validator_bls_pubkey,
     )
     .await?;
     node.entrypoint().await?;
