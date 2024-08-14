@@ -9,6 +9,7 @@ use alloy::{
 };
 use anyhow::Error;
 use beacon_api_client::ProposerDuty;
+use rand_core::{OsRng, RngCore};
 use std::rc::Rc;
 use std::str::FromStr;
 
@@ -60,6 +61,20 @@ sol!(
     #[sol(rpc)]
     Slasher,
     "src/ethereum_l1/abi/Slasher.json"
+);
+
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    AVSDirectory,
+    "src/ethereum_l1/abi/AVSDirectory.json"
+);
+
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    PreconfRegistry,
+    "src/ethereum_l1/abi/PreconfRegistry.json"
 );
 
 impl ExecutionLayer {
@@ -158,6 +173,31 @@ impl ExecutionLayer {
             .watch()
             .await?;
         tracing::debug!("Opted into slashing: {tx_hash}");
+
+        let mut os_rng = OsRng {};
+        let salt: [u8; 32] = os_rng.next_u32().to_le_bytes();
+        let avs_directory = AVSDirectory::new(self.taiko_preconfirming_address, provider);
+        let digest_hash = avs_directory.calculateOperatorAVSRegistrationDigestHash(
+            self.taiko_preconfirming_address, //?
+            self.avs_service_manager_contract_address,
+        );
+
+        // sign the digest hash with private key
+
+        let signature = PreconfRegistry::SignatureWithSaltAndExpiry {
+            signature: Bytes::from(vec![0; 32]),
+            salt: FixedBytes::from(&[0u8; 32]),
+            expiry: U256::from(0),
+        };
+
+        let preconf_registry = PreconfRegistry::new(self.taiko_preconfirming_address, provider);
+        let tx_hash = preconf_registry
+            .registerPreconfer(signature)
+            .send()
+            .await?
+            .watch()
+            .await?;
+        tracing::debug!("Registered preconfirming: {tx_hash}");
 
         Ok(())
     }

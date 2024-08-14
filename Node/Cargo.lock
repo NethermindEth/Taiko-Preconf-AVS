@@ -4166,6 +4166,7 @@ dependencies = [
  "k256 0.13.3",
  "lazy_static",
  "mockito",
+ "rand_core 0.6.4",
  "reqwest 0.12.5",
  "secp256k1",
  "serde",
