@@ -236,12 +236,14 @@ impl ExecutionLayer {
         let salt = Self::create_random_salt();
         let avs_directory =
             AVSDirectory::new(self.contract_addresses.avs.directory, provider.clone());
+        let expiration_timestamp =
+            U256::from(chrono::Utc::now().timestamp() as u64 + self.preconf_registry_expiry_sec);
         let digest_hash = avs_directory
             .calculateOperatorAVSRegistrationDigestHash(
                 self.avs_node_address,
                 self.contract_addresses.avs.service_manager,
                 salt,
-                U256::from(0),
+                expiration_timestamp,
             )
             .send()
             .await?
@@ -256,9 +258,7 @@ impl ExecutionLayer {
         let signature_with_salt_and_expiry = PreconfRegistry::SignatureWithSaltAndExpiry {
             signature: Bytes::from(signature.as_bytes()),
             salt,
-            expiry: U256::from(
-                chrono::Utc::now().timestamp() as u64 + self.preconf_registry_expiry_sec,
-            ),
+            expiry: expiration_timestamp,
         };
 
         let preconf_registry =
