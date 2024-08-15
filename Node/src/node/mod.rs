@@ -4,7 +4,7 @@ use crate::{
         EthereumL1,
     },
     mev_boost::MevBoost,
-    taiko::Taiko,
+    taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::{block_proposed::BlockProposed, commit::L2TxListsCommit, node_message::NodeMessage},
 };
 use anyhow::{anyhow as any_err, Error};
@@ -124,7 +124,7 @@ impl Node {
         if let Some(block) = preconfirmed_blocks.get(&block_proposed.block_id) {
             //TODO: verify the signature?
 
-            if block.tx_list_hash != block_proposed.tx_list_hash {
+            if block.commit_hash != block_proposed.tx_list_hash {
                 info!(
                     "Block tx_list_hash is not correct for block_id: {}. Calling proof of incorrect preconfirmation.",
                     block_proposed.block_id
@@ -133,7 +133,7 @@ impl Node {
                     .execution_layer
                     .prove_incorrect_preconfirmation(
                         block_proposed.block_id,
-                        block.tx_list_hash,
+                        block.commit_hash,
                         block.signature,
                     )
                     .await?;
@@ -199,7 +199,8 @@ impl Node {
         }
 
         let new_block_height = pending_tx_lists.parent_block_id + 1;
-        let commit = L2TxListsCommit::new(&pending_tx_lists, new_block_height);
+        let (commit_hash, signature) =
+            self.generate_commit_hash_and_signature(&pending_tx_lists, new_block_height)?;
 
         self.send_preconfirmations_to_the_avs_p2p().await?;
         self.taiko
@@ -217,12 +218,27 @@ impl Node {
         self.preconfirmed_blocks.lock().await.insert(
             new_block_height,
             Block {
-                tx_list_hash: commit.hash()?,
-                signature: [0; 96], // TODO: get the signature from the web3signer
+                commit_hash,
+                signature,
             },
         );
 
         Ok(())
+    }
+
+    // TODO: use web3signer to sign the message
+    fn generate_commit_hash_and_signature(
+        &self,
+        reply: &RPCReplyL2TxLists,
+        block_height: u64,
+    ) -> Result<([u8; 32], [u8; 65]), Error> {
+        let commit = L2TxListsCommit::new(reply, block_height);
+        let hash = commit.hash()?;
+        let signature = self
+            .ethereum_l1
+            .execution_layer
+            .sign_message_with_private_ecdsa_key(&hash[..])?;
+        Ok((hash, signature))
     }
 
     async fn clean_old_blocks(

@@ -281,18 +281,24 @@ impl ExecutionLayer {
         FixedBytes::from(&salt)
     }
 
+    pub fn sign_message_with_private_ecdsa_key(&self, msg: &[u8]) -> Result<[u8; 65], Error> {
+        let signature = self.signer.sign_message_sync(msg)?;
+        Ok(signature.as_bytes())
+    }
+
     pub async fn prove_incorrect_preconfirmation(
         &self,
         _block_id: u64,
         _tx_list_hash: [u8; 32],
-        _signture: [u8; 96],
+        _signture: [u8; 65],
     ) -> Result<(), Error> {
         let provider = ProviderBuilder::new()
             .with_recommended_fillers()
             .wallet(self.wallet.clone())
             .on_http(self.rpc_url.clone());
 
-        let _contract = PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
+        let _contract =
+            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
         // TODO: waiting for the new contract ABI
         // let builder = contract.proveIncorrectPreconfirmation(U256::from(block_id), tx_list_hash, signature);
 
