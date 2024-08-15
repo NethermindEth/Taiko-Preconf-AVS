@@ -2,7 +2,7 @@ use anyhow::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub struct RPCReplyL2TxLists {
     pub tx_lists: Value, // TODO: decode and create tx_list_bytes on AVS node side
@@ -10,6 +10,8 @@ pub struct RPCReplyL2TxLists {
     pub tx_list_bytes: Vec<Vec<u8>>,
     #[serde(deserialize_with = "deserialize_parent_meta_hash")]
     pub parent_meta_hash: [u8; 32],
+    #[serde(rename = "ParentBlockID")]
+    pub parent_block_id: u64,
 }
 
 fn deserialize_tx_lists_bytes<'de, D>(deserializer: D) -> Result<Vec<Vec<u8>>, D::Error>
@@ -69,5 +71,6 @@ mod tests {
         assert_eq!(result.tx_list_bytes.len(), 1);
         assert_eq!(result.tx_list_bytes[0].len(), 492);
         assert_eq!(result.parent_meta_hash.len(), 32);
+        assert_eq!(result.parent_block_id, 1234);
     }
 }

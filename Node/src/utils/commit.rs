@@ -12,12 +12,12 @@ pub struct L2TxListsCommit {
     pub block_height: u64,
 }
 
-impl From<RPCReplyL2TxLists> for L2TxListsCommit {
-    fn from(reply: RPCReplyL2TxLists) -> Self {
+impl L2TxListsCommit {
+    pub fn new(reply: &RPCReplyL2TxLists, block_height: u64) -> Self {
         L2TxListsCommit {
             tx_list_bytes: reply.tx_list_bytes[0].clone(), // TODO check for other indexes
             parent_meta_hash: reply.parent_meta_hash,
-            block_height: 1, //TODO add to the replay
+            block_height,
         }
     }
 }
