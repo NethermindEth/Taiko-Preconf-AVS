@@ -16,8 +16,8 @@ use beacon_api_client::ProposerDuty;
 use ecdsa::SigningKey;
 use k256::Secp256k1;
 use rand_core::{OsRng, RngCore};
-use std::rc::Rc;
 use std::str::FromStr;
+use std::sync::Arc;
 
 pub struct ExecutionLayer {
     rpc_url: reqwest::Url,
@@ -25,7 +25,7 @@ pub struct ExecutionLayer {
     wallet: EthereumWallet,
     avs_node_address: Address,
     contract_addresses: ContractAddresses,
-    slot_clock: Rc<SlotClock>,
+    slot_clock: Arc<SlotClock>,
     preconf_registry_expiry_sec: u64,
 }
 
@@ -107,7 +107,7 @@ impl ExecutionLayer {
         rpc_url: &str,
         avs_node_ecdsa_private_key: &str,
         contract_addresses: &config::ContractAddresses,
-        slot_clock: Rc<SlotClock>,
+        slot_clock: Arc<SlotClock>,
         preconf_registry_expiry_sec: u64,
     ) -> Result<Self, Error> {
         tracing::debug!("Creating ExecutionLayer with RPC URL: {}", rpc_url);
@@ -281,6 +281,26 @@ impl ExecutionLayer {
         FixedBytes::from(&salt)
     }
 
+    pub async fn prove_incorrect_preconfirmation(
+        &self,
+        _block_id: u64,
+        _tx_list_hash: [u8; 32],
+        _signture: [u8; 96],
+    ) -> Result<(), Error> {
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.wallet.clone())
+            .on_http(self.rpc_url.clone());
+
+        let _contract = PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
+        // TODO: waiting for the new contract ABI
+        // let builder = contract.proveIncorrectPreconfirmation(U256::from(block_id), tx_list_hash, signature);
+
+        let tx_hash = FixedBytes::<32>::default(); // builder.send().await?.watch().await?;
+        tracing::debug!("Proved incorrect preconfirmation: {tx_hash}");
+        Ok(())
+    }
+
     #[cfg(test)]
     pub fn new_from_pk(
         rpc_url: reqwest::Url,
@@ -296,7 +316,7 @@ impl ExecutionLayer {
             wallet,
             avs_node_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
                 .parse()?,
-            slot_clock: Rc::new(clock),
+            slot_clock: Arc::new(clock),
             contract_addresses: ContractAddresses {
                 eigen_layer: EigenLayerContractAddresses {
                     strategy_manager: Address::ZERO,

@@ -27,16 +27,18 @@ async fn main() -> Result<(), Error> {
         &config.taiko_driver_url,
         config.block_proposed_receiver_timeout_sec,
     ));
-    let ethereum_l1 = ethereum_l1::EthereumL1::new(
-        &config.mev_boost_url,
-        &config.avs_node_ecdsa_private_key,
-        &config.contract_addresses,
-        &config.l1_beacon_url,
-        config.l1_slot_duration_sec,
-        config.l1_slots_per_epoch,
-        config.preconf_registry_expiry_sec,
-    )
-    .await?;
+    let ethereum_l1 = Arc::new(
+        ethereum_l1::EthereumL1::new(
+            &config.mev_boost_url,
+            &config.avs_node_ecdsa_private_key,
+            &config.contract_addresses,
+            &config.l1_beacon_url,
+            config.l1_slot_duration_sec,
+            config.l1_slots_per_epoch,
+            config.preconf_registry_expiry_sec,
+        )
+        .await?,
+    );
     let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url);
     let block_proposed_event_checker =
         BlockProposedEventReceiver::new(taiko.clone(), node_tx.clone());
