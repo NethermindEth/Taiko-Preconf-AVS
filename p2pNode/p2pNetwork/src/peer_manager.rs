@@ -261,49 +261,50 @@ impl PeerManager {
 
     fn on_connection_established(&mut self, peer_id: PeerId) {
         info!("Connection established with peer {}", peer_id);
-        let peer_data = self.peer_data.get_mut(&peer_id).unwrap();
-        // TODO check connection_data
-        if peer_data.connection_history.is_empty() {
-            peer_data.connection_history.push(ConnectionData {
-                established_timestamp: Some(Instant::now()),
-                failure_timestamp: None,
-                disconnect_timestamp: None,
-                connection_status: ConnectionStatus::Connected,
-                dial_timestamp: Instant::now(),
-            });
-        } else {
-            let connection_data = peer_data
-                .connection_history
-                .last_mut()
-                .expect("Missing connectio_data entry for established peer");
-            connection_data.established_timestamp = Some(Instant::now());
-            connection_data.connection_status = ConnectionStatus::Connected;
+        if let Some(peer_data) = self.peer_data.get_mut(&peer_id) {
+            // TODO check connection_data
+            if peer_data.connection_history.is_empty() {
+                peer_data.connection_history.push(ConnectionData {
+                    established_timestamp: Some(Instant::now()),
+                    failure_timestamp: None,
+                    disconnect_timestamp: None,
+                    connection_status: ConnectionStatus::Connected,
+                    dial_timestamp: Instant::now(),
+                });
+            } else {
+                let connection_data = peer_data
+                    .connection_history
+                    .last_mut()
+                    .expect("Missing connectio_data entry for established peer");
+                connection_data.established_timestamp = Some(Instant::now());
+                connection_data.connection_status = ConnectionStatus::Connected;
+            }
         }
-
         self.connected_peers.insert(peer_id);
         self.dialling_peers.remove(&peer_id);
     }
 
     fn on_connection_closed(&mut self, peer_id: PeerId) {
         info!("Connection closed with peer {}", peer_id);
-        let peer_data = self.peer_data.get_mut(&peer_id).unwrap();
-        // TODO check connection_data
-        if peer_data.connection_history.is_empty() {
-            peer_data.connection_history.push(ConnectionData {
-                established_timestamp: None,
-                failure_timestamp: None,
-                disconnect_timestamp: Some(Instant::now()),
-                connection_status: ConnectionStatus::Disconnected,
-                dial_timestamp: Instant::now(),
-            })
-        } else {
-            let connection_data = peer_data
-                .connection_history
-                .last_mut()
-                .expect("Missing connectio_data entry for established peer");
-            connection_data.connection_status = ConnectionStatus::Disconnected;
-            connection_data.disconnect_timestamp = Some(Instant::now());
-            PeerManager::update_average_connection_duration(peer_data);
+        if let Some(peer_data) = self.peer_data.get_mut(&peer_id) {
+            // TODO check connection_data
+            if peer_data.connection_history.is_empty() {
+                peer_data.connection_history.push(ConnectionData {
+                    established_timestamp: None,
+                    failure_timestamp: None,
+                    disconnect_timestamp: Some(Instant::now()),
+                    connection_status: ConnectionStatus::Disconnected,
+                    dial_timestamp: Instant::now(),
+                })
+            } else {
+                let connection_data = peer_data
+                    .connection_history
+                    .last_mut()
+                    .expect("Missing connectio_data entry for established peer");
+                connection_data.connection_status = ConnectionStatus::Disconnected;
+                connection_data.disconnect_timestamp = Some(Instant::now());
+                PeerManager::update_average_connection_duration(peer_data);
+            }
         }
         self.connected_peers.remove(&peer_id);
     }
@@ -311,15 +312,16 @@ impl PeerManager {
     fn on_dial_failure(&mut self, peer_id: Option<PeerId>) {
         info!("Dialling failed for peer: {:?}", peer_id);
         if let Some(peer_id) = peer_id {
-            let peer_data = self.peer_data.get_mut(&peer_id).unwrap();
-            // TODO check connection_data
-            let connection_data = peer_data
-                .connection_history
-                .last_mut()
-                .expect("Missing connectio_data entry for established peer");
-            connection_data.connection_status = ConnectionStatus::Failed;
-            connection_data.failure_timestamp = Some(Instant::now());
-            PeerManager::update_average_connection_duration(peer_data);
+            if let Some(peer_data) = self.peer_data.get_mut(&peer_id) {
+                // TODO check connection_data
+                let connection_data = peer_data
+                    .connection_history
+                    .last_mut()
+                    .expect("Missing connectio_data entry for established peer");
+                connection_data.connection_status = ConnectionStatus::Failed;
+                connection_data.failure_timestamp = Some(Instant::now());
+                PeerManager::update_average_connection_duration(peer_data);
+            }
             self.dialling_peers.remove(&peer_id);
         }
     }

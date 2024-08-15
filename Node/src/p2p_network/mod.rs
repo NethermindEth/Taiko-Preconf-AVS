@@ -26,6 +26,7 @@ impl AVSp2p {
         let address = std::env::var("ADDRESS").unwrap_or_else(|_| "0.0.0.0".to_string());
         let ipv4 = address.parse().unwrap();
         info!("Node ipv4 address: {address:?}");
+        // TODO: load bootnodes
 
         let config = P2PNetworkConfig {
             local_key: generate_secp256k1(),
@@ -33,6 +34,7 @@ impl AVSp2p {
             ipv4,
             udpv4: 9000,
             tcpv4: 9000,
+            boot_nodes: None,
         };
 
         let mut p2p = P2PNetwork::new(&config, self.node_tx.clone(), self.avs_p2p_rx).await;

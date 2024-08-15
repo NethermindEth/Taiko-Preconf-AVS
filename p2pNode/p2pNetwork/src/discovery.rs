@@ -13,11 +13,7 @@ use libp2p::swarm::{dummy::ConnectionHandler, ConnectionId};
 use libp2p::swarm::{NetworkBehaviour, ToSwarm};
 use libp2p::{Multiaddr, PeerId};
 use std::collections::HashMap;
-use std::fs::File;
 use std::future::Future;
-use std::io::Write;
-use std::io::{self, Read};
-use std::path::Path;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::task::{Context, Poll};
@@ -39,24 +35,6 @@ type DiscResult = Result<Vec<discv5::enr::Enr<CombinedKey>>, discv5::QueryError>
 #[derive(Debug, Clone)]
 pub struct DiscoveredPeers {
     pub peers: HashMap<PeerId, Option<Multiaddr>>,
-}
-
-const BOOT_NODE_PATH: &str = "/shared/enr.txt";
-
-fn read_boot_node() -> Result<String, io::Error> {
-    info!("Reading boot node from {}", BOOT_NODE_PATH);
-    let mut file = File::open(BOOT_NODE_PATH)?;
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
-    info!("Boot node: {}", contents);
-    Ok(contents)
-}
-
-fn write_boot_node(enr: &str) -> Result<(), io::Error> {
-    info!("Writing boot node to {} end {}", BOOT_NODE_PATH, enr);
-    let mut file = File::create(BOOT_NODE_PATH)?;
-    file.write_all(enr.as_bytes())?;
-    Ok(())
 }
 
 impl Discovery {
@@ -85,7 +63,7 @@ impl Discovery {
         };
 
         // Setup default config
-        let config = ConfigBuilder::new(listen_config)
+        let discv5_config = ConfigBuilder::new(listen_config)
             .enable_packet_filter()
             .request_timeout(Duration::from_secs(30))
             .query_peer_timeout(Duration::from_secs(30))
@@ -100,17 +78,20 @@ impl Discovery {
             .build();
 
         // Create discv5 instance
-        let mut discv5 = Discv5::new(local_enr.clone(), enr_key, config).unwrap();
+        let mut discv5 = Discv5::new(local_enr.clone(), enr_key, discv5_config).unwrap();
 
         // Process bootnode
-        // TODO Move to a config file
-        let path = Path::new(BOOT_NODE_PATH);
-        if path.exists() {
-            let bootnode = read_boot_node();
-            let bootnode_enr = Enr::from_str(&bootnode.unwrap()).unwrap();
-            discv5.add_enr(bootnode_enr).expect("bootnode error");
+        if let Some(vec) = config.boot_nodes.clone() {
+            for enr_str in vec {
+                if let Ok(bootnode_enr) = Enr::from_str(&enr_str) {
+                    info!("Add boot node ENR: {}", enr_str);
+                    discv5.add_enr(bootnode_enr).expect("Add bootnode error");
+                } else {
+                    warn!("Failed to parse bootnode ENR: {}", enr_str);
+                }
+            }
         } else {
-            let _ = write_boot_node(&local_enr.to_base64());
+            info!("No bootnodes specified");
         }
 
         // Start the discv5 service
@@ -141,6 +122,10 @@ impl Discovery {
         let peers_enr = self.discv5.find_node_predicate(target, predicate, count);
 
         self.peers_future.push(Box::pin(peers_enr));
+    }
+
+    pub fn get_local_enr(&self) -> String {
+        self.discv5.local_enr().to_base64()
     }
 
     fn get_peers(&mut self, cx: &mut Context) -> Option<DiscoveredPeers> {

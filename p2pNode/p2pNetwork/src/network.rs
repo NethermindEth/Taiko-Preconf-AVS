@@ -19,6 +19,7 @@ pub struct P2PNetworkConfig {
     pub ipv4: Ipv4Addr,
     pub udpv4: u16,
     pub tcpv4: u16,
+    pub boot_nodes: Option<Vec<String>>,
 }
 #[derive(NetworkBehaviour)]
 struct SwarmBehaviour {
@@ -120,6 +121,10 @@ impl P2PNetwork {
             swarm,
             topic_name,
         }
+    }
+
+    pub fn get_local_enr(&self) -> String {
+        self.swarm.behaviour().discovery.get_local_enr()
     }
 
     pub async fn run(&mut self, config: &P2PNetworkConfig) {
