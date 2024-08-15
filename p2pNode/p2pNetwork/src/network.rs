@@ -7,6 +7,7 @@ use libp2p::{gossipsub, identify, identity, noise, PeerId};
 use libp2p::{Multiaddr, SwarmBuilder};
 use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use std::collections::hash_map::DefaultHasher;
+use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::net::Ipv4Addr;
 use std::time::Duration;
@@ -34,6 +35,20 @@ pub struct P2PNetwork {
     avs_p2p_rx: Receiver<Vec<u8>>,
     swarm: libp2p::Swarm<SwarmBehaviour>,
     topic_name: String,
+}
+
+impl fmt::Display for P2PNetworkConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "P2PNetworkConfig {{\n  listen_addr: {},\n  ipv4: {},\n  udpv4: {},\n  tcpv4: {},\n  boot_nodes: {:?}\n}}",
+            self.listen_addr,
+            self.ipv4,
+            self.udpv4,
+            self.tcpv4,
+            self.boot_nodes
+        )
+    }
 }
 
 impl P2PNetwork {

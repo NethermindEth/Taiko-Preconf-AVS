@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut p2p = P2PNetwork::new(&config, node_tx.clone(), avs_p2p_rx).await;
 
     // Save boot node if it is not specified in shared directory
-    if let None = config.boot_nodes {
+    if config.boot_nodes.is_none() {
         write_boot_node(&p2p.get_local_enr()).unwrap();
     }
 

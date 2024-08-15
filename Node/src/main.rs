@@ -20,7 +20,7 @@ async fn main() -> Result<(), Error> {
     let (avs_p2p_tx, avs_p2p_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
     let (node_tx, node_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
     let p2p = p2p_network::AVSp2p::new(node_tx.clone(), avs_p2p_rx);
-    p2p.start().await;
+    p2p.start(config.p2p_network_config).await;
     let taiko = Arc::new(taiko::Taiko::new(
         &config.taiko_proposer_url,
         &config.taiko_driver_url,
