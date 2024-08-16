@@ -1,0 +1,50 @@
+services:
+  node1:
+    image: nodep2p
+    container_name: node1
+    environment:
+      - ADDRESS=172.16.1.201
+      - SEND_PREFIX=node1
+    volumes:
+      - shared_volume:/shared
+    networks:
+      p2p_network:
+        ipv4_address: 172.16.1.201
+
+  node2:
+    image: nodep2p
+    depends_on:
+      - node1
+    container_name: node2
+    environment:
+      - ADDRESS=172.16.1.202
+      - SEND_PREFIX=node2
+    volumes:
+      - shared_volume:/shared
+    networks:
+      p2p_network:
+        ipv4_address: 172.16.1.202
+
+  node3:
+    image: nodep2p
+    depends_on:
+      - node1
+    container_name: node3
+    environment:
+      - ADDRESS=172.16.1.203
+      - SEND_PREFIX=node3
+    volumes:
+      - shared_volume:/shared
+    networks:
+      p2p_network:
+        ipv4_address: 172.16.1.203
+
+networks:
+  p2p_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.16.1.0/24
+
+volumes:
+  shared_volume:

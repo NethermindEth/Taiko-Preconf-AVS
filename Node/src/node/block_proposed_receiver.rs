@@ -1,15 +1,16 @@
-use crate::{taiko::Taiko, utils::node_message::NodeMessage};
+use crate::taiko::Taiko;
+use crate::utils::block_proposed::BlockProposed;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info};
 
 pub struct BlockProposedEventReceiver {
     taiko: Arc<Taiko>,
-    node_tx: Sender<NodeMessage>,
+    node_tx: Sender<BlockProposed>,
 }
 
 impl BlockProposedEventReceiver {
-    pub fn new(taiko: Arc<Taiko>, node_tx: Sender<NodeMessage>) -> Self {
+    pub fn new(taiko: Arc<Taiko>, node_tx: Sender<BlockProposed>) -> Self {
         Self { taiko, node_tx }
     }
 
@@ -28,11 +29,7 @@ impl BlockProposedEventReceiver {
                         "Received block proposed event for block: {}",
                         block_proposed.block_id
                     );
-                    if let Err(e) = self
-                        .node_tx
-                        .send(NodeMessage::BlockProposed(block_proposed))
-                        .await
-                    {
+                    if let Err(e) = self.node_tx.send(block_proposed).await {
                         error!("Error sending block proposed event by channel: {:?}", e);
                     }
                 }

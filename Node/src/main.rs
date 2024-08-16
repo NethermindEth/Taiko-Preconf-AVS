@@ -9,7 +9,6 @@ use anyhow::Error;
 use node::block_proposed_receiver::BlockProposedEventReceiver;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use utils::node_message::NodeMessage;
 
 const MESSAGE_QUEUE_SIZE: usize = 100;
 
@@ -18,10 +17,11 @@ async fn main() -> Result<(), Error> {
     init_logging();
     let config = utils::config::Config::read_env_variables();
 
-    let (avs_p2p_tx, avs_p2p_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
-    let (node_tx, node_rx) = mpsc::channel::<NodeMessage>(MESSAGE_QUEUE_SIZE);
-    let p2p = p2p_network::AVSp2p::new(node_tx.clone(), avs_p2p_rx);
-    p2p.start();
+    let (node_to_p2p_tx, node_to_p2p_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
+    let (p2p_to_node_tx, p2p_to_node_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
+    let (node_tx, node_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
+    let p2p = p2p_network::AVSp2p::new(p2p_to_node_tx.clone(), node_to_p2p_rx);
+    p2p.start(config.p2p_network_config).await;
     let taiko = Arc::new(taiko::Taiko::new(
         &config.taiko_proposer_url,
         &config.taiko_driver_url,
@@ -44,7 +44,8 @@ async fn main() -> Result<(), Error> {
     BlockProposedEventReceiver::start(block_proposed_event_checker).await;
     let node = node::Node::new(
         node_rx,
-        avs_p2p_tx,
+        node_to_p2p_tx,
+        p2p_to_node_rx,
         taiko,
         ethereum_l1,
         mev_boost,

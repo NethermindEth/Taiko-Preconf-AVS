@@ -1,3 +1,5 @@
+use p2p_network::generate_secp256k1;
+use p2p_network::network::P2PNetworkConfig;
 use tracing::{info, warn};
 
 pub struct Config {
@@ -12,6 +14,7 @@ pub struct Config {
     pub l2_slot_duration_sec: u64,
     pub validator_pubkey: String,
     pub block_proposed_receiver_timeout_sec: u64,
+    pub p2p_network_config: P2PNetworkConfig,
 }
 
 impl Config {
@@ -70,6 +73,29 @@ impl Config {
                 .parse::<u64>()
                 .expect("BLOCK_PROPOSED_RECEIVER_TIMEOUT_SEC must be a number");
 
+        // Load P2P config from env
+        // Load Ipv4 address from env
+        let address = std::env::var("ADDRESS").unwrap_or_else(|_| "0.0.0.0".to_string());
+        let ipv4 = address.parse().unwrap();
+
+        // Load boot node from env
+        let boot_nodes: Option<Vec<String>> =
+            if let Ok(bootnode_enr) = std::env::var("BOOTNODE_ENR") {
+                Some(vec![bootnode_enr])
+            } else {
+                None
+            };
+
+        // Create P2P network config
+        let p2p_network_config: P2PNetworkConfig = P2PNetworkConfig {
+            local_key: generate_secp256k1(),
+            listen_addr: "/ip4/0.0.0.0/tcp/9000".parse().unwrap(),
+            ipv4,
+            udpv4: 9000,
+            tcpv4: 9000,
+            boot_nodes,
+        };
+
         let config = Self {
             taiko_proposer_url: std::env::var("TAIKO_PROPOSER_URL")
                 .unwrap_or_else(|_| "http://127.0.0.1:1234".to_string()),
@@ -100,6 +126,7 @@ impl Config {
             l2_slot_duration_sec,
             validator_pubkey,
             block_proposed_receiver_timeout_sec,
+            p2p_network_config,
         };
 
         info!(
@@ -115,6 +142,7 @@ L1 slots per epoch: {}
 L2 slot duration: {}
 Validator pubkey: {}
 Block proposed receiver timeout: {}
+p2p_network_config: {}
 "#,
             config.taiko_proposer_url,
             config.taiko_driver_url,
@@ -125,7 +153,8 @@ Block proposed receiver timeout: {}
             config.l1_slots_per_epoch,
             config.l2_slot_duration_sec,
             config.validator_pubkey,
-            config.block_proposed_receiver_timeout_sec
+            config.block_proposed_receiver_timeout_sec,
+            config.p2p_network_config,
         );
 
         config

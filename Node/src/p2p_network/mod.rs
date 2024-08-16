@@ -1,40 +1,29 @@
-use crate::utils::node_message::NodeMessage;
+use p2p_network::network::{P2PNetwork, P2PNetworkConfig};
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::task;
 use tracing::info;
 
 pub struct AVSp2p {
-    node_tx: Sender<NodeMessage>,
-    avs_p2p_rx: Receiver<String>,
+    node_tx: Sender<Vec<u8>>,
+    node_to_p2p_rx: Receiver<Vec<u8>>,
 }
 
 impl AVSp2p {
-    pub fn new(node_tx: Sender<NodeMessage>, avs_p2p_rx: Receiver<String>) -> Self {
+    pub fn new(node_tx: Sender<Vec<u8>>, node_to_p2p_rx: Receiver<Vec<u8>>) -> Self {
         AVSp2p {
             node_tx,
-            avs_p2p_rx,
+            node_to_p2p_rx,
         }
     }
 
     // Consumes self and fires up threads
-    pub fn start(mut self) {
+    pub async fn start(self, config: P2PNetworkConfig) {
         info!("Starting P2P network");
 
-        //TODO for initial testing
-        let node_tx = self.node_tx.clone();
-        tokio::spawn(async move {
-            loop {
-                node_tx
-                    .send(NodeMessage::P2P("Hello from avs p2p!".to_string()))
-                    .await
-                    .unwrap();
-                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-            }
-        });
+        let mut p2p = P2PNetwork::new(&config, self.node_tx.clone(), self.node_to_p2p_rx).await;
 
-        tokio::spawn(async move {
-            while let Some(message) = self.avs_p2p_rx.recv().await {
-                tracing::debug!("AVS p2p received: {}", message);
-            }
+        task::spawn(async move {
+            p2p.run(&config).await;
         });
     }
 }
