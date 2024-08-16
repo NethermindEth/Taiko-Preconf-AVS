@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
-    pub tx_list_hash: [u8; 32],
+    pub commit_hash: [u8; 32],
     #[serde(with = "serde_bytes")]
-    pub signature: [u8; 96], // BLS 96 bytes signature
+    pub signature: [u8; 65], // ECDSA 65 bytes signature
 }
 
 impl From<Block> for Vec<u8> {

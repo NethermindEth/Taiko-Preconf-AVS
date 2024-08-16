@@ -4,7 +4,7 @@ use crate::{
         EthereumL1,
     },
     mev_boost::MevBoost,
-    taiko::Taiko,
+    taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::{block::Block, block_proposed::BlockProposed, commit::L2TxListsCommit},
 };
 use anyhow::{anyhow as any_err, Error};
@@ -81,7 +81,13 @@ impl Node {
         if let Some(node_rx) = self.node_rx.take() {
             let p2p_to_node_rx = self.p2p_to_node_rx.take().unwrap();
             tokio::spawn(async move {
-                Self::handle_incoming_messages(node_rx, p2p_to_node_rx, preconfirmed_blocks, ethereum_l1).await;
+                Self::handle_incoming_messages(
+                    node_rx,
+                    p2p_to_node_rx,
+                    preconfirmed_blocks,
+                    ethereum_l1,
+                )
+                .await;
             });
         } else {
             tracing::error!("node_rx has already been moved");
@@ -107,7 +113,7 @@ impl Node {
                 },
                 Some(p2p_message) = p2p_to_node_rx.recv() => {
                     let block: Block = p2p_message.into();
-                    tracing::debug!("Node received message from p2p: {:?}", block); 
+                    tracing::debug!("Node received message from p2p: {:?}", block);
                     // TODO: add block to preconfirmation queue
                 }
             }
@@ -123,7 +129,7 @@ impl Node {
         if let Some(block) = preconfirmed_blocks.get(&block_proposed.block_id) {
             //TODO: verify the signature?
 
-            if block.tx_list_hash != block_proposed.tx_list_hash {
+            if block.commit_hash != block_proposed.tx_list_hash {
                 info!(
                     "Block tx_list_hash is not correct for block_id: {}. Calling proof of incorrect preconfirmation.",
                     block_proposed.block_id
@@ -132,7 +138,7 @@ impl Node {
                     .execution_layer
                     .prove_incorrect_preconfirmation(
                         block_proposed.block_id,
-                        block.tx_list_hash,
+                        block.commit_hash,
                         block.signature,
                     )
                     .await?;
@@ -198,11 +204,12 @@ impl Node {
         }
 
         let new_block_height = pending_tx_lists.parent_block_id + 1;
-        let commit = L2TxListsCommit::new(&pending_tx_lists, new_block_height);
+        let (commit_hash, signature) =
+            self.generate_commit_hash_and_signature(&pending_tx_lists, new_block_height)?;
 
         let new_block = Block {
-            tx_list_hash: commit.hash()?,
-            signature: [0; 96], // TODO: get the signature from the web3signer
+            commit_hash,
+            signature,
         };
         self.send_preconfirmations_to_the_avs_p2p(new_block.clone())
             .await?;
@@ -226,6 +233,21 @@ impl Node {
         Ok(())
     }
 
+    // TODO: use web3signer to sign the message
+    fn generate_commit_hash_and_signature(
+        &self,
+        reply: &RPCReplyL2TxLists,
+        block_height: u64,
+    ) -> Result<([u8; 32], [u8; 65]), Error> {
+        let commit = L2TxListsCommit::new(reply, block_height);
+        let hash = commit.hash()?;
+        let signature = self
+            .ethereum_l1
+            .execution_layer
+            .sign_message_with_private_ecdsa_key(&hash[..])?;
+        Ok((hash, signature))
+    }
+
     async fn clean_old_blocks(
         preconfirmed_blocks: &Arc<Mutex<HashMap<u64, Block>>>,
         current_block_height: u64,
@@ -236,7 +258,7 @@ impl Node {
         Ok(())
     }
 
-    fn check_for_the_slot_to_preconf(&self, lookahead: &Vec<ProposerDuty>) -> Option<Slot> {
+    fn check_for_the_slot_to_preconf(&self, lookahead: &[ProposerDuty]) -> Option<Slot> {
         lookahead
             .iter()
             .find(|duty| duty.public_key.to_string() == self.validator_pubkey)
