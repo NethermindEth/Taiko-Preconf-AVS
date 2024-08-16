@@ -58,9 +58,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tcpv4: 9000,
         boot_nodes,
     };
-    let (avs_p2p_tx, avs_p2p_rx) = mpsc::channel(10);
+    let (node_to_p2p_tx, node_to_p2p_rx) = mpsc::channel(10);
     let (node_tx, mut node_rx) = mpsc::channel(10);
-    let mut p2p = P2PNetwork::new(&config, node_tx.clone(), avs_p2p_rx).await;
+    let mut p2p = P2PNetwork::new(&config, node_tx.clone(), node_to_p2p_rx).await;
 
     // Save boot node if it is not specified in shared directory
     if config.boot_nodes.is_none() {
@@ -84,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let data = format!("{send_prefix}-{send_count}");
                 info!("SEND Message: {:#?}", &data);
 
-                avs_p2p_tx
+                node_to_p2p_tx
                     .send(data.as_bytes().to_vec())
                     .await
                     .unwrap();

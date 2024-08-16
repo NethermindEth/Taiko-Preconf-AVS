@@ -32,7 +32,7 @@ struct SwarmBehaviour {
 
 pub struct P2PNetwork {
     node_tx: Sender<Vec<u8>>,
-    avs_p2p_rx: Receiver<Vec<u8>>,
+    node_to_p2p_rx: Receiver<Vec<u8>>,
     swarm: libp2p::Swarm<SwarmBehaviour>,
     topic_name: String,
 }
@@ -55,7 +55,7 @@ impl P2PNetwork {
     pub async fn new(
         config: &P2PNetworkConfig,
         node_tx: Sender<Vec<u8>>,
-        avs_p2p_rx: Receiver<Vec<u8>>,
+        node_to_p2p_rx: Receiver<Vec<u8>>,
     ) -> Self {
         // Create a random PeerId
         let local_peer_id = PeerId::from(config.local_key.public());
@@ -132,7 +132,7 @@ impl P2PNetwork {
 
         P2PNetwork {
             node_tx,
-            avs_p2p_rx,
+            node_to_p2p_rx,
             swarm,
             topic_name,
         }
@@ -148,7 +148,7 @@ impl P2PNetwork {
         //loop
         loop {
             tokio::select! {
-                Some(message) = self.avs_p2p_rx.recv() => {
+                Some(message) = self.node_to_p2p_rx.recv() => {
                     debug!("AVS p2p sent block to p2p: {:?}", message);
                     let topic = gossipsub::IdentTopic::new(self.topic_name.clone());
                     //encode message

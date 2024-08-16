@@ -6,3 +6,15 @@ pub struct Block {
     #[serde(with = "serde_bytes")]
     pub signature: [u8; 96], // BLS 96 bytes signature
 }
+
+impl From<Block> for Vec<u8> {
+    fn from(val: Block) -> Self {
+        bincode::serialize(&val).expect("Serialization failed")
+    }
+}
+
+impl From<Vec<u8>> for Block {
+    fn from(bytes: Vec<u8>) -> Self {
+        bincode::deserialize(&bytes).expect("Deserialization failed")
+    }
+}

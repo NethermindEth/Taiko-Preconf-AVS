@@ -5,14 +5,14 @@ use tracing::info;
 
 pub struct AVSp2p {
     node_tx: Sender<Vec<u8>>,
-    avs_p2p_rx: Receiver<Vec<u8>>,
+    node_to_p2p_rx: Receiver<Vec<u8>>,
 }
 
 impl AVSp2p {
-    pub fn new(node_tx: Sender<Vec<u8>>, avs_p2p_rx: Receiver<Vec<u8>>) -> Self {
+    pub fn new(node_tx: Sender<Vec<u8>>, node_to_p2p_rx: Receiver<Vec<u8>>) -> Self {
         AVSp2p {
             node_tx,
-            avs_p2p_rx,
+            node_to_p2p_rx,
         }
     }
 
@@ -20,7 +20,7 @@ impl AVSp2p {
     pub async fn start(self, config: P2PNetworkConfig) {
         info!("Starting P2P network");
 
-        let mut p2p = P2PNetwork::new(&config, self.node_tx.clone(), self.avs_p2p_rx).await;
+        let mut p2p = P2PNetwork::new(&config, self.node_tx.clone(), self.node_to_p2p_rx).await;
 
         task::spawn(async move {
             p2p.run(&config).await;

@@ -5,10 +5,7 @@ use crate::{
     },
     mev_boost::MevBoost,
     taiko::Taiko,
-    utils::{
-        block::Block, block_proposed::BlockProposed, commit::L2TxListsCommit,
-        node_message::NodeMessage,
-    },
+    utils::{block::Block, block_proposed::BlockProposed, commit::L2TxListsCommit},
 };
 use anyhow::{anyhow as any_err, Error};
 use beacon_api_client::ProposerDuty;
@@ -25,8 +22,9 @@ const OLDEST_BLOCK_DISTANCE: u64 = 256;
 
 pub struct Node {
     taiko: Arc<Taiko>,
-    node_rx: Option<Receiver<Vec<u8>>>,
-    avs_p2p_tx: Sender<Vec<u8>>,
+    node_rx: Option<Receiver<BlockProposed>>,
+    node_to_p2p_tx: Sender<Vec<u8>>,
+    p2p_to_node_rx: Option<Receiver<Vec<u8>>>,
     gas_used: u64,
     ethereum_l1: Arc<EthereumL1>,
     _mev_boost: MevBoost, // temporary unused
@@ -41,8 +39,9 @@ pub struct Node {
 
 impl Node {
     pub async fn new(
-        node_rx: Receiver<Vec<u8>>,
-        avs_p2p_tx: Sender<Vec<u8>>,
+        node_rx: Receiver<BlockProposed>,
+        node_to_p2p_tx: Sender<Vec<u8>>,
+        p2p_to_node_rx: Receiver<Vec<u8>>,
         taiko: Arc<Taiko>,
         ethereum_l1: Arc<EthereumL1>,
         mev_boost: MevBoost,
@@ -52,7 +51,8 @@ impl Node {
         Ok(Self {
             taiko,
             node_rx: Some(node_rx),
-            avs_p2p_tx,
+            node_to_p2p_tx,
+            p2p_to_node_rx: Some(p2p_to_node_rx),
             gas_used: 0,
             ethereum_l1,
             _mev_boost: mev_boost,
@@ -79,8 +79,9 @@ impl Node {
         let preconfirmed_blocks = self.preconfirmed_blocks.clone();
         let ethereum_l1 = self.ethereum_l1.clone();
         if let Some(node_rx) = self.node_rx.take() {
+            let p2p_to_node_rx = self.p2p_to_node_rx.take().unwrap();
             tokio::spawn(async move {
-                Self::handle_incoming_messages(node_rx, preconfirmed_blocks, ethereum_l1).await;
+                Self::handle_incoming_messages(node_rx, p2p_to_node_rx, preconfirmed_blocks, ethereum_l1).await;
             });
         } else {
             tracing::error!("node_rx has already been moved");
@@ -88,33 +89,27 @@ impl Node {
     }
 
     async fn handle_incoming_messages(
-        mut node_rx: Receiver<Vec<u8>>,
+        mut node_rx: Receiver<BlockProposed>,
+        mut p2p_to_node_rx: Receiver<Vec<u8>>,
         preconfirmed_blocks: Arc<Mutex<HashMap<u64, Block>>>,
         ethereum_l1: Arc<EthereumL1>,
     ) {
         loop {
             tokio::select! {
-                Some(message) = node_rx.recv() => {
-                    let message: NodeMessage = message.into();
-                    match message {
-                        NodeMessage::BlockProposed(block_proposed) => {
-                            tracing::debug!("Node received block proposed event: {:?}", block_proposed);
-                            if let Err(e) = Self::check_preconfirmed_blocks_correctness(&preconfirmed_blocks, &block_proposed, ethereum_l1.clone()).await {
-                                tracing::error!("Failed to check preconfirmed blocks correctness: {}", e);
-                            }
-
-                            if let Err(e) = Self::clean_old_blocks(&preconfirmed_blocks, block_proposed.block_id).await {
-                                tracing::error!("Failed to clean old blocks: {}", e);
-                            }
-                        }
-                        NodeMessage::P2P(message) => {
-                            tracing::debug!("Node received P2P message: {:?}", message);
-                        }
-                        NodeMessage::BlockPerconfirmation(block) => {
-                            tracing::debug!("Node received block perconfirmation event: {:?}", block);
-                        }
+                Some(block_proposed) = node_rx.recv() => {
+                    tracing::debug!("Node received block proposed event: {:?}", block_proposed);
+                    if let Err(e) = Self::check_preconfirmed_blocks_correctness(&preconfirmed_blocks, &block_proposed, ethereum_l1.clone()).await {
+                        tracing::error!("Failed to check preconfirmed blocks correctness: {}", e);
+                    }
+                    if let Err(e) = Self::clean_old_blocks(&preconfirmed_blocks, block_proposed.block_id).await {
+                        tracing::error!("Failed to clean old blocks: {}", e);
                     }
                 },
+                Some(p2p_message) = p2p_to_node_rx.recv() => {
+                    let block: Block = p2p_message.into();
+                    tracing::debug!("Node received message from p2p: {:?}", block); 
+                    // TODO: add block to preconfirmation queue
+                }
             }
         }
     }
@@ -249,10 +244,9 @@ impl Node {
     }
 
     async fn send_preconfirmations_to_the_avs_p2p(&self, block: Block) -> Result<(), Error> {
-        let node_message: Vec<u8> = NodeMessage::BlockPerconfirmation(block).into();
-        self.avs_p2p_tx
-            .send(node_message)
+        self.node_to_p2p_tx
+            .send(block.into())
             .await
-            .map_err(|e| any_err!("Failed to send message to avs_p2p_tx: {}", e))
+            .map_err(|e| any_err!("Failed to send message to node_to_p2p_tx: {}", e))
     }
 }
