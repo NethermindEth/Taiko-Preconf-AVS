@@ -1,3 +1,5 @@
+use p2p_network::generate_secp256k1;
+use p2p_network::network::P2PNetworkConfig;
 use tracing::{info, warn};
 
 pub struct Config {
@@ -13,6 +15,7 @@ pub struct Config {
     pub block_proposed_receiver_timeout_sec: u64,
     pub preconf_registry_expiry_sec: u64,
     pub contract_addresses: ContractAddresses,
+    pub p2p_network_config: P2PNetworkConfig,
 }
 
 #[derive(Debug)]
@@ -169,6 +172,29 @@ impl Config {
             .parse::<u64>()
             .expect("PRECONF_REGISTRY_EXPIRY_SEC must be a number");
 
+        // Load P2P config from env
+        // Load Ipv4 address from env
+        let address = std::env::var("ADDRESS").unwrap_or_else(|_| "0.0.0.0".to_string());
+        let ipv4 = address.parse().unwrap();
+
+        // Load boot node from env
+        let boot_nodes: Option<Vec<String>> =
+            if let Ok(bootnode_enr) = std::env::var("BOOTNODE_ENR") {
+                Some(vec![bootnode_enr])
+            } else {
+                None
+            };
+
+        // Create P2P network config
+        let p2p_network_config: P2PNetworkConfig = P2PNetworkConfig {
+            local_key: generate_secp256k1(),
+            listen_addr: "/ip4/0.0.0.0/tcp/9000".parse().unwrap(),
+            ipv4,
+            udpv4: 9000,
+            tcpv4: 9000,
+            boot_nodes,
+        };
+
         let config = Self {
             taiko_proposer_url: std::env::var("TAIKO_PROPOSER_URL")
                 .unwrap_or("http://127.0.0.1:1234".to_string()),
@@ -187,6 +213,7 @@ impl Config {
             block_proposed_receiver_timeout_sec,
             preconf_registry_expiry_sec,
             contract_addresses,
+            p2p_network_config,
         };
 
         info!(
@@ -203,6 +230,7 @@ Validator pubkey: {}
 Block proposed receiver timeout: {}
 Preconf registry expiry seconds: {}
 Contract addresses: {:#?}
+p2p_network_config: {}
 "#,
             config.taiko_proposer_url,
             config.taiko_driver_url,
@@ -215,6 +243,7 @@ Contract addresses: {:#?}
             config.block_proposed_receiver_timeout_sec,
             config.preconf_registry_expiry_sec,
             config.contract_addresses,
+            config.p2p_network_config,
         );
 
         config

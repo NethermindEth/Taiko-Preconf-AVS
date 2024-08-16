@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "p2pNetwork",
+    "p2pIntegrationTest",
+]
+resolver = "2"
