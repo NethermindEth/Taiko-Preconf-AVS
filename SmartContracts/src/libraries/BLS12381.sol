@@ -24,7 +24,7 @@ library BLS12381 {
     }
 
     /// @dev Referenced from https://eips.ethereum.org/EIPS/eip-2537#curve-parameters
-    function baseFiedlModulus() internal pure returns (uint256[2] memory) {
+    function baseFieldModulus() internal pure returns (uint256[2] memory) {
         return [
             0x000000000000000000000000000000001a0111ea397fe69a4b1ba7b6434bacd7,
             0x64774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab
@@ -51,7 +51,7 @@ library BLS12381 {
      * @param point The G1 point to negate
      */
     function negate(G1Point memory point) internal pure returns (G1Point memory) {
-        uint256[2] memory fieldModulus = baseFiedlModulus();
+        uint256[2] memory fieldModulus = baseFieldModulus();
         uint256[2] memory yNeg;
 
         // Perform word-wise elementary subtraction
