@@ -121,14 +121,25 @@ impl Node {
                 Some(p2p_message) = p2p_to_node_rx.recv() => {
                     let msg: PreconfirmationMessage = p2p_message.into();
                     tracing::debug!("Node received message from p2p: {:?}", msg);
-                    // add to preconfirmation map
-                    preconfirmed_blocks.lock().await.insert(msg.block_height, msg.proof);
-                    // advance head
-                    if let Err(e) = taiko
-                        .advance_head_to_new_l2_block(msg.tx_lists, msg.gas_used)
-                        .await {
-                            tracing::error!("Failed to advance head: {}", e);
+                    // TODO check valid preconfer
+                    // check hash
+                    if let Ok(hash) = L2TxListsCommit::from_preconf(msg.block_height, msg.tx_list_bytes).hash() {
+                        if hash == msg.proof.commit_hash {
+                            // check signature
+                            if let Ok(_) = ethereum_l1.execution_layer.recover_address_from_msg(&msg.proof.commit_hash, &msg.proof.signature) {
+                                // Add to preconfirmation map
+                                preconfirmed_blocks.lock().await.insert(msg.block_height, msg.proof);
+                                // Advance head
+                                if let Err(e) = taiko.advance_head_to_new_l2_block(msg.tx_lists, msg.gas_used).await {
+                                    tracing::error!("Failed to advance head: {}", e);
+                                }
+                            } else {
+                                tracing::error!("Failed to check signature");
+                            }
                         }
+                    } else {
+                        tracing::warn!("Hash mismatch or failed to calculate hash.");
+                    }
                 }
             }
         }
@@ -141,8 +152,7 @@ impl Node {
     ) -> Result<(), Error> {
         let preconfirmed_blocks = preconfirmed_blocks.lock().await;
         if let Some(block) = preconfirmed_blocks.get(&block_proposed.block_id) {
-            //TODO: verify the signature?
-
+            //Signature is already verified on precof insertion
             if block.commit_hash != block_proposed.tx_list_hash {
                 info!(
                     "Block tx_list_hash is not correct for block_id: {}. Calling proof of incorrect preconfirmation.",
@@ -228,6 +238,7 @@ impl Node {
         let preconf_message = PreconfirmationMessage {
             block_height: new_block_height,
             tx_lists: pending_tx_lists.tx_lists.clone(),
+            tx_list_bytes: pending_tx_lists.tx_list_bytes[0].clone(), //TODO: handle rest tx lists
             gas_used: self.gas_used,
             proof: proof.clone(),
         };

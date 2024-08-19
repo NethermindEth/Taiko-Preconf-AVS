@@ -6,6 +6,7 @@ use serde_json::Value;
 pub struct PreconfirmationMessage {
     pub block_height: u64,
     pub tx_lists: Value,
+    pub tx_list_bytes: Vec<u8>,
     pub gas_used: u64,
     pub proof: PreconfirmationProof,
 }

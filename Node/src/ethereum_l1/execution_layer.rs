@@ -6,7 +6,7 @@ use alloy::{
     providers::ProviderBuilder,
     signers::{
         local::{LocalSigner, PrivateKeySigner},
-        SignerSync,
+        Signature, SignerSync,
     },
     sol,
     sol_types::SolValue,
@@ -284,6 +284,12 @@ impl ExecutionLayer {
     pub fn sign_message_with_private_ecdsa_key(&self, msg: &[u8]) -> Result<[u8; 65], Error> {
         let signature = self.signer.sign_message_sync(msg)?;
         Ok(signature.as_bytes())
+    }
+
+    pub fn recover_address_from_msg(&self, msg: &[u8], signature: &[u8]) -> Result<Address, Error> {
+        let signature = Signature::try_from(signature)?;
+        let address = signature.recover_address_from_msg(msg)?;
+        Ok(address)
     }
 
     pub async fn prove_incorrect_preconfirmation(
