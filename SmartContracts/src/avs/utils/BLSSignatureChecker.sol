@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity 0.8.25;
+
+import {BLS12381} from "../../libraries/BLS12381.sol";
+
+contract BLSSignatureChecker {
+    using BLS12381 for *;
+
+    /// @dev The domain separation tag for the BLS signature
+    function dst() internal pure returns (bytes memory) {
+        // Todo: This must be set based on the recommendations of RFC9380
+        return hex"";
+    }
+
+    /**
+     * @notice Returns `true` if the BLS signature on the message matches against the public key
+     * @param message The message bytes
+     * @param sig The BLS signature
+     * @param pubkey The BLS public key of the expected signer
+     */
+    function verifySignature(bytes memory message, BLS12381.G2Point memory sig, BLS12381.G1Point memory pubkey)
+        internal
+        view
+        returns (bool)
+    {
+        // Hash the message bytes into a G2 point
+        BLS12381.G2Point memory msgG2 = message.hashToCurveG2(dst());
+
+        // Return the pairing check result
+        return BLS12381.pairing(BLS12381.generatorG1().negate(), sig, pubkey, msgG2);
+    }
+}
