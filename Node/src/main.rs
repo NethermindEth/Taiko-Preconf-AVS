@@ -52,6 +52,7 @@ async fn main() -> Result<(), Error> {
         mev_boost,
         config.l2_slot_duration_sec,
         config.validator_bls_pubkey,
+        config.epochs_to_skip_at_beginning,
     )
     .await?;
     node.entrypoint().await?;
