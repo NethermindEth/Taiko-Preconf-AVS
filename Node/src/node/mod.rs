@@ -111,7 +111,7 @@ impl Node {
             tokio::select! {
                 Some(block_proposed) = node_rx.recv() => {
                     tracing::debug!("Node received block proposed event: {:?}", block_proposed);
-                    if let Err(e) = Self::check_preconfirmed_blocks_correctness(&preconfirmed_blocks, &block_proposed, ethereum_l1.clone()).await {
+                    if let Err(e) = Self::check_preconfirmed_blocks_correctness(&preconfirmed_blocks, taiko.chain_id, &block_proposed, ethereum_l1.clone()).await {
                         tracing::error!("Failed to check preconfirmed blocks correctness: {}", e);
                     }
                     if let Err(e) = Self::clean_old_blocks(&preconfirmed_blocks, block_proposed.block_id).await {
@@ -131,33 +131,55 @@ impl Node {
         msg: PreconfirmationMessage,
         preconfirmed_blocks: &Arc<Mutex<HashMap<u64, PreconfirmationProof>>>,
         ethereum_l1: Arc<EthereumL1>,
-        taiko: Arc<Taiko>
-    )  {
+        taiko: Arc<Taiko>,
+    ) {
         tracing::debug!("Node received message from p2p: {:?}", msg);
         // TODO check valid preconfer
         // check hash
-        match L2TxListsCommit::from_preconf(msg.block_height, msg.tx_list_bytes, taiko.chain_id).hash() {
+        match L2TxListsCommit::from_preconf(msg.block_height, msg.tx_list_bytes, taiko.chain_id)
+            .hash()
+        {
             Ok(hash) => {
                 if hash == msg.proof.commit_hash {
                     // check signature
-                    match ethereum_l1.execution_layer.recover_address_from_msg(&msg.proof.commit_hash, &msg.proof.signature) {
+                    match ethereum_l1
+                        .execution_layer
+                        .recover_address_from_msg(&msg.proof.commit_hash, &msg.proof.signature)
+                    {
                         Ok(_) => {
                             // Add to preconfirmation map
-                            preconfirmed_blocks.lock().await.insert(msg.block_height, msg.proof);
+                            preconfirmed_blocks
+                                .lock()
+                                .await
+                                .insert(msg.block_height, msg.proof);
                             // Advance head
-                            if let Err(e) = taiko.advance_head_to_new_l2_block(msg.tx_lists, msg.gas_used).await {
-                                tracing::error!("Failed to advance head: {} for block_id: {}", e, msg.block_height);
+                            if let Err(e) = taiko
+                                .advance_head_to_new_l2_block(msg.tx_lists, msg.gas_used)
+                                .await
+                            {
+                                tracing::error!(
+                                    "Failed to advance head: {} for block_id: {}",
+                                    e,
+                                    msg.block_height
+                                );
                             }
                         }
                         Err(e) => {
-                            tracing::error!("Failed to check signature: {} for block_id: {}", e, msg.block_height);
+                            tracing::error!(
+                                "Failed to check signature: {} for block_id: {}",
+                                e,
+                                msg.block_height
+                            );
                         }
                     }
                 } else {
-                    tracing::warn!("Preconfirmatoin hash is not correct for block_id: {}", msg.block_height);
+                    tracing::warn!(
+                        "Preconfirmatoin hash is not correct for block_id: {}",
+                        msg.block_height
+                    );
                 }
             }
-            Err(e) =>{
+            Err(e) => {
                 tracing::warn!("Failed to calculate hash: {}", e);
             }
         }
@@ -165,6 +187,7 @@ impl Node {
 
     async fn check_preconfirmed_blocks_correctness(
         preconfirmed_blocks: &Arc<Mutex<HashMap<u64, PreconfirmationProof>>>,
+        chain_id: u64,
         block_proposed: &BlockProposed,
         ethereum_l1: Arc<EthereumL1>,
     ) -> Result<(), Error> {
@@ -180,6 +203,7 @@ impl Node {
                     .execution_layer
                     .prove_incorrect_preconfirmation(
                         block_proposed.block_id,
+                        chain_id,
                         block.commit_hash,
                         block.signature,
                     )
