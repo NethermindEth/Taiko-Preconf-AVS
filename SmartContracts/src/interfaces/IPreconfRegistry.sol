@@ -5,42 +5,88 @@ import {BLS12381} from "../libraries/BLS12381.sol";
 import {ISignatureUtils} from "eigenlayer-middleware/interfaces/IServiceManagerUI.sol";
 
 interface IPreconfRegistry {
+    struct Validator {
+        // Preconfer that the validator proposer blocks for
+        address preconfer;
+        // Timestamp at which the preconfer may start proposing for the preconfer
+        // 2 epochs from validator addition timestamp
+        uint40 startProposingAt;
+        // Timestamp at which the preconfer must stop proposing for the preconfer
+        // 2 epochs from validator removal timestamp
+        uint40 stopProposingAt;
+    }
+    // ^ Note: 40 bits are enough for UNIX timestamp. This way we also compress the data to a single slot.
+
+    struct AddValidatorParam {
+        // The public key of the validator
+        BLS12381.G1Point pubkey;
+        // The signature of the validator
+        BLS12381.G2Point signature;
+        // The timestamp at which the above signature expires
+        uint256 signatureExpiry;
+        // The preconfer that the validator will be proposing for
+        address preconfer;
+    }
+
+    struct RemoveValidatorParam {
+        // The public key of the validator
+        BLS12381.G1Point pubkey;
+        // The signature of the validator
+        BLS12381.G2Point signature;
+        // The timestamp at which the above signature expires
+        uint256 signatureExpiry;
+    }
+
+    enum ValidatorOp {
+        REMOVE,
+        ADD
+    }
+
     event PreconferRegistered(address indexed preconfer, uint256 indexed index);
     event PreconferDeregistered(address indexed preconfer);
-    event ValidatorAdded(address indexed preconfer, uint256[2] compressedPubKey);
-    event ValidatorRemoved(address indexed preconfer, bytes32 validatorPubKeyHash);
+    event ValidatorAdded(bytes32 indexed pubKeyHash, address indexed preconfer);
+    event ValidatorRemoved(bytes32 indexed pubKeyHash, address indexed preconfer);
 
     /// @dev The preconfer is already registered in the registry
     error PreconferAlreadyRegistered();
     /// @dev The preconfer is not registered in the registry
     error PreconferNotRegistered();
-    /// @dev The length of the public keys and signatures arrays do not match
-    error ArrayLengthMismatch();
     /// @dev The signature is invalid
     error InvalidValidatorSignature();
-    /// @dev The address provided as witness of the preconfer that has the last index is incorrect
-    error LastIndexWitnessIncorrect();
-    /// @dev The public key hash is not associated with the preconfer
-    error InvalidValidatorPubKeyHash();
+    /// @dev The signature has expired
+    error ValidatorSignatureExpired();
+    /// @dev The validator is already proposing for a preconfer and cannot be added again without removal
+    error ValidatorAlreadyActive();
+    /// @dev The validator is already removed or waiting to stop proposing for a preconfer
+    error ValidatorAlreadyInactive();
 
     /// @dev Registers a preconfer by giving them a non-zero registry index
     function registerPreconfer(ISignatureUtils.SignatureWithSaltAndExpiry calldata operatorSignature) external;
 
     /// @dev Deregisters a preconfer from the registry
-    function deregisterPreconfer(address lastIndexWitness) external;
+    function deregisterPreconfer() external;
 
-    /// @dev Associates a batch of validators with a preconfer
-    function addValidators(BLS12381.G1Point[] calldata pubkeys, BLS12381.G2Point[] calldata signatures) external;
+    /// @dev Adds consensus layer validators to the system by assigning preconfers to them
+    function addValidators(AddValidatorParam[] calldata addValidatorParams) external;
 
-    /// @dev Removes a batch of validators for a preconfer
-    function removeValidators(bytes32[] calldata validatorPubKeyHashes) external;
+    /// @dev Removes active validators who are proposing for a preconfer
+    function removeValidators(RemoveValidatorParam[] calldata removeValidatorParams) external;
+
+    /// @dev Returns the message that the validator must sign to add or remove themselves from a preconfer
+    function getMessageToSign(ValidatorOp validatorOp, uint256 expiry, address preconfer)
+        external
+        view
+        returns (bytes memory);
+
+    /// @dev Returns the index of the next preconfer
+    function getNextPreconferIndex() external view returns (uint256);
 
     /// @dev Returns the index of the preconfer
-    function preconferToIndex(address preconfer) external view returns (uint256);
+    function getPreconferIndex(address preconfer) external view returns (uint256);
 
-    /// @dev Returns the nonce of the preconfer
-    function preconferToNonce(address preconfer) external view returns (uint256);
+    /// @dev Returns the preconfer at the given index
+    function getPreconferAtIndex(uint256 index) external view returns (address);
 
-    /// @dev Returns the timestamp at which the public key hash was added
-    function preconferToPubKeyHashToTimestamp(address preconfer, bytes32 pubKeyHash) external view returns (uint256);
+    /// @dev Returns a validator who is proposing for a registered preconfer
+    function getValidator(bytes32 pubKeyHash) external view returns (Validator memory);
 }
