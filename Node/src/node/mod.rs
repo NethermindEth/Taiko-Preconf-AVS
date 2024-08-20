@@ -4,7 +4,7 @@ use crate::{
         EthereumL1,
     },
     mev_boost::MevBoost,
-    taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
+    taiko::{self, l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::{
         block_proposed::BlockProposed, commit::L2TxListsCommit,
         preconfirmation_message::PreconfirmationMessage,
@@ -121,26 +121,44 @@ impl Node {
                 Some(p2p_message) = p2p_to_node_rx.recv() => {
                     let msg: PreconfirmationMessage = p2p_message.into();
                     tracing::debug!("Node received message from p2p: {:?}", msg);
-                    // TODO check valid preconfer
-                    // check hash
-                    if let Ok(hash) = L2TxListsCommit::from_preconf(msg.block_height, msg.tx_list_bytes).hash() {
-                        if hash == msg.proof.commit_hash {
-                            // check signature
-                            if let Ok(_) = ethereum_l1.execution_layer.recover_address_from_msg(&msg.proof.commit_hash, &msg.proof.signature) {
-                                // Add to preconfirmation map
-                                preconfirmed_blocks.lock().await.insert(msg.block_height, msg.proof);
-                                // Advance head
-                                if let Err(e) = taiko.advance_head_to_new_l2_block(msg.tx_lists, msg.gas_used).await {
-                                    tracing::error!("Failed to advance head: {}", e);
-                                }
-                            } else {
-                                tracing::error!("Failed to check signature");
+                    Self::check_preconfirmation_message(msg, &preconfirmed_blocks, ethereum_l1.clone(), taiko.clone()).await;
+                }
+            }
+        }
+    }
+
+    async fn check_preconfirmation_message(
+        msg: PreconfirmationMessage,
+        preconfirmed_blocks: &Arc<Mutex<HashMap<u64, PreconfirmationProof>>>,
+        ethereum_l1: Arc<EthereumL1>,
+        taiko: Arc<Taiko>
+    )  {
+        tracing::debug!("Node received message from p2p: {:?}", msg);
+        // TODO check valid preconfer
+        // check hash
+        match L2TxListsCommit::from_preconf(msg.block_height, msg.tx_list_bytes).hash() {
+            Ok(hash) => {
+                if hash == msg.proof.commit_hash {
+                    // check signature
+                    match ethereum_l1.execution_layer.recover_address_from_msg(&msg.proof.commit_hash, &msg.proof.signature) {
+                        Ok(_) => {
+                            // Add to preconfirmation map
+                            preconfirmed_blocks.lock().await.insert(msg.block_height, msg.proof);
+                            // Advance head
+                            if let Err(e) = taiko.advance_head_to_new_l2_block(msg.tx_lists, msg.gas_used).await {
+                                tracing::error!("Failed to advance head: {} for block_id: {}", e, msg.block_height);
                             }
                         }
-                    } else {
-                        tracing::warn!("Hash mismatch or failed to calculate hash.");
+                        Err(e) => {
+                            tracing::error!("Failed to check signature: {} for block_id: {}", e, msg.block_height);
+                        }
                     }
+                } else {
+                    tracing::warn!("Preconfirmatoin hash is not correct for block_id: {}", msg.block_height);
                 }
+            }
+            Err(e) =>{
+                tracing::warn!("Failed to calculate hash: {}", e);
             }
         }
     }
