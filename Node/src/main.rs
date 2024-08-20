@@ -26,6 +26,7 @@ async fn main() -> Result<(), Error> {
         &config.taiko_proposer_url,
         &config.taiko_driver_url,
         config.block_proposed_receiver_timeout_sec,
+        config.taiko_chain_id,
     ));
     let ethereum_l1 = Arc::new(
         ethereum_l1::EthereumL1::new(

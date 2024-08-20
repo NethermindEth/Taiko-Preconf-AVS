@@ -5,8 +5,6 @@ use secp256k1::{ecdsa::Signature, Message, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
 use tiny_keccak::{Hasher, Keccak};
 
-// TODO add chain id to taiko
-const CHAIN_ID: [u8; 32] = [0u8; 32];
 //https://github.com/NethermindEth/Taiko-Preconf-AVS/blob/caf9fbbde0dd84947af5a7b26610ffd38525d932/SmartContracts/src/avs/PreconfTaskManager.sol#L175
 #[derive(Serialize, Deserialize)]
 pub struct L2TxListsCommit {
@@ -16,24 +14,30 @@ pub struct L2TxListsCommit {
 }
 
 impl L2TxListsCommit {
-    pub fn new(reply: &RPCReplyL2TxLists, block_height: u64) -> Self {
+    pub fn new(reply: &RPCReplyL2TxLists, block_height: u64, chain_id: u64) -> Self {
         let block_height_bytes = block_height.to_le_bytes(); // Convert u64 to a [u8; 8] array
         let mut block_height = [0u8; 32];
         block_height[24..].copy_from_slice(&block_height_bytes);
+        let chain_id_bytes = chain_id.to_le_bytes(); // Convert u64 to a [u8; 8] array
+        let mut chain_id = [0u8; 32];
+        chain_id[24..].copy_from_slice(&chain_id_bytes);
         L2TxListsCommit {
             block_height,
-            chain_id: CHAIN_ID,
+            chain_id,
             tx_list_bytes: reply.tx_list_bytes[0].clone(), // TODO check for other indexes
         }
     }
 
-    pub fn from_preconf(block_height: u64, tx_list_bytes: Vec<u8>) -> Self {
+    pub fn from_preconf(block_height: u64, tx_list_bytes: Vec<u8>, chain_id: u64) -> Self {
         let block_height_bytes = block_height.to_le_bytes(); // Convert u64 to a [u8; 8] array
         let mut block_height = [0u8; 32];
         block_height[24..].copy_from_slice(&block_height_bytes);
+        let chain_id_bytes = chain_id.to_le_bytes(); // Convert u64 to a [u8; 8] array
+        let mut chain_id = [0u8; 32];
+        chain_id[24..].copy_from_slice(&chain_id_bytes);
         L2TxListsCommit {
             block_height,
-            chain_id: CHAIN_ID,
+            chain_id,
             tx_list_bytes,
         }
     }

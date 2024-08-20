@@ -4,7 +4,7 @@ use crate::{
         EthereumL1,
     },
     mev_boost::MevBoost,
-    taiko::{self, l2_tx_lists::RPCReplyL2TxLists, Taiko},
+    taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::{
         block_proposed::BlockProposed, commit::L2TxListsCommit,
         preconfirmation_message::PreconfirmationMessage,
@@ -136,7 +136,7 @@ impl Node {
         tracing::debug!("Node received message from p2p: {:?}", msg);
         // TODO check valid preconfer
         // check hash
-        match L2TxListsCommit::from_preconf(msg.block_height, msg.tx_list_bytes).hash() {
+        match L2TxListsCommit::from_preconf(msg.block_height, msg.tx_list_bytes, taiko.chain_id).hash() {
             Ok(hash) => {
                 if hash == msg.proof.commit_hash {
                     // check signature
@@ -288,7 +288,7 @@ impl Node {
         reply: &RPCReplyL2TxLists,
         block_height: u64,
     ) -> Result<([u8; 32], [u8; 65]), Error> {
-        let commit = L2TxListsCommit::new(reply, block_height);
+        let commit = L2TxListsCommit::new(reply, block_height, self.taiko.chain_id);
         let hash = commit.hash()?;
         let signature = self
             .ethereum_l1
