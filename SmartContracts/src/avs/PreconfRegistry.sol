@@ -52,7 +52,7 @@ contract PreconfRegistry is IPreconfRegistry, ISignatureUtils, BLSSignatureCheck
             nextPreconferIndex = _nextPreconferIndex + 1;
         }
 
-        emit PreconferRegistered(msg.sender, _nextPreconferIndex);
+        emit PreconferRegistered(msg.sender);
 
         preconfServiceManager.registerOperatorToAVS(msg.sender, operatorSignature);
     }

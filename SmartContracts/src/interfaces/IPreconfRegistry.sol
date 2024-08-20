@@ -42,7 +42,7 @@ interface IPreconfRegistry {
         ADD
     }
 
-    event PreconferRegistered(address indexed preconfer, uint256 indexed index);
+    event PreconferRegistered(address indexed preconfer);
     event PreconferDeregistered(address indexed preconfer);
     event ValidatorAdded(bytes32 indexed pubKeyHash, address indexed preconfer);
     event ValidatorRemoved(bytes32 indexed pubKeyHash, address indexed preconfer);
