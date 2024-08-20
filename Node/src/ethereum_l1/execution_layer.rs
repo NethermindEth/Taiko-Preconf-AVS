@@ -46,6 +46,17 @@ pub struct AvsContractAddresses {
     pub preconf_registry: Address,
 }
 
+pub struct Validator {
+    // Preconfer that the validator proposer blocks for
+    pub preconfer: [u8; 20],
+    // Timestamp at which the preconfer may start proposing for the preconfer
+    // 2 epochs from validator addition timestamp
+    pub startProposingAt: u64,
+    // Timestamp at which the preconfer must stop proposing for the preconfer
+    // 2 epochs from validator removal timestamp
+    pub stopProposingAt: u64,
+}
+
 sol!(
     #[allow(clippy::too_many_arguments)]
     #[allow(missing_docs)]
@@ -130,6 +141,10 @@ impl ExecutionLayer {
             slot_clock,
             preconf_registry_expiry_sec,
         })
+    }
+
+    pub fn get_avs_node_address(&self) -> [u8; 20] {
+        self.avs_node_address.into_array()
     }
 
     fn parse_contract_addresses(
@@ -305,6 +320,28 @@ impl ExecutionLayer {
         let tx_hash = FixedBytes::<32>::default(); // builder.send().await?.watch().await?;
         tracing::debug!("Proved incorrect preconfirmation: {tx_hash}");
         Ok(())
+    }
+
+    pub async fn get_validator(&self, pubkey: &[u8]) -> Result<Validator, Error> {
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.wallet.clone())
+            .on_http(self.rpc_url.clone());
+        let preconf_registry =
+            PreconfRegistry::new(self.contract_addresses.avs.preconf_registry, provider);
+
+        let pubkey: [u8; 32] = pubkey[..32].try_into()?;
+
+        let validator = preconf_registry
+            .getValidator(FixedBytes::from(pubkey))
+            .call()
+            .await?;
+
+        Ok(Validator {
+            preconfer: validator._0.preconfer.into_array(),
+            startProposingAt: validator._0.startProposingAt,
+            stopProposingAt: validator._0.stopProposingAt,
+        })
     }
 
     #[cfg(test)]

@@ -33,9 +33,10 @@ pub struct Node {
     lookahead: Vec<ProposerDuty>,
     l2_slot_duration_sec: u64,
     validator_pubkey: String,
-    current_slot_to_preconf: Option<Slot>,
-    next_slot_to_preconf: Option<Slot>,
+    current_first_slot_to_preconf: Option<Slot>,
+    current_final_slot_to_preconf: Option<Slot>,
     preconfirmed_blocks: Arc<Mutex<HashMap<u64, Block>>>,
+    should_post_lookahead_for_next_epoch: bool,
 }
 
 impl Node {
@@ -64,9 +65,10 @@ impl Node {
             lookahead: vec![],
             l2_slot_duration_sec,
             validator_pubkey,
-            current_slot_to_preconf: None,
-            next_slot_to_preconf: None,
+            current_first_slot_to_preconf: None,
+            current_final_slot_to_preconf: None,
             preconfirmed_blocks: Arc::new(Mutex::new(HashMap::new())),
+            should_post_lookahead_for_next_epoch: false,
         })
     }
 
@@ -179,24 +181,60 @@ impl Node {
                 return Ok(());
             }
 
-            self.current_slot_to_preconf = self.next_slot_to_preconf;
+            self.find_slots_to_preconfirm().await?;
             self.lookahead = self
                 .ethereum_l1
                 .consensus_layer
                 .get_lookahead(self.epoch + 1)
                 .await?;
-            self.next_slot_to_preconf = self.check_for_the_slot_to_preconf(&self.lookahead);
+
+            if self.should_post_lookahead_for_next_epoch {
+                // TODO: post lookahead
+                self.should_post_lookahead_for_next_epoch = false;
+            }
         }
 
-        if let Some(slot) = self.current_slot_to_preconf {
-            if slot == self.ethereum_l1.slot_clock.get_current_slot()? {
+        let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
+
+        if let (Some(first_slot), Some(final_slot)) = (
+            self.current_first_slot_to_preconf,
+            self.current_final_slot_to_preconf,
+        ) {
+            if current_slot >= first_slot && current_slot <= final_slot {
                 self.preconfirm_block().await?;
             }
         } else {
-            tracing::debug!(
-                "Not my slot to preconfirm: {}",
-                self.ethereum_l1.slot_clock.get_current_slot()?
-            );
+            tracing::debug!("Not my slot to preconfirm: {}", current_slot);
+        }
+
+        Ok(())
+    }
+
+    async fn find_slots_to_preconfirm(&mut self) -> Result<(), Error> {
+        let first_duty = if let Some(duty) = self.lookahead.first() {
+            duty
+        } else {
+            tracing::error!("Empty lookahead");
+            return Ok(());
+        };
+        let mut first_slot_to_preconf = first_duty.slot;
+        let avs_node_address = self.ethereum_l1.execution_layer.get_avs_node_address();
+        self.should_post_lookahead_for_next_epoch = true;
+
+        for duty in self.lookahead.iter() {
+            let validator = self
+                .ethereum_l1
+                .execution_layer
+                .get_validator(&duty.public_key.to_vec())
+                .await?;
+            if validator.preconfer == avs_node_address {
+                self.current_first_slot_to_preconf = Some(first_slot_to_preconf);
+                self.current_final_slot_to_preconf = Some(duty.slot);
+                return Ok(());
+            } else {
+                first_slot_to_preconf = duty.slot + 1;
+                self.should_post_lookahead_for_next_epoch = false;
+            }
         }
 
         Ok(())
@@ -205,7 +243,7 @@ impl Node {
     async fn preconfirm_block(&mut self) -> Result<(), Error> {
         tracing::debug!(
             "Preconfirming for the slot: {:?}",
-            self.current_slot_to_preconf
+            self.current_final_slot_to_preconf
         );
 
         let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;
@@ -266,13 +304,6 @@ impl Node {
         let mut preconfirmed_blocks = preconfirmed_blocks.lock().await;
         preconfirmed_blocks.retain(|block_height, _| block_height >= &oldest_block_to_keep);
         Ok(())
-    }
-
-    fn check_for_the_slot_to_preconf(&self, lookahead: &[ProposerDuty]) -> Option<Slot> {
-        lookahead
-            .iter()
-            .find(|duty| duty.public_key.to_string() == self.validator_pubkey)
-            .map(|duty| duty.slot)
     }
 
     async fn send_preconfirmations_to_the_avs_p2p(&self, block: Block) -> Result<(), Error> {
