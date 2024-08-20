@@ -196,7 +196,16 @@ impl Config {
             boot_nodes,
         };
 
-        let taiko_chain_id = 1u64;
+        let taiko_chain_id = std::env::var("TAIKO_CHAIN_ID")
+        .expect("TAIKO_CHAIN_ID env variable must be set")
+        .parse::<u64>()
+        .map(|val| {
+            if val == 0 {
+                panic!("TAIKO_CHAIN_ID must be a positive number");
+            }
+            val
+        })
+        .expect("TAIKO_CHAIN_ID must be a number");
 
         let config = Self {
             taiko_proposer_url: std::env::var("TAIKO_PROPOSER_URL")
