@@ -1,14 +1,12 @@
 use crate::{
-    ethereum_l1::{
-        slot_clock::{Epoch, Slot},
-        EthereumL1,
-    },
+    ethereum_l1::{slot_clock::Epoch, EthereumL1},
     mev_boost::MevBoost,
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::{block::Block, block_proposed::BlockProposed, commit::L2TxListsCommit},
 };
 use anyhow::{anyhow as any_err, Error};
 use beacon_api_client::ProposerDuty;
+use operator::{Operator, Status as OperatorStatus};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{
     mpsc::{Receiver, Sender},
@@ -17,6 +15,7 @@ use tokio::sync::{
 use tracing::info;
 
 pub mod block_proposed_receiver;
+mod operator;
 
 const OLDEST_BLOCK_DISTANCE: u64 = 256;
 
@@ -32,11 +31,8 @@ pub struct Node {
     epochs_to_skip: Epoch,
     lookahead: Vec<ProposerDuty>,
     l2_slot_duration_sec: u64,
-    validator_pubkey: String,
-    current_first_slot_to_preconf: Option<Slot>,
-    current_final_slot_to_preconf: Option<Slot>,
     preconfirmed_blocks: Arc<Mutex<HashMap<u64, Block>>>,
-    should_post_lookahead_for_next_epoch: bool,
+    operator: Operator,
 }
 
 impl Node {
@@ -48,10 +44,10 @@ impl Node {
         ethereum_l1: Arc<EthereumL1>,
         mev_boost: MevBoost,
         l2_slot_duration_sec: u64,
-        validator_pubkey: String,
         epochs_to_skip_at_beginning: Epoch,
     ) -> Result<Self, Error> {
         let current_epoch = ethereum_l1.slot_clock.get_current_epoch()?;
+        let operator = Operator::new(ethereum_l1.clone());
         Ok(Self {
             taiko,
             node_rx: Some(node_rx),
@@ -64,11 +60,8 @@ impl Node {
             epochs_to_skip: epochs_to_skip_at_beginning,
             lookahead: vec![],
             l2_slot_duration_sec,
-            validator_pubkey,
-            current_first_slot_to_preconf: None,
-            current_final_slot_to_preconf: None,
             preconfirmed_blocks: Arc::new(Mutex::new(HashMap::new())),
-            should_post_lookahead_for_next_epoch: false,
+            operator,
         })
     }
 
@@ -181,59 +174,34 @@ impl Node {
                 return Ok(());
             }
 
-            self.find_slots_to_preconfirm().await?;
+            self.operator = Operator::new(self.ethereum_l1.clone());
+            self.operator
+                .find_slots_to_preconfirm(&self.lookahead)
+                .await?;
+
             self.lookahead = self
                 .ethereum_l1
                 .consensus_layer
                 .get_lookahead(self.epoch + 1)
                 .await?;
 
-            if self.should_post_lookahead_for_next_epoch {
+            if self.operator.should_post_lookahead() {
                 // TODO: post lookahead
-                self.should_post_lookahead_for_next_epoch = false;
             }
         }
 
         let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
 
-        if let (Some(first_slot), Some(final_slot)) = (
-            self.current_first_slot_to_preconf,
-            self.current_final_slot_to_preconf,
-        ) {
-            if current_slot >= first_slot && current_slot <= final_slot {
+        match self.operator.get_status(current_slot) {
+            OperatorStatus::PreconferAndProposer => {
+                // TODO: replace with mev-boost forced inclusion list
                 self.preconfirm_block().await?;
             }
-        } else {
-            tracing::debug!("Not my slot to preconfirm: {}", current_slot);
-        }
-
-        Ok(())
-    }
-
-    async fn find_slots_to_preconfirm(&mut self) -> Result<(), Error> {
-        let first_duty = if let Some(duty) = self.lookahead.first() {
-            duty
-        } else {
-            tracing::error!("Empty lookahead");
-            return Ok(());
-        };
-        let mut first_slot_to_preconf = first_duty.slot;
-        let avs_node_address = self.ethereum_l1.execution_layer.get_avs_node_address();
-        self.should_post_lookahead_for_next_epoch = true;
-
-        for duty in self.lookahead.iter() {
-            let validator = self
-                .ethereum_l1
-                .execution_layer
-                .get_validator(&duty.public_key.to_vec())
-                .await?;
-            if validator.preconfer == avs_node_address {
-                self.current_first_slot_to_preconf = Some(first_slot_to_preconf);
-                self.current_final_slot_to_preconf = Some(duty.slot);
-                return Ok(());
-            } else {
-                first_slot_to_preconf = duty.slot + 1;
-                self.should_post_lookahead_for_next_epoch = false;
+            OperatorStatus::Preconfer => {
+                self.preconfirm_block().await?;
+            }
+            OperatorStatus::None => {
+                tracing::debug!("Not my slot to preconfirm: {}", current_slot);
             }
         }
 
@@ -243,7 +211,7 @@ impl Node {
     async fn preconfirm_block(&mut self) -> Result<(), Error> {
         tracing::debug!(
             "Preconfirming for the slot: {:?}",
-            self.current_final_slot_to_preconf
+            self.ethereum_l1.slot_clock.get_current_slot()?
         );
 
         let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;

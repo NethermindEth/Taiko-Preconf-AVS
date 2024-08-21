@@ -19,6 +19,7 @@ use rand_core::{OsRng, RngCore};
 use std::str::FromStr;
 use std::sync::Arc;
 
+#[allow(unused)] //TODO: remove after used in release code
 pub struct ExecutionLayer {
     rpc_url: reqwest::Url,
     signer: LocalSigner<SigningKey<Secp256k1>>,
@@ -29,16 +30,19 @@ pub struct ExecutionLayer {
     preconf_registry_expiry_sec: u64,
 }
 
+#[allow(unused)] //TODO: remove after used in release code
 pub struct ContractAddresses {
     pub eigen_layer: EigenLayerContractAddresses,
     pub avs: AvsContractAddresses,
 }
 
+#[allow(unused)] //TODO: remove after used in release code
 pub struct EigenLayerContractAddresses {
     pub strategy_manager: Address,
     pub slasher: Address,
 }
 
+#[allow(unused)] //TODO: remove after used in release code
 pub struct AvsContractAddresses {
     pub preconf_task_manager: Address,
     pub directory: Address,
@@ -51,10 +55,10 @@ pub struct Validator {
     pub preconfer: [u8; 20],
     // Timestamp at which the preconfer may start proposing for the preconfer
     // 2 epochs from validator addition timestamp
-    pub startProposingAt: u64,
+    pub start_proposing_at: u64,
     // Timestamp at which the preconfer must stop proposing for the preconfer
     // 2 epochs from validator removal timestamp
-    pub stopProposingAt: u64,
+    pub stop_proposing_at: u64,
 }
 
 sol!(
@@ -113,6 +117,7 @@ sol!(
     "src/ethereum_l1/abi/PreconfRegistry.json"
 );
 
+#[allow(dead_code)] //TODO: remove after used in release code
 impl ExecutionLayer {
     pub fn new(
         rpc_url: &str,
@@ -339,8 +344,8 @@ impl ExecutionLayer {
 
         Ok(Validator {
             preconfer: validator._0.preconfer.into_array(),
-            startProposingAt: validator._0.startProposingAt,
-            stopProposingAt: validator._0.stopProposingAt,
+            start_proposing_at: validator._0.startProposingAt,
+            stop_proposing_at: validator._0.stopProposingAt,
         })
     }
 
