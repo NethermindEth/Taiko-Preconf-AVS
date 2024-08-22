@@ -2,3 +2,4 @@
 .vscode
 .env
 tools/tx_spammer/venv
+.DS_Store
