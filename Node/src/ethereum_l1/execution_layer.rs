@@ -1,6 +1,7 @@
 use super::slot_clock::SlotClock;
 use crate::utils::config;
 use alloy::{
+    contract::EventPoller,
     network::{Ethereum, EthereumWallet, NetworkWallet},
     primitives::{Address, Bytes, FixedBytes, U256},
     providers::ProviderBuilder,
@@ -308,7 +309,15 @@ impl ExecutionLayer {
         Ok(())
     }
 
-    pub async fn wait_for_the_registered_event(&self) -> Result<(), Error> {
+    pub async fn watch_for_registered_event(
+        &self,
+    ) -> Result<
+        EventPoller<
+            alloy::transports::http::Http<reqwest::Client>,
+            PreconfRegistry::PreconferRegistered,
+        >,
+        Error,
+    > {
         let provider = ProviderBuilder::new()
             .with_recommended_fillers()
             .wallet(self.wallet.clone())
@@ -318,6 +327,16 @@ impl ExecutionLayer {
         let registered_filter = registry.PreconferRegistered_filter().watch().await?;
         tracing::debug!("Subscribed to registered event");
 
+        Ok(registered_filter)
+    }
+
+    pub async fn wait_for_the_registered_event(
+        &self,
+        registered_filter: EventPoller<
+            alloy::transports::http::Http<reqwest::Client>,
+            PreconfRegistry::PreconferRegistered,
+        >,
+    ) -> Result<(), Error> {
         let mut stream = registered_filter.into_stream();
         while let Some(log) = stream.next().await {
             match log {
