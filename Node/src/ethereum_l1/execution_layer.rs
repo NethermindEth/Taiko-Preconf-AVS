@@ -14,6 +14,7 @@ use alloy::{
 use anyhow::Error;
 use beacon_api_client::ProposerDuty;
 use ecdsa::SigningKey;
+use futures_util::StreamExt;
 use k256::Secp256k1;
 use rand_core::{OsRng, RngCore};
 use std::str::FromStr;
@@ -203,7 +204,7 @@ impl ExecutionLayer {
         Ok(())
     }
 
-    pub async fn register(&self) -> Result<(), Error> {
+    pub async fn register_preconfer(&self) -> Result<(), Error> {
         let provider = ProviderBuilder::new()
             .with_recommended_fillers()
             .wallet(self.wallet.clone())
@@ -304,6 +305,35 @@ impl ExecutionLayer {
 
         let tx_hash = FixedBytes::<32>::default(); // builder.send().await?.watch().await?;
         tracing::debug!("Proved incorrect preconfirmation: {tx_hash}");
+        Ok(())
+    }
+
+    pub async fn wait_for_the_registered_event(&self) -> Result<(), Error> {
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.wallet.clone())
+            .on_http(self.rpc_url.clone());
+
+        let registry = PreconfRegistry::new(self.contract_addresses.avs.preconf_registry, provider);
+        let registered_filter = registry.PreconferRegistered_filter().watch().await?;
+        tracing::debug!("Subscribed to registered event");
+
+        let mut stream = registered_filter.into_stream();
+        while let Some(log) = stream.next().await {
+            match log {
+                Ok(log) => {
+                    tracing::info!("Received PreconferRegistered for: {}", log.0.preconfer);
+                    if log.0.preconfer == self.avs_node_address {
+                        tracing::info!("Preconfer registered!");
+                        break;
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Error receiving log: {:?}", e);
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -414,7 +444,7 @@ mod tests {
         let private_key = anvil.keys()[0].clone();
         let el = ExecutionLayer::new_from_pk(rpc_url, private_key).unwrap();
 
-        let result = el.register().await;
+        let result = el.register_preconfer().await;
         assert!(result.is_ok(), "Register method failed: {:?}", result.err());
     }
 }
