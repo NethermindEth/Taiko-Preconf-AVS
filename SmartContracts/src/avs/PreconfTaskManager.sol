@@ -40,10 +40,9 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     // Maps the epoch timestamp to the randomly selected preconfer (if present) for that epoch
     mapping(uint256 epochTimestamp => address randomPreconfer) internal randomPreconfers;
 
-    // A ring buffer of proposed (and preconfed) L2 blocks
-    uint256 nextBlockId;
-    uint256 internal constant PROPOSED_BLOCK_BUFFER_SIZE = 256;
-    mapping(uint256 blockId => IPreconfTaskManager.ProposedBlock proposedBlock) proposedBlocks;
+    // Maps the block height to the associated proposer
+    // This is required since the stored block in Taiko has this contract as the proposer
+    mapping(uint256 blockId => address proposer) internal blockIdToProposer;
 
     constructor(
         IPreconfServiceManager _serviceManager,
@@ -58,7 +57,6 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     }
 
     function initialize(IERC20 _taikoToken) external initializer {
-        nextBlockId = 1;
         _taikoToken.approve(address(taikoL1), type(uint256).max);
     }
 
@@ -123,17 +121,10 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
             _updateLookahead(currentEpochTimestamp, lookaheadSetParams);
         }
 
-        uint256 _nextBlockId = nextBlockId;
-
-        // Store the hash of the transaction list and the proposer of the proposed block.
-        // The hash is later used to verify transaction inclusion/ordering in a preconfirmation.
-        proposedBlocks[_nextBlockId % PROPOSED_BLOCK_BUFFER_SIZE] = IPreconfTaskManager.ProposedBlock({
-            proposer: msg.sender,
-            timestamp: uint96(block.timestamp),
-            txListHash: keccak256(txList)
-        });
-
-        nextBlockId = _nextBlockId + 1;
+        // Store the proposer for the block locally
+        // Use Taiko's block number to index
+        (, ITaikoL1.SlotB memory slotB) = taikoL1.getStateVariables();
+        blockIdToProposer[slotB.numBlocks] = msg.sender;
 
         // Block the preconfer from withdrawing stake from Eigenlayer during the dispute window
         preconfServiceManager.lockStakeUntil(msg.sender, block.timestamp + DISPUTE_PERIOD);
@@ -143,21 +134,33 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     }
 
     /**
-     * @notice Slashes an operator if their preconfirmation has not been respected onchain
-     * @dev The ECDSA signature expected by this function must be from a library that prevents malleable
-     * signatures i.e `s` value is in the lower half order, and the `v` value is either 27 or 28.
-     * @param header The header of the preconfirmation sent to the AVS P2P
-     * @param signature ECDSA-signed hash of the preconfirmation header
+     * @notice Proves that the preconfirmation for a specific block was not respected
+     * @dev The function requires the metadata of the block in the format that Taiko uses. This is matched
+     * against the metadata hash stored in Taiko.
+     * @param taikoBlockMetadata The metadata of the Taiko block for which the preconfirmation was provided
+     * @param header The header of the preconfirmation
+     * @param signature The signature of the preconfirmation
      */
-    function proveIncorrectPreconfirmation(PreconfirmationHeader calldata header, bytes calldata signature) external {
-        IPreconfTaskManager.ProposedBlock memory proposedBlock = proposedBlocks[header.blockId];
+    function proveIncorrectPreconfirmation(
+        ITaikoL1.BlockMetadata calldata taikoBlockMetadata,
+        PreconfirmationHeader calldata header,
+        bytes calldata signature
+    ) external {
+        uint256 blockId = taikoBlockMetadata.id;
+        address proposer = blockIdToProposer[blockId];
 
-        if (block.timestamp - proposedBlock.timestamp >= DISPUTE_PERIOD) {
+        // Pull the formalised block from Taiko
+        ITaikoL1.BlockV2 memory taikoBlock = taikoL1.getBlockV2(uint64(blockId));
+
+        if (block.timestamp - taikoBlock.proposedAt >= DISPUTE_PERIOD) {
             // Revert if the dispute window has been missed
             revert IPreconfTaskManager.MissedDisputeWindow();
         } else if (header.chainId != block.chainid) {
             // Revert if the preconfirmation was provided on another chain
             revert IPreconfTaskManager.PreconfirmationChainIdMismatch();
+        } else if (keccak256(abi.encode(taikoBlockMetadata)) != taikoBlock.metaHash) {
+            // Revert if the metadata of the block does not match the one stored in Taiko
+            revert IPreconfTaskManager.MetadataMismatch();
         }
 
         bytes32 headerHash = keccak256(abi.encodePacked(header.blockId, header.chainId, header.txListHash));
@@ -168,7 +171,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
 
         // Slash if the preconfirmation was given offchain, but block proposal was missed OR
         // the preconfirmed set of transactions is different from the transactions in the proposed block.
-        if (preconfSigner != proposedBlock.proposer || header.txListHash != proposedBlock.txListHash) {
+        if (preconfSigner != proposer || header.txListHash != taikoBlockMetadata.blobHash) {
             preconfServiceManager.slashOperator(preconfSigner);
         } else {
             revert IPreconfTaskManager.PreconfirmationIsCorrect();
