@@ -83,6 +83,15 @@ interface IPreconfTaskManager {
         EIP4788.InclusionProof memory validatorInclusionProof
     ) external;
 
+    /// @dev Returns the entire lookahead buffer
+    function getLookahead() external view returns (LookaheadEntry[64] memory);
+
+    /// @dev Return the parameters required for the lookahead to be set for the given epoch
+    function getLookaheadParamsForEpoch(uint256 epochTimestamp, bytes[32] memory validatorBLSPubKeys)
+        external
+        view
+        returns (LookaheadSetParam[] memory);
+
     /// @dev Returns true is a lookahead is not posted for an epoch
     /// @dev In the event that a lookahead was posted but later invalidated, this returns false
     function isLookaheadRequired(uint256 epochTimestamp) external view returns (bool);
