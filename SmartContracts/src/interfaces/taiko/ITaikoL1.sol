@@ -25,8 +25,41 @@ interface ITaikoL1 {
         uint64 id;
     }
 
+    struct SlotA {
+        uint64 genesisHeight;
+        uint64 genesisTimestamp;
+        uint64 lastSyncedBlockId;
+        uint64 lastSynecdAt; // typo!
+    }
+
+    struct SlotB {
+        uint64 numBlocks;
+        uint64 lastVerifiedBlockId;
+        bool provingPaused;
+        uint8 __reservedB1;
+        uint16 __reservedB2;
+        uint32 __reservedB3;
+        uint64 lastUnpausedAt;
+    }
+
+    struct BlockV2 {
+        bytes32 metaHash;
+        address assignedProver;
+        uint96 livenessBond;
+        uint64 blockId;
+        uint64 proposedAt;
+        uint64 proposedIn;
+        uint24 nextTransitionId;
+        bool livenessBondReturned;
+        uint24 verifiedTransitionId;
+    }
+
     function proposeBlock(bytes calldata _params, bytes calldata _txList)
         external
         payable
         returns (BlockMetadata memory meta_, EthDeposit[] memory deposits_);
+
+    function getStateVariables() external view returns (SlotA memory, SlotB memory);
+
+    function getBlockV2(uint64 _blockId) external view returns (BlockV2 memory blk_);
 }
