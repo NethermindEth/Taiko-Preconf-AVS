@@ -16,6 +16,7 @@ pub struct Config {
     pub preconf_registry_expiry_sec: u64,
     pub contract_addresses: ContractAddresses,
     pub p2p_network_config: P2PNetworkConfig,
+    pub taiko_chain_id: u64,
 }
 
 #[derive(Debug)]
@@ -195,6 +196,17 @@ impl Config {
             boot_nodes,
         };
 
+        let taiko_chain_id = std::env::var("TAIKO_CHAIN_ID")
+        .expect("TAIKO_CHAIN_ID env variable must be set")
+        .parse::<u64>()
+        .map(|val| {
+            if val == 0 {
+                panic!("TAIKO_CHAIN_ID must be a positive number");
+            }
+            val
+        })
+        .expect("TAIKO_CHAIN_ID must be a number");
+
         let config = Self {
             taiko_proposer_url: std::env::var("TAIKO_PROPOSER_URL")
                 .unwrap_or("http://127.0.0.1:1234".to_string()),
@@ -214,6 +226,7 @@ impl Config {
             preconf_registry_expiry_sec,
             contract_addresses,
             p2p_network_config,
+            taiko_chain_id,
         };
 
         info!(
