@@ -246,7 +246,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         address preconferInRegistry = validatorInRegistry.preconfer;
         if (
             slotTimestamp < validatorInRegistry.startProposingAt
-                || (validatorInRegistry.stopProposingAt != 0 && slotTimestamp > validatorInRegistry.stopProposingAt)
+                || (validatorInRegistry.stopProposingAt != 0 && slotTimestamp >= validatorInRegistry.stopProposingAt)
         ) {
             // The validator is no longer allowed to propose for the former preconfer
             preconferInRegistry = address(0);
@@ -367,5 +367,57 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
 
     function isLookaheadRequired(uint256 epochTimestamp) public view returns (bool) {
         return lookaheadPosters[epochTimestamp] == address(0);
+    }
+
+    function getLookahead() external view returns (LookaheadEntry[LOOKAHEAD_BUFFER_SIZE] memory) {
+        return lookahead;
+    }
+
+    /**
+     * @notice Builds and returns lookahead set parameters for an epoch
+     * @dev This function can be used by the offchain node to create the lookahead to be posted.
+     * @param epochTimestamp The start timestamp of the epoch for which the lookahead is to be generated
+     * @param validatorBLSPubKeys The BLS public keys of the validators who are expected to propose in the epoch
+     * in the same sequence as they appear in the epoch. So at index n - 1, we have the validator for slot n in that
+     * epoch.
+     */
+    function getLookaheadParamsForEpoch(uint256 epochTimestamp, bytes[32] memory validatorBLSPubKeys)
+        external
+        view
+        returns (LookaheadSetParam[] memory)
+    {
+        uint256 index;
+        LookaheadSetParam[32] memory lookaheadSetParamsTemp;
+
+        for (uint256 i = 0; i < 32; ++i) {
+            uint256 slotTimestamp = epochTimestamp + (i * SECONDS_IN_SLOT);
+
+            // Fetch the validator object from the registry
+            IPreconfRegistry.Validator memory validator =
+                preconfRegistry.getValidator(keccak256(abi.encodePacked(bytes16(0), validatorBLSPubKeys[i])));
+
+            // Skip deregistered preconfers
+            if (preconfRegistry.getPreconferIndex(validator.preconfer) == 0) {
+                continue;
+            }
+
+            // If the validator is allowed to propose in the epoch, add the associated preconfer to the lookahead
+            if (
+                validator.preconfer != address(0) && slotTimestamp >= validator.startProposingAt
+                    && (validator.stopProposingAt == 0 || slotTimestamp < validator.stopProposingAt)
+            ) {
+                lookaheadSetParamsTemp[i] =
+                    LookaheadSetParam({timestamp: slotTimestamp, preconfer: validator.preconfer});
+                ++index;
+            }
+        }
+
+        // Not very gas efficient, but is okay for a view
+        LookaheadSetParam[] memory lookaheadSetParams = new LookaheadSetParam[](index);
+        for (uint256 i; i < index; ++i) {
+            lookaheadSetParams[i] = lookaheadSetParamsTemp[i];
+        }
+
+        return lookaheadSetParams;
     }
 }
