@@ -2,7 +2,7 @@ use super::slot_clock::SlotClock;
 use crate::utils::config;
 use alloy::{
     network::{Ethereum, EthereumWallet, NetworkWallet},
-    primitives::{Address, Bytes, FixedBytes, U256},
+    primitives::{Address, Bytes, FixedBytes, B256, U256},
     providers::ProviderBuilder,
     signers::{
         local::{LocalSigner, PrivateKeySigner},
@@ -294,21 +294,27 @@ impl ExecutionLayer {
 
     pub async fn prove_incorrect_preconfirmation(
         &self,
-        _block_id: u64,
-        _tx_list_hash: [u8; 32],
-        _signture: [u8; 65],
+        block_id: u64,
+        chain_id: u64,
+        tx_list_hash: [u8; 32],
+        signature: [u8; 65],
     ) -> Result<(), Error> {
         let provider = ProviderBuilder::new()
             .with_recommended_fillers()
             .wallet(self.wallet.clone())
             .on_http(self.rpc_url.clone());
 
-        let _contract =
+        let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
-        // TODO: waiting for the new contract ABI
-        // let builder = contract.proveIncorrectPreconfirmation(U256::from(block_id), tx_list_hash, signature);
 
-        let tx_hash = FixedBytes::<32>::default(); // builder.send().await?.watch().await?;
+        let header = PreconfTaskManager::PreconfirmationHeader {
+            blockId: U256::from(block_id),
+            chainId: U256::from(chain_id),
+            txListHash: B256::from(tx_list_hash), 
+        };
+        let signature = Bytes::from(signature);
+        let builder = contract.proveIncorrectPreconfirmation(header, signature);
+        let tx_hash = builder.send().await?.watch().await?;
         tracing::debug!("Proved incorrect preconfirmation: {tx_hash}");
         Ok(())
     }
