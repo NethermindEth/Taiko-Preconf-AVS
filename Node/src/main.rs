@@ -16,6 +16,12 @@ const MESSAGE_QUEUE_SIZE: usize = 100;
 async fn main() -> Result<(), Error> {
     init_logging();
     let config = utils::config::Config::read_env_variables();
+    let state_file = utils::state_file::State::read_state_file(&config.state_file_path)
+        .map_err(|e| anyhow::anyhow!(format!("reading state file: {}", e)))?;
+
+    if !state_file.registered {
+        return Err(anyhow::anyhow!("Node is not registered, exiting"));
+    }
 
     let (node_to_p2p_tx, node_to_p2p_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
     let (p2p_to_node_tx, p2p_to_node_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
@@ -52,7 +58,6 @@ async fn main() -> Result<(), Error> {
         mev_boost,
         config.l2_slot_duration_sec,
         config.validator_bls_pubkey,
-        config.epochs_to_skip_at_beginning,
     )
     .await?;
     node.entrypoint().await?;

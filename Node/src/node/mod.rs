@@ -29,7 +29,6 @@ pub struct Node {
     ethereum_l1: Arc<EthereumL1>,
     _mev_boost: MevBoost, // temporary unused
     epoch: Epoch,
-    epochs_to_skip: Epoch,
     lookahead: Vec<ProposerDuty>,
     l2_slot_duration_sec: u64,
     validator_pubkey: String,
@@ -48,7 +47,6 @@ impl Node {
         mev_boost: MevBoost,
         l2_slot_duration_sec: u64,
         validator_pubkey: String,
-        epochs_to_skip_at_beginning: Epoch,
     ) -> Result<Self, Error> {
         let current_epoch = ethereum_l1.slot_clock.get_current_epoch()?;
         Ok(Self {
@@ -60,7 +58,6 @@ impl Node {
             ethereum_l1,
             _mev_boost: mev_boost,
             epoch: current_epoch,
-            epochs_to_skip: epochs_to_skip_at_beginning,
             lookahead: vec![],
             l2_slot_duration_sec,
             validator_pubkey,
@@ -173,11 +170,6 @@ impl Node {
                 current_epoch
             );
             self.epoch = current_epoch;
-            if self.epochs_to_skip > 0 {
-                self.epochs_to_skip = self.epochs_to_skip - 1;
-                tracing::info!("Preconfirmation skipped at the beginning");
-                return Ok(());
-            }
 
             self.current_slot_to_preconf = self.next_slot_to_preconf;
             self.lookahead = self
