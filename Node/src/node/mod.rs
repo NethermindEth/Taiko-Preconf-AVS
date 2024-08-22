@@ -48,7 +48,6 @@ impl Node {
         l2_slot_duration_sec: u64,
         validator_pubkey: String,
     ) -> Result<Self, Error> {
-        let current_epoch = ethereum_l1.slot_clock.get_current_epoch()?;
         Ok(Self {
             taiko,
             node_rx: Some(node_rx),
@@ -57,7 +56,7 @@ impl Node {
             gas_used: 0,
             ethereum_l1,
             _mev_boost: mev_boost,
-            epoch: current_epoch,
+            epoch: Epoch::MAX, // it'll be updated in the first preconfirmation loop step
             lookahead: vec![],
             l2_slot_duration_sec,
             validator_pubkey,
