@@ -24,8 +24,6 @@ interface IPreconfRegistry {
         BLS12381.G2Point signature;
         // The timestamp at which the above signature expires
         uint256 signatureExpiry;
-        // The preconfer that the validator will be proposing for
-        address preconfer;
     }
 
     struct RemoveValidatorParam {

@@ -97,12 +97,11 @@ contract PreconfRegistry is IPreconfRegistry, ISignatureUtils, BLSSignatureCheck
     function addValidators(AddValidatorParam[] calldata addValidatorParams) external {
         for (uint256 i; i < addValidatorParams.length; ++i) {
             // Revert if preconfer is not registered
-            if (preconferToIndex[addValidatorParams[i].preconfer] == 0) {
+            if (preconferToIndex[msg.sender] == 0) {
                 revert PreconferNotRegistered();
             }
 
-            bytes memory message =
-                _createMessage(ValidatorOp.ADD, addValidatorParams[i].signatureExpiry, addValidatorParams[i].preconfer);
+            bytes memory message = _createMessage(ValidatorOp.ADD, addValidatorParams[i].signatureExpiry, msg.sender);
 
             // Revert if any signature is invalid
             if (!verifySignature(message, addValidatorParams[i].signature, addValidatorParams[i].pubkey)) {
@@ -129,7 +128,7 @@ contract PreconfRegistry is IPreconfRegistry, ISignatureUtils, BLSSignatureCheck
             ) {
                 unchecked {
                     validators[pubKeyHash] = Validator({
-                        preconfer: addValidatorParams[i].preconfer,
+                        preconfer: msg.sender,
                         // The delay is crucial in order to not contradict the lookahead
                         startProposingAt: uint40(block.timestamp + PreconfConstants.TWO_EPOCHS),
                         stopProposingAt: uint40(0)
@@ -140,7 +139,7 @@ contract PreconfRegistry is IPreconfRegistry, ISignatureUtils, BLSSignatureCheck
                 revert ValidatorAlreadyActive();
             }
 
-            emit ValidatorAdded(pubKeyHash, addValidatorParams[i].preconfer);
+            emit ValidatorAdded(pubKeyHash, msg.sender);
         }
     }
 
