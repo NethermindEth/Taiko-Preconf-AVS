@@ -1,10 +1,11 @@
+use crate::utils::types::ECDSASignature;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreconfirmationProof {
     pub commit_hash: [u8; 32],
     #[serde(with = "serde_bytes")]
-    pub signature: [u8; 65], // ECDSA 65 bytes signature
+    pub signature: ECDSASignature,
 }
 
 impl From<PreconfirmationProof> for Vec<u8> {

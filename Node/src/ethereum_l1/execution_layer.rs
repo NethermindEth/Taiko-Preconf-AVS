@@ -1,5 +1,5 @@
 use super::slot_clock::SlotClock;
-use crate::utils::config;
+use crate::utils::{config, types::*};
 use alloy::{
     contract::EventPoller,
     network::{Ethereum, EthereumWallet, NetworkWallet},
@@ -48,20 +48,9 @@ pub struct AvsContractAddresses {
     pub preconf_registry: Address,
 }
 
-pub struct Validator {
-    // Preconfer that the validator proposer blocks for
-    pub preconfer: [u8; 20],
-    // Timestamp at which the preconfer may start proposing for the preconfer
-    // 2 epochs from validator addition timestamp
-    pub start_proposing_at: u64,
-    // Timestamp at which the preconfer must stop proposing for the preconfer
-    // 2 epochs from validator removal timestamp
-    pub stop_proposing_at: u64,
-}
-
 pub struct LookaheadSetParam {
-    pub timestamp: u64,
-    pub preconfer: [u8; 20],
+    pub _timestamp: u64,
+    pub preconfer: PreconferAddress,
 }
 
 impl From<&PreconfTaskManager::LookaheadSetParam> for LookaheadSetParam {
@@ -74,7 +63,7 @@ impl From<&PreconfTaskManager::LookaheadSetParam> for LookaheadSetParam {
         });
 
         Self {
-            timestamp,
+            _timestamp: timestamp,
             preconfer: param.preconfer.into_array(),
         }
     }
@@ -359,28 +348,6 @@ impl ExecutionLayer {
         Ok(())
     }
 
-    pub async fn get_validator(&self, pubkey: &[u8]) -> Result<Validator, Error> {
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone());
-        let preconf_registry =
-            PreconfRegistry::new(self.contract_addresses.avs.preconf_registry, provider);
-
-        let pubkey: [u8; 32] = pubkey[..32].try_into()?;
-
-        let validator = preconf_registry
-            .getValidator(FixedBytes::from(pubkey))
-            .call()
-            .await?;
-
-        Ok(Validator {
-            preconfer: validator._0.preconfer.into_array(),
-            start_proposing_at: validator._0.startProposingAt,
-            stop_proposing_at: validator._0.stopProposingAt,
-        })
-    }
-
     pub async fn watch_for_registered_event(
         &self,
     ) -> Result<
@@ -430,8 +397,8 @@ impl ExecutionLayer {
 
     pub async fn get_lookahead_params_for_epoch(
         &self,
-        epoch_timestamp: u64,
-        validator_bls_pub_keys: &[[u8; 48]; 32],
+        epoch_begin_timestamp: u64,
+        validator_bls_pub_keys: &[BLSCompressedPublicKey; 32],
     ) -> Result<Vec<LookaheadSetParam>, Error> {
         let provider = ProviderBuilder::new()
             .with_recommended_fillers()
@@ -442,7 +409,7 @@ impl ExecutionLayer {
 
         let params = contract
             .getLookaheadParamsForEpoch(
-                U256::from(epoch_timestamp),
+                U256::from(epoch_begin_timestamp),
                 validator_bls_pub_keys.map(|key| Bytes::from(key)),
             )
             .call()
@@ -450,6 +417,23 @@ impl ExecutionLayer {
             ._0;
 
         Ok(params.iter().map(|param| param.into()).collect::<Vec<_>>())
+    }
+
+    pub async fn is_lookahead_required(&self, epoch_begin_timestamp: u64) -> Result<bool, Error> {
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.wallet.clone())
+            .on_http(self.rpc_url.clone());
+
+        let contract =
+            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
+
+        let is_required = contract
+            .isLookaheadRequired(U256::from(epoch_begin_timestamp))
+            .call()
+            .await?;
+
+        Ok(is_required._0)
     }
 
     #[cfg(test)]

@@ -235,7 +235,12 @@ impl Node {
 
             self.operator = Operator::new(self.ethereum_l1.clone());
             self.operator
-                .find_slots_to_preconfirm(&self.lookahead)
+                .find_slots_to_preconfirm(
+                    self.ethereum_l1
+                        .slot_clock
+                        .get_epoch_begin_timestamp(current_epoch)?,
+                    &self.lookahead,
+                )
                 .await?;
 
             self.lookahead = self
@@ -251,7 +256,7 @@ impl Node {
 
         let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
 
-        match self.operator.get_status(current_slot) {
+        match self.operator.get_status(current_slot)? {
             OperatorStatus::PreconferAndProposer => {
                 // TODO: replace with mev-boost forced inclusion list
                 self.preconfirm_block().await?;
