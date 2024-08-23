@@ -2,17 +2,9 @@
 pragma solidity 0.8.25;
 
 import {EIP4788} from "../libraries/EIP4788.sol";
+import {ITaikoL1} from "./taiko/ITaikoL1.sol";
 
 interface IPreconfTaskManager {
-    struct ProposedBlock {
-        // Proposer of the L2 block
-        address proposer;
-        // L1 block timestamp
-        uint96 timestamp;
-        // Keccak hash of the RLP transaction list of the block
-        bytes32 txListHash;
-    }
-
     struct PreconfirmationHeader {
         // The block height for which the preconfirmation is provided
         uint256 blockId;
@@ -59,6 +51,8 @@ interface IPreconfTaskManager {
     error MissedDisputeWindow();
     /// @dev The disputed preconfirmation is correct
     error PreconfirmationIsCorrect();
+    /// @dev The sent block metadata does not match the one retrieved from Taiko
+    error MetadataMismatch();
     /// @dev The expected validator has been slashed on CL
     error ExpectedValidatorMustNotBeSlashed();
     /// @dev The lookahead poster for the epoch has already been slashed
@@ -75,7 +69,11 @@ interface IPreconfTaskManager {
     ) external payable;
 
     /// @dev Slashes a preconfer if the txn and ordering in a signed preconf does not match the actual block
-    function proveIncorrectPreconfirmation(PreconfirmationHeader memory header, bytes memory signature) external;
+    function proveIncorrectPreconfirmation(
+        ITaikoL1.BlockMetadata calldata taikoBlockMetadata,
+        PreconfirmationHeader calldata header,
+        bytes calldata signature
+    ) external;
 
     /// @dev Slashes a preconfer if the validator lookahead pushed by them has an incorrect entry
     function proveIncorrectLookahead(
@@ -84,6 +82,15 @@ interface IPreconfTaskManager {
         bytes memory validatorBLSPubKey,
         EIP4788.InclusionProof memory validatorInclusionProof
     ) external;
+
+    /// @dev Returns the entire lookahead buffer
+    function getLookahead() external view returns (LookaheadEntry[64] memory);
+
+    /// @dev Return the parameters required for the lookahead to be set for the given epoch
+    function getLookaheadParamsForEpoch(uint256 epochTimestamp, bytes[32] memory validatorBLSPubKeys)
+        external
+        view
+        returns (LookaheadSetParam[] memory);
 
     /// @dev Returns true is a lookahead is not posted for an epoch
     /// @dev In the event that a lookahead was posted but later invalidated, this returns false

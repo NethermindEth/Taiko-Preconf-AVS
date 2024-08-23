@@ -52,6 +52,7 @@ async fn main() -> Result<(), Error> {
         &config.taiko_proposer_url,
         &config.taiko_driver_url,
         config.block_proposed_receiver_timeout_sec,
+        config.taiko_chain_id,
     ));
 
     let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url);

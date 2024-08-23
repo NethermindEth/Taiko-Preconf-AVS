@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.25;
 
-import {PreconfConstants} from "./libraries/PreconfConstants.sol";
 import {BLS12381} from "../libraries/BLS12381.sol";
+import {PreconfConstants} from "./PreconfConstants.sol";
 import {BLSSignatureChecker} from "./utils/BLSSignatureChecker.sol";
 import {IPreconfRegistry} from "../interfaces/IPreconfRegistry.sol";
 import {IServiceManager} from "eigenlayer-middleware/interfaces/IServiceManager.sol";

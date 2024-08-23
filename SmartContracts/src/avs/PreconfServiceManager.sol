@@ -32,7 +32,7 @@ contract PreconfServiceManager is ServiceManagerBase, IPreconfServiceManager {
 
     modifier onlyPreconfTaskManager() {
         if (msg.sender != address(preconfTaskManager)) {
-            revert IPreconfServiceManager.SenderIsNotPreconfTaskManager(msg.sender);
+            revert SenderIsNotPreconfTaskManager(msg.sender);
         }
         _;
     }
@@ -44,7 +44,7 @@ contract PreconfServiceManager is ServiceManagerBase, IPreconfServiceManager {
 
     function slashOperator(address operator) external onlyPreconfTaskManager {
         if (slasher.isOperatorSlashed(operator)) {
-            revert IPreconfServiceManager.OperatorAlreadySlashed(operator);
+            revert OperatorAlreadySlashed(operator);
         }
         slasher.slashOperator(operator);
     }
