@@ -9,10 +9,11 @@ pub struct Taiko {
     rpc_proposer: RpcClient,
     rpc_driver: RpcClient,
     rpc_driver_long_timeout: RpcClient,
+    pub chain_id: u64,
 }
 
 impl Taiko {
-    pub fn new(proposer_url: &str, driver_url: &str, long_timeout_sec: u64) -> Self {
+    pub fn new(proposer_url: &str, driver_url: &str, long_timeout_sec: u64, chain_id: u64) -> Self {
         Self {
             rpc_proposer: RpcClient::new(proposer_url),
             rpc_driver: RpcClient::new(driver_url),
@@ -20,6 +21,7 @@ impl Taiko {
                 driver_url,
                 Duration::from_secs(long_timeout_sec),
             ),
+            chain_id,
         }
     }
 
@@ -156,6 +158,7 @@ mod test {
             &format!("http://127.0.0.1:{}", port),
             &format!("http://127.0.0.1:{}", port),
             120,
+            1,
         );
         (rpc_server, taiko)
     }

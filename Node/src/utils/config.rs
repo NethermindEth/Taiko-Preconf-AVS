@@ -16,7 +16,7 @@ pub struct Config {
     pub preconf_registry_expiry_sec: u64,
     pub contract_addresses: ContractAddresses,
     pub p2p_network_config: P2PNetworkConfig,
-    pub epochs_to_skip_at_beginning: u64,
+    pub taiko_chain_id: u64,
 }
 
 #[derive(Debug)]
@@ -186,11 +186,6 @@ impl Config {
                 None
             };
 
-        let epochs_to_skip_at_beginning = std::env::var("EPOCHS_TO_SKIP_AT_BEGINNING")
-            .unwrap_or("2".to_string())
-            .parse::<u64>()
-            .expect("EPOCHS_TO_SKIP_AT_BEGINNING must be a number");
-
         // Create P2P network config
         let p2p_network_config: P2PNetworkConfig = P2PNetworkConfig {
             local_key: generate_secp256k1(),
@@ -200,6 +195,17 @@ impl Config {
             tcpv4: 9000,
             boot_nodes,
         };
+
+        let taiko_chain_id = std::env::var("TAIKO_CHAIN_ID")
+            .expect("TAIKO_CHAIN_ID env variable must be set")
+            .parse::<u64>()
+            .map(|val| {
+                if val == 0 {
+                    panic!("TAIKO_CHAIN_ID must be a positive number");
+                }
+                val
+            })
+            .expect("TAIKO_CHAIN_ID must be a number");
 
         let config = Self {
             taiko_proposer_url: std::env::var("TAIKO_PROPOSER_URL")
@@ -220,7 +226,7 @@ impl Config {
             preconf_registry_expiry_sec,
             contract_addresses,
             p2p_network_config,
-            epochs_to_skip_at_beginning,
+            taiko_chain_id,
         };
 
         info!(
@@ -236,7 +242,6 @@ L2 slot duration: {}
 Validator pubkey: {}
 Block proposed receiver timeout: {}
 Preconf registry expiry seconds: {}
-Epochs to skip at the beginning: {}
 Contract addresses: {:#?}
 p2p_network_config: {}
 "#,
@@ -250,7 +255,6 @@ p2p_network_config: {}
             config.validator_bls_pubkey,
             config.block_proposed_receiver_timeout_sec,
             config.preconf_registry_expiry_sec,
-            config.epochs_to_skip_at_beginning,
             config.contract_addresses,
             config.p2p_network_config,
         );
