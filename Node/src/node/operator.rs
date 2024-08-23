@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 pub struct Operator {
     ethereum_l1: Arc<EthereumL1>,
-    should_post_lookahead_for_next_epoch: bool,
+    lookahead_required_contract_called: bool,
     lookahead_params: Vec<LookaheadSetParam>,
     l1_slots_per_epoch: u64,
 }
@@ -24,7 +24,7 @@ impl Operator {
         let l1_slots_per_epoch = ethereum_l1.slot_clock.get_slots_per_epoch();
         Self {
             ethereum_l1,
-            should_post_lookahead_for_next_epoch: false,
+            lookahead_required_contract_called: false,
             lookahead_params: vec![],
             l1_slots_per_epoch,
         }
@@ -57,8 +57,22 @@ impl Operator {
                 != self.ethereum_l1.execution_layer.get_preconfer_address()
     }
 
-    pub fn should_post_lookahead(&self) -> bool {
-        self.should_post_lookahead_for_next_epoch
+    pub async fn should_post_lookahead(
+        &mut self,
+        epoch_begin_timestamp: u64,
+    ) -> Result<bool, Error> {
+        if !self.lookahead_required_contract_called {
+            self.lookahead_required_contract_called = true;
+            if self
+                .ethereum_l1
+                .execution_layer
+                .is_lookahead_required(epoch_begin_timestamp)
+                .await?
+            {
+                return Ok(true);
+            }
+        }
+        return Ok(false);
     }
 
     pub async fn find_slots_to_preconfirm(
@@ -90,12 +104,6 @@ impl Operator {
                 epoch_begin_timestamp,
                 validator_bls_pub_keys.as_slice().try_into()?,
             )
-            .await?;
-
-        self.should_post_lookahead_for_next_epoch = self
-            .ethereum_l1
-            .execution_layer
-            .is_lookahead_required(epoch_begin_timestamp)
             .await?;
 
         Ok(())

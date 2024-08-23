@@ -36,7 +36,6 @@ pub struct Node {
     l2_slot_duration_sec: u64,
     preconfirmed_blocks: Arc<Mutex<HashMap<u64, PreconfirmationProof>>>,
     operator: Operator,
-    // validator_pubkey: String,
 }
 
 impl Node {
@@ -225,6 +224,10 @@ impl Node {
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
         let current_epoch = self.ethereum_l1.slot_clock.get_current_epoch()?;
+        let current_epoch_timestamp = self
+            .ethereum_l1
+            .slot_clock
+            .get_epoch_begin_timestamp(current_epoch)?;
         if current_epoch != self.epoch {
             tracing::debug!(
                 "Current epoch changed from {} to {}",
@@ -235,12 +238,7 @@ impl Node {
 
             self.operator = Operator::new(self.ethereum_l1.clone());
             self.operator
-                .find_slots_to_preconfirm(
-                    self.ethereum_l1
-                        .slot_clock
-                        .get_epoch_begin_timestamp(current_epoch)?,
-                    &self.lookahead,
-                )
+                .find_slots_to_preconfirm(current_epoch_timestamp, &self.lookahead)
                 .await?;
 
             self.lookahead = self
@@ -248,20 +246,30 @@ impl Node {
                 .consensus_layer
                 .get_lookahead(self.epoch + 1)
                 .await?;
-
-            if self.operator.should_post_lookahead() {
-                // TODO: post lookahead
-            }
         }
 
         let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
 
         match self.operator.get_status(current_slot)? {
             OperatorStatus::PreconferAndProposer => {
+                if self
+                    .operator
+                    .should_post_lookahead(current_epoch_timestamp)
+                    .await?
+                {
+                    // TODO: post lookahead
+                }
                 // TODO: replace with mev-boost forced inclusion list
                 self.preconfirm_block().await?;
             }
             OperatorStatus::Preconfer => {
+                if self
+                    .operator
+                    .should_post_lookahead(current_epoch_timestamp)
+                    .await?
+                {
+                    // TODO: post lookahead
+                }
                 self.preconfirm_block().await?;
             }
             OperatorStatus::None => {
