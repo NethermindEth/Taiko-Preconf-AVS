@@ -1,6 +1,7 @@
 use super::slot_clock::SlotClock;
 use crate::utils::config;
 use alloy::{
+    contract::EventPoller,
     network::{Ethereum, EthereumWallet, NetworkWallet},
     primitives::{Address, Bytes, FixedBytes, B256, U256},
     providers::ProviderBuilder,
@@ -14,6 +15,7 @@ use alloy::{
 use anyhow::Error;
 use beacon_api_client::ProposerDuty;
 use ecdsa::SigningKey;
+use futures_util::StreamExt;
 use k256::Secp256k1;
 use rand_core::{OsRng, RngCore};
 use std::str::FromStr;
@@ -23,7 +25,7 @@ pub struct ExecutionLayer {
     rpc_url: reqwest::Url,
     signer: LocalSigner<SigningKey<Secp256k1>>,
     wallet: EthereumWallet,
-    avs_node_address: Address,
+    preconfer_address: Address,
     contract_addresses: ContractAddresses,
     slot_clock: Arc<SlotClock>,
     preconf_registry_expiry_sec: u64,
@@ -113,8 +115,8 @@ impl ExecutionLayer {
         tracing::debug!("Creating ExecutionLayer with RPC URL: {}", rpc_url);
 
         let signer = PrivateKeySigner::from_str(avs_node_ecdsa_private_key)?;
-        let avs_node_address: Address = signer.address();
-        tracing::info!("AVS node address: {}", avs_node_address);
+        let preconfer_address: Address = signer.address();
+        tracing::info!("AVS node address: {}", preconfer_address);
 
         let wallet = EthereumWallet::from(signer.clone());
 
@@ -125,7 +127,7 @@ impl ExecutionLayer {
             rpc_url: rpc_url.parse()?,
             signer,
             wallet,
-            avs_node_address,
+            preconfer_address,
             contract_addresses,
             slot_clock,
             preconf_registry_expiry_sec,
@@ -203,7 +205,7 @@ impl ExecutionLayer {
         Ok(())
     }
 
-    pub async fn register(&self) -> Result<(), Error> {
+    pub async fn register_preconfer(&self) -> Result<(), Error> {
         let provider = ProviderBuilder::new()
             .with_recommended_fillers()
             .wallet(self.wallet.clone())
@@ -240,7 +242,7 @@ impl ExecutionLayer {
             U256::from(chrono::Utc::now().timestamp() as u64 + self.preconf_registry_expiry_sec);
         let digest_hash = avs_directory
             .calculateOperatorAVSRegistrationDigestHash(
-                self.avs_node_address,
+                self.preconfer_address,
                 self.contract_addresses.avs.service_manager,
                 salt,
                 expiration_timestamp,
@@ -310,12 +312,59 @@ impl ExecutionLayer {
         let header = PreconfTaskManager::PreconfirmationHeader {
             blockId: U256::from(block_id),
             chainId: U256::from(chain_id),
-            txListHash: B256::from(tx_list_hash), 
+            txListHash: B256::from(tx_list_hash),
         };
         let signature = Bytes::from(signature);
         let builder = contract.proveIncorrectPreconfirmation(header, signature);
         let tx_hash = builder.send().await?.watch().await?;
         tracing::debug!("Proved incorrect preconfirmation: {tx_hash}");
+        Ok(())
+    }
+
+    pub async fn watch_for_registered_event(
+        &self,
+    ) -> Result<
+        EventPoller<
+            alloy::transports::http::Http<reqwest::Client>,
+            PreconfRegistry::PreconferRegistered,
+        >,
+        Error,
+    > {
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.wallet.clone())
+            .on_http(self.rpc_url.clone());
+
+        let registry = PreconfRegistry::new(self.contract_addresses.avs.preconf_registry, provider);
+        let registered_filter = registry.PreconferRegistered_filter().watch().await?;
+        tracing::debug!("Subscribed to registered event");
+
+        Ok(registered_filter)
+    }
+
+    pub async fn wait_for_the_registered_event(
+        &self,
+        registered_filter: EventPoller<
+            alloy::transports::http::Http<reqwest::Client>,
+            PreconfRegistry::PreconferRegistered,
+        >,
+    ) -> Result<(), Error> {
+        let mut stream = registered_filter.into_stream();
+        while let Some(log) = stream.next().await {
+            match log {
+                Ok(log) => {
+                    tracing::info!("Received PreconferRegistered for: {}", log.0.preconfer);
+                    if log.0.preconfer == self.preconfer_address {
+                        tracing::info!("Preconfer registered!");
+                        break;
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Error receiving log: {:?}", e);
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -332,7 +381,7 @@ impl ExecutionLayer {
             rpc_url,
             signer,
             wallet,
-            avs_node_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
+            preconfer_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
                 .parse()?,
             slot_clock: Arc::new(clock),
             contract_addresses: ContractAddresses {
@@ -426,7 +475,7 @@ mod tests {
         let private_key = anvil.keys()[0].clone();
         let el = ExecutionLayer::new_from_pk(rpc_url, private_key).unwrap();
 
-        let result = el.register().await;
+        let result = el.register_preconfer().await;
         assert!(result.is_ok(), "Register method failed: {:?}", result.err());
     }
 }
