@@ -59,6 +59,27 @@ pub struct Validator {
     pub stop_proposing_at: u64,
 }
 
+pub struct LookaheadSetParam {
+    pub timestamp: u64,
+    pub preconfer: [u8; 20],
+}
+
+impl From<&PreconfTaskManager::LookaheadSetParam> for LookaheadSetParam {
+    fn from(param: &PreconfTaskManager::LookaheadSetParam) -> Self {
+        let timestamp = param.timestamp.try_into().unwrap_or_else(|_| {
+            tracing::error!(
+                "Failed to convert timestamp to u64 from PreconfTaskManager::LookaheadSetParam"
+            );
+            u64::MAX
+        });
+
+        Self {
+            timestamp,
+            preconfer: param.preconfer.into_array(),
+        }
+    }
+}
+
 sol!(
     #[allow(clippy::too_many_arguments)]
     #[allow(missing_docs)]
@@ -115,7 +136,6 @@ sol!(
     "src/ethereum_l1/abi/PreconfRegistry.json"
 );
 
-#[allow(dead_code)] //TODO: remove after used in release code
 impl ExecutionLayer {
     pub fn new(
         rpc_url: &str,
@@ -322,18 +342,20 @@ impl ExecutionLayer {
             .wallet(self.wallet.clone())
             .on_http(self.rpc_url.clone());
 
-        let contract =
+        let _contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
 
-        let header = PreconfTaskManager::PreconfirmationHeader {
+        let _header = PreconfTaskManager::PreconfirmationHeader {
             blockId: U256::from(block_id),
             chainId: U256::from(chain_id),
             txListHash: B256::from(tx_list_hash),
         };
-        let signature = Bytes::from(signature);
-        let builder = contract.proveIncorrectPreconfirmation(header, signature);
-        let tx_hash = builder.send().await?.watch().await?;
-        tracing::debug!("Proved incorrect preconfirmation: {tx_hash}");
+        let _signature = Bytes::from(signature);
+
+        // TODO: use new paremeter BlockMetadata
+        // let builder = contract.proveIncorrectPreconfirmation(header, signature);
+        // let tx_hash = builder.send().await?.watch().await?;
+        // tracing::debug!("Proved incorrect preconfirmation: {tx_hash}");
         Ok(())
     }
 
@@ -404,6 +426,30 @@ impl ExecutionLayer {
         }
 
         Ok(())
+    }
+
+    pub async fn get_lookahead_params_for_epoch(
+        &self,
+        epoch_timestamp: u64,
+        validator_bls_pub_keys: &[[u8; 48]; 32],
+    ) -> Result<Vec<LookaheadSetParam>, Error> {
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.wallet.clone())
+            .on_http(self.rpc_url.clone());
+        let contract =
+            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
+
+        let params = contract
+            .getLookaheadParamsForEpoch(
+                U256::from(epoch_timestamp),
+                validator_bls_pub_keys.map(|key| Bytes::from(key)),
+            )
+            .call()
+            .await?
+            ._0;
+
+        Ok(params.iter().map(|param| param.into()).collect::<Vec<_>>())
     }
 
     #[cfg(test)]

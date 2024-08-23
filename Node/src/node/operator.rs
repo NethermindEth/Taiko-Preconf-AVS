@@ -57,7 +57,7 @@ impl Operator {
         let mut first_slot_to_preconf = first_duty.slot;
         let mut first_preconfer = true;
         let mut preconfer_found = false;
-        let avs_node_address = self.ethereum_l1.execution_layer.get_preconfer_address();
+        let preconfer_address = self.ethereum_l1.execution_layer.get_preconfer_address();
         self.should_post_lookahead_for_next_epoch = false;
 
         for duty in lookahead {
@@ -68,7 +68,7 @@ impl Operator {
                 )
                 .await?
             {
-                if preconfer == avs_node_address {
+                if preconfer == preconfer_address {
                     self.first_slot_to_preconf = Some(first_slot_to_preconf);
                     self.final_slot_to_preconf = Some(duty.slot);
                     if first_preconfer {
