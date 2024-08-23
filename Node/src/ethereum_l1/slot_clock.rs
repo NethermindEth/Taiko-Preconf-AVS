@@ -31,6 +31,10 @@ impl SlotClock {
         }
     }
 
+    pub fn get_slots_per_epoch(&self) -> u64 {
+        self.slots_per_epoch
+    }
+
     fn duration_to_next_slot(&self) -> Result<Duration, Error> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         self.duration_to_next_slot_from(now)
@@ -100,6 +104,12 @@ impl SlotClock {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let slot = self.slot_of(now)?;
         Ok(slot / self.slots_per_epoch)
+    }
+
+    pub fn get_epoch_begin_timestamp(&self, epoch: Epoch) -> Result<u64, Error> {
+        let slot = epoch * self.slots_per_epoch;
+        let start_of_slot = self.start_of(slot)?;
+        Ok(start_of_slot.as_secs())
     }
 }
 

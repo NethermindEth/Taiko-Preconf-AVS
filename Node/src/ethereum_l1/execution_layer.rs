@@ -1,5 +1,5 @@
 use super::slot_clock::SlotClock;
-use crate::utils::config;
+use crate::utils::{config, types::*};
 use alloy::{
     contract::EventPoller,
     network::{Ethereum, EthereumWallet, NetworkWallet},
@@ -46,6 +46,27 @@ pub struct AvsContractAddresses {
     pub directory: Address,
     pub service_manager: Address,
     pub preconf_registry: Address,
+}
+
+pub struct LookaheadSetParam {
+    pub _timestamp: u64,
+    pub preconfer: PreconferAddress,
+}
+
+impl From<&PreconfTaskManager::LookaheadSetParam> for LookaheadSetParam {
+    fn from(param: &PreconfTaskManager::LookaheadSetParam) -> Self {
+        let timestamp = param.timestamp.try_into().unwrap_or_else(|_| {
+            tracing::error!(
+                "Failed to convert timestamp to u64 from PreconfTaskManager::LookaheadSetParam"
+            );
+            u64::MAX
+        });
+
+        Self {
+            _timestamp: timestamp,
+            preconfer: param.preconfer.into_array(),
+        }
+    }
 }
 
 sol!(
@@ -132,6 +153,10 @@ impl ExecutionLayer {
             slot_clock,
             preconf_registry_expiry_sec,
         })
+    }
+
+    pub fn get_preconfer_address(&self) -> [u8; 20] {
+        self.preconfer_address.into_array()
     }
 
     fn parse_contract_addresses(
@@ -306,18 +331,20 @@ impl ExecutionLayer {
             .wallet(self.wallet.clone())
             .on_http(self.rpc_url.clone());
 
-        let contract =
+        let _contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
 
-        let header = PreconfTaskManager::PreconfirmationHeader {
+        let _header = PreconfTaskManager::PreconfirmationHeader {
             blockId: U256::from(block_id),
             chainId: U256::from(chain_id),
             txListHash: B256::from(tx_list_hash),
         };
-        let signature = Bytes::from(signature);
-        let builder = contract.proveIncorrectPreconfirmation(header, signature);
-        let tx_hash = builder.send().await?.watch().await?;
-        tracing::debug!("Proved incorrect preconfirmation: {tx_hash}");
+        let _signature = Bytes::from(signature);
+
+        // TODO: use new paremeter BlockMetadata
+        // let builder = contract.proveIncorrectPreconfirmation(header, signature);
+        // let tx_hash = builder.send().await?.watch().await?;
+        // tracing::debug!("Proved incorrect preconfirmation: {tx_hash}");
         Ok(())
     }
 
@@ -334,8 +361,8 @@ impl ExecutionLayer {
             .with_recommended_fillers()
             .wallet(self.wallet.clone())
             .on_http(self.rpc_url.clone());
-
         let registry = PreconfRegistry::new(self.contract_addresses.avs.preconf_registry, provider);
+
         let registered_filter = registry.PreconferRegistered_filter().watch().await?;
         tracing::debug!("Subscribed to registered event");
 
@@ -366,6 +393,47 @@ impl ExecutionLayer {
         }
 
         Ok(())
+    }
+
+    pub async fn get_lookahead_params_for_epoch(
+        &self,
+        epoch_begin_timestamp: u64,
+        validator_bls_pub_keys: &[BLSCompressedPublicKey; 32],
+    ) -> Result<Vec<LookaheadSetParam>, Error> {
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.wallet.clone())
+            .on_http(self.rpc_url.clone());
+        let contract =
+            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
+
+        let params = contract
+            .getLookaheadParamsForEpoch(
+                U256::from(epoch_begin_timestamp),
+                validator_bls_pub_keys.map(|key| Bytes::from(key)),
+            )
+            .call()
+            .await?
+            ._0;
+
+        Ok(params.iter().map(|param| param.into()).collect::<Vec<_>>())
+    }
+
+    pub async fn is_lookahead_required(&self, epoch_begin_timestamp: u64) -> Result<bool, Error> {
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.wallet.clone())
+            .on_http(self.rpc_url.clone());
+
+        let contract =
+            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
+
+        let is_required = contract
+            .isLookaheadRequired(U256::from(epoch_begin_timestamp))
+            .call()
+            .await?;
+
+        Ok(is_required._0)
     }
 
     #[cfg(test)]
