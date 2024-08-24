@@ -16,4 +16,11 @@ interface IAVSDirectory {
 
     /// @dev This function will be left without implementation in the MVP
     function deregisterOperatorFromAVS(address operator) external;
+
+    /// @dev This function will have the implementation in the MVP so that the node can pull the message
+    ///    to be signed
+    function calculateOperatorAVSRegistrationDigestHash(address operator, address avs, bytes32 salt, uint256 expiry)
+        external
+        view
+        returns (bytes32);
 }
