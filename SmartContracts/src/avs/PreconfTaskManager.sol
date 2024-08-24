@@ -140,7 +140,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         address proposer = blockIdToProposer[blockId];
 
         // Pull the formalised block from Taiko
-        ITaikoL1.BlockV2 memory taikoBlock = taikoL1.getBlockV2(uint64(blockId));
+        ITaikoL1.Block memory taikoBlock = taikoL1.getBlock(uint64(blockId));
 
         if (block.timestamp - taikoBlock.proposedAt >= PreconfConstants.DISPUTE_PERIOD) {
             // Revert if the dispute window has been missed
