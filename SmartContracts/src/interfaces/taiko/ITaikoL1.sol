@@ -17,6 +17,8 @@ interface ITaikoL1 {
         bool blobUsed;
         bytes32 parentMetaHash;
         address sender;
+        uint32 blobTxListOffset;
+        uint32 blobTxListLength;
     }
 
     struct EthDeposit {
@@ -42,16 +44,17 @@ interface ITaikoL1 {
         uint64 lastUnpausedAt;
     }
 
-    struct BlockV2 {
+    struct Block {
         bytes32 metaHash;
         address assignedProver;
         uint96 livenessBond;
         uint64 blockId;
         uint64 proposedAt;
         uint64 proposedIn;
-        uint24 nextTransitionId;
-        bool livenessBondReturned;
-        uint24 verifiedTransitionId;
+        uint32 nextTransitionId;
+        uint32 verifiedTransitionId;
+        uint64 timestamp;
+        uint32 l1StateBlockNumber;
     }
 
     function proposeBlock(bytes calldata _params, bytes calldata _txList)
@@ -61,5 +64,5 @@ interface ITaikoL1 {
 
     function getStateVariables() external view returns (SlotA memory, SlotB memory);
 
-    function getBlockV2(uint64 _blockId) external view returns (BlockV2 memory blk_);
+    function getBlock(uint64 _blockId) external view returns (Block memory blk_);
 }
