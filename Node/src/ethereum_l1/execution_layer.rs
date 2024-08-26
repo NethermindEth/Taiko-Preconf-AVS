@@ -94,6 +94,9 @@ sol! {
         bytes signature;
         uint32 l1StateBlockNumber;
         uint64 timestamp;
+        uint32 blobTxListOffset;
+        uint32 blobTxListLength;
+        uint8 blobIndex;
     }
 }
 
@@ -202,6 +205,9 @@ impl ExecutionLayer {
             signature: Bytes::from(vec![0; 32]),
             l1StateBlockNumber: 0,
             timestamp: 0,
+            blobTxListOffset: 0,
+            blobTxListLength: 0,
+            blobIndex: 0,
         };
 
         let encoded_block_params = Bytes::from(BlockParams::abi_encode_sequence(&block_params));
