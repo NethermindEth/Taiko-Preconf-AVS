@@ -34,6 +34,7 @@ async fn main() -> Result<(), Error> {
         config.l1_slot_duration_sec,
         config.l1_slots_per_epoch,
         config.preconf_registry_expiry_sec,
+        config.validator_index,
     )
     .await?;
 
@@ -60,6 +61,7 @@ async fn main() -> Result<(), Error> {
         BlockProposedEventReceiver::new(taiko.clone(), node_tx.clone());
     BlockProposedEventReceiver::start(block_proposed_event_checker).await;
     let ethereum_l1 = Arc::new(ethereum_l1);
+
     let node = node::Node::new(
         node_rx,
         node_to_p2p_tx,

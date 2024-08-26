@@ -1,6 +1,6 @@
 use crate::{
     ethereum_l1::{slot_clock::Epoch, EthereumL1},
-    mev_boost::MevBoost,
+    mev_boost::{self, MevBoost},
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::{
         block_proposed::BlockProposed, commit::L2TxListsCommit,
@@ -8,6 +8,7 @@ use crate::{
         preconfirmation_proof::PreconfirmationProof,
     },
 };
+use alloy::hex;
 use anyhow::{anyhow as any_err, Error};
 use beacon_api_client::ProposerDuty;
 use operator::{Operator, Status as OperatorStatus};
@@ -27,6 +28,8 @@ pub mod block_proposed_receiver;
 mod operator;
 use block_porposer::BlockProposer;
 
+use mev_boost::constraints::Constraint;
+
 const OLDEST_BLOCK_DISTANCE: u64 = 256;
 
 pub struct Node {
@@ -36,7 +39,7 @@ pub struct Node {
     p2p_to_node_rx: Option<Receiver<Vec<u8>>>,
     gas_used: u64,
     ethereum_l1: Arc<EthereumL1>,
-    _mev_boost: MevBoost, // temporary unused
+    mev_boost: MevBoost, // temporary unused
     epoch: Epoch,
     lookahead: Vec<ProposerDuty>,
     l2_slot_duration_sec: u64,
@@ -66,7 +69,7 @@ impl Node {
             p2p_to_node_rx: Some(p2p_to_node_rx),
             gas_used: 0,
             ethereum_l1,
-            _mev_boost: mev_boost,
+            mev_boost,
             epoch: current_epoch,
             lookahead: vec![],
             l2_slot_duration_sec,
@@ -237,9 +240,9 @@ impl Node {
     }
 
     async fn preconfirmation_loop(&mut self) {
+        // TODO syncronize with slot clock
         let mut interval =
             tokio::time::interval(std::time::Duration::from_secs(self.l2_slot_duration_sec));
-
         loop {
             interval.tick().await;
 
@@ -280,12 +283,22 @@ impl Node {
         match self.operator.get_status(current_slot)? {
             OperatorStatus::PreconferAndProposer => {
                 if self.is_preconfer_now.load(Ordering::Acquire) {
+                    // TODO change behavior
                     self.is_preconfer_now.store(false, Ordering::Release);
 
                     let mut preconfirmation_txs = self.preconfirmation_txs.lock().await;
                     if !preconfirmation_txs.is_empty() {
+                        // Build constraints
+                        let constraints: Vec<Constraint> = preconfirmation_txs
+                            .iter()
+                            .map(|(_, value)| Constraint::new(hex::encode(value), None))
+                            .collect();
 
-                        // TODO: call mev-boost force inclusion list
+                        self
+                            .mev_boost
+                            .force_inclusion(constraints, self.ethereum_l1.clone())
+                            .await?;
+
                         preconfirmation_txs.clear();
                     }
                 }
