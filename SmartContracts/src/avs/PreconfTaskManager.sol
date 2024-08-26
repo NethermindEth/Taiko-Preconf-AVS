@@ -18,6 +18,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     ITaikoL1 internal immutable taikoL1;
 
     // EIP-4788
+    uint256 internal immutable beaconGenesis;
     address internal immutable beaconBlockRootContract;
 
     // A ring buffer of upcoming preconfers (who are also the L1 validators)
@@ -39,11 +40,13 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         IPreconfServiceManager _serviceManager,
         IPreconfRegistry _registry,
         ITaikoL1 _taikoL1,
+        uint256 _beaconGenesis,
         address _beaconBlockRootContract
     ) {
         preconfServiceManager = _serviceManager;
         preconfRegistry = _registry;
         taikoL1 = _taikoL1;
+        beaconGenesis = _beaconGenesis;
         beaconBlockRootContract = _beaconBlockRootContract;
     }
 
@@ -316,11 +319,11 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     /**
      * @notice Computes the timestamp of the epoch containing the provided slot timestamp
      */
-    function _getEpochTimestamp(uint256 slotTimestamp) private pure returns (uint256) {
-        uint256 timePassedSinceGenesis = slotTimestamp - PreconfConstants.BEACON_GENESIS_TIMESTAMP;
+    function _getEpochTimestamp(uint256 slotTimestamp) private view returns (uint256) {
+        uint256 timePassedSinceGenesis = slotTimestamp - beaconGenesis;
         uint256 timeToCurrentEpochFromGenesis =
             (timePassedSinceGenesis / PreconfConstants.SECONDS_IN_EPOCH) * PreconfConstants.SECONDS_IN_EPOCH;
-        return PreconfConstants.BEACON_GENESIS_TIMESTAMP + timeToCurrentEpochFromGenesis;
+        return beaconGenesis + timeToCurrentEpochFromGenesis;
     }
 
     /**
