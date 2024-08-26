@@ -37,7 +37,8 @@ impl MevBoost {
             .sign_message_with_private_ecdsa_key(&data_to_sign)?;
 
         // Prepare data to send
-        let signed_constraints = SignedConstraints::new(message, hex::encode(signature));
+        let signed_constraints =
+            SignedConstraints::new(message, format!("0x{}", hex::encode(signature)));
         let json_data = serde_json::to_value(&signed_constraints).unwrap();
 
         // https://chainbound.github.io/bolt-docs/api/builder#ethv1builderconstraints

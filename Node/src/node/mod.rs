@@ -294,7 +294,9 @@ impl Node {
                         // Build constraints
                         let constraints: Vec<Constraint> = preconfirmation_txs
                             .iter()
-                            .map(|(_, value)| Constraint::new(hex::encode(value), None))
+                            .map(|(_, value)| {
+                                Constraint::new(format!("0x{}", hex::encode(value)), None)
+                            })
                             .collect();
 
                         self.mev_boost
