@@ -192,6 +192,7 @@ impl ExecutionLayer {
         tx_list: Vec<u8>,
         parent_meta_hash: [u8; 32],
         lookahead_set: Vec<ProposerDuty>,
+        is_send: bool,
     ) -> Result<Vec<u8>, Error> {
         let provider = ProviderBuilder::new().on_http(self.rpc_url.clone());
 
@@ -260,13 +261,15 @@ impl ExecutionLayer {
         tx.encode_with_signature(&signature, &mut buf, false);
 
         // Send transaction
-        let pending = provider
-            .send_raw_transaction(&buf)
-            .await?
-            .register()
-            .await?;
+        if is_send {
+            let pending = provider
+                .send_raw_transaction(&buf)
+                .await?
+                .register()
+                .await?;
 
-        tracing::debug!("Proposed new block, with hash {}", pending.tx_hash());
+            tracing::debug!("Proposed new block, with hash {}", pending.tx_hash());
+        }
 
         Ok(buf)
     }
@@ -595,7 +598,7 @@ mod tests {
             .await
             .unwrap();
 
-        el.propose_new_block(0, vec![0; 32], [0; 32], vec![])
+        el.propose_new_block(0, vec![0; 32], [0; 32], vec![], true)
             .await
             .unwrap();
     }

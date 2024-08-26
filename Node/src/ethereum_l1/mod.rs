@@ -71,7 +71,7 @@ mod tests {
             .await
             .unwrap();
 
-        el.propose_new_block(0, vec![0; 32], [0; 32], duties)
+        el.propose_new_block(0, vec![0; 32], [0; 32], duties, true)
             .await
             .unwrap();
     }

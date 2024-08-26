@@ -13,9 +13,7 @@ pub struct MevBoost {
 impl MevBoost {
     pub fn new(rpc_url: &str) -> Self {
         let rpc_client = RpcClient::new(rpc_url);
-        Self {
-            rpc_client,
-        }
+        Self { rpc_client }
     }
 
     pub async fn force_inclusion(

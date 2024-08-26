@@ -254,16 +254,18 @@ impl Node {
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
         let current_epoch = self.ethereum_l1.slot_clock.get_current_epoch()?;
-        let current_epoch_timestamp = self
-            .ethereum_l1
-            .slot_clock
-            .get_epoch_begin_timestamp(current_epoch)?;
         if current_epoch != self.epoch {
             tracing::debug!(
                 "Current epoch changed from {} to {}",
                 self.epoch,
                 current_epoch
             );
+            let current_epoch = self.ethereum_l1.slot_clock.get_current_epoch()?;
+            let current_epoch_timestamp = self
+                .ethereum_l1
+                .slot_clock
+                .get_epoch_begin_timestamp(current_epoch)?;
+
             self.epoch = current_epoch;
 
             self.operator = Operator::new(self.ethereum_l1.clone());
@@ -282,8 +284,9 @@ impl Node {
 
         match self.operator.get_status(current_slot)? {
             OperatorStatus::PreconferAndProposer => {
-                if self.is_preconfer_now.load(Ordering::Acquire) {
-                    // TODO change behavior
+                self.preconfirm_block(current_epoch, false).await?;
+                if self.block_proposer.is_final_perconfirmation() {
+                    // Last(4th) perconfirmation when we are proposer and preconfer
                     self.is_preconfer_now.store(false, Ordering::Release);
 
                     let mut preconfirmation_txs = self.preconfirmation_txs.lock().await;
@@ -294,13 +297,15 @@ impl Node {
                             .map(|(_, value)| Constraint::new(hex::encode(value), None))
                             .collect();
 
-                        self
-                            .mev_boost
+                        self.mev_boost
                             .force_inclusion(constraints, self.ethereum_l1.clone())
                             .await?;
 
                         preconfirmation_txs.clear();
                     }
+                } else {
+                    // Increment perconfirmations count when we are proposer and preconfer
+                    self.block_proposer.increment_final_perconfirmation();
                 }
             }
             OperatorStatus::Preconfer => {
@@ -308,14 +313,8 @@ impl Node {
                     self.is_preconfer_now.store(true, Ordering::Release);
                     self.start_propose().await?;
                 }
-                if self
-                    .operator
-                    .should_post_lookahead(current_epoch_timestamp)
-                    .await?
-                {
-                    // TODO: build lookahead
-                }
-                self.preconfirm_block().await?;
+
+                self.preconfirm_block(current_epoch, true).await?;
             }
             OperatorStatus::None => {
                 tracing::debug!("Not my slot to preconfirm: {}", current_slot);
@@ -330,7 +329,9 @@ impl Node {
         // TODO check that it returns real L2 height
         let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;
         if pending_tx_lists.tx_list_bytes.is_empty() {
-            return Ok(());
+            return Err(Error::msg(
+                "Can't initialize new block proposal without txs",
+            ));
         }
         let new_block_height = pending_tx_lists.parent_block_id + 1;
         // get L1 preconfer wallet nonce
@@ -344,11 +345,24 @@ impl Node {
         Ok(())
     }
 
-    async fn preconfirm_block(&mut self) -> Result<(), Error> {
+    async fn preconfirm_block(&mut self, current_epoch: u64, is_send: bool) -> Result<(), Error> {
         tracing::debug!(
             "Preconfirming for the slot: {:?}",
             self.ethereum_l1.slot_clock.get_current_slot()?
         );
+
+        let current_epoch_timestamp = self
+            .ethereum_l1
+            .slot_clock
+            .get_epoch_begin_timestamp(current_epoch)?;
+
+        if self
+            .operator
+            .should_post_lookahead(current_epoch_timestamp)
+            .await?
+        {
+            // TODO: build lookahead
+        }
 
         let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;
         if pending_tx_lists.tx_list_bytes.is_empty() {
@@ -384,6 +398,7 @@ impl Node {
                 pending_tx_lists.tx_list_bytes[0].clone(), //TODO: handle rest tx lists
                 pending_tx_lists.parent_meta_hash,
                 std::mem::take(&mut self.lookahead),
+                is_send,
             )
             .await?;
 
