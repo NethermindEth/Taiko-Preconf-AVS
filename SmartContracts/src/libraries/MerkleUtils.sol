@@ -56,7 +56,7 @@ library MerkleUtils {
         return h == root;
     }
 
-    function toLittleEndian(uint256 n) public pure returns (bytes32) {
+    function toLittleEndian(uint256 n) internal pure returns (bytes32) {
         uint256 v = n;
         v = ((v & 0xFF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00) >> 8)
             | ((v & 0x00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF) << 8);
@@ -70,7 +70,7 @@ library MerkleUtils {
         return bytes32(v);
     }
 
-    function mixInLength(bytes32 root, uint256 length) public pure returns (bytes32) {
+    function mixInLength(bytes32 root, uint256 length) internal pure returns (bytes32) {
         bytes32 littleEndianLength = toLittleEndian(length);
         return sha256(abi.encodePacked(root, littleEndianLength));
     }
