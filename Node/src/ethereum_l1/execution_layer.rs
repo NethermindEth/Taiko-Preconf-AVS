@@ -1,10 +1,11 @@
 use super::slot_clock::SlotClock;
 use crate::utils::{config, types::*};
 use alloy::{
+    consensus::TypedTransaction,
     contract::EventPoller,
     network::{Ethereum, EthereumWallet, NetworkWallet},
     primitives::{Address, Bytes, FixedBytes, B256, U256},
-    providers::ProviderBuilder,
+    providers::{Provider, ProviderBuilder},
     signers::{
         local::{LocalSigner, PrivateKeySigner},
         Signature, SignerSync,
@@ -29,6 +30,7 @@ pub struct ExecutionLayer {
     contract_addresses: ContractAddresses,
     slot_clock: Arc<SlotClock>,
     preconf_registry_expiry_sec: u64,
+    chain_id: u64,
 }
 
 pub struct ContractAddresses {
@@ -126,7 +128,7 @@ sol!(
 );
 
 impl ExecutionLayer {
-    pub fn new(
+    pub async fn new(
         rpc_url: &str,
         avs_node_ecdsa_private_key: &str,
         contract_addresses: &config::ContractAddresses,
@@ -144,6 +146,9 @@ impl ExecutionLayer {
         let contract_addresses = Self::parse_contract_addresses(contract_addresses)
             .map_err(|e| Error::msg(format!("Failed to parse contract addresses: {}", e)))?;
 
+        let provider = ProviderBuilder::new().on_http(rpc_url.parse()?);
+        let chain_id = provider.get_chain_id().await?;
+
         Ok(Self {
             rpc_url: rpc_url.parse()?,
             signer,
@@ -152,6 +157,7 @@ impl ExecutionLayer {
             contract_addresses,
             slot_clock,
             preconf_registry_expiry_sec,
+            chain_id,
         })
     }
 
@@ -179,18 +185,17 @@ impl ExecutionLayer {
 
     pub async fn propose_new_block(
         &self,
+        nonce: u64,
         tx_list: Vec<u8>,
         parent_meta_hash: [u8; 32],
         lookahead_set: Vec<ProposerDuty>,
-    ) -> Result<(), Error> {
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone());
+    ) -> Result<Vec<u8>, Error> {
+        let provider = ProviderBuilder::new().on_http(self.rpc_url.clone());
 
         let contract =
-            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
+            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, &provider);
 
+        // TODO fix
         let block_params = BlockParams {
             assignedProver: Address::ZERO,
             coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(
@@ -207,6 +212,8 @@ impl ExecutionLayer {
         let encoded_block_params = Bytes::from(BlockParams::abi_encode_sequence(&block_params));
 
         let tx_list = Bytes::from(tx_list);
+
+        // create lookahead set
         let lookahead_set_param = lookahead_set
             .iter()
             .map(|duty| {
@@ -217,17 +224,48 @@ impl ExecutionLayer {
             })
             .collect::<Result<Vec<_>, Error>>()?;
 
-        let builder = contract.newBlockProposal(
-            encoded_block_params,
-            tx_list,
-            U256::from(0), //TODO: Replace it with the proper lookaheadPointer when the contract is ready.
-            lookahead_set_param,
-        );
+        // TODO check gas parameters
+        let builder = contract
+            .newBlockProposal(
+                encoded_block_params,
+                tx_list,
+                U256::from(0), //TODO: Replace it with the proper lookaheadPointer when the contract is ready.
+                lookahead_set_param,
+            )
+            .chain_id(self.chain_id)
+            .nonce(nonce) //TODO how to get it?
+            .gas(50_000)
+            .max_fee_per_gas(20_000_000_000)
+            .max_priority_fee_per_gas(1_000_000_000);
 
-        let tx_hash = builder.send().await?.watch().await?;
-        tracing::debug!("Proposed new block: {tx_hash}");
+        // Build transaction
+        let tx = builder.as_ref().clone().build_typed_tx();
+        let Ok(TypedTransaction::Eip1559(mut tx)) = tx else {
+            // TODO fix
+            panic!("Not EIP1559 transaction");
+        };
 
-        Ok(())
+        // Sign transaction
+        let signature = self
+            .wallet
+            .default_signer()
+            .sign_transaction(&mut tx)
+            .await?;
+
+        // Encode transaction
+        let mut buf = vec![];
+        tx.encode_with_signature(&signature, &mut buf, false);
+
+        // Send transaction
+        let pending = provider
+            .send_raw_transaction(&buf)
+            .await?
+            .register()
+            .await?;
+
+        tracing::debug!("Proposed new block, with hash {}", pending.tx_hash());
+
+        Ok(buf)
     }
 
     pub async fn register_preconfer(&self) -> Result<(), Error> {
@@ -317,6 +355,15 @@ impl ExecutionLayer {
         let signature = Signature::try_from(signature)?;
         let address = signature.recover_address_from_msg(msg)?;
         Ok(address)
+    }
+
+    pub async fn get_preconfer_nonce(&self) -> Result<u64, Error> {
+        let provider = ProviderBuilder::new().on_http(self.rpc_url.clone());
+
+        let nonce = provider
+            .get_transaction_count(self.preconfer_address)
+            .await?;
+        Ok(nonce)
     }
 
     pub async fn prove_incorrect_preconfirmation(
@@ -410,7 +457,7 @@ impl ExecutionLayer {
         let params = contract
             .getLookaheadParamsForEpoch(
                 U256::from(epoch_begin_timestamp),
-                validator_bls_pub_keys.map(|key| Bytes::from(key)),
+                validator_bls_pub_keys.map(Bytes::from),
             )
             .call()
             .await?
@@ -437,13 +484,16 @@ impl ExecutionLayer {
     }
 
     #[cfg(test)]
-    pub fn new_from_pk(
+    pub async fn new_from_pk(
         rpc_url: reqwest::Url,
         private_key: elliptic_curve::SecretKey<k256::Secp256k1>,
     ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_signing_key(private_key.into());
         let wallet = EthereumWallet::from(signer.clone());
         let clock = SlotClock::new(0u64, 0u64, 12u64, 32u64);
+
+        let provider = ProviderBuilder::new().on_http(rpc_url.clone());
+        let chain_id = provider.get_chain_id().await?;
 
         Ok(Self {
             rpc_url,
@@ -465,6 +515,7 @@ impl ExecutionLayer {
                 },
             },
             preconf_registry_expiry_sec: 120,
+            chain_id,
         })
     }
 
@@ -521,7 +572,9 @@ mod tests {
         let anvil = Anvil::new().try_spawn().unwrap();
         let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
         let private_key = anvil.keys()[0].clone();
-        let el = ExecutionLayer::new_from_pk(rpc_url, private_key).unwrap();
+        let el = ExecutionLayer::new_from_pk(rpc_url, private_key)
+            .await
+            .unwrap();
         el.call_test_contract().await.unwrap();
     }
 
@@ -530,9 +583,11 @@ mod tests {
         let anvil = Anvil::new().try_spawn().unwrap();
         let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
         let private_key = anvil.keys()[0].clone();
-        let el = ExecutionLayer::new_from_pk(rpc_url, private_key).unwrap();
+        let el = ExecutionLayer::new_from_pk(rpc_url, private_key)
+            .await
+            .unwrap();
 
-        el.propose_new_block(vec![0; 32], [0; 32], vec![])
+        el.propose_new_block(0, vec![0; 32], [0; 32], vec![])
             .await
             .unwrap();
     }
@@ -541,7 +596,9 @@ mod tests {
         let anvil = Anvil::new().try_spawn().unwrap();
         let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
         let private_key = anvil.keys()[0].clone();
-        let el = ExecutionLayer::new_from_pk(rpc_url, private_key).unwrap();
+        let el = ExecutionLayer::new_from_pk(rpc_url, private_key)
+            .await
+            .unwrap();
 
         let result = el.register_preconfer().await;
         assert!(result.is_ok(), "Register method failed: {:?}", result.err());
