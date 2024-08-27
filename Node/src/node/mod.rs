@@ -1,5 +1,5 @@
 use crate::{
-    ethereum_l1::{slot_clock::Epoch, EthereumL1},
+    ethereum_l1::{execution_layer::PreconfTaskManager, slot_clock::Epoch, EthereumL1},
     mev_boost::MevBoost,
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::{
@@ -238,7 +238,7 @@ impl Node {
 
             self.operator = Operator::new(self.ethereum_l1.clone());
             self.operator
-                .find_slots_to_preconfirm(current_epoch_timestamp, &self.lookahead)
+                .update_preconfer_lookahead_for_epoch(current_epoch_timestamp, &self.lookahead)
                 .await?;
 
             self.lookahead = self
@@ -252,25 +252,17 @@ impl Node {
 
         match self.operator.get_status(current_slot)? {
             OperatorStatus::PreconferAndProposer => {
-                if self
-                    .operator
-                    .should_post_lookahead(current_epoch_timestamp)
-                    .await?
-                {
-                    // TODO: post lookahead
-                }
                 // TODO: replace with mev-boost forced inclusion list
-                self.preconfirm_block().await?;
+                let (lookahead_pointer, lookahead_params) =
+                    self.get_lookahead_params(current_epoch_timestamp).await?;
+                self.preconfirm_block(lookahead_pointer, lookahead_params)
+                    .await?;
             }
             OperatorStatus::Preconfer => {
-                if self
-                    .operator
-                    .should_post_lookahead(current_epoch_timestamp)
-                    .await?
-                {
-                    // TODO: post lookahead
-                }
-                self.preconfirm_block().await?;
+                let (lookahead_pointer, lookahead_params) =
+                    self.get_lookahead_params(current_epoch_timestamp).await?;
+                self.preconfirm_block(lookahead_pointer, lookahead_params)
+                    .await?;
             }
             OperatorStatus::None => {
                 tracing::debug!("Not my slot to preconfirm: {}", current_slot);
@@ -280,7 +272,52 @@ impl Node {
         Ok(())
     }
 
-    async fn preconfirm_block(&mut self) -> Result<(), Error> {
+    async fn get_lookahead_params(
+        &mut self,
+        current_epoch_timestamp: u64,
+    ) -> Result<(u64, Vec<PreconfTaskManager::LookaheadSetParam>), Error> {
+        if self
+            .operator
+            .should_post_lookahead(current_epoch_timestamp)
+            .await?
+        {
+            let lookahead_params = self
+                .ethereum_l1
+                .execution_layer
+                .get_lookahead_params_for_epoch_using_beacon_lookahead(
+                    self.ethereum_l1
+                        .slot_clock
+                        .get_epoch_begin_timestamp(self.epoch + 1)?,
+                    &self.lookahead,
+                )
+                .await?;
+
+            let lookahead = self.ethereum_l1.execution_layer.get_lookahead().await?;
+            let current_timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_secs();
+            let lookahead_pointer = lookahead
+                .iter()
+                .position(|entry| {
+                    entry.preconfer == self.ethereum_l1.execution_layer.get_preconfer_address()
+                        && current_timestamp > entry.prevTimestamp
+                        && current_timestamp <= entry.timestamp
+                })
+                .ok_or(anyhow::anyhow!(
+                    "get_lookahead_params: Preconfer not found in lookahead"
+                ))?;
+
+            return Ok((lookahead_pointer as u64, lookahead_params));
+        }
+
+        Ok((0, vec![]))
+    }
+
+    async fn preconfirm_block(
+        &mut self,
+        lookahead_pointer: u64,
+        lookahead_params: Vec<PreconfTaskManager::LookaheadSetParam>,
+    ) -> Result<(), Error> {
         tracing::debug!(
             "Preconfirming for the slot: {:?}",
             self.ethereum_l1.slot_clock.get_current_slot()?
@@ -316,7 +353,8 @@ impl Node {
             .propose_new_block(
                 pending_tx_lists.tx_list_bytes[0].clone(), //TODO: handle rest tx lists
                 pending_tx_lists.parent_meta_hash,
-                std::mem::take(&mut self.lookahead),
+                lookahead_pointer,
+                lookahead_params,
             )
             .await?;
 
