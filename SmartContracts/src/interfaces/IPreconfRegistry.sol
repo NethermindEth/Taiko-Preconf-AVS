@@ -2,7 +2,7 @@
 pragma solidity 0.8.25;
 
 import {BLS12381} from "../libraries/BLS12381.sol";
-import {ISignatureUtils} from "eigenlayer-middleware/interfaces/IServiceManagerUI.sol";
+import {IAVSDirectory} from "./eigenlayer-mvp/IAVSDirectory.sol";
 
 interface IPreconfRegistry {
     struct Validator {
@@ -59,7 +59,7 @@ interface IPreconfRegistry {
     error ValidatorAlreadyInactive();
 
     /// @dev Registers a preconfer by giving them a non-zero registry index
-    function registerPreconfer(ISignatureUtils.SignatureWithSaltAndExpiry calldata operatorSignature) external;
+    function registerPreconfer(IAVSDirectory.SignatureWithSaltAndExpiry calldata operatorSignature) external;
 
     /// @dev Deregisters a preconfer from the registry
     function deregisterPreconfer() external;

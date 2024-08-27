@@ -5,13 +5,13 @@ import {BLS12381} from "../libraries/BLS12381.sol";
 import {PreconfConstants} from "./PreconfConstants.sol";
 import {BLSSignatureChecker} from "./utils/BLSSignatureChecker.sol";
 import {IPreconfRegistry} from "../interfaces/IPreconfRegistry.sol";
-import {IServiceManager} from "eigenlayer-middleware/interfaces/IServiceManager.sol";
-import {ISignatureUtils} from "eigenlayer-middleware/interfaces/IServiceManagerUI.sol";
+import {IPreconfServiceManager} from "../interfaces/IPreconfServiceManager.sol";
+import {IAVSDirectory} from "../interfaces/eigenlayer-mvp/IAVSDirectory.sol";
 
-contract PreconfRegistry is IPreconfRegistry, ISignatureUtils, BLSSignatureChecker {
+contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker {
     using BLS12381 for BLS12381.G1Point;
 
-    IServiceManager internal immutable preconfServiceManager;
+    IPreconfServiceManager internal immutable preconfServiceManager;
 
     uint256 internal nextPreconferIndex;
 
@@ -27,7 +27,7 @@ contract PreconfRegistry is IPreconfRegistry, ISignatureUtils, BLSSignatureCheck
     // Maps a validator's BLS pub key hash to the validator's details
     mapping(bytes32 publicKeyHash => Validator) internal validators;
 
-    constructor(IServiceManager _preconfServiceManager) {
+    constructor(IPreconfServiceManager _preconfServiceManager) {
         preconfServiceManager = _preconfServiceManager;
         nextPreconferIndex = 1;
     }
@@ -37,7 +37,7 @@ contract PreconfRegistry is IPreconfRegistry, ISignatureUtils, BLSSignatureCheck
      * @dev This function internally accesses Eigenlayer via the AVS service manager
      * @param operatorSignature The signature of the operator in the format expected by Eigenlayer
      */
-    function registerPreconfer(SignatureWithSaltAndExpiry calldata operatorSignature) external {
+    function registerPreconfer(IAVSDirectory.SignatureWithSaltAndExpiry calldata operatorSignature) external {
         // Preconfer must not have registered already
         if (preconferToIndex[msg.sender] != 0) {
             revert PreconferAlreadyRegistered();
