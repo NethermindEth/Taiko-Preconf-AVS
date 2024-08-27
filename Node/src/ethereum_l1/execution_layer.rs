@@ -172,11 +172,9 @@ impl ExecutionLayer {
         parent_meta_hash: [u8; 32],
         lookahead_pointer: u64,
         lookahead_set_params: Vec<PreconfTaskManager::LookaheadSetParam>,
-    ) -> Result<(), Error> {
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone());
+        send_to_contract: bool,
+    ) -> Result<Vec<u8>, Error> {
+        let provider = self.create_provider();
 
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, &provider);
@@ -435,10 +433,7 @@ impl ExecutionLayer {
         epoch_begin_timestamp: u64,
         validator_bls_pub_keys: &[BLSCompressedPublicKey; 32],
     ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone());
+        let provider = self.create_provider();
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
 
@@ -457,11 +452,7 @@ impl ExecutionLayer {
     pub async fn get_lookahead_preconfer_buffer(
         &self,
     ) -> Result<[PreconfTaskManager::LookaheadEntry; 64], Error> {
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone());
-
+        let provider = self.create_provider();
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
 
@@ -616,7 +607,9 @@ mod tests {
         let anvil = Anvil::new().try_spawn().unwrap();
         let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
         let private_key = anvil.keys()[0].clone();
-        let _el = ExecutionLayer::new_from_pk(rpc_url, private_key).unwrap();
+        let _el = ExecutionLayer::new_from_pk(rpc_url, private_key)
+            .await
+            .unwrap();
 
         let _epoch_begin_timestamp = 0;
         let _validator_bls_pub_keys: [BLSCompressedPublicKey; 32] = [[0u8; 48]; 32];
