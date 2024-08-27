@@ -174,7 +174,7 @@ impl ExecutionLayer {
         lookahead_set_params: Vec<PreconfTaskManager::LookaheadSetParam>,
         send_to_contract: bool,
     ) -> Result<Vec<u8>, Error> {
-        let provider = ProviderBuilder::new().on_http(self.rpc_url.clone());
+        let provider = self.create_provider();
 
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, &provider);
@@ -246,14 +246,11 @@ impl ExecutionLayer {
     }
 
     pub async fn register_preconfer(&self) -> Result<(), Error> {
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone());
+        let provider = self.create_provider();
 
         let strategy_manager = StrategyManager::new(
             self.contract_addresses.eigen_layer.strategy_manager,
-            provider.clone(),
+            &provider,
         );
         let tx_hash = strategy_manager
             .depositIntoStrategy(Address::ZERO, Address::ZERO, U256::from(1))
@@ -263,10 +260,7 @@ impl ExecutionLayer {
             .await?;
         tracing::debug!("Deposited into strategy: {tx_hash}");
 
-        let slasher = Slasher::new(
-            self.contract_addresses.eigen_layer.slasher,
-            provider.clone(),
-        );
+        let slasher = Slasher::new(self.contract_addresses.eigen_layer.slasher, &provider);
         let tx_hash = slasher
             .optIntoSlashing(self.contract_addresses.avs.service_manager)
             .send()
@@ -276,8 +270,7 @@ impl ExecutionLayer {
         tracing::debug!("Opted into slashing: {tx_hash}");
 
         let salt = Self::create_random_salt();
-        let avs_directory =
-            AVSDirectory::new(self.contract_addresses.avs.directory, provider.clone());
+        let avs_directory = AVSDirectory::new(self.contract_addresses.avs.directory, &provider);
         let expiration_timestamp =
             U256::from(chrono::Utc::now().timestamp() as u64 + self.preconf_registry_expiry_sec);
         let digest_hash = avs_directory
@@ -350,10 +343,7 @@ impl ExecutionLayer {
         tx_list_hash: [u8; 32],
         signature: [u8; 65],
     ) -> Result<(), Error> {
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone());
+        let provider = self.create_provider();
 
         let _contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
@@ -381,10 +371,7 @@ impl ExecutionLayer {
         >,
         Error,
     > {
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone());
+        let provider = self.create_provider();
         let registry = PreconfRegistry::new(self.contract_addresses.avs.preconf_registry, provider);
 
         let registered_filter = registry.PreconferRegistered_filter().watch().await?;
@@ -453,10 +440,7 @@ impl ExecutionLayer {
         epoch_begin_timestamp: u64,
         validator_bls_pub_keys: &[BLSCompressedPublicKey; 32],
     ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone());
+        let provider = self.create_provider();
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
 
@@ -475,11 +459,7 @@ impl ExecutionLayer {
     pub async fn get_lookahead_preconfer_buffer(
         &self,
     ) -> Result<[PreconfTaskManager::LookaheadEntry; 64], Error> {
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone());
-
+        let provider = self.create_provider();
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
 
@@ -489,11 +469,7 @@ impl ExecutionLayer {
     }
 
     pub async fn is_lookahead_required(&self, epoch_begin_timestamp: u64) -> Result<bool, Error> {
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone());
-
+        let provider = self.create_provider();
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
 
@@ -503,6 +479,13 @@ impl ExecutionLayer {
             .await?;
 
         Ok(is_required._0)
+    }
+
+    fn create_provider(&self) -> impl Provider<alloy::transports::http::Http<reqwest::Client>> {
+        ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.wallet.clone())
+            .on_http(self.rpc_url.clone())
     }
 
     #[cfg(test)]
@@ -631,7 +614,9 @@ mod tests {
         let anvil = Anvil::new().try_spawn().unwrap();
         let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
         let private_key = anvil.keys()[0].clone();
-        let _el = ExecutionLayer::new_from_pk(rpc_url, private_key).await.unwrap();
+        let _el = ExecutionLayer::new_from_pk(rpc_url, private_key)
+            .await
+            .unwrap();
 
         let _epoch_begin_timestamp = 0;
         let _validator_bls_pub_keys: [BLSCompressedPublicKey; 32] = [[0u8; 48]; 32];
