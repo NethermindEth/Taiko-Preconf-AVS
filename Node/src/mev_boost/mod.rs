@@ -8,12 +8,16 @@ use constraints::{Constraint, ConstraintsMessage, SignedConstraints};
 
 pub struct MevBoost {
     rpc_client: RpcClient,
+    validator_index: u64,
 }
 
 impl MevBoost {
-    pub fn new(rpc_url: &str) -> Self {
+    pub fn new(rpc_url: &str, validator_index: u64) -> Self {
         let rpc_client = RpcClient::new(rpc_url);
-        Self { rpc_client }
+        Self {
+            rpc_client,
+            validator_index,
+        }
     }
 
     pub async fn force_inclusion(
@@ -24,9 +28,8 @@ impl MevBoost {
         // Prepare the message
         // TODO check slot id value
         let slot_id = ethereum_l1.slot_clock.get_current_slot()?;
-        let validator_index = ethereum_l1.execution_layer.get_validator_index();
 
-        let message = ConstraintsMessage::new(validator_index, slot_id, constraints);
+        let message = ConstraintsMessage::new(self.validator_index, slot_id, constraints);
 
         let data_to_sign: Vec<u8> = message.clone().into();
 

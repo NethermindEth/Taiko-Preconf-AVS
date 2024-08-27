@@ -23,7 +23,6 @@ impl EthereumL1 {
         slot_duration_sec: u64,
         slots_per_epoch: u64,
         preconf_registry_expiry_sec: u64,
-        validator_index: u64,
     ) -> Result<Self, anyhow::Error> {
         let consensus_layer = ConsensusLayer::new(consensus_rpc_url)?;
         let genesis_details = consensus_layer.get_genesis_details().await?;
@@ -40,7 +39,6 @@ impl EthereumL1 {
             contract_addresses,
             slot_clock.clone(),
             preconf_registry_expiry_sec,
-            validator_index,
         )
         .await?;
 

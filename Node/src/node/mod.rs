@@ -23,10 +23,10 @@ use tokio::sync::{
 };
 use tracing::info;
 
-mod block_porposer;
+mod block_porposer_helper;
 pub mod block_proposed_receiver;
 mod operator;
-use block_porposer::BlockProposer;
+use block_porposer_helper::BlockProposerHelper;
 
 use mev_boost::constraints::Constraint;
 
@@ -39,7 +39,7 @@ pub struct Node {
     p2p_to_node_rx: Option<Receiver<Vec<u8>>>,
     gas_used: u64,
     ethereum_l1: Arc<EthereumL1>,
-    mev_boost: MevBoost, // temporary unused
+    mev_boost: MevBoost,
     epoch: Epoch,
     lookahead: Vec<ProposerDuty>,
     l2_slot_duration_sec: u64,
@@ -47,7 +47,7 @@ pub struct Node {
     is_preconfer_now: Arc<AtomicBool>,
     preconfirmation_txs: Arc<Mutex<HashMap<u64, Vec<u8>>>>, // block_id -> tx
     operator: Operator,
-    block_proposer: BlockProposer,
+    block_proposer: BlockProposerHelper,
 }
 
 impl Node {
@@ -77,7 +77,7 @@ impl Node {
             is_preconfer_now: Arc::new(AtomicBool::new(false)),
             preconfirmation_txs: Arc::new(Mutex::new(HashMap::new())),
             operator,
-            block_proposer: BlockProposer::new(),
+            block_proposer: BlockProposerHelper::new(),
         })
     }
 
@@ -285,7 +285,7 @@ impl Node {
         match self.operator.get_status(current_slot)? {
             OperatorStatus::PreconferAndProposer => {
                 self.preconfirm_block(current_epoch, false).await?;
-                if self.block_proposer.is_final_perconfirmation() {
+                if self.block_proposer.is_last_final_slot_perconfirmation() {
                     // Last(4th) perconfirmation when we are proposer and preconfer
                     self.is_preconfer_now.store(false, Ordering::Release);
 
@@ -307,7 +307,7 @@ impl Node {
                     }
                 } else {
                     // Increment perconfirmations count when we are proposer and preconfer
-                    self.block_proposer.increment_final_perconfirmation();
+                    self.block_proposer.increment_final_slot_perconfirmation();
                 }
             }
             OperatorStatus::Preconfer => {

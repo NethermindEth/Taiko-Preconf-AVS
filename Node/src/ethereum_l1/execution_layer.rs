@@ -24,7 +24,6 @@ use std::sync::Arc;
 
 pub struct ExecutionLayer {
     rpc_url: reqwest::Url,
-    validator_index: u64,
     signer: LocalSigner<SigningKey<Secp256k1>>,
     wallet: EthereumWallet,
     preconfer_address: Address,
@@ -135,7 +134,6 @@ impl ExecutionLayer {
         contract_addresses: &config::ContractAddresses,
         slot_clock: Arc<SlotClock>,
         preconf_registry_expiry_sec: u64,
-        validator_index: u64,
     ) -> Result<Self, Error> {
         tracing::debug!("Creating ExecutionLayer with RPC URL: {}", rpc_url);
 
@@ -153,7 +151,6 @@ impl ExecutionLayer {
 
         Ok(Self {
             rpc_url: rpc_url.parse()?,
-            validator_index,
             signer,
             wallet,
             preconfer_address,
@@ -199,7 +196,6 @@ impl ExecutionLayer {
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, &provider);
 
-        // TODO fix
         let block_params = BlockParams {
             assignedProver: Address::ZERO,
             coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(
@@ -503,7 +499,6 @@ impl ExecutionLayer {
 
         Ok(Self {
             rpc_url,
-            validator_index: 0,
             signer,
             wallet,
             preconfer_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
@@ -565,10 +560,6 @@ impl ExecutionLayer {
         assert_eq!(number, "43");
 
         Ok(())
-    }
-
-    pub fn get_validator_index(&self) -> u64 {
-        self.validator_index
     }
 }
 
