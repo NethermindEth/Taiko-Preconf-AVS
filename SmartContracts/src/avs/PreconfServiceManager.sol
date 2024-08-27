@@ -2,27 +2,21 @@
 pragma solidity 0.8.25;
 
 import {IPreconfServiceManager} from "../interfaces/IPreconfServiceManager.sol";
-import {IPreconfTaskManager} from "../interfaces/IPreconfTaskManager.sol";
 import {ISlasher} from "../interfaces/eigenlayer-mvp/ISlasher.sol";
 import {IAVSDirectory} from "../interfaces/eigenlayer-mvp/IAVSDirectory.sol";
 
 contract PreconfServiceManager is IPreconfServiceManager {
     address internal immutable preconfRegistry;
+    address internal immutable preconfTaskManager;
     IAVSDirectory internal immutable avsDirectory;
-    IPreconfTaskManager internal immutable preconfTaskManager;
     ISlasher internal immutable slasher;
 
     mapping(address operator => uint256 timestamp) public stakeLockedUntil;
 
-    constructor(
-        address _preconfRegistry,
-        IAVSDirectory _avsDirectory,
-        IPreconfTaskManager _taskManager,
-        ISlasher _slasher
-    ) {
+    constructor(address _preconfRegistry, address _preconfTaskManager, IAVSDirectory _avsDirectory, ISlasher _slasher) {
         _preconfRegistry;
+        preconfTaskManager = _preconfTaskManager;
         avsDirectory = _avsDirectory;
-        preconfTaskManager = _taskManager;
         slasher = _slasher;
     }
 
