@@ -260,7 +260,6 @@ impl Node {
                 self.epoch,
                 current_epoch
             );
-            let current_epoch = self.ethereum_l1.slot_clock.get_current_epoch()?;
             let current_epoch_timestamp = self
                 .ethereum_l1
                 .slot_clock
@@ -284,31 +283,7 @@ impl Node {
 
         match self.operator.get_status(current_slot)? {
             OperatorStatus::PreconferAndProposer => {
-                self.preconfirm_block(current_epoch, false).await?;
-                if self.block_proposer.is_last_final_slot_perconfirmation() {
-                    // Last(4th) perconfirmation when we are proposer and preconfer
-                    self.is_preconfer_now.store(false, Ordering::Release);
-
-                    let mut preconfirmation_txs = self.preconfirmation_txs.lock().await;
-                    if !preconfirmation_txs.is_empty() {
-                        // Build constraints
-                        let constraints: Vec<Constraint> = preconfirmation_txs
-                            .iter()
-                            .map(|(_, value)| {
-                                Constraint::new(format!("0x{}", hex::encode(value)), None)
-                            })
-                            .collect();
-
-                        self.mev_boost
-                            .force_inclusion(constraints, self.ethereum_l1.clone())
-                            .await?;
-
-                        preconfirmation_txs.clear();
-                    }
-                } else {
-                    // Increment perconfirmations count when we are proposer and preconfer
-                    self.block_proposer.increment_final_slot_perconfirmation();
-                }
+                self.preconfirm_last_slot().await?;
             }
             OperatorStatus::Preconfer => {
                 if !self.is_preconfer_now.load(Ordering::Acquire) {
@@ -316,7 +291,7 @@ impl Node {
                     self.start_propose().await?;
                 }
 
-                self.preconfirm_block(current_epoch, true).await?;
+                self.preconfirm_block(true).await?;
             }
             OperatorStatus::None => {
                 tracing::debug!("Not my slot to preconfirm: {}", current_slot);
@@ -326,16 +301,38 @@ impl Node {
         Ok(())
     }
 
+    async fn preconfirm_last_slot(&mut self) -> Result<(), Error> {
+        self.preconfirm_block(false).await?;
+        if self.block_proposer.is_last_final_slot_perconfirmation() {
+            // Last(4th) perconfirmation when we are proposer and preconfer
+            self.is_preconfer_now.store(false, Ordering::Release);
+
+            let mut preconfirmation_txs = self.preconfirmation_txs.lock().await;
+            if !preconfirmation_txs.is_empty() {
+                // Build constraints
+                let constraints: Vec<Constraint> = preconfirmation_txs
+                    .iter()
+                    .map(|(_, value)| Constraint::new(format!("0x{}", hex::encode(value)), None))
+                    .collect();
+
+                self.mev_boost
+                    .force_inclusion(constraints, self.ethereum_l1.clone())
+                    .await?;
+
+                preconfirmation_txs.clear();
+            }
+        } else {
+            // Increment perconfirmations count when we are proposer and preconfer
+            self.block_proposer.increment_final_slot_perconfirmation();
+        }
+
+        Ok(())
+    }
+
     async fn start_propose(&mut self) -> Result<(), Error> {
         // get L2 block id
-        // TODO check that it returns real L2 height
-        let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;
-        if pending_tx_lists.tx_list_bytes.is_empty() {
-            return Err(Error::msg(
-                "Can't initialize new block proposal without txs",
-            ));
-        }
-        let new_block_height = pending_tx_lists.parent_block_id + 1;
+        // TODO get L2 height
+        let new_block_height = 0 + 1;
         // get L1 preconfer wallet nonce
         let nonce = self
             .ethereum_l1
@@ -347,7 +344,7 @@ impl Node {
         Ok(())
     }
 
-    async fn preconfirm_block(&mut self, current_epoch: u64, is_send: bool) -> Result<(), Error> {
+    async fn preconfirm_block(&mut self, send_to_contract: bool) -> Result<(), Error> {
         tracing::debug!(
             "Preconfirming for the slot: {:?}",
             self.ethereum_l1.slot_clock.get_current_slot()?
@@ -356,7 +353,7 @@ impl Node {
         let current_epoch_timestamp = self
             .ethereum_l1
             .slot_clock
-            .get_epoch_begin_timestamp(current_epoch)?;
+            .get_epoch_begin_timestamp(self.epoch)?;
 
         if self
             .operator
@@ -400,7 +397,7 @@ impl Node {
                 pending_tx_lists.tx_list_bytes[0].clone(), //TODO: handle rest tx lists
                 pending_tx_lists.parent_meta_hash,
                 std::mem::take(&mut self.lookahead),
-                is_send,
+                send_to_contract,
             )
             .await?;
 

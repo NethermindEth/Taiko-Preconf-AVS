@@ -189,7 +189,7 @@ impl ExecutionLayer {
         tx_list: Vec<u8>,
         parent_meta_hash: [u8; 32],
         lookahead_set: Vec<ProposerDuty>,
-        is_send: bool,
+        send_to_contract: bool,
     ) -> Result<Vec<u8>, Error> {
         let provider = ProviderBuilder::new().on_http(self.rpc_url.clone());
 
@@ -257,7 +257,7 @@ impl ExecutionLayer {
         tx.encode_with_signature(&signature, &mut buf, false);
 
         // Send transaction
-        if is_send {
+        if send_to_contract {
             let pending = provider
                 .send_raw_transaction(&buf)
                 .await?
