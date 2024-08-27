@@ -77,12 +77,12 @@ impl Operator {
     pub async fn update_preconfer_lookahead_for_epoch(
         &mut self,
         epoch_begin_timestamp: u64,
-        lookahead: &[ProposerDuty],
+        cl_lookahead: &[ProposerDuty],
     ) -> Result<(), Error> {
         self.lookahead_params = self
             .ethereum_l1
             .execution_layer
-            .get_lookahead_params_for_epoch_using_beacon_lookahead(epoch_begin_timestamp, lookahead)
+            .get_lookahead_params_for_epoch_using_cl_lookahead(epoch_begin_timestamp, cl_lookahead)
             .await?;
         Ok(())
     }

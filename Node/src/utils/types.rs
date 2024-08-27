@@ -1,4 +1,4 @@
-// pub type PreconferAddress = [u8; 20];
+pub type PreconferAddress = [u8; 20];
 pub type ECDSASignature = [u8; 65]; // ECDSA 65 bytes signature
 pub type BLSCompressedPublicKey = [u8; 48];
 

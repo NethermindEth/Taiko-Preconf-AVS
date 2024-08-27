@@ -32,7 +32,8 @@ pub struct Node {
     ethereum_l1: Arc<EthereumL1>,
     _mev_boost: MevBoost, // temporary unused
     epoch: Epoch,
-    lookahead: Vec<ProposerDuty>,
+    cl_lookahead: Vec<ProposerDuty>,
+    lookahead_preconfer_buffer: Option<[PreconfTaskManager::LookaheadEntry; 64]>,
     l2_slot_duration_sec: u64,
     preconfirmed_blocks: Arc<Mutex<HashMap<u64, PreconfirmationProof>>>,
     operator: Operator,
@@ -59,7 +60,8 @@ impl Node {
             ethereum_l1,
             _mev_boost: mev_boost,
             epoch: current_epoch,
-            lookahead: vec![],
+            cl_lookahead: vec![],
+            lookahead_preconfer_buffer: None,
             l2_slot_duration_sec,
             preconfirmed_blocks: Arc::new(Mutex::new(HashMap::new())),
             operator,
@@ -238,14 +240,20 @@ impl Node {
 
             self.operator = Operator::new(self.ethereum_l1.clone());
             self.operator
-                .update_preconfer_lookahead_for_epoch(current_epoch_timestamp, &self.lookahead)
+                .update_preconfer_lookahead_for_epoch(current_epoch_timestamp, &self.cl_lookahead)
                 .await?;
 
-            self.lookahead = self
+            self.cl_lookahead = self
                 .ethereum_l1
                 .consensus_layer
                 .get_lookahead(self.epoch + 1)
                 .await?;
+            self.lookahead_preconfer_buffer = Some(
+                self.ethereum_l1
+                    .execution_layer
+                    .get_lookahead_preconfer_buffer()
+                    .await?,
+            );
         }
 
         let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
@@ -276,6 +284,26 @@ impl Node {
         &mut self,
         current_epoch_timestamp: u64,
     ) -> Result<(u64, Vec<PreconfTaskManager::LookaheadSetParam>), Error> {
+        let current_timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs();
+
+        let lookahead_pointer = self
+            .lookahead_preconfer_buffer
+            .as_ref()
+            .ok_or(anyhow::anyhow!(
+                "get_lookahead_params: lookahead_preconfer_buffer is None"
+            ))?
+            .iter()
+            .position(|entry| {
+                entry.preconfer == self.ethereum_l1.execution_layer.get_preconfer_address()
+                    && current_timestamp > entry.prevTimestamp
+                    && current_timestamp <= entry.timestamp
+            })
+            .ok_or(anyhow::anyhow!(
+                "get_lookahead_params: Preconfer not found in lookahead"
+            ))? as u64;
+
         if self
             .operator
             .should_post_lookahead(current_epoch_timestamp)
@@ -284,33 +312,18 @@ impl Node {
             let lookahead_params = self
                 .ethereum_l1
                 .execution_layer
-                .get_lookahead_params_for_epoch_using_beacon_lookahead(
+                .get_lookahead_params_for_epoch_using_cl_lookahead(
                     self.ethereum_l1
                         .slot_clock
                         .get_epoch_begin_timestamp(self.epoch + 1)?,
-                    &self.lookahead,
+                    &self.cl_lookahead,
                 )
                 .await?;
 
-            let lookahead = self.ethereum_l1.execution_layer.get_lookahead().await?;
-            let current_timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)?
-                .as_secs();
-            let lookahead_pointer = lookahead
-                .iter()
-                .position(|entry| {
-                    entry.preconfer == self.ethereum_l1.execution_layer.get_preconfer_address()
-                        && current_timestamp > entry.prevTimestamp
-                        && current_timestamp <= entry.timestamp
-                })
-                .ok_or(anyhow::anyhow!(
-                    "get_lookahead_params: Preconfer not found in lookahead"
-                ))?;
-
-            return Ok((lookahead_pointer as u64, lookahead_params));
+            return Ok((lookahead_pointer, lookahead_params));
         }
 
-        Ok((0, vec![]))
+        Ok((lookahead_pointer, vec![]))
     }
 
     async fn preconfirm_block(
