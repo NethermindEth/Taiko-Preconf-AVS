@@ -71,7 +71,7 @@ impl Operator {
                 return Ok(true);
             }
         }
-        return Ok(false);
+        Ok(false)
     }
 
     pub async fn update_preconfer_lookahead_for_epoch(

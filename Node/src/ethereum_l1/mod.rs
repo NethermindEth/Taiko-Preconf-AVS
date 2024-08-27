@@ -39,7 +39,8 @@ impl EthereumL1 {
             contract_addresses,
             slot_clock.clone(),
             preconf_registry_expiry_sec,
-        )?;
+        )
+        .await?;
 
         Ok(Self {
             slot_clock,
@@ -65,7 +66,9 @@ mod tests {
         let anvil = Anvil::new().try_spawn().unwrap();
         let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
         let private_key = anvil.keys()[0].clone();
-        let el = ExecutionLayer::new_from_pk(rpc_url, private_key).unwrap();
+        let el = ExecutionLayer::new_from_pk(rpc_url, private_key)
+            .await
+            .unwrap();
 
         // TODO:
         // There is a bug in the Anvil (anvil 0.2.0) library:
@@ -77,7 +80,7 @@ mod tests {
         //     .unwrap();
         let lookahead_params = Vec::<PreconfTaskManager::LookaheadSetParam>::new();
 
-        el.propose_new_block(vec![0; 32], [0; 32], 0, lookahead_params)
+        el.propose_new_block(0, vec![0; 32], [0; 32], 0, lookahead_params, true)
             .await
             .unwrap();
     }
