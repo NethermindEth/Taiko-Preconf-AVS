@@ -55,11 +55,12 @@ async fn main() -> Result<(), Error> {
         config.taiko_chain_id,
     ));
 
-    let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url);
+    let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url, config.validator_index);
     let block_proposed_event_checker =
         BlockProposedEventReceiver::new(taiko.clone(), node_tx.clone());
     BlockProposedEventReceiver::start(block_proposed_event_checker).await;
     let ethereum_l1 = Arc::new(ethereum_l1);
+
     let node = node::Node::new(
         node_rx,
         node_to_p2p_tx,

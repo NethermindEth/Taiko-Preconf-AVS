@@ -17,6 +17,7 @@ pub struct Config {
     pub contract_addresses: ContractAddresses,
     pub p2p_network_config: P2PNetworkConfig,
     pub taiko_chain_id: u64,
+    pub validator_index: u64,
 }
 
 #[derive(Debug)]
@@ -207,6 +208,11 @@ impl Config {
             })
             .expect("TAIKO_CHAIN_ID must be a number");
 
+        let validator_index = std::env::var("VALIDATOR_INDEX")
+            .expect("VALIDATOR_INDEX env variable must be set")
+            .parse::<u64>()
+            .expect("VALIDATOR_INDEX must be a number");
+
         let config = Self {
             taiko_proposer_url: std::env::var("TAIKO_PROPOSER_URL")
                 .unwrap_or("http://127.0.0.1:1234".to_string()),
@@ -227,6 +233,7 @@ impl Config {
             contract_addresses,
             p2p_network_config,
             taiko_chain_id,
+            validator_index,
         };
 
         info!(

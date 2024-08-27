@@ -72,7 +72,7 @@ impl Operator {
                 return Ok(true);
             }
         }
-        return Ok(false);
+        Ok(false)
     }
 
     pub async fn find_slots_to_preconfirm(
