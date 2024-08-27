@@ -23,10 +23,10 @@ use tokio::sync::{
 };
 use tracing::info;
 
-mod block_porposer_helper;
 pub mod block_proposed_receiver;
 mod operator;
-use block_porposer_helper::BlockProposerHelper;
+mod preconfirmation_helper;
+use preconfirmation_helper::PreconfirmationHelper;
 
 use mev_boost::constraints::Constraint;
 
@@ -47,7 +47,7 @@ pub struct Node {
     is_preconfer_now: Arc<AtomicBool>,
     preconfirmation_txs: Arc<Mutex<HashMap<u64, Vec<u8>>>>, // block_id -> tx
     operator: Operator,
-    block_proposer: BlockProposerHelper,
+    preconfirmation_helper: PreconfirmationHelper,
 }
 
 impl Node {
@@ -77,7 +77,7 @@ impl Node {
             is_preconfer_now: Arc::new(AtomicBool::new(false)),
             preconfirmation_txs: Arc::new(Mutex::new(HashMap::new())),
             operator,
-            block_proposer: BlockProposerHelper::new(),
+            preconfirmation_helper: PreconfirmationHelper::new(),
         })
     }
 
@@ -303,7 +303,10 @@ impl Node {
 
     async fn preconfirm_last_slot(&mut self) -> Result<(), Error> {
         self.preconfirm_block(false).await?;
-        if self.block_proposer.is_last_final_slot_perconfirmation() {
+        if self
+            .preconfirmation_helper
+            .is_last_final_slot_perconfirmation()
+        {
             // Last(4th) perconfirmation when we are proposer and preconfer
             self.is_preconfer_now.store(false, Ordering::Release);
 
@@ -323,16 +326,14 @@ impl Node {
             }
         } else {
             // Increment perconfirmations count when we are proposer and preconfer
-            self.block_proposer.increment_final_slot_perconfirmation();
+            self.preconfirmation_helper
+                .increment_final_slot_perconfirmation();
         }
 
         Ok(())
     }
 
     async fn start_propose(&mut self) -> Result<(), Error> {
-        // get L2 block id
-        // TODO get L2 height
-        let new_block_height = 0 + 1;
         // get L1 preconfer wallet nonce
         let nonce = self
             .ethereum_l1
@@ -340,7 +341,7 @@ impl Node {
             .get_preconfer_nonce()
             .await?;
 
-        self.block_proposer.start_propose(nonce, new_block_height);
+        self.preconfirmation_helper.init(nonce);
         Ok(())
     }
 
@@ -368,7 +369,8 @@ impl Node {
             return Ok(());
         }
 
-        let (nonce, new_block_height) = self.block_proposer.propose_next();
+        let new_block_height = pending_tx_lists.parent_block_id + 1;
+        let nonce = self.preconfirmation_helper.get_next_nonce();
 
         let (commit_hash, signature) =
             self.generate_commit_hash_and_signature(&pending_tx_lists, new_block_height)?;
