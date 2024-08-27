@@ -401,19 +401,19 @@ impl ExecutionLayer {
         Ok(())
     }
 
-    pub async fn get_lookahead_params_for_epoch_using_beacon_lookahead(
+    pub async fn get_lookahead_params_for_epoch_using_cl_lookahead(
         &self,
         epoch_begin_timestamp: u64,
-        lookahead: &[ProposerDuty],
+        cl_lookahead: &[ProposerDuty],
     ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
-        if lookahead.len() != self.slot_clock.get_slots_per_epoch() as usize {
+        if cl_lookahead.len() != self.slot_clock.get_slots_per_epoch() as usize {
             return Err(anyhow::anyhow!(
             "Operator::find_slots_to_preconfirm: unexpected number of proposer duties in the lookahead"
         ));
         }
 
         let slots = self.slot_clock.get_slots_per_epoch() as usize;
-        let validator_bls_pub_keys: Vec<BLSCompressedPublicKey> = lookahead
+        let validator_bls_pub_keys: Vec<BLSCompressedPublicKey> = cl_lookahead
             .iter()
             .take(slots)
             .map(|key| {
@@ -454,7 +454,9 @@ impl ExecutionLayer {
         Ok(params)
     }
 
-    pub async fn get_lookahead(&self) -> Result<[PreconfTaskManager::LookaheadEntry; 64], Error> {
+    pub async fn get_lookahead_preconfer_buffer(
+        &self,
+    ) -> Result<[PreconfTaskManager::LookaheadEntry; 64], Error> {
         let provider = ProviderBuilder::new()
             .with_recommended_fillers()
             .wallet(self.wallet.clone())
