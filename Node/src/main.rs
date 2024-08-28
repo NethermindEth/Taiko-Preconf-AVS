@@ -58,7 +58,7 @@ async fn main() -> Result<(), Error> {
     let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url, config.validator_index);
     let block_proposed_event_checker =
         BlockProposedEventReceiver::new(taiko.clone(), node_tx.clone());
-    BlockProposedEventReceiver::start(block_proposed_event_checker).await;
+    BlockProposedEventReceiver::start(block_proposed_event_checker);
     let ethereum_l1 = Arc::new(ethereum_l1);
 
     let node = node::Node::new(
