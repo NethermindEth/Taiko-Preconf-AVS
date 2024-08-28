@@ -1,6 +1,5 @@
-use crate::{
-    ethereum_l1::{execution_layer::LookaheadSetParam, slot_clock::Slot, EthereumL1},
-    utils::types::*,
+use crate::ethereum_l1::{
+    execution_layer::PreconfTaskManager::LookaheadSetParam, slot_clock::Slot, EthereumL1,
 };
 use anyhow::Error;
 use beacon_api_client::ProposerDuty;
@@ -31,6 +30,8 @@ impl Operator {
     }
 
     pub fn get_status(&self, slot: Slot) -> Result<Status, Error> {
+        // TODO: use the other lookahead parameters, which have entry for every slot
+        // below can have less than 32 entries
         if self.lookahead_params.len() < self.l1_slots_per_epoch as usize {
             return Err(anyhow::anyhow!(
                 "Operator::get_status: Not enough lookahead params"
@@ -75,37 +76,16 @@ impl Operator {
         Ok(false)
     }
 
-    pub async fn find_slots_to_preconfirm(
+    pub async fn update_preconfer_lookahead_for_epoch(
         &mut self,
         epoch_begin_timestamp: u64,
-        lookahead: &[ProposerDuty],
+        cl_lookahead: &[ProposerDuty],
     ) -> Result<(), Error> {
-        if lookahead.len() != self.l1_slots_per_epoch as usize {
-            return Err(anyhow::anyhow!(
-                "Operator::find_slots_to_preconfirm: unexpected number of proposer duties in the lookahead"
-            ));
-        }
-
-        let slots = self.l1_slots_per_epoch as usize;
-        let validator_bls_pub_keys: Vec<BLSCompressedPublicKey> = lookahead
-            .iter()
-            .take(slots)
-            .map(|key| {
-                let mut array = [0u8; 48];
-                array.copy_from_slice(&key.public_key);
-                array
-            })
-            .collect();
-
         self.lookahead_params = self
             .ethereum_l1
             .execution_layer
-            .get_lookahead_params_for_epoch(
-                epoch_begin_timestamp,
-                validator_bls_pub_keys.as_slice().try_into()?,
-            )
+            .get_lookahead_params_for_epoch_using_cl_lookahead(epoch_begin_timestamp, cl_lookahead)
             .await?;
-
         Ok(())
     }
 }

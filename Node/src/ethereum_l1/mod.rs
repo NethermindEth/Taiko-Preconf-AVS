@@ -55,12 +55,13 @@ mod tests {
     use super::*;
     use alloy::node_bindings::Anvil;
     use consensus_layer::tests::setup_server;
+    use execution_layer::PreconfTaskManager;
 
     #[tokio::test]
     async fn test_propose_new_block_with_lookahead() {
         let server = setup_server().await;
         let cl = ConsensusLayer::new(server.url().as_str()).unwrap();
-        let duties = cl.get_lookahead(1).await.unwrap();
+        let _duties = cl.get_lookahead(1).await.unwrap();
 
         let anvil = Anvil::new().try_spawn().unwrap();
         let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
@@ -69,7 +70,17 @@ mod tests {
             .await
             .unwrap();
 
-        el.propose_new_block(0, vec![0; 32], [0; 32], duties, true)
+        // TODO:
+        // There is a bug in the Anvil (anvil 0.2.0) library:
+        // `Result::unwrap()` on an `Err` value: buffer overrun while deserializing
+        // check if it's fixed in next version
+        // let lookahead_params = el
+        //     .get_lookahead_params_for_epoch_using_beacon_lookahead(1, &duties)
+        //     .await
+        //     .unwrap();
+        let lookahead_params = Vec::<PreconfTaskManager::LookaheadSetParam>::new();
+
+        el.propose_new_block(0, vec![0; 32], [0; 32], 0, lookahead_params, true)
             .await
             .unwrap();
     }

@@ -50,27 +50,6 @@ pub struct AvsContractAddresses {
     pub preconf_registry: Address,
 }
 
-pub struct LookaheadSetParam {
-    pub _timestamp: u64,
-    pub preconfer: PreconferAddress,
-}
-
-impl From<&PreconfTaskManager::LookaheadSetParam> for LookaheadSetParam {
-    fn from(param: &PreconfTaskManager::LookaheadSetParam) -> Self {
-        let timestamp = param.timestamp.try_into().unwrap_or_else(|_| {
-            tracing::error!(
-                "Failed to convert timestamp to u64 from PreconfTaskManager::LookaheadSetParam"
-            );
-            u64::MAX
-        });
-
-        Self {
-            _timestamp: timestamp,
-            preconfer: param.preconfer.into_array(),
-        }
-    }
-}
-
 sol!(
     #[allow(clippy::too_many_arguments)]
     #[allow(missing_docs)]
@@ -164,7 +143,7 @@ impl ExecutionLayer {
         })
     }
 
-    pub fn get_preconfer_address(&self) -> [u8; 20] {
+    pub fn get_preconfer_address(&self) -> PreconferAddress {
         self.preconfer_address.into_array()
     }
 
@@ -191,10 +170,11 @@ impl ExecutionLayer {
         nonce: u64,
         tx_list: Vec<u8>,
         parent_meta_hash: [u8; 32],
-        lookahead_set: Vec<ProposerDuty>,
+        lookahead_pointer: u64,
+        lookahead_set_params: Vec<PreconfTaskManager::LookaheadSetParam>,
         send_to_contract: bool,
     ) -> Result<Vec<u8>, Error> {
-        let provider = ProviderBuilder::new().on_http(self.rpc_url.clone());
+        let provider = self.create_provider();
 
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, &provider);
@@ -219,24 +199,13 @@ impl ExecutionLayer {
 
         let tx_list = Bytes::from(tx_list);
 
-        // create lookahead set
-        let lookahead_set_param = lookahead_set
-            .iter()
-            .map(|duty| {
-                Ok(PreconfTaskManager::LookaheadSetParam {
-                    timestamp: U256::from(self.slot_clock.start_of(duty.slot)?.as_millis()),
-                    preconfer: Address::ZERO, //TODO: Replace it with a BLS key when the contract is ready.
-                })
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
-
         // TODO check gas parameters
         let builder = contract
             .newBlockProposal(
                 encoded_block_params,
                 tx_list,
-                U256::from(0), //TODO: Replace it with the proper lookaheadPointer when the contract is ready.
-                lookahead_set_param,
+                U256::from(lookahead_pointer),
+                lookahead_set_params,
             )
             .chain_id(self.chain_id)
             .nonce(nonce) //TODO how to get it?
@@ -277,14 +246,11 @@ impl ExecutionLayer {
     }
 
     pub async fn register_preconfer(&self) -> Result<(), Error> {
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone());
+        let provider = self.create_provider();
 
         let strategy_manager = StrategyManager::new(
             self.contract_addresses.eigen_layer.strategy_manager,
-            provider.clone(),
+            &provider,
         );
         let tx_hash = strategy_manager
             .depositIntoStrategy(Address::ZERO, Address::ZERO, U256::from(1))
@@ -294,10 +260,7 @@ impl ExecutionLayer {
             .await?;
         tracing::debug!("Deposited into strategy: {tx_hash}");
 
-        let slasher = Slasher::new(
-            self.contract_addresses.eigen_layer.slasher,
-            provider.clone(),
-        );
+        let slasher = Slasher::new(self.contract_addresses.eigen_layer.slasher, &provider);
         let tx_hash = slasher
             .optIntoSlashing(self.contract_addresses.avs.service_manager)
             .send()
@@ -307,8 +270,7 @@ impl ExecutionLayer {
         tracing::debug!("Opted into slashing: {tx_hash}");
 
         let salt = Self::create_random_salt();
-        let avs_directory =
-            AVSDirectory::new(self.contract_addresses.avs.directory, provider.clone());
+        let avs_directory = AVSDirectory::new(self.contract_addresses.avs.directory, &provider);
         let expiration_timestamp =
             U256::from(chrono::Utc::now().timestamp() as u64 + self.preconf_registry_expiry_sec);
         let digest_hash = avs_directory
@@ -381,10 +343,7 @@ impl ExecutionLayer {
         tx_list_hash: [u8; 32],
         signature: [u8; 65],
     ) -> Result<(), Error> {
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone());
+        let provider = self.create_provider();
 
         let _contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
@@ -412,10 +371,7 @@ impl ExecutionLayer {
         >,
         Error,
     > {
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone());
+        let provider = self.create_provider();
         let registry = PreconfRegistry::new(self.contract_addresses.avs.preconf_registry, provider);
 
         let registered_filter = registry.PreconferRegistered_filter().watch().await?;
@@ -450,15 +406,41 @@ impl ExecutionLayer {
         Ok(())
     }
 
+    pub async fn get_lookahead_params_for_epoch_using_cl_lookahead(
+        &self,
+        epoch_begin_timestamp: u64,
+        cl_lookahead: &[ProposerDuty],
+    ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
+        if cl_lookahead.len() != self.slot_clock.get_slots_per_epoch() as usize {
+            return Err(anyhow::anyhow!(
+            "Operator::find_slots_to_preconfirm: unexpected number of proposer duties in the lookahead"
+        ));
+        }
+
+        let slots = self.slot_clock.get_slots_per_epoch() as usize;
+        let validator_bls_pub_keys: Vec<BLSCompressedPublicKey> = cl_lookahead
+            .iter()
+            .take(slots)
+            .map(|key| {
+                let mut array = [0u8; 48];
+                array.copy_from_slice(&key.public_key);
+                array
+            })
+            .collect();
+
+        self.get_lookahead_params_for_epoch(
+            epoch_begin_timestamp,
+            validator_bls_pub_keys.as_slice().try_into()?,
+        )
+        .await
+    }
+
     pub async fn get_lookahead_params_for_epoch(
         &self,
         epoch_begin_timestamp: u64,
         validator_bls_pub_keys: &[BLSCompressedPublicKey; 32],
-    ) -> Result<Vec<LookaheadSetParam>, Error> {
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone());
+    ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
+        let provider = self.create_provider();
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
 
@@ -471,15 +453,23 @@ impl ExecutionLayer {
             .await?
             ._0;
 
-        Ok(params.iter().map(|param| param.into()).collect::<Vec<_>>())
+        Ok(params)
+    }
+
+    pub async fn get_lookahead_preconfer_buffer(
+        &self,
+    ) -> Result<[PreconfTaskManager::LookaheadEntry; 64], Error> {
+        let provider = self.create_provider();
+        let contract =
+            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
+
+        let lookahead = contract.getLookahead().call().await?._0;
+
+        Ok(lookahead)
     }
 
     pub async fn is_lookahead_required(&self, epoch_begin_timestamp: u64) -> Result<bool, Error> {
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone());
-
+        let provider = self.create_provider();
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
 
@@ -489,6 +479,13 @@ impl ExecutionLayer {
             .await?;
 
         Ok(is_required._0)
+    }
+
+    fn create_provider(&self) -> impl Provider<alloy::transports::http::Http<reqwest::Client>> {
+        ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.wallet.clone())
+            .on_http(self.rpc_url.clone())
     }
 
     #[cfg(test)]
@@ -595,7 +592,7 @@ mod tests {
             .await
             .unwrap();
 
-        el.propose_new_block(0, vec![0; 32], [0; 32], vec![], true)
+        el.propose_new_block(0, vec![0; 32], [0; 32], 0, vec![], true)
             .await
             .unwrap();
     }
@@ -610,5 +607,31 @@ mod tests {
 
         let result = el.register_preconfer().await;
         assert!(result.is_ok(), "Register method failed: {:?}", result.err());
+    }
+
+    #[tokio::test]
+    async fn test_get_lookahead_params_for_epoch() {
+        let anvil = Anvil::new().try_spawn().unwrap();
+        let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
+        let private_key = anvil.keys()[0].clone();
+        let _el = ExecutionLayer::new_from_pk(rpc_url, private_key)
+            .await
+            .unwrap();
+
+        let _epoch_begin_timestamp = 0;
+        let _validator_bls_pub_keys: [BLSCompressedPublicKey; 32] = [[0u8; 48]; 32];
+
+        // TODO:
+        // There is a bug in the Anvil (anvil 0.2.0) library:
+        // `Result::unwrap()` on an `Err` value: buffer overrun while deserializing
+        // check if it's fixed in next version
+        // let lookahead_params = el
+        //     .get_lookahead_params_for_epoch(epoch_begin_timestamp, &validator_bls_pub_keys)
+        //     .await
+        //     .unwrap();
+        // assert!(
+        //     !lookahead_params.is_empty(),
+        //     "Lookahead params should not be empty"
+        // );
     }
 }
