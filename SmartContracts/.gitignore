@@ -14,4 +14,4 @@ docs/
 .env
 
 # Configs
-config.solhint.json
+.solhint.json
