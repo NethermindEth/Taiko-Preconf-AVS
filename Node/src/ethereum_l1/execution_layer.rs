@@ -172,9 +172,11 @@ impl ExecutionLayer {
         parent_meta_hash: [u8; 32],
         lookahead_pointer: u64,
         lookahead_set_params: Vec<PreconfTaskManager::LookaheadSetParam>,
-        send_to_contract: bool,
-    ) -> Result<Vec<u8>, Error> {
-        let provider = self.create_provider();
+    ) -> Result<(), Error> {
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.wallet.clone())
+            .on_http(self.rpc_url.clone());
 
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, &provider);
@@ -199,19 +201,12 @@ impl ExecutionLayer {
 
         let tx_list = Bytes::from(tx_list);
 
-        // TODO check gas parameters
-        let builder = contract
-            .newBlockProposal(
-                encoded_block_params,
-                tx_list,
-                U256::from(lookahead_pointer),
-                lookahead_set_params,
-            )
-            .chain_id(self.chain_id)
-            .nonce(nonce) //TODO how to get it?
-            .gas(50_000)
-            .max_fee_per_gas(20_000_000_000)
-            .max_priority_fee_per_gas(1_000_000_000);
+        let builder = contract.newBlockProposal(
+            encoded_block_params,
+            tx_list,
+            U256::from(lookahead_pointer),
+            lookahead_set_params,
+        );
 
         // Build transaction
         let tx = builder.as_ref().clone().build_typed_tx();
@@ -406,19 +401,19 @@ impl ExecutionLayer {
         Ok(())
     }
 
-    pub async fn get_lookahead_params_for_epoch_using_cl_lookahead(
+    pub async fn get_lookahead_params_for_epoch_using_beacon_lookahead(
         &self,
         epoch_begin_timestamp: u64,
-        cl_lookahead: &[ProposerDuty],
+        lookahead: &[ProposerDuty],
     ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
-        if cl_lookahead.len() != self.slot_clock.get_slots_per_epoch() as usize {
+        if lookahead.len() != self.slot_clock.get_slots_per_epoch() as usize {
             return Err(anyhow::anyhow!(
             "Operator::find_slots_to_preconfirm: unexpected number of proposer duties in the lookahead"
         ));
         }
 
         let slots = self.slot_clock.get_slots_per_epoch() as usize;
-        let validator_bls_pub_keys: Vec<BLSCompressedPublicKey> = cl_lookahead
+        let validator_bls_pub_keys: Vec<BLSCompressedPublicKey> = lookahead
             .iter()
             .take(slots)
             .map(|key| {
@@ -440,7 +435,10 @@ impl ExecutionLayer {
         epoch_begin_timestamp: u64,
         validator_bls_pub_keys: &[BLSCompressedPublicKey; 32],
     ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
-        let provider = self.create_provider();
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.wallet.clone())
+            .on_http(self.rpc_url.clone());
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
 
@@ -456,10 +454,12 @@ impl ExecutionLayer {
         Ok(params)
     }
 
-    pub async fn get_lookahead_preconfer_buffer(
-        &self,
-    ) -> Result<[PreconfTaskManager::LookaheadEntry; 64], Error> {
-        let provider = self.create_provider();
+    pub async fn get_lookahead(&self) -> Result<[PreconfTaskManager::LookaheadEntry; 64], Error> {
+        let provider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.wallet.clone())
+            .on_http(self.rpc_url.clone());
+
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
 
@@ -592,7 +592,7 @@ mod tests {
             .await
             .unwrap();
 
-        el.propose_new_block(0, vec![0; 32], [0; 32], 0, vec![], true)
+        el.propose_new_block(vec![0; 32], [0; 32], 0, vec![])
             .await
             .unwrap();
     }
@@ -614,9 +614,7 @@ mod tests {
         let anvil = Anvil::new().try_spawn().unwrap();
         let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
         let private_key = anvil.keys()[0].clone();
-        let _el = ExecutionLayer::new_from_pk(rpc_url, private_key)
-            .await
-            .unwrap();
+        let _el = ExecutionLayer::new_from_pk(rpc_url, private_key).unwrap();
 
         let _epoch_begin_timestamp = 0;
         let _validator_bls_pub_keys: [BLSCompressedPublicKey; 32] = [[0u8; 48]; 32];

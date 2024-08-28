@@ -1,6 +1,6 @@
 use crate::{
     ethereum_l1::{execution_layer::PreconfTaskManager, slot_clock::Epoch, EthereumL1},
-    mev_boost::{constraints::Constraint, MevBoost},
+    mev_boost::MevBoost,
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::{
         block_proposed::BlockProposed, commit::L2TxListsCommit,
@@ -269,7 +269,7 @@ impl Node {
 
             self.operator = Operator::new(self.ethereum_l1.clone());
             self.operator
-                .update_preconfer_lookahead_for_epoch(current_epoch_timestamp, &self.cl_lookahead)
+                .update_preconfer_lookahead_for_epoch(current_epoch_timestamp, &self.lookahead)
                 .await?;
 
             self.cl_lookahead = self
@@ -289,14 +289,17 @@ impl Node {
 
         match self.operator.get_status(current_slot)? {
             OperatorStatus::PreconferAndProposer => {
-                self.preconfirm_last_slot().await?;
+                // TODO: replace with mev-boost forced inclusion list
+                let (lookahead_pointer, lookahead_params) =
+                    self.get_lookahead_params(current_epoch_timestamp).await?;
+                self.preconfirm_block(lookahead_pointer, lookahead_params)
+                    .await?;
             }
             OperatorStatus::Preconfer => {
-                if !self.is_preconfer_now.load(Ordering::Acquire) {
-                    self.is_preconfer_now.store(true, Ordering::Release);
-                    self.start_propose().await?;
-                }
-                self.preconfirm_block(true).await?;
+                let (lookahead_pointer, lookahead_params) =
+                    self.get_lookahead_params(current_epoch_timestamp).await?;
+                self.preconfirm_block(lookahead_pointer, lookahead_params)
+                    .await?;
             }
             OperatorStatus::None => {
                 tracing::debug!("Not my slot to preconfirm: {}", current_slot);
@@ -310,26 +313,6 @@ impl Node {
         &mut self,
         current_epoch_timestamp: u64,
     ) -> Result<(u64, Vec<PreconfTaskManager::LookaheadSetParam>), Error> {
-        let current_timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs();
-
-        let lookahead_pointer = self
-            .lookahead_preconfer_buffer
-            .as_ref()
-            .ok_or(anyhow::anyhow!(
-                "get_lookahead_params: lookahead_preconfer_buffer is None"
-            ))?
-            .iter()
-            .position(|entry| {
-                entry.preconfer == self.ethereum_l1.execution_layer.get_preconfer_address()
-                    && current_timestamp > entry.prevTimestamp
-                    && current_timestamp <= entry.timestamp
-            })
-            .ok_or(anyhow::anyhow!(
-                "get_lookahead_params: Preconfer not found in lookahead"
-            ))? as u64;
-
         if self
             .operator
             .should_post_lookahead(current_epoch_timestamp)
@@ -338,65 +321,40 @@ impl Node {
             let lookahead_params = self
                 .ethereum_l1
                 .execution_layer
-                .get_lookahead_params_for_epoch_using_cl_lookahead(
+                .get_lookahead_params_for_epoch_using_beacon_lookahead(
                     self.ethereum_l1
                         .slot_clock
                         .get_epoch_begin_timestamp(self.epoch + 1)?,
-                    &self.cl_lookahead,
+                    &self.lookahead,
                 )
                 .await?;
 
-            return Ok((lookahead_pointer, lookahead_params));
+            let lookahead = self.ethereum_l1.execution_layer.get_lookahead().await?;
+            let current_timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_secs();
+            let lookahead_pointer = lookahead
+                .iter()
+                .position(|entry| {
+                    entry.preconfer == self.ethereum_l1.execution_layer.get_preconfer_address()
+                        && current_timestamp > entry.prevTimestamp
+                        && current_timestamp <= entry.timestamp
+                })
+                .ok_or(anyhow::anyhow!(
+                    "get_lookahead_params: Preconfer not found in lookahead"
+                ))?;
+
+            return Ok((lookahead_pointer as u64, lookahead_params));
         }
 
-        Ok((lookahead_pointer, vec![]))
+        Ok((0, vec![]))
     }
 
-    async fn preconfirm_last_slot(&mut self) -> Result<(), Error> {
-        self.preconfirm_block(false).await?;
-        if self
-            .preconfirmation_helper
-            .is_last_final_slot_perconfirmation()
-        {
-            // Last(4th) perconfirmation when we are proposer and preconfer
-            self.is_preconfer_now.store(false, Ordering::Release);
-
-            let mut preconfirmation_txs = self.preconfirmation_txs.lock().await;
-            if !preconfirmation_txs.is_empty() {
-                // Build constraints
-                let constraints: Vec<Constraint> = preconfirmation_txs
-                    .iter()
-                    .map(|(_, value)| Constraint::new(format!("0x{}", hex::encode(value)), None))
-                    .collect();
-
-                self.mev_boost
-                    .force_inclusion(constraints, self.ethereum_l1.clone())
-                    .await?;
-
-                preconfirmation_txs.clear();
-            }
-        } else {
-            // Increment perconfirmations count when we are proposer and preconfer
-            self.preconfirmation_helper
-                .increment_final_slot_perconfirmation();
-        }
-
-        Ok(())
-    }
-
-    async fn start_propose(&mut self) -> Result<(), Error> {
-        // get L1 preconfer wallet nonce
-        let nonce = self
-            .ethereum_l1
-            .execution_layer
-            .get_preconfer_nonce()
-            .await?;
-
-        self.preconfirmation_helper.init(nonce);
-        Ok(())
-    }
-
-    async fn preconfirm_block(&mut self, send_to_contract: bool) -> Result<(), Error> {
+    async fn preconfirm_block(
+        &mut self,
+        lookahead_pointer: u64,
+        lookahead_params: Vec<PreconfTaskManager::LookaheadSetParam>,
+    ) -> Result<(), Error> {
         tracing::debug!(
             "Preconfirming for the slot: {:?}",
             self.ethereum_l1.slot_clock.get_current_slot()?
@@ -445,7 +403,6 @@ impl Node {
                 pending_tx_lists.parent_meta_hash,
                 lookahead_pointer,
                 lookahead_params,
-                send_to_contract,
             )
             .await?;
 

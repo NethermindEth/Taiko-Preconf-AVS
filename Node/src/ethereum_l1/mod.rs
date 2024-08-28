@@ -80,7 +80,7 @@ mod tests {
         //     .unwrap();
         let lookahead_params = Vec::<PreconfTaskManager::LookaheadSetParam>::new();
 
-        el.propose_new_block(0, vec![0; 32], [0; 32], 0, lookahead_params, true)
+        el.propose_new_block(vec![0; 32], [0; 32], 0, lookahead_params)
             .await
             .unwrap();
     }
