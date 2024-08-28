@@ -30,6 +30,8 @@ impl Operator {
     }
 
     pub fn get_status(&self, slot: Slot) -> Result<Status, Error> {
+        // TODO: use the other lookahead parameters, which have entry for every slot
+        // below can have less than 32 entries
         if self.lookahead_params.len() < self.l1_slots_per_epoch as usize {
             return Err(anyhow::anyhow!(
                 "Operator::get_status: Not enough lookahead params"
