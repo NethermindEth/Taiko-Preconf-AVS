@@ -12,6 +12,7 @@ pub struct Config {
     pub l1_slots_per_epoch: u64,
     pub l2_slot_duration_sec: u64,
     pub validator_bls_pubkey: String,
+    pub validator_bls_privkey: String,
     pub block_proposed_receiver_timeout_sec: u64,
     pub preconf_registry_expiry_sec: u64,
     pub contract_addresses: ContractAddresses,
@@ -163,6 +164,15 @@ impl Config {
             "0x0".to_string()
         });
 
+        const VALIDATOR_PRIVATEKEY: &str = "VALIDATOR_PRIVATEKEY";
+        let validator_bls_privkey = std::env::var(VALIDATOR_PRIVATEKEY).unwrap_or({
+            warn!(
+                "No validator pubkey found in {} env var, using default",
+                VALIDATOR_PRIVATEKEY
+            );
+            "0x0".to_string()
+        });
+
         let block_proposed_receiver_timeout_sec =
             std::env::var("BLOCK_PROPOSED_RECEIVER_TIMEOUT_SEC")
                 .unwrap_or("120".to_string())
@@ -228,6 +238,7 @@ impl Config {
             l1_slots_per_epoch,
             l2_slot_duration_sec,
             validator_bls_pubkey: validator_pubkey,
+            validator_bls_privkey,
             block_proposed_receiver_timeout_sec,
             preconf_registry_expiry_sec,
             contract_addresses,

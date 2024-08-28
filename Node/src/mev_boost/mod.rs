@@ -1,10 +1,10 @@
-use crate::ethereum_l1::EthereumL1;
 use crate::utils::rpc_client::RpcClient;
+use crate::{bls::BLSService, ethereum_l1::EthereumL1};
 use anyhow::Error;
 use std::sync::Arc;
 
 pub mod constraints;
-use constraints::{Constraint, ConstraintsMessage, SignedConstraints};
+use constraints::{ConstraintsMessage, SignedConstraints};
 
 pub struct MevBoost {
     rpc_client: RpcClient,
@@ -22,27 +22,19 @@ impl MevBoost {
 
     pub async fn force_inclusion(
         &self,
-        constraints: Vec<Constraint>,
+        constraints: Vec<Vec<u8>>,
         ethereum_l1: Arc<EthereumL1>,
+        bls_service: Arc<BLSService>,
     ) -> Result<(), Error> {
         // Prepare the message
         // TODO check slot id value
         let slot_id = ethereum_l1.slot_clock.get_current_slot()?;
 
-        let message = ConstraintsMessage::new(self.validator_index, slot_id, constraints);
+        let message = ConstraintsMessage::new(self.validator_index, slot_id, false, constraints);
 
-        let data_to_sign: Vec<u8> = message.clone().into();
+        let signed = SignedConstraints::new(message, bls_service);
 
-        // Sign the message
-        // TODO: Determine if the transaction data needs to be signed as a JSON string.
-        let signature = ethereum_l1
-            .execution_layer
-            .sign_message_with_private_ecdsa_key(&data_to_sign)?;
-
-        // Prepare data to send
-        let signed_constraints =
-            SignedConstraints::new(message, format!("0x{}", hex::encode(signature)));
-        let json_data = serde_json::to_value(&signed_constraints).unwrap();
+        let json_data = serde_json::to_value(&signed)?;
 
         // https://chainbound.github.io/bolt-docs/api/builder#ethv1builderconstraints
         let method = "/eth/v1/builder/constraints";

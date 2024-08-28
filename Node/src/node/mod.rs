@@ -1,6 +1,7 @@
 use crate::{
+    bls::BLSService,
     ethereum_l1::{execution_layer::PreconfTaskManager, slot_clock::Epoch, EthereumL1},
-    mev_boost::{constraints::Constraint, MevBoost},
+    mev_boost::MevBoost,
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::{
         block_proposed::BlockProposed, commit::L2TxListsCommit,
@@ -8,7 +9,6 @@ use crate::{
         preconfirmation_proof::PreconfirmationProof,
     },
 };
-use alloy::hex;
 use anyhow::{anyhow as any_err, Error};
 use beacon_api_client::ProposerDuty;
 use operator::{Operator, Status as OperatorStatus};
@@ -47,6 +47,7 @@ pub struct Node {
     preconfirmation_txs: Arc<Mutex<HashMap<u64, Vec<u8>>>>, // block_id -> tx
     operator: Operator,
     preconfirmation_helper: PreconfirmationHelper,
+    bls_service: Arc<BLSService>,
 }
 
 impl Node {
@@ -58,6 +59,7 @@ impl Node {
         ethereum_l1: Arc<EthereumL1>,
         mev_boost: MevBoost,
         l2_slot_duration_sec: u64,
+        bls_service: Arc<BLSService>,
     ) -> Result<Self, Error> {
         let current_epoch = ethereum_l1.slot_clock.get_current_epoch()?;
         let operator = Operator::new(ethereum_l1.clone());
@@ -78,6 +80,7 @@ impl Node {
             preconfirmation_txs: Arc::new(Mutex::new(HashMap::new())),
             operator,
             preconfirmation_helper: PreconfirmationHelper::new(),
+            bls_service,
         })
     }
 
@@ -364,13 +367,17 @@ impl Node {
             let mut preconfirmation_txs = self.preconfirmation_txs.lock().await;
             if !preconfirmation_txs.is_empty() {
                 // Build constraints
-                let constraints: Vec<Constraint> = preconfirmation_txs
+                let constraints: Vec<Vec<u8>> = preconfirmation_txs
                     .iter()
-                    .map(|(_, value)| Constraint::new(format!("0x{}", hex::encode(value)), None))
+                    .map(|(_, value)| value.clone())
                     .collect();
 
                 self.mev_boost
-                    .force_inclusion(constraints, self.ethereum_l1.clone())
+                    .force_inclusion(
+                        constraints,
+                        self.ethereum_l1.clone(),
+                        self.bls_service.clone(),
+                    )
                     .await?;
 
                 preconfirmation_txs.clear();
