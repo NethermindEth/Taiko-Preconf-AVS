@@ -17,9 +17,11 @@ use std::{
     collections::HashMap,
     sync::{atomic::AtomicBool, Arc},
 };
+use tokio::time::{sleep_until, Duration, Instant};
 use tokio::sync::{
     mpsc::{Receiver, Sender},
     Mutex,
+    
 };
 use tracing::info;
 
@@ -240,9 +242,17 @@ impl Node {
     }
 
     async fn preconfirmation_loop(&mut self) {
-        // TODO syncronize with slot clock
+        // Synchronize with L1 Slot Start Time
+        let sleep_duration = Duration::from_secs(self.l2_slot_duration_sec);
+        let mut duration = self.ethereum_l1.slot_clock.duration_to_next_slot().unwrap();
+        if duration < sleep_duration {
+            sleep_until(Instant::now() + duration).await;
+            duration = self.ethereum_l1.slot_clock.duration_to_next_slot().unwrap();
+        }
+        sleep_until(Instant::now() + duration - sleep_duration).await;
+        // start preconfirmation loop
         let mut interval =
-            tokio::time::interval(std::time::Duration::from_secs(self.l2_slot_duration_sec));
+            tokio::time::interval(sleep_duration);
         loop {
             interval.tick().await;
 
