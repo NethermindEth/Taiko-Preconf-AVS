@@ -109,6 +109,13 @@ sol!(
     "src/ethereum_l1/abi/PreconfRegistry.json"
 );
 
+pub struct EventPollerLookaheadUpdated(
+    pub  EventPoller<
+        alloy::transports::http::Http<reqwest::Client>,
+        PreconfTaskManager::LookaheadUpdated,
+    >,
+);
+
 impl ExecutionLayer {
     pub async fn new(
         rpc_url: &str,
@@ -362,7 +369,7 @@ impl ExecutionLayer {
         Ok(())
     }
 
-    pub async fn subscribe_for_registered_event(
+    pub async fn subscribe_to_registered_event(
         &self,
     ) -> Result<
         EventPoller<
@@ -406,15 +413,9 @@ impl ExecutionLayer {
         Ok(())
     }
 
-    pub async fn subscribe_for_the_lookahead_updated_event(
+    pub async fn subscribe_to_lookahead_updated_event(
         &self,
-    ) -> Result<
-        EventPoller<
-            alloy::transports::http::Http<reqwest::Client>,
-            PreconfTaskManager::LookaheadUpdated,
-        >,
-        Error,
-    > {
+    ) -> Result<EventPollerLookaheadUpdated, Error> {
         let provider = self.create_provider();
         let task_manager =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
@@ -422,23 +423,7 @@ impl ExecutionLayer {
         let lookahead_updated_filter = task_manager.LookaheadUpdated_filter().watch().await?;
         tracing::debug!("Subscribed to lookahead updated event");
 
-        Ok(lookahead_updated_filter)
-    }
-
-    pub async fn wait_for_the_lookahead_updated_event(
-        &self,
-        lookahead_updated_filter: EventPoller<
-            alloy::transports::http::Http<reqwest::Client>,
-            PreconfTaskManager::LookaheadUpdated,
-        >,
-    ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
-        let mut stream = lookahead_updated_filter.into_stream();
-
-        if let Some(log) = stream.next().await {
-            return Ok(log?.0._0);
-        }
-
-        Ok(vec![]) // czy to na pewno w ten sposób?
+        Ok(EventPollerLookaheadUpdated(lookahead_updated_filter))
     }
 
     pub async fn get_lookahead_params_for_epoch_using_cl_lookahead(

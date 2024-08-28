@@ -1,7 +1,4 @@
-use crate::ethereum_l1::{
-    execution_layer::{EventPollerLookaheadUpdated, PreconfTaskManager},
-    EthereumL1,
-};
+use crate::ethereum_l1::{execution_layer::PreconfTaskManager, EthereumL1};
 use anyhow::Error;
 use futures_util::StreamExt;
 use std::sync::Arc;
@@ -19,26 +16,22 @@ pub struct LookaheadUpdatedEventReceiver {
 }
 
 impl LookaheadUpdatedEventReceiver {
-    pub fn new(
-        ethereum_l1: Arc<EthereumL1>,
-        node_tx: Sender<LookaheadUpdated>,
-    ) -> Result<Self, Error> {
-        Ok(Self {
+    pub fn new(ethereum_l1: Arc<EthereumL1>, node_tx: Sender<LookaheadUpdated>) -> Self {
+        Self {
             ethereum_l1,
             node_tx,
-        })
+        }
     }
 
     pub fn start(self) {
-        let ethereum_l1 = self.ethereum_l1.clone();
-        let node_tx = self.node_tx.clone();
         tokio::spawn(async move {
-            Self::check_for_events(ethereum_l1, node_tx).await;
+            self.check_for_events().await;
         });
     }
 
-    pub async fn check_for_events(ethereum_l1: Arc<EthereumL1>, node_tx: Sender<LookaheadUpdated>) {
-        let event_poller = match ethereum_l1
+    async fn check_for_events(self) {
+        let event_poller = match self
+            .ethereum_l1
             .execution_layer
             .subscribe_to_lookahead_updated_event()
             .await
@@ -60,7 +53,11 @@ impl LookaheadUpdatedEventReceiver {
                             "Received lookahead updated event with {} params.",
                             lookahead_params.len()
                         );
-                        if let Err(e) = node_tx.send(LookaheadUpdated { lookahead_params }).await {
+                        if let Err(e) = self
+                            .node_tx
+                            .send(LookaheadUpdated { lookahead_params })
+                            .await
+                        {
                             error!("Error sending lookahead updated event by channel: {:?}", e);
                         }
                     }
