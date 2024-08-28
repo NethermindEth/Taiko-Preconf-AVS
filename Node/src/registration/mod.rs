@@ -14,7 +14,7 @@ impl Registration {
         let registered_filter = self
             .ethereum_l1
             .execution_layer
-            .watch_for_registered_event()
+            .subscribe_for_registered_event()
             .await?;
 
         self.ethereum_l1
