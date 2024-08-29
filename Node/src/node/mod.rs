@@ -21,6 +21,7 @@ use tokio::sync::{
     mpsc::{Receiver, Sender},
     Mutex,
 };
+use tokio::time::{sleep, Duration};
 use tracing::info;
 
 pub mod block_proposed_receiver;
@@ -240,9 +241,11 @@ impl Node {
     }
 
     async fn preconfirmation_loop(&mut self) {
-        // TODO syncronize with slot clock
-        let mut interval =
-            tokio::time::interval(std::time::Duration::from_secs(self.l2_slot_duration_sec));
+        // Synchronize with L1 Slot Start Time
+        let duration_to_next_slot = self.ethereum_l1.slot_clock.duration_to_next_slot().unwrap();
+        sleep(duration_to_next_slot).await;
+        // start preconfirmation loop
+        let mut interval = tokio::time::interval(Duration::from_secs(self.l2_slot_duration_sec));
         loop {
             interval.tick().await;
 
