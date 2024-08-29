@@ -1,25 +1,20 @@
-use crate::ethereum_l1::{execution_layer::PreconfTaskManager, EthereumL1};
+use crate::ethereum_l1::{execution_layer::IPreconfTaskManager, EthereumL1};
+use anyhow::Error;
 use futures_util::StreamExt;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tracing::{debug, error};
 
-pub struct LookaheadUpdated {
-    pub _lookahead_params: Vec<PreconfTaskManager::LookaheadSetParam>,
-}
+type LookaheadUpdated = Vec<IPreconfTaskManager::LookaheadSetParam>;
 
 #[derive(Clone)]
 pub struct LookaheadUpdatedEventReceiver {
     ethereum_l1: Arc<EthereumL1>,
-    node_tx: Sender<LookaheadUpdated>,
 }
 
 impl LookaheadUpdatedEventReceiver {
-    pub fn new(ethereum_l1: Arc<EthereumL1>, node_tx: Sender<LookaheadUpdated>) -> Self {
-        Self {
-            ethereum_l1,
-            node_tx,
-        }
+    pub fn new(ethereum_l1: Arc<EthereumL1>) -> Self {
+        Self { ethereum_l1 }
     }
 
     pub fn start(self) {
@@ -52,14 +47,8 @@ impl LookaheadUpdatedEventReceiver {
                             "Received lookahead updated event with {} params.",
                             lookahead_params.len()
                         );
-                        if let Err(e) = self
-                            .node_tx
-                            .send(LookaheadUpdated {
-                                _lookahead_params: lookahead_params,
-                            })
-                            .await
-                        {
-                            error!("Error sending lookahead updated event by channel: {:?}", e);
+                        if let Err(e) = self.check_lookahead_correctness(&lookahead_params).await {
+                            error!("Error checking lookahead correctness: {:?}", e);
                         }
                     }
                     Err(e) => {
@@ -73,5 +62,37 @@ impl LookaheadUpdatedEventReceiver {
                 }
             }
         }
+    }
+
+    async fn check_lookahead_correctness(
+        &self,
+        lookahead_updated_next_epoch: &LookaheadUpdated,
+    ) -> Result<(), Error> {
+        let epoch = self.ethereum_l1.slot_clock.get_current_epoch()?;
+        let next_epoch_begin_timestamp = self
+            .ethereum_l1
+            .slot_clock
+            .get_epoch_begin_timestamp(epoch + 1)?;
+
+        let next_epoch_duties = self
+            .ethereum_l1
+            .consensus_layer
+            .get_lookahead(epoch + 1)
+            .await?;
+        let next_epoch_lookahead_params = self
+            .ethereum_l1
+            .execution_layer
+            .get_lookahead_params_for_epoch_using_cl_lookahead(
+                next_epoch_begin_timestamp,
+                &next_epoch_duties,
+            )
+            .await?;
+
+        // if lookahead_updated_next_epoch != &next_epoch_lookahead_params {
+
+        // }
+
+        // self.ethereum_l1.execution_layer.prove
+        Ok(())
     }
 }

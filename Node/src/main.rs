@@ -49,7 +49,6 @@ async fn main() -> Result<(), Error> {
     let (node_to_p2p_tx, node_to_p2p_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
     let (p2p_to_node_tx, p2p_to_node_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
     let (block_proposed_tx, block_proposed_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
-    let (lookahead_updated_tx, lookahead_updated_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
     let p2p = p2p_network::AVSp2p::new(p2p_to_node_tx.clone(), node_to_p2p_rx);
     p2p.start(config.p2p_network_config).await;
     let taiko = Arc::new(taiko::Taiko::new(
@@ -66,7 +65,6 @@ async fn main() -> Result<(), Error> {
         block_proposed_rx,
         node_to_p2p_tx,
         p2p_to_node_rx,
-        lookahead_updated_rx,
         taiko.clone(),
         ethereum_l1.clone(),
         mev_boost,
@@ -79,7 +77,7 @@ async fn main() -> Result<(), Error> {
     BlockProposedEventReceiver::start(block_proposed_event_checker);
 
     let lookahead_updated_event_checker =
-        LookaheadUpdatedEventReceiver::new(ethereum_l1.clone(), lookahead_updated_tx);
+        LookaheadUpdatedEventReceiver::new(ethereum_l1.clone());
     lookahead_updated_event_checker.start();
 
     Ok(())
