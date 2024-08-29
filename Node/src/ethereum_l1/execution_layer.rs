@@ -178,7 +178,7 @@ impl ExecutionLayer {
         tx_list: Vec<u8>,
         parent_meta_hash: [u8; 32],
         lookahead_pointer: u64,
-        lookahead_set_params: Vec<PreconfTaskManager::LookaheadSetParam>,
+        lookahead_set_params: Vec<IPreconfTaskManager::LookaheadSetParam>,
         send_to_contract: bool,
     ) -> Result<Vec<u8>, Error> {
         let provider = self.create_provider();
@@ -355,7 +355,7 @@ impl ExecutionLayer {
         let _contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
 
-        let _header = PreconfTaskManager::PreconfirmationHeader {
+        let _header = IPreconfTaskManager::PreconfirmationHeader {
             blockId: U256::from(block_id),
             chainId: U256::from(chain_id),
             txListHash: B256::from(tx_list_hash),
@@ -430,7 +430,7 @@ impl ExecutionLayer {
         &self,
         epoch_begin_timestamp: u64,
         cl_lookahead: &[ProposerDuty],
-    ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
+    ) -> Result<Vec<IPreconfTaskManager::LookaheadSetParam>, Error> {
         if cl_lookahead.len() != self.slot_clock.get_slots_per_epoch() as usize {
             return Err(anyhow::anyhow!(
             "Operator::find_slots_to_preconfirm: unexpected number of proposer duties in the lookahead"
@@ -459,7 +459,7 @@ impl ExecutionLayer {
         &self,
         epoch_begin_timestamp: u64,
         validator_bls_pub_keys: &[BLSCompressedPublicKey; 32],
-    ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
+    ) -> Result<Vec<IPreconfTaskManager::LookaheadSetParam>, Error> {
         let provider = self.create_provider();
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
@@ -478,7 +478,7 @@ impl ExecutionLayer {
 
     pub async fn get_lookahead_preconfer_buffer(
         &self,
-    ) -> Result<[PreconfTaskManager::LookaheadEntry; 64], Error> {
+    ) -> Result<[IPreconfTaskManager::LookaheadEntry; 64], Error> {
         let provider = self.create_provider();
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);

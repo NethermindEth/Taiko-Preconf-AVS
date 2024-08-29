@@ -35,7 +35,7 @@ impl SlotClock {
         self.slots_per_epoch
     }
 
-    fn duration_to_next_slot(&self) -> Result<Duration, Error> {
+    pub fn duration_to_next_slot(&self) -> Result<Duration, Error> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         self.duration_to_next_slot_from(now)
     }
