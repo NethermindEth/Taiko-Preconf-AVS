@@ -21,7 +21,7 @@ use tokio::sync::{
     mpsc::{Receiver, Sender},
     Mutex,
 };
-use tokio::time::{sleep_until, Duration, Instant};
+use tokio::time::{sleep, Duration};
 use tracing::info;
 
 pub mod block_proposed_receiver;
@@ -241,13 +241,11 @@ impl Node {
     }
 
     async fn preconfirmation_loop(&mut self) {
-        let l2_slot_duration = Duration::from_secs(self.l2_slot_duration_sec);
         // Synchronize with L1 Slot Start Time
-        self.synchronize_with_l1_slot_start_time(l2_slot_duration)
-            .await
-            .unwrap();
+        let duration_to_next_slot = self.ethereum_l1.slot_clock.duration_to_next_slot().unwrap();
+        sleep(duration_to_next_slot).await;
         // start preconfirmation loop
-        let mut interval = tokio::time::interval(l2_slot_duration);
+        let mut interval = tokio::time::interval(Duration::from_secs(self.l2_slot_duration_sec));
         loop {
             interval.tick().await;
 
@@ -255,19 +253,6 @@ impl Node {
                 tracing::error!("Failed to execute main block preconfirmation step: {}", err);
             }
         }
-    }
-
-    async fn synchronize_with_l1_slot_start_time(
-        &mut self,
-        l2_slot_duration: Duration,
-    ) -> Result<(), Error> {
-        let mut duration_to_next_slot = self.ethereum_l1.slot_clock.duration_to_next_slot()?;
-        if duration_to_next_slot < l2_slot_duration {
-            sleep_until(Instant::now() + duration_to_next_slot).await;
-            duration_to_next_slot = self.ethereum_l1.slot_clock.duration_to_next_slot()?;
-        }
-        sleep_until(Instant::now() + duration_to_next_slot).await;
-        Ok(())
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
