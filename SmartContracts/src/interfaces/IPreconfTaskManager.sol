@@ -14,11 +14,13 @@ interface IPreconfTaskManager {
         bytes32 txListHash;
     }
 
-    struct LookaheadEntry {
+    struct LookaheadBufferEntry {
+        // True when the preconfer is randomly selected
+        bool isFallback;
         // Timestamp of the slot at which the provided preconfer is the L1 validator
-        uint48 timestamp;
+        uint40 timestamp;
         // Timestamp of the last slot that had a valid preconfer
-        uint48 prevTimestamp;
+        uint40 prevTimestamp;
         // Address of the preconfer who is also the L1 validator
         // The preconfer will have rights to propose a block in the range (prevTimestamp, timestamp]
         address preconfer;
@@ -29,6 +31,16 @@ interface IPreconfTaskManager {
         uint256 timestamp;
         // The AVS operator who is also the L1 validator for the slot and will preconf L2 transactions
         address preconfer;
+    }
+
+    struct LookaheadMetadata {
+        // True if the lookahead was proved to be incorrect
+        bool incorrect;
+        // The poster of the lookahead
+        address poster;
+        // Fallback preconfer selected for the epoch in which the lookahead was posted
+        // This is only set when the lookahead is proved to be incorrect
+        address fallbackPreconfer;
     }
 
     event LookaheadUpdated(LookaheadSetParam[]);
@@ -55,16 +67,18 @@ interface IPreconfTaskManager {
     error MetadataMismatch();
     /// @dev The expected validator has been slashed on CL
     error ExpectedValidatorMustNotBeSlashed();
-    /// @dev The lookahead poster for the epoch has already been slashed
-    error PosterAlreadySlashedForTheEpoch();
+    /// @dev The lookahead poster for the epoch has already been slashed or there is no lookahead for epoch
+    error PosterAlreadySlashedOrLookaheadIsEmpty();
     /// @dev The lookahead preconfer matches the one the actual validator is proposing for
     error LookaheadEntryIsCorrect();
+    /// @dev Cannot force push a lookahead since it is not lagging behind
+    error LookaheadIsNotLagging();
 
     /// @dev Accepts block proposal by an operator and forwards it to TaikoL1 contract
     function newBlockProposal(
         bytes calldata blockParams,
         bytes calldata txList,
-        uint256 lookaheadHint,
+        uint256 lookaheadPointer,
         LookaheadSetParam[] calldata lookaheadSetParams
     ) external payable;
 
@@ -83,8 +97,14 @@ interface IPreconfTaskManager {
         EIP4788.InclusionProof memory validatorInclusionProof
     ) external;
 
-    /// @dev Returns the entire lookahead buffer
-    function getLookahead() external view returns (LookaheadEntry[64] memory);
+    /// @dev Forces the lookahead to be set for the next epoch if it is lagging behind
+    function forcePushLookahead(LookaheadSetParam[] memory lookaheadSetParams) external;
+
+    /// @dev Returns the fallback preconfer for the given epoch
+    function getFallbackPreconfer(uint256 epochTimestamp) external view returns (address);
+
+    /// @dev Returns the full 32 slot preconfer lookahead for the epoch
+    function getLookaheadForEpoch(uint256 epochTimestamp) external view returns (address[32] memory);
 
     /// @dev Return the parameters required for the lookahead to be set for the given epoch
     function getLookaheadParamsForEpoch(uint256 epochTimestamp, bytes[32] memory validatorBLSPubKeys)
@@ -95,4 +115,7 @@ interface IPreconfTaskManager {
     /// @dev Returns true is a lookahead is not posted for an epoch
     /// @dev In the event that a lookahead was posted but later invalidated, this returns false
     function isLookaheadRequired(uint256 epochTimestamp) external view returns (bool);
+
+    /// @dev Returns the entire lookahead buffer
+    function getLookaheadBuffer() external view returns (LookaheadBufferEntry[64] memory);
 }
