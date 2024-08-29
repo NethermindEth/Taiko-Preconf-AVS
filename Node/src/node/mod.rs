@@ -170,7 +170,6 @@ impl Node {
     }
 
     fn check_lookahead_correctness(_lookahead_updated: &LookaheadUpdated) -> Result<(), Error> {
-        // TODO: compare lookaheads
         Ok(())
     }
 
@@ -276,34 +275,7 @@ impl Node {
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
         let current_epoch = self.ethereum_l1.slot_clock.get_current_epoch()?;
         if current_epoch != self.epoch {
-            tracing::debug!(
-                "Current epoch changed from {} to {}",
-                self.epoch,
-                current_epoch
-            );
-            let current_epoch_timestamp = self
-                .ethereum_l1
-                .slot_clock
-                .get_epoch_begin_timestamp(current_epoch)?;
-
-            self.epoch = current_epoch;
-
-            self.operator = Operator::new(self.ethereum_l1.clone());
-            self.operator
-                .update_preconfer_lookahead_for_epoch(current_epoch_timestamp, &self.cl_lookahead)
-                .await?;
-
-            self.cl_lookahead = self
-                .ethereum_l1
-                .consensus_layer
-                .get_lookahead(self.epoch + 1)
-                .await?;
-            self.lookahead_preconfer_buffer = Some(
-                self.ethereum_l1
-                    .execution_layer
-                    .get_lookahead_preconfer_buffer()
-                    .await?,
-            );
+            self.new_epoch_started(current_epoch).await?;
         }
 
         let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
@@ -323,6 +295,35 @@ impl Node {
                 tracing::debug!("Not my slot to preconfirm: {}", current_slot);
             }
         }
+
+        Ok(())
+    }
+
+    async fn new_epoch_started(&mut self, new_epoch: u64) -> Result<(), Error> {
+        tracing::debug!("Current epoch changed from {} to {}", self.epoch, new_epoch);
+        let new_epoch_timestamp = self
+            .ethereum_l1
+            .slot_clock
+            .get_epoch_begin_timestamp(new_epoch)?;
+
+        self.epoch = new_epoch;
+
+        self.operator = Operator::new(self.ethereum_l1.clone());
+        self.operator
+            .update_preconfer_lookahead_for_epoch(new_epoch_timestamp, &self.cl_lookahead)
+            .await?;
+
+        self.cl_lookahead = self
+            .ethereum_l1
+            .consensus_layer
+            .get_lookahead(self.epoch + 1)
+            .await?;
+        self.lookahead_preconfer_buffer = Some(
+            self.ethereum_l1
+                .execution_layer
+                .get_lookahead_preconfer_buffer()
+                .await?,
+        );
 
         Ok(())
     }
