@@ -66,6 +66,7 @@ async fn main() -> Result<(), Error> {
         block_proposed_rx,
         node_to_p2p_tx,
         p2p_to_node_rx,
+        lookahead_updated_rx,
         taiko.clone(),
         ethereum_l1.clone(),
         mev_boost,

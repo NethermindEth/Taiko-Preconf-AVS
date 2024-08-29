@@ -1,12 +1,11 @@
 use crate::ethereum_l1::{execution_layer::PreconfTaskManager, EthereumL1};
-use anyhow::Error;
 use futures_util::StreamExt;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tracing::{debug, error};
 
 pub struct LookaheadUpdated {
-    pub lookahead_params: Vec<PreconfTaskManager::LookaheadSetParam>,
+    pub _lookahead_params: Vec<PreconfTaskManager::LookaheadSetParam>,
 }
 
 #[derive(Clone)]
@@ -55,7 +54,9 @@ impl LookaheadUpdatedEventReceiver {
                         );
                         if let Err(e) = self
                             .node_tx
-                            .send(LookaheadUpdated { lookahead_params })
+                            .send(LookaheadUpdated {
+                                _lookahead_params: lookahead_params,
+                            })
                             .await
                         {
                             error!("Error sending lookahead updated event by channel: {:?}", e);

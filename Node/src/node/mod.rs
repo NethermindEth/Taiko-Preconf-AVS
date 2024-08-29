@@ -1,6 +1,7 @@
 use crate::{
     ethereum_l1::{execution_layer::PreconfTaskManager, slot_clock::Epoch, EthereumL1},
     mev_boost::{constraints::Constraint, MevBoost},
+    node::lookahead_updated_receiver::LookaheadUpdated,
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::{
         block_proposed::BlockProposed, commit::L2TxListsCommit,
@@ -24,6 +25,7 @@ use tokio::sync::{
 use tracing::info;
 
 pub mod block_proposed_receiver;
+pub mod lookahead_updated_receiver;
 mod operator;
 mod preconfirmation_helper;
 use preconfirmation_helper::PreconfirmationHelper;
@@ -32,7 +34,8 @@ const OLDEST_BLOCK_DISTANCE: u64 = 256;
 
 pub struct Node {
     taiko: Arc<Taiko>,
-    node_rx: Option<Receiver<BlockProposed>>,
+    node_block_proposed_rx: Option<Receiver<BlockProposed>>,
+    node_lookahead_updated_rx: Option<Receiver<LookaheadUpdated>>,
     node_to_p2p_tx: Sender<Vec<u8>>,
     p2p_to_node_rx: Option<Receiver<Vec<u8>>>,
     gas_used: u64,
@@ -54,6 +57,7 @@ impl Node {
         node_rx: Receiver<BlockProposed>,
         node_to_p2p_tx: Sender<Vec<u8>>,
         p2p_to_node_rx: Receiver<Vec<u8>>,
+        node_lookahead_updated_rx: Receiver<LookaheadUpdated>,
         taiko: Arc<Taiko>,
         ethereum_l1: Arc<EthereumL1>,
         mev_boost: MevBoost,
@@ -63,9 +67,10 @@ impl Node {
         let operator = Operator::new(ethereum_l1.clone());
         Ok(Self {
             taiko,
-            node_rx: Some(node_rx),
+            node_block_proposed_rx: Some(node_rx),
             node_to_p2p_tx,
             p2p_to_node_rx: Some(p2p_to_node_rx),
+            node_lookahead_updated_rx: Some(node_lookahead_updated_rx),
             gas_used: 0,
             ethereum_l1,
             mev_boost,
@@ -96,12 +101,16 @@ impl Node {
         let taiko = self.taiko.clone();
         let is_preconfer_now = self.is_preconfer_now.clone();
         let preconfirmation_txs = self.preconfirmation_txs.clone();
-        if let Some(node_rx) = self.node_rx.take() {
-            let p2p_to_node_rx = self.p2p_to_node_rx.take().unwrap();
+        if let (Some(node_rx), Some(p2p_to_node_rx), Some(lookahead_updated_rx)) = (
+            self.node_block_proposed_rx.take(),
+            self.p2p_to_node_rx.take(),
+            self.node_lookahead_updated_rx.take(),
+        ) {
             tokio::spawn(async move {
                 Self::handle_incoming_messages(
                     node_rx,
                     p2p_to_node_rx,
+                    lookahead_updated_rx,
                     preconfirmed_blocks,
                     ethereum_l1,
                     taiko,
@@ -111,13 +120,14 @@ impl Node {
                 .await;
             });
         } else {
-            tracing::error!("node_rx has already been moved");
+            tracing::error!("Some of the node_rx, p2p_to_node_rx, or lookahead_updated_rx has already been moved");
         }
     }
 
     async fn handle_incoming_messages(
         mut node_rx: Receiver<BlockProposed>,
         mut p2p_to_node_rx: Receiver<Vec<u8>>,
+        mut lookahead_updated_rx: Receiver<LookaheadUpdated>,
         preconfirmed_blocks: Arc<Mutex<HashMap<u64, PreconfirmationProof>>>,
         ethereum_l1: Arc<EthereumL1>,
         taiko: Arc<Taiko>,
@@ -149,8 +159,19 @@ impl Node {
                         tracing::debug!("Node is Preconfer and received message from p2p: {:?}", p2p_message);
                     }
                 }
+                Some(lookahead_updated) = lookahead_updated_rx.recv() => {
+                    tracing::debug!("Node received lookahead updated event");
+                    if let Err(e) = Self::check_lookahead_correctness(&lookahead_updated) {
+                        tracing::error!("Failed to check lookahead correctness: {}", e);
+                    }
+                }
             }
         }
+    }
+
+    fn check_lookahead_correctness(_lookahead_updated: &LookaheadUpdated) -> Result<(), Error> {
+        // TODO: compare lookaheads
+        Ok(())
     }
 
     async fn check_preconfirmation_message(
