@@ -1,5 +1,5 @@
 use crate::ethereum_l1::{
-    execution_layer::PreconfTaskManager::LookaheadSetParam, slot_clock::Slot, EthereumL1,
+    execution_layer::IPreconfTaskManager::LookaheadSetParam, slot_clock::Slot, EthereumL1,
 };
 use anyhow::Error;
 use beacon_api_client::ProposerDuty;
