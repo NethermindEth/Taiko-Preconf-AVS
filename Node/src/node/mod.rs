@@ -1,5 +1,5 @@
 use crate::{
-    ethereum_l1::{execution_layer::IPreconfTaskManager, slot_clock::Epoch, EthereumL1},
+    ethereum_l1::{execution_layer::PreconfTaskManager, slot_clock::Epoch, EthereumL1},
     mev_boost::{constraints::Constraint, MevBoost},
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::{
@@ -41,7 +41,7 @@ pub struct Node {
     mev_boost: MevBoost,
     epoch: Epoch,
     cl_lookahead: Vec<ProposerDuty>,
-    lookahead_preconfer_buffer: Option<[IPreconfTaskManager::LookaheadEntry; 64]>,
+    lookahead_preconfer_buffer: Option<[PreconfTaskManager::LookaheadEntry; 64]>,
     l2_slot_duration_sec: u64,
     preconfirmed_blocks: Arc<Mutex<HashMap<u64, PreconfirmationProof>>>,
     is_preconfer_now: Arc<AtomicBool>,
@@ -312,7 +312,7 @@ impl Node {
     async fn get_lookahead_params(
         &mut self,
         current_epoch_timestamp: u64,
-    ) -> Result<(u64, Vec<IPreconfTaskManager::LookaheadSetParam>), Error> {
+    ) -> Result<(u64, Vec<PreconfTaskManager::LookaheadSetParam>), Error> {
         let current_timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_secs();
@@ -326,8 +326,8 @@ impl Node {
             .iter()
             .position(|entry| {
                 entry.preconfer == self.ethereum_l1.execution_layer.get_preconfer_address()
-                    && current_timestamp > entry.prevTimestamp.to::<u64>()
-                    && current_timestamp <= entry.timestamp.to::<u64>()
+                    && current_timestamp > entry.prevTimestamp
+                    && current_timestamp <= entry.timestamp
             })
             .ok_or(anyhow::anyhow!(
                 "get_lookahead_params: Preconfer not found in lookahead"
