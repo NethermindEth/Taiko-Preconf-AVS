@@ -16,6 +16,7 @@ use alloy::{
 use anyhow::Error;
 use beacon_api_client::ProposerDuty;
 use ecdsa::SigningKey;
+use ethereum_consensus::{crypto::bls::PublicKey as BlsPublicKey, phase0::validator::Validator};
 use futures_util::StreamExt;
 use k256::Secp256k1;
 use rand_core::{OsRng, RngCore};
@@ -366,6 +367,36 @@ impl ExecutionLayer {
         // let builder = contract.proveIncorrectPreconfirmation(header, signature);
         // let tx_hash = builder.send().await?.watch().await?;
         // tracing::debug!("Proved incorrect preconfirmation: {tx_hash}");
+        Ok(())
+    }
+
+    pub async fn prove_incorrect_lookahead(
+        &self,
+        lookaheadPointer: u64,
+        slotTimestamp: u64,
+        slot: Slot,
+        validatorBLSPubKey: BLSCompressedPublicKey,
+        // validatorInclusionProof: EIP4788::InclusionProof,
+        validator: Validator,
+    ) -> Result<(), Error> {
+        let provider = self.create_provider();
+
+        let contract =
+            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
+
+        // contract.proveIncorrectLookahead(lookaheadPointer, slotTimestamp, validatorBLSPubKey, validator_inclusion_proof)
+
+        // let validator = Validator {
+        //     public_key: BlsPublicKey::try_from(&validatorBLSPubKey[..])?,
+        //     withdrawal_credentials: Bytes32::from(vec![0u8; 32]),
+        //     effective_balance: Gwei(0),
+        //     slashed: false,
+        //     activation_eligibility_epoch: 0u64,
+        //     activation_epoch: 0u64,
+        //     exit_epoch: 0u64,
+        //     withdrawable_epoch: 0u64,
+        // };
+
         Ok(())
     }
 

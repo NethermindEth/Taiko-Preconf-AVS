@@ -1,8 +1,13 @@
 #![allow(dead_code)] // TODO: remove
+use crate::utils::types::*;
 use anyhow::Error;
-use beacon_api_client::{mainnet::MainnetClientTypes, Client, GenesisDetails, ProposerDuty};
+use beacon_api_client::{
+    mainnet::MainnetClientTypes, Client, GenesisDetails, ProposerDuty, PublicKeyOrIndex, StateId,
+};
+use ethereum_consensus::{
+    crypto::bls::PublicKey as EthereumConsensusBlsPublicKey, phase0::validator::Validator,
+};
 use reqwest;
-
 pub struct ConsensusLayer {
     client: Client<MainnetClientTypes>,
 }
@@ -21,6 +26,22 @@ impl ConsensusLayer {
 
     pub async fn get_genesis_details(&self) -> Result<GenesisDetails, Error> {
         self.client.get_genesis_details().await.map_err(Error::new)
+    }
+
+    // pub async fn get_validator_inclusion_proof(&self, validator_index: u64, epoch: u64) -> Result<Vec<u8>, Error> {
+    //     self.client.get_validator(state_id, validator_id)
+    // }
+
+    pub async fn get_validator(
+        &self,
+        public_key: EthereumConsensusBlsPublicKey,
+        slot: Slot,
+    ) -> Result<Validator, Error> {
+        Ok(self
+            .client
+            .get_validator(StateId::Slot(slot), PublicKeyOrIndex::PublicKey(public_key))
+            .await?
+            .validator)
     }
 }
 

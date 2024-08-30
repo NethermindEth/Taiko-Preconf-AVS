@@ -1,11 +1,11 @@
 use crate::{
-    ethereum_l1::{execution_layer::IPreconfTaskManager, slot_clock::Epoch, EthereumL1},
+    ethereum_l1::{execution_layer::IPreconfTaskManager, EthereumL1},
     mev_boost::{constraints::Constraint, MevBoost},
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::{
         block_proposed::BlockProposed, commit::L2TxListsCommit,
         preconfirmation_message::PreconfirmationMessage,
-        preconfirmation_proof::PreconfirmationProof,
+        preconfirmation_proof::PreconfirmationProof, types::*,
     },
 };
 use alloy::hex;

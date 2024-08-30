@@ -76,8 +76,7 @@ async fn main() -> Result<(), Error> {
     let block_proposed_event_checker = BlockProposedEventReceiver::new(taiko, block_proposed_tx);
     BlockProposedEventReceiver::start(block_proposed_event_checker);
 
-    let lookahead_updated_event_checker =
-        LookaheadUpdatedEventReceiver::new(ethereum_l1.clone());
+    let lookahead_updated_event_checker = LookaheadUpdatedEventReceiver::new(ethereum_l1.clone());
     lookahead_updated_event_checker.start();
 
     Ok(())

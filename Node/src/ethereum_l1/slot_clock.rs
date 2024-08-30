@@ -1,9 +1,7 @@
 #![allow(dead_code)] // TODO remove for production
+use crate::utils::types::*;
 use anyhow::Error;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-pub type Slot = u64;
-pub type Epoch = u64;
 
 /// Determines the present slot based upon a manually-incremented UNIX timestamp.
 /// based on: https://github.com/sigp/lighthouse/blob/stable/common/slot_clock/src/manual_slot_clock.rs
@@ -59,7 +57,7 @@ impl SlotClock {
         }
     }
 
-    fn slot_of(&self, now: Duration) -> Result<Slot, Error> {
+    pub fn slot_of(&self, now: Duration) -> Result<Slot, Error> {
         let genesis = self.genesis_duration;
 
         if now >= genesis {

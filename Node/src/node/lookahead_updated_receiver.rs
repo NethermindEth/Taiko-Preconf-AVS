@@ -1,7 +1,7 @@
 use crate::ethereum_l1::{execution_layer::IPreconfTaskManager, EthereumL1};
 use anyhow::Error;
 use futures_util::StreamExt;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc::Sender;
 use tracing::{debug, error};
 
@@ -89,6 +89,27 @@ impl LookaheadUpdatedEventReceiver {
             .await?;
 
         // if lookahead_updated_next_epoch != &next_epoch_lookahead_params {
+        for (i, (param, updated_param)) in next_epoch_lookahead_params
+            .iter()
+            .zip(lookahead_updated_next_epoch.iter())
+            .enumerate()
+        {
+            if param.timestamp != updated_param.timestamp
+                || param.preconfer != updated_param.preconfer
+            {
+                error!("Mismatch found at index {i}");
+                let pub_key = next_epoch_duties[i].public_key.clone();
+                let slot = self
+                    .ethereum_l1
+                    .slot_clock
+                    .slot_of(Duration::from_secs(param.timestamp.try_into()?))?;
+                let validator = self
+                    .ethereum_l1
+                    .consensus_layer
+                    .get_validator(pub_key, slot)
+                    .await?;
+            }
+        }
 
         // }
 
