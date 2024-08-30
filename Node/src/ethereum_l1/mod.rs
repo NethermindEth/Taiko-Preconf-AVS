@@ -1,6 +1,7 @@
 pub mod consensus_layer;
 pub mod execution_layer;
 pub mod slot_clock;
+pub mod validator;
 
 use crate::utils::config::ContractAddresses;
 use consensus_layer::ConsensusLayer;

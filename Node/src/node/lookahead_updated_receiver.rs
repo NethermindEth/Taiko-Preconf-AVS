@@ -1,4 +1,4 @@
-use crate::ethereum_l1::{execution_layer::IPreconfTaskManager, EthereumL1};
+use crate::ethereum_l1::{execution_layer::IPreconfTaskManager, validator::Validator, EthereumL1};
 use anyhow::Error;
 use futures_util::StreamExt;
 use std::{sync::Arc, time::Duration};
@@ -88,7 +88,6 @@ impl LookaheadUpdatedEventReceiver {
             )
             .await?;
 
-        // if lookahead_updated_next_epoch != &next_epoch_lookahead_params {
         for (i, (param, updated_param)) in next_epoch_lookahead_params
             .iter()
             .zip(lookahead_updated_next_epoch.iter())
@@ -108,10 +107,21 @@ impl LookaheadUpdatedEventReceiver {
                     .consensus_layer
                     .get_validator(pub_key, slot)
                     .await?;
+
+                let validator = match Validator::try_from(validator) {
+                    Ok(validator) => validator,
+                    Err(e) => {
+                        error!(
+                            "Error converting validator to our validator struct: {:?}",
+                            e
+                        );
+                        continue;
+                    }
+                };
+
+                // pass validator to the prove method
             }
         }
-
-        // }
 
         // self.ethereum_l1.execution_layer.prove
         Ok(())

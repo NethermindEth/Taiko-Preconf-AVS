@@ -1,4 +1,5 @@
 use super::slot_clock::SlotClock;
+use super::validator::Validator;
 use crate::utils::{config, types::*};
 use alloy::{
     consensus::TypedTransaction,
@@ -16,10 +17,11 @@ use alloy::{
 use anyhow::Error;
 use beacon_api_client::ProposerDuty;
 use ecdsa::SigningKey;
-use ethereum_consensus::{crypto::bls::PublicKey as BlsPublicKey, phase0::validator::Validator};
+use ethereum_consensus::crypto::bls::PublicKey as BlsPublicKey;
 use futures_util::StreamExt;
 use k256::Secp256k1;
 use rand_core::{OsRng, RngCore};
+use ssz::Encode;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -386,16 +388,8 @@ impl ExecutionLayer {
 
         // contract.proveIncorrectLookahead(lookaheadPointer, slotTimestamp, validatorBLSPubKey, validator_inclusion_proof)
 
-        // let validator = Validator {
-        //     public_key: BlsPublicKey::try_from(&validatorBLSPubKey[..])?,
-        //     withdrawal_credentials: Bytes32::from(vec![0u8; 32]),
-        //     effective_balance: Gwei(0),
-        //     slashed: false,
-        //     activation_eligibility_epoch: 0u64,
-        //     activation_epoch: 0u64,
-        //     exit_epoch: 0u64,
-        //     withdrawable_epoch: 0u64,
-        // };
+        let serialized_validator = validator.as_ssz_bytes();
+        // convert to bytes32[8] validator;
 
         Ok(())
     }
