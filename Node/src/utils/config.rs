@@ -164,11 +164,11 @@ impl Config {
             "0x0".to_string()
         });
 
-        const VALIDATOR_PRIVATEKEY: &str = "VALIDATOR_PRIVATEKEY";
-        let validator_bls_privkey = std::env::var(VALIDATOR_PRIVATEKEY).unwrap_or({
+        const VALIDATOR_BLS_PRIVATEKEY: &str = "VALIDATOR_BLS_PRIVATEKEY";
+        let validator_bls_privkey = std::env::var(VALIDATOR_BLS_PRIVATEKEY).unwrap_or({
             warn!(
                 "No validator pubkey found in {} env var, using default",
-                VALIDATOR_PRIVATEKEY
+                VALIDATOR_BLS_PRIVATEKEY
             );
             "0x0".to_string()
         });
