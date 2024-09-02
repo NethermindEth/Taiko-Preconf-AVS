@@ -1,13 +1,16 @@
 #![allow(dead_code)] // TODO: remove
+use super::validator::Validator;
 use crate::utils::types::*;
 use anyhow::Error;
 use beacon_api_client::{
     mainnet::MainnetClientTypes, Client, GenesisDetails, ProposerDuty, PublicKeyOrIndex, StateId,
 };
 use ethereum_consensus::{
-    crypto::bls::PublicKey as EthereumConsensusBlsPublicKey, phase0::validator::Validator,
+    crypto::bls::PublicKey as EthereumConsensusBlsPublicKey,
+    phase0::validator::Validator as EthereumConsensusValidator,
 };
 use reqwest;
+
 pub struct ConsensusLayer {
     client: Client<MainnetClientTypes>,
 }
@@ -32,16 +35,38 @@ impl ConsensusLayer {
     //     self.client.get_validator(state_id, validator_id)
     // }
 
-    pub async fn get_validator(
+
+    pub async fn get_validators(
         &self,
-        public_key: EthereumConsensusBlsPublicKey,
-        slot: Slot,
-    ) -> Result<Validator, Error> {
-        Ok(self
+        public_keys: &[EthereumConsensusBlsPublicKey],
+    ) -> Result<Vec<Validator>, Error> {
+        let public_keys_or_indices = public_keys
+            .iter()
+            .map(|k| PublicKeyOrIndex::PublicKey(k.clone()))
+            .collect::<Vec<PublicKeyOrIndex>>();
+        let validators = self
             .client
-            .get_validator(StateId::Slot(slot), PublicKeyOrIndex::PublicKey(public_key))
-            .await?
-            .validator)
+            .get_validators(StateId::Head, &public_keys_or_indices, &vec![])
+            .await?;
+        let validators_mapped = validators
+            .iter()
+            .map(|v| Validator::try_from(v.validator.clone()))
+            .collect::<Result<Vec<_>, _>>();
+
+        validators_mapped.map_err(|e| anyhow::anyhow!("Failed to convert validator: {e}"))
+    }
+
+    pub async fn get_all_head_validators(&self) -> Result<Vec<Validator>, Error> {
+        let validators = self
+            .client
+            .get_validators(StateId::Head, &vec![], &vec![])
+            .await?;
+        let validators_mapped = validators
+            .iter()
+            .map(|v| Validator::try_from(v.validator.clone()))
+            .collect::<Result<Vec<_>, _>>();
+
+        validators_mapped.map_err(|e| anyhow::anyhow!("Failed to convert validator: {e}"))
     }
 }
 

@@ -374,12 +374,15 @@ impl ExecutionLayer {
 
     pub async fn prove_incorrect_lookahead(
         &self,
-        lookaheadPointer: u64,
-        slotTimestamp: u64,
+        lookahead_pointer: u64,
+        slot_timestamp: u64,
         slot: Slot,
-        validatorBLSPubKey: BLSCompressedPublicKey,
+        // validatorBLSPubKey: BLSCompressedPublicKey,
         // validatorInclusionProof: EIP4788::InclusionProof,
-        validator: Validator,
+        validator: &Validator,
+        validator_index: usize,
+        validator_proof: &[u8],
+        validator_proof_root: [u8; 32],
     ) -> Result<(), Error> {
         let provider = self.create_provider();
 
@@ -389,7 +392,13 @@ impl ExecutionLayer {
         // contract.proveIncorrectLookahead(lookaheadPointer, slotTimestamp, validatorBLSPubKey, validator_inclusion_proof)
 
         let serialized_validator = validator.as_ssz_bytes();
-        // convert to bytes32[8] validator;
+        let mut validator_chunks: [B256; 8] = Default::default();
+        for (i, chunk) in serialized_validator.chunks(32).enumerate() {
+            validator_chunks[i] = B256::from_slice(chunk);
+        }
+        let validator_index = U256::from(validator_index);
+
+        //let validator_proof =
 
         Ok(())
     }

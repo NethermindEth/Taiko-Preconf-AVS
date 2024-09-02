@@ -1,6 +1,12 @@
-use crate::ethereum_l1::{execution_layer::PreconfTaskManager, validator::Validator, EthereumL1};
+use crate::{
+    ethereum_l1::{execution_layer::PreconfTaskManager, validator::Validator, EthereumL1},
+    utils::types::*,
+};
 use anyhow::Error;
+use beacon_api_client::ProposerDuty;
 use futures_util::StreamExt;
+use rs_merkle::{algorithms::Sha256, Hasher, MerkleTree};
+use ssz::Encode;
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, error};
 
@@ -68,15 +74,16 @@ impl LookaheadUpdatedEventReceiver {
         lookahead_updated_next_epoch: &LookaheadUpdated,
     ) -> Result<(), Error> {
         let epoch = self.ethereum_l1.slot_clock.get_current_epoch()?;
+        let next_epoch = epoch + 1;
         let next_epoch_begin_timestamp = self
             .ethereum_l1
             .slot_clock
-            .get_epoch_begin_timestamp(epoch + 1)?;
+            .get_epoch_begin_timestamp(next_epoch)?;
 
         let next_epoch_duties = self
             .ethereum_l1
             .consensus_layer
-            .get_lookahead(epoch + 1)
+            .get_lookahead(next_epoch)
             .await?;
         let next_epoch_lookahead_params = self
             .ethereum_l1
@@ -96,33 +103,67 @@ impl LookaheadUpdatedEventReceiver {
                 || param.preconfer != updated_param.preconfer
             {
                 error!("Mismatch found at index {i}");
-                let pub_key = next_epoch_duties[i].public_key.clone();
-                let slot = self
-                    .ethereum_l1
-                    .slot_clock
-                    .slot_of(Duration::from_secs(param.timestamp.try_into()?))?;
-                let validator = self
+                let pub_key = next_epoch_duties[i].public_key.as_ref();
+                let validator_index = next_epoch_duties[i].validator_index;
+                let validators = self
                     .ethereum_l1
                     .consensus_layer
-                    .get_validator(pub_key, slot)
+                    .get_all_head_validators()
                     .await?;
 
-                let validator = match Validator::try_from(validator) {
-                    Ok(validator) => validator,
-                    Err(e) => {
-                        error!(
-                            "Error converting validator to our validator struct: {:?}",
-                            e
-                        );
-                        continue;
-                    }
-                };
+                let leaves_index = validators
+                    .iter()
+                    .position(|v| v.public_key == pub_key)
+                    .ok_or(anyhow::anyhow!(
+                        "Validator not found in the all validators list from the beacon chain"
+                    ))?;
+                let validator = &validators[leaves_index];
 
-                // pass validator to the prove method
+                let (proof_bytes, root) =
+                    Self::create_merkle_proof_for_validator_being_part_of_validator_list(
+                        &validators,
+                        leaves_index,
+                    )?;
+
+                self.ethereum_l1
+                    .execution_layer
+                    .prove_incorrect_lookahead(
+                        0,
+                        0,
+                        0,
+                        validator,
+                        validator_index,
+                        &proof_bytes,
+                        root,
+                    )
+                    .await?;
             }
         }
 
         // self.ethereum_l1.execution_layer.prove
         Ok(())
+    }
+
+    fn create_merkle_proof_for_validator_being_part_of_validator_list(
+        validators: &[Validator],
+        leaves_index: usize,
+    ) -> Result<(Vec<u8>, [u8; 32]), Error> {
+        let ssz_encoded_validators = validators
+            .iter()
+            .map(|v| v.as_ssz_bytes())
+            .collect::<Vec<_>>();
+        let leaves: Vec<[u8; 32]> = ssz_encoded_validators
+            .iter()
+            .map(|v| Sha256::hash(v))
+            .collect();
+
+        let merkle_tree = MerkleTree::<Sha256>::from_leaves(&leaves);
+        let indices_to_prove = vec![leaves_index];
+        let merkle_proof = merkle_tree.proof(&indices_to_prove);
+        let proof_bytes = merkle_proof.to_bytes();
+        let root = merkle_tree
+            .root()
+            .ok_or(anyhow::anyhow!("couldn't get the merkle root"))?;
+        Ok((proof_bytes, root))
     }
 }
