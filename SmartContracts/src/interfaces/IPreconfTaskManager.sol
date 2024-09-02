@@ -47,8 +47,6 @@ interface IPreconfTaskManager {
     event ProvedIncorrectPreconfirmation(address indexed preconfer, uint256 indexed blockId, address indexed disputer);
     event ProvedIncorrectLookahead(address indexed poster, uint256 indexed timestamp, address indexed disputer);
 
-    /// @dev The block proposer is not the randomly chosen fallback preconfer for the current slot/timestamp
-    error SenderIsNotTheFallbackPreconfer();
     /// @dev The current (or provided) timestamp does not fall in the range provided by the lookahead pointer
     error InvalidLookaheadPointer();
     /// @dev The block proposer is not the assigned preconfer for the current slot/timestamp
@@ -65,8 +63,6 @@ interface IPreconfTaskManager {
     error PreconfirmationIsCorrect();
     /// @dev The sent block metadata does not match the one retrieved from Taiko
     error MetadataMismatch();
-    /// @dev The expected validator has been slashed on CL
-    error ExpectedValidatorMustNotBeSlashed();
     /// @dev The lookahead poster for the epoch has already been slashed or there is no lookahead for epoch
     error PosterAlreadySlashedOrLookaheadIsEmpty();
     /// @dev The lookahead preconfer matches the one the actual validator is proposing for
