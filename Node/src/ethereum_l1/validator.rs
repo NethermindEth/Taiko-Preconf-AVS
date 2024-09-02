@@ -2,7 +2,7 @@ use std::convert::TryFrom;
 use std::io::Read;
 
 use crate::utils::types::*;
-use ethereum_consensus::phase0::validator::Validator as EthereumConsensusValidator;
+use ethereum_consensus::deneb::Validator as EthereumConsensusValidator;
 use ssz::{Decode, Encode};
 use ssz_derive::{Decode, Encode};
 

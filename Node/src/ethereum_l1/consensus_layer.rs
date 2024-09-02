@@ -7,7 +7,6 @@ use beacon_api_client::{
 };
 use ethereum_consensus::{
     crypto::bls::PublicKey as EthereumConsensusBlsPublicKey,
-    phase0::validator::Validator as EthereumConsensusValidator,
 };
 use reqwest;
 
@@ -34,7 +33,6 @@ impl ConsensusLayer {
     // pub async fn get_validator_inclusion_proof(&self, validator_index: u64, epoch: u64) -> Result<Vec<u8>, Error> {
     //     self.client.get_validator(state_id, validator_id)
     // }
-
 
     pub async fn get_validators(
         &self,
@@ -68,6 +66,13 @@ impl ConsensusLayer {
 
         validators_mapped.map_err(|e| anyhow::anyhow!("Failed to convert validator: {e}"))
     }
+
+    // pub async fn get_beacon_state(&self, slot: Slot) -> Result<BeaconState, Error> {
+    //     self.client
+    //         .get_beacon_state(StateId::Head, slot)
+    //         .await
+    //         .map_err(Error::new)
+    // }
 }
 
 #[cfg(test)]
