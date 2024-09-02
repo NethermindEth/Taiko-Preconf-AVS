@@ -1,5 +1,5 @@
 use crate::{
-    ethereum_l1::{execution_layer::IPreconfTaskManager::LookaheadSetParam, EthereumL1},
+    ethereum_l1::{execution_layer::PreconfTaskManager::LookaheadSetParam, EthereumL1},
     utils::types::*,
 };
 use anyhow::Error;

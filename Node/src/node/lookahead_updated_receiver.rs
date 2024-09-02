@@ -1,11 +1,10 @@
-use crate::ethereum_l1::{execution_layer::IPreconfTaskManager, validator::Validator, EthereumL1};
+use crate::ethereum_l1::{execution_layer::PreconfTaskManager, validator::Validator, EthereumL1};
 use anyhow::Error;
 use futures_util::StreamExt;
 use std::{sync::Arc, time::Duration};
-use tokio::sync::mpsc::Sender;
 use tracing::{debug, error};
 
-type LookaheadUpdated = Vec<IPreconfTaskManager::LookaheadSetParam>;
+type LookaheadUpdated = Vec<PreconfTaskManager::LookaheadSetParam>;
 
 #[derive(Clone)]
 pub struct LookaheadUpdatedEventReceiver {

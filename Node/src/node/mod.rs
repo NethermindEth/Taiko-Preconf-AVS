@@ -1,6 +1,7 @@
 use crate::{
-    ethereum_l1::{execution_layer::IPreconfTaskManager, EthereumL1},
-    mev_boost::{constraints::Constraint, MevBoost},
+    bls::BLSService,
+    ethereum_l1::{execution_layer::PreconfTaskManager, EthereumL1},
+    mev_boost::MevBoost,
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::{
         block_proposed::BlockProposed, commit::L2TxListsCommit,
@@ -8,7 +9,6 @@ use crate::{
         preconfirmation_proof::PreconfirmationProof, types::*,
     },
 };
-use alloy::hex;
 use anyhow::{anyhow as any_err, Error};
 use beacon_api_client::ProposerDuty;
 use operator::{Operator, Status as OperatorStatus};
@@ -42,13 +42,14 @@ pub struct Node {
     mev_boost: MevBoost,
     epoch: Epoch,
     cl_lookahead: Vec<ProposerDuty>,
-    lookahead_preconfer_buffer: Option<[IPreconfTaskManager::LookaheadEntry; 64]>,
+    lookahead_preconfer_buffer: Option<[PreconfTaskManager::LookaheadEntry; 64]>,
     l2_slot_duration_sec: u64,
     preconfirmed_blocks: Arc<Mutex<HashMap<u64, PreconfirmationProof>>>,
     is_preconfer_now: Arc<AtomicBool>,
     preconfirmation_txs: Arc<Mutex<HashMap<u64, Vec<u8>>>>, // block_id -> tx
     operator: Operator,
     preconfirmation_helper: PreconfirmationHelper,
+    bls_service: Arc<BLSService>,
 }
 
 impl Node {
@@ -60,6 +61,7 @@ impl Node {
         ethereum_l1: Arc<EthereumL1>,
         mev_boost: MevBoost,
         l2_slot_duration_sec: u64,
+        bls_service: Arc<BLSService>,
     ) -> Result<Self, Error> {
         let current_epoch = ethereum_l1.slot_clock.get_current_epoch()?;
         let operator = Operator::new(ethereum_l1.clone());
@@ -80,6 +82,7 @@ impl Node {
             preconfirmation_txs: Arc::new(Mutex::new(HashMap::new())),
             operator,
             preconfirmation_helper: PreconfirmationHelper::new(),
+            bls_service,
         })
     }
 
@@ -317,7 +320,7 @@ impl Node {
     async fn get_lookahead_params(
         &mut self,
         current_epoch_timestamp: u64,
-    ) -> Result<(u64, Vec<IPreconfTaskManager::LookaheadSetParam>), Error> {
+    ) -> Result<(u64, Vec<PreconfTaskManager::LookaheadSetParam>), Error> {
         let current_timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_secs();
@@ -331,8 +334,8 @@ impl Node {
             .iter()
             .position(|entry| {
                 entry.preconfer == self.ethereum_l1.execution_layer.get_preconfer_address()
-                    && current_timestamp > entry.prevTimestamp.to::<u64>()
-                    && current_timestamp <= entry.timestamp.to::<u64>()
+                    && current_timestamp > entry.prevTimestamp
+                    && current_timestamp <= entry.timestamp
             })
             .ok_or(anyhow::anyhow!(
                 "get_lookahead_params: Preconfer not found in lookahead"
@@ -372,13 +375,17 @@ impl Node {
             let mut preconfirmation_txs = self.preconfirmation_txs.lock().await;
             if !preconfirmation_txs.is_empty() {
                 // Build constraints
-                let constraints: Vec<Constraint> = preconfirmation_txs
+                let constraints: Vec<Vec<u8>> = preconfirmation_txs
                     .iter()
-                    .map(|(_, value)| Constraint::new(format!("0x{}", hex::encode(value)), None))
+                    .map(|(_, value)| value.clone())
                     .collect();
 
                 self.mev_boost
-                    .force_inclusion(constraints, self.ethereum_l1.clone())
+                    .force_inclusion(
+                        constraints,
+                        self.ethereum_l1.clone(),
+                        self.bls_service.clone(),
+                    )
                     .await?;
 
                 preconfirmation_txs.clear();

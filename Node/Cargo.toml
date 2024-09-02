@@ -6,8 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-alloy = { version = "0.3", features = ["full", "node-bindings"] }
-alloy-eips = "0.3"
+alloy = { version = "0.2", features = ["full", "node-bindings"] }
+alloy-eips = "0.2"
 tokio = { version = "1.38", features = ["full"] }
 tracing = "0.1.40"
 tracing-subscriber = "0.3"
@@ -35,6 +35,8 @@ clap = "4.5"
 futures-util = "0.3"
 ethereum_ssz = "0.7"
 ethereum_ssz_derive = "0.7"
+tree_hash = "0.8"
+blst = "0.3"
 
 [dev-dependencies]
 mockito = "1.4"

@@ -1,3 +1,4 @@
+mod bls;
 mod ethereum_l1;
 mod mev_boost;
 mod node;
@@ -61,6 +62,8 @@ async fn main() -> Result<(), Error> {
     let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url, config.validator_index);
     let ethereum_l1 = Arc::new(ethereum_l1);
 
+    let bls_service = Arc::new(bls::BLSService::new(&config.validator_bls_privkey));
+
     let node = node::Node::new(
         block_proposed_rx,
         node_to_p2p_tx,
@@ -69,6 +72,7 @@ async fn main() -> Result<(), Error> {
         ethereum_l1.clone(),
         mev_boost,
         config.l2_slot_duration_sec,
+        bls_service,
     )
     .await?;
     node.entrypoint().await?;
