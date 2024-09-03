@@ -383,8 +383,11 @@ impl ExecutionLayer {
         validator_index: usize,
         validator_proof: &[u8],
         validators_root: [u8; 32],
+        nr_validators: u64,
         beacon_state_proof: &[u8],
         beacon_state_root: [u8; 32],
+        beacon_block_proof_for_state: &[u8],
+        beacon_block_proof_for_proposer_index: &[u8],
     ) -> Result<(), Error> {
         let provider = self.create_provider();
 

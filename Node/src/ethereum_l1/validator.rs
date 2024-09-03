@@ -1,7 +1,7 @@
-use std::convert::TryFrom;
 use crate::utils::types::*;
 use ethereum_consensus::deneb::Validator as EthereumConsensusValidator;
 use ssz_derive::{Decode, Encode};
+use std::convert::TryFrom;
 
 #[derive(PartialEq, Debug, Encode, Decode)]
 pub struct Validator {

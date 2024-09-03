@@ -1,5 +1,8 @@
 use anyhow::Error;
-use ethereum_consensus::{types::mainnet::BeaconState, types::ExecutionPayloadHeaderRef};
+use ethereum_consensus::types::{
+    mainnet::{BeaconState, SignedBeaconBlock},
+    BeaconBlockBodyRef, ExecutionPayloadHeaderRef,
+};
 use ssz_rs::prelude::*;
 
 pub fn serialize_beacon_state_fields_to_vec_of_ssz_encoded_bytes(
@@ -58,6 +61,26 @@ pub fn serialize_beacon_state_fields_to_vec_of_ssz_encoded_bytes(
     result.push(serialize(&beacon_state.next_withdrawal_validator_index())?);
     if let Some(historical_summaries) = beacon_state.historical_summaries() {
         result.push(serialize(historical_summaries)?);
+    }
+
+    Ok(result)
+}
+
+pub fn serialize_beacon_block_fields_to_vec_of_ssz_encoded_bytes(
+    beacon_block: &SignedBeaconBlock,
+) -> Result<Vec<Vec<u8>>, Error> {
+    let mut result = vec![];
+
+    result.push(serialize(&beacon_block.message().slot())?);
+    result.push(serialize(&beacon_block.message().proposer_index())?);
+    result.push(serialize(&beacon_block.message().parent_root())?);
+    result.push(serialize(&beacon_block.message().state_root())?);
+    match beacon_block.message().body() {
+        BeaconBlockBodyRef::Capella(body) => result.push(serialize(body)?),
+        BeaconBlockBodyRef::Deneb(body) => result.push(serialize(body)?),
+        BeaconBlockBodyRef::Bellatrix(body) => result.push(serialize(body)?),
+        BeaconBlockBodyRef::Altair(body) => result.push(serialize(body)?),
+        BeaconBlockBodyRef::Phase0(body) => result.push(serialize(body)?),
     }
 
     Ok(result)
