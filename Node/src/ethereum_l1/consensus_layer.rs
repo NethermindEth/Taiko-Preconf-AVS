@@ -6,9 +6,11 @@ use beacon_api_client::{
     mainnet::MainnetClientTypes, Client, GenesisDetails, ProposerDuty, PublicKeyOrIndex, StateId,
 };
 use ethereum_consensus::{
-    crypto::bls::PublicKey as EthereumConsensusBlsPublicKey,
+    crypto::bls::PublicKey as EthereumConsensusBlsPublicKey, types::mainnet::BeaconState,
 };
 use reqwest;
+// use serde::Serialize;
+// use ssz::Encode;
 
 pub struct ConsensusLayer {
     client: Client<MainnetClientTypes>,
@@ -54,7 +56,7 @@ impl ConsensusLayer {
         validators_mapped.map_err(|e| anyhow::anyhow!("Failed to convert validator: {e}"))
     }
 
-    pub async fn get_all_head_validators(&self) -> Result<Vec<Validator>, Error> {
+    pub async fn get_all_validators_for_head_state(&self) -> Result<Vec<Validator>, Error> {
         let validators = self
             .client
             .get_validators(StateId::Head, &vec![], &vec![])
@@ -67,12 +69,15 @@ impl ConsensusLayer {
         validators_mapped.map_err(|e| anyhow::anyhow!("Failed to convert validator: {e}"))
     }
 
-    // pub async fn get_beacon_state(&self, slot: Slot) -> Result<BeaconState, Error> {
-    //     self.client
-    //         .get_beacon_state(StateId::Head, slot)
-    //         .await
-    //         .map_err(Error::new)
-    // }
+    pub async fn get_beacon_state(&self) -> Result<BeaconState, Error> {
+        let beacon_state = self
+            .client
+            .get_state(StateId::Head)
+            .await
+            .map_err(Error::new)?;
+
+        Ok(beacon_state)
+    }
 }
 
 #[cfg(test)]

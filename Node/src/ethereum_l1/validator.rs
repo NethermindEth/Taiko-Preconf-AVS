@@ -1,9 +1,6 @@
 use std::convert::TryFrom;
-use std::io::Read;
-
 use crate::utils::types::*;
 use ethereum_consensus::deneb::Validator as EthereumConsensusValidator;
-use ssz::{Decode, Encode};
 use ssz_derive::{Decode, Encode};
 
 #[derive(PartialEq, Debug, Encode, Decode)]
