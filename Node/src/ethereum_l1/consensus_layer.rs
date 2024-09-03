@@ -1,5 +1,4 @@
 #![allow(dead_code)] // TODO: remove
-use super::validator::Validator;
 use crate::utils::types::*;
 use anyhow::Error;
 use beacon_api_client::{
@@ -37,40 +36,6 @@ impl ConsensusLayer {
     // pub async fn get_validator_inclusion_proof(&self, validator_index: u64, epoch: u64) -> Result<Vec<u8>, Error> {
     //     self.client.get_validator(state_id, validator_id)
     // }
-
-    pub async fn get_validators(
-        &self,
-        public_keys: &[EthereumConsensusBlsPublicKey],
-        slot: Slot,
-    ) -> Result<Vec<Validator>, Error> {
-        let public_keys_or_indices = public_keys
-            .iter()
-            .map(|k| PublicKeyOrIndex::PublicKey(k.clone()))
-            .collect::<Vec<PublicKeyOrIndex>>();
-        let validators = self
-            .client
-            .get_validators(StateId::Slot(slot), &public_keys_or_indices, &vec![])
-            .await?;
-        let validators_mapped = validators
-            .iter()
-            .map(|v| Validator::try_from(v.validator.clone()))
-            .collect::<Result<Vec<_>, _>>();
-
-        validators_mapped.map_err(|e| anyhow::anyhow!("Failed to convert validator: {e}"))
-    }
-
-    pub async fn get_all_validators_for_slot(&self, slot: Slot) -> Result<Vec<Validator>, Error> {
-        let validators = self
-            .client
-            .get_validators(StateId::Slot(slot), &vec![], &vec![])
-            .await?;
-        let validators_mapped = validators
-            .iter()
-            .map(|v| Validator::try_from(v.validator.clone()))
-            .collect::<Result<Vec<_>, _>>();
-
-        validators_mapped.map_err(|e| anyhow::anyhow!("Failed to convert validator: {e}"))
-    }
 
     pub async fn get_beacon_state(&self, slot: Slot) -> Result<BeaconState, Error> {
         let beacon_state = self

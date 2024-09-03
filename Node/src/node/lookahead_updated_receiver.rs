@@ -1,14 +1,11 @@
 use crate::{
-    ethereum_l1::{
-        execution_layer::PreconfTaskManager, ssz_serializer::*, validator::Validator, EthereumL1,
-    },
+    ethereum_l1::{execution_layer::PreconfTaskManager, ssz_serializer::*, EthereumL1},
     utils::types::*,
 };
 use anyhow::Error;
 use beacon_api_client::ProposerDuty;
 use futures_util::StreamExt;
 use rs_merkle::{algorithms::Sha256, Hasher, MerkleTree};
-use ssz::Encode;
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, error, info, warn};
 
@@ -111,53 +108,8 @@ impl LookaheadUpdatedEventReceiver {
                     .ethereum_l1
                     .slot_clock
                     .slot_of(Duration::from_secs(param.timestamp.try_into()?))?;
-                info!("Lookahead mismatch found for slot: {}", slot);
-                let pub_key = epoch_duties[i].public_key.as_ref();
-                let validator_index = epoch_duties[i].validator_index;
-                let validators = self
-                    .ethereum_l1
-                    .consensus_layer
-                    .get_all_validators_for_slot(slot)
-                    .await?;
 
-                let leaves_index = validators
-                    .iter()
-                    .position(|v| v.public_key == pub_key)
-                    .ok_or(anyhow::anyhow!(
-                        "Validator not found in the all validators list from the beacon chain"
-                    ))?;
-                let validator = &validators[leaves_index];
-
-                let (validator_proof, validators_root) =
-                    Self::create_merkle_proof_for_validator_being_part_of_validator_list(
-                        &validators,
-                        leaves_index,
-                    )?;
-
-                let (beacon_state_proof, beacon_state_root) = self
-                    .create_merkle_proof_for_validator_list_being_part_of_beacon_state(slot)
-                    .await?;
-
-                let (beacon_block_proof_for_state, beacon_block_proof_for_proposer_index) = self
-                    .create_merkle_proofs_for_beacon_block_containing_beacon_state_and_validator_index(slot)
-                    .await?;
-
-                self.ethereum_l1
-                    .execution_layer
-                    .prove_incorrect_lookahead(
-                        0,
-                        0,
-                        0,
-                        validator,
-                        validator_index,
-                        &validator_proof,
-                        validators_root,
-                        validators.len() as u64,
-                        &beacon_state_proof,
-                        beacon_state_root,
-                        &beacon_block_proof_for_state,
-                        &beacon_block_proof_for_proposer_index,
-                    )
+                self.prove_incorrect_lookahead(slot, &epoch_duties[i])
                     .await?;
             }
         }
@@ -165,16 +117,69 @@ impl LookaheadUpdatedEventReceiver {
         Ok(())
     }
 
-    fn create_merkle_proof_for_validator_being_part_of_validator_list(
-        validators: &[Validator],
-        leaves_index: usize,
-    ) -> Result<(Vec<u8>, [u8; 32]), Error> {
+    async fn prove_incorrect_lookahead(
+        &self,
+        slot: Slot,
+        epoch_duty: &ProposerDuty,
+    ) -> Result<(), Error> {
+        info!("Lookahead mismatch found for slot: {}", slot);
+        let pub_key = &epoch_duty.public_key;
+        let beacon_state = self
+            .ethereum_l1
+            .consensus_layer
+            .get_beacon_state(slot)
+            .await?;
+        let validators = beacon_state.validators();
         let ssz_encoded_validators = validators
             .iter()
-            .map(|v| v.as_ssz_bytes())
-            .collect::<Vec<_>>();
+            .map(|v| serialize_validator_to_ssz_encoded_bytes(v))
+            .collect::<Result<Vec<_>, _>>()?;
+        let validator_index = validators
+            .iter()
+            .position(|v| v.public_key == *pub_key)
+            .ok_or(anyhow::anyhow!(
+                "Validator not found in the all validators list from the beacon chain"
+            ))?;
+        let validator = &ssz_encoded_validators[validator_index];
 
-        Self::create_merkle_tree_from_ssz_encoded_leaves(&ssz_encoded_validators, leaves_index)
+        let (validator_proof, validators_root) =
+            Self::create_merkle_proof_for_validator_being_part_of_validator_list(
+                &ssz_encoded_validators,
+                validator_index,
+            )?;
+
+        let (beacon_state_proof, beacon_state_root) = self
+            .create_merkle_proof_for_validator_list_being_part_of_beacon_state(slot)
+            .await?;
+
+        let (beacon_block_proof_for_state, beacon_block_proof_for_proposer_index) = self
+            .create_merkle_proofs_for_beacon_block_containing_beacon_state_and_validator_index(slot)
+            .await?;
+
+        self.ethereum_l1
+            .execution_layer
+            .prove_incorrect_lookahead(
+                0,
+                0,
+                0,
+                validator,
+                validator_index,
+                &validator_proof,
+                validators_root,
+                validators.len() as u64,
+                &beacon_state_proof,
+                beacon_state_root,
+                &beacon_block_proof_for_state,
+                &beacon_block_proof_for_proposer_index,
+            )
+            .await
+    }
+
+    fn create_merkle_proof_for_validator_being_part_of_validator_list(
+        ssz_encoded_validators: &Vec<Vec<u8>>,
+        validator_index: usize,
+    ) -> Result<(Vec<u8>, [u8; 32]), Error> {
+        Self::create_merkle_tree_from_ssz_encoded_leaves(ssz_encoded_validators, validator_index)
     }
 
     async fn create_merkle_proof_for_validator_list_being_part_of_beacon_state(

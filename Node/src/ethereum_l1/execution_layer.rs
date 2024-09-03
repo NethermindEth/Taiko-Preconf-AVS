@@ -1,5 +1,4 @@
 use super::slot_clock::SlotClock;
-use super::validator::Validator;
 use crate::utils::{config, types::*};
 use alloy::{
     consensus::TypedTransaction,
@@ -17,11 +16,9 @@ use alloy::{
 use anyhow::Error;
 use beacon_api_client::ProposerDuty;
 use ecdsa::SigningKey;
-use ethereum_consensus::crypto::bls::PublicKey as BlsPublicKey;
 use futures_util::StreamExt;
 use k256::Secp256k1;
 use rand_core::{OsRng, RngCore};
-use ssz::Encode;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -379,7 +376,7 @@ impl ExecutionLayer {
         slot: Slot,
         // validatorBLSPubKey: BLSCompressedPublicKey,
         // validatorInclusionProof: EIP4788::InclusionProof,
-        validator: &Validator,
+        validator: &Vec<u8>,
         validator_index: usize,
         validator_proof: &[u8],
         validators_root: [u8; 32],
@@ -396,9 +393,8 @@ impl ExecutionLayer {
 
         // contract.proveIncorrectLookahead(lookaheadPointer, slotTimestamp, validatorBLSPubKey, validator_inclusion_proof)
 
-        let serialized_validator = validator.as_ssz_bytes();
         let mut validator_chunks: [B256; 8] = Default::default();
-        for (i, chunk) in serialized_validator.chunks(32).enumerate() {
+        for (i, chunk) in validator.chunks(32).enumerate() {
             validator_chunks[i] = B256::from_slice(chunk);
         }
         let validator_index = U256::from(validator_index);

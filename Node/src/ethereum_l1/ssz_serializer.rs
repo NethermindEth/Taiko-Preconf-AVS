@@ -1,4 +1,5 @@
 use anyhow::Error;
+use ethereum_consensus::deneb::Validator;
 use ethereum_consensus::types::{
     mainnet::{BeaconState, SignedBeaconBlock},
     BeaconBlockBodyRef, ExecutionPayloadHeaderRef,
@@ -84,4 +85,8 @@ pub fn serialize_beacon_block_fields_to_vec_of_ssz_encoded_bytes(
     }
 
     Ok(result)
+}
+
+pub fn serialize_validator_to_ssz_encoded_bytes(validator: &Validator) -> Result<Vec<u8>, Error> {
+    serialize(validator).map_err(|e| anyhow::anyhow!("Failed to serialize validator: {e}"))
 }
