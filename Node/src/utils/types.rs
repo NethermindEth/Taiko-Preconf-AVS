@@ -4,7 +4,6 @@ pub type BLSCompressedPublicKey = [u8; 48];
 
 pub type Slot = u64;
 pub type Epoch = u64;
-pub type Gwei = u64;
 
 // TODO for future usage
 // pub type BLSUncompressedPublicKey = [u8; 96];

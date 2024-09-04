@@ -2,16 +2,10 @@
 use crate::utils::types::*;
 use anyhow::Error;
 use beacon_api_client::{
-    mainnet::MainnetClientTypes, BlockId, Client, GenesisDetails, ProposerDuty, PublicKeyOrIndex,
-    StateId,
+    mainnet::MainnetClientTypes, BlockId, Client, GenesisDetails, ProposerDuty, StateId,
 };
-use ethereum_consensus::{
-    crypto::bls::PublicKey as EthereumConsensusBlsPublicKey,
-    types::mainnet::{BeaconState, SignedBeaconBlock},
-};
+use ethereum_consensus::types::mainnet::{BeaconState, SignedBeaconBlock};
 use reqwest;
-// use serde::Serialize;
-// use ssz::Encode;
 
 pub struct ConsensusLayer {
     client: Client<MainnetClientTypes>,
@@ -32,10 +26,6 @@ impl ConsensusLayer {
     pub async fn get_genesis_details(&self) -> Result<GenesisDetails, Error> {
         self.client.get_genesis_details().await.map_err(Error::new)
     }
-
-    // pub async fn get_validator_inclusion_proof(&self, validator_index: u64, epoch: u64) -> Result<Vec<u8>, Error> {
-    //     self.client.get_validator(state_id, validator_id)
-    // }
 
     pub async fn get_beacon_state(&self, slot: Slot) -> Result<BeaconState, Error> {
         let beacon_state = self

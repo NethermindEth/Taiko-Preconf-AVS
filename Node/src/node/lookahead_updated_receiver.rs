@@ -104,12 +104,8 @@ impl LookaheadUpdatedEventReceiver {
                     warn!("Lookahead timestamp mismatch at index {i}: param.timestamp: {}, updated_param.timestamp: {}", param.timestamp, updated_param.timestamp);
                     continue;
                 }
-                let slot = self
-                    .ethereum_l1
-                    .slot_clock
-                    .slot_of(Duration::from_secs(param.timestamp.try_into()?))?;
 
-                self.prove_incorrect_lookahead(slot, &epoch_duties[i])
+                self.prove_incorrect_lookahead(param.timestamp.try_into()?, &epoch_duties[i])
                     .await?;
             }
         }
@@ -119,9 +115,13 @@ impl LookaheadUpdatedEventReceiver {
 
     async fn prove_incorrect_lookahead(
         &self,
-        slot: Slot,
+        slot_timestamp: u64,
         epoch_duty: &ProposerDuty,
     ) -> Result<(), Error> {
+        let slot = self
+            .ethereum_l1
+            .slot_clock
+            .slot_of(Duration::from_secs(slot_timestamp))?;
         info!("Lookahead mismatch found for slot: {}", slot);
         let pub_key = &epoch_duty.public_key;
         let beacon_state = self
@@ -159,18 +159,18 @@ impl LookaheadUpdatedEventReceiver {
         self.ethereum_l1
             .execution_layer
             .prove_incorrect_lookahead(
-                0,
-                0,
-                0,
+                0, //TODO: pass lookahead pointer
+                slot_timestamp,
+                pub_key.as_ref().try_into()?,
                 validator,
                 validator_index,
-                &validator_proof,
+                validator_proof,
                 validators_root,
                 validators.len() as u64,
-                &beacon_state_proof,
+                beacon_state_proof,
                 beacon_state_root,
-                &beacon_block_proof_for_state,
-                &beacon_block_proof_for_proposer_index,
+                beacon_block_proof_for_state,
+                beacon_block_proof_for_proposer_index,
             )
             .await
     }
@@ -178,14 +178,14 @@ impl LookaheadUpdatedEventReceiver {
     fn create_merkle_proof_for_validator_being_part_of_validator_list(
         ssz_encoded_validators: &Vec<Vec<u8>>,
         validator_index: usize,
-    ) -> Result<(Vec<u8>, [u8; 32]), Error> {
+    ) -> Result<(Vec<[u8; 32]>, [u8; 32]), Error> {
         Self::create_merkle_tree_from_ssz_encoded_leaves(ssz_encoded_validators, validator_index)
     }
 
     async fn create_merkle_proof_for_validator_list_being_part_of_beacon_state(
         &self,
         slot: Slot,
-    ) -> Result<(Vec<u8>, [u8; 32]), Error> {
+    ) -> Result<(Vec<[u8; 32]>, [u8; 32]), Error> {
         const VALIDATORS_INDEX: usize = 11;
         let beacon_state = self
             .ethereum_l1
@@ -201,7 +201,7 @@ impl LookaheadUpdatedEventReceiver {
     async fn create_merkle_proofs_for_beacon_block_containing_beacon_state_and_validator_index(
         &self,
         slot: Slot,
-    ) -> Result<(Vec<u8>, Vec<u8>), Error> {
+    ) -> Result<(Vec<[u8; 32]>, Vec<[u8; 32]>), Error> {
         let beacon_block = self
             .ethereum_l1
             .consensus_layer
@@ -223,16 +223,16 @@ impl LookaheadUpdatedEventReceiver {
     fn create_merkle_tree_from_ssz_encoded_leaves(
         ssz_encoded_leaves: &Vec<Vec<u8>>,
         index_to_prove: usize,
-    ) -> Result<(Vec<u8>, [u8; 32]), Error> {
+    ) -> Result<(Vec<[u8; 32]>, [u8; 32]), Error> {
         let leaves: Vec<[u8; 32]> = ssz_encoded_leaves.iter().map(|v| Sha256::hash(v)).collect();
 
         let merkle_tree = MerkleTree::<Sha256>::from_leaves(&leaves);
         let indices_to_prove = vec![index_to_prove];
         let merkle_proof = merkle_tree.proof(&indices_to_prove);
-        let proof_bytes = merkle_proof.to_bytes();
+        let proof_hashes = merkle_proof.proof_hashes().to_vec();
         let root = merkle_tree
             .root()
             .ok_or(anyhow::anyhow!("couldn't get the merkle root"))?;
-        Ok((proof_bytes, root))
+        Ok((proof_hashes, root))
     }
 }

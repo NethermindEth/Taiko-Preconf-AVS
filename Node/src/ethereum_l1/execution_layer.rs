@@ -373,25 +373,21 @@ impl ExecutionLayer {
         &self,
         lookahead_pointer: u64,
         slot_timestamp: u64,
-        slot: Slot,
-        // validatorBLSPubKey: BLSCompressedPublicKey,
-        // validatorInclusionProof: EIP4788::InclusionProof,
+        validator_bls_pub_key: BLSCompressedPublicKey,
         validator: &Vec<u8>,
         validator_index: usize,
-        validator_proof: &[u8],
+        validator_proof: Vec<[u8; 32]>,
         validators_root: [u8; 32],
         nr_validators: u64,
-        beacon_state_proof: &[u8],
+        beacon_state_proof: Vec<[u8; 32]>,
         beacon_state_root: [u8; 32],
-        beacon_block_proof_for_state: &[u8],
-        beacon_block_proof_for_proposer_index: &[u8],
+        beacon_block_proof_for_state: Vec<[u8; 32]>,
+        beacon_block_proof_for_proposer_index: Vec<[u8; 32]>,
     ) -> Result<(), Error> {
         let provider = self.create_provider();
 
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
-
-        // contract.proveIncorrectLookahead(lookaheadPointer, slotTimestamp, validatorBLSPubKey, validator_inclusion_proof)
 
         let mut validator_chunks: [B256; 8] = Default::default();
         for (i, chunk) in validator.chunks(32).enumerate() {
@@ -399,9 +395,39 @@ impl ExecutionLayer {
         }
         let validator_index = U256::from(validator_index);
 
-        //let validator_proof =
+        let validator_inclusion_proof = PreconfTaskManager::InclusionProof {
+            validator: validator_chunks,
+            validatorIndex: validator_index,
+            validatorProof: Self::convert_proof_to_fixed_bytes(validator_proof),
+            validatorsRoot: FixedBytes::from(validators_root),
+            nr_validators: U256::from(nr_validators),
+            beaconStateProof: Self::convert_proof_to_fixed_bytes(beacon_state_proof),
+            beaconStateRoot: FixedBytes::from(beacon_state_root),
+            beaconBlockProofForState: Self::convert_proof_to_fixed_bytes(
+                beacon_block_proof_for_state,
+            ),
+            beaconBlockProofForProposerIndex: Self::convert_proof_to_fixed_bytes(
+                beacon_block_proof_for_proposer_index,
+            ),
+        };
+        let tx_hash = contract
+            .proveIncorrectLookahead(
+                U256::from(lookahead_pointer),
+                U256::from(slot_timestamp),
+                Bytes::from(validator_bls_pub_key),
+                validator_inclusion_proof,
+            )
+            .send()
+            .await?
+            .watch()
+            .await?;
+        tracing::debug!("Proved incorrect lookahead: {tx_hash}");
 
         Ok(())
+    }
+
+    fn convert_proof_to_fixed_bytes(proof: Vec<[u8; 32]>) -> Vec<FixedBytes<32>> {
+        proof.iter().map(|p| FixedBytes::from(p)).collect()
     }
 
     pub async fn subscribe_to_registered_event(
@@ -688,5 +714,50 @@ mod tests {
         //     !lookahead_params.is_empty(),
         //     "Lookahead params should not be empty"
         // );
+    }
+
+    #[tokio::test]
+    async fn test_prove_incorrect_lookahead() {
+        let anvil = Anvil::new().try_spawn().unwrap();
+        let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
+        let private_key = anvil.keys()[0].clone();
+        let el = ExecutionLayer::new_from_pk(rpc_url, private_key)
+            .await
+            .unwrap();
+
+        // Test parameters
+        let lookahead_pointer = 100;
+        let slot_timestamp = 1000;
+        let validator_bls_pub_key = [1u8; 48];
+        let validator = vec![2u8; 256];
+        let validator_index = 0;
+        let validator_proof = vec![[3u8; 32]; 5];
+        let validators_root = [4u8; 32];
+        let nr_validators = 1000;
+        let beacon_state_proof = vec![[5u8; 32]; 5];
+        let beacon_state_root = [6u8; 32];
+        let beacon_block_proof_for_state = vec![[7u8; 32]; 5];
+        let beacon_block_proof_for_proposer_index = vec![[8u8; 32]; 5];
+
+        // Call the method
+        let result = el
+            .prove_incorrect_lookahead(
+                lookahead_pointer,
+                slot_timestamp,
+                validator_bls_pub_key,
+                &validator,
+                validator_index,
+                validator_proof,
+                validators_root,
+                nr_validators,
+                beacon_state_proof,
+                beacon_state_root,
+                beacon_block_proof_for_state,
+                beacon_block_proof_for_proposer_index,
+            )
+            .await;
+
+        // Assert the result
+        assert!(result.is_ok(), "prove_incorrect_lookahead should succeed");
     }
 }
