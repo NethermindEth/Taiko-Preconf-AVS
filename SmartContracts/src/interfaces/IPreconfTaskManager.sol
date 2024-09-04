@@ -68,7 +68,7 @@ interface IPreconfTaskManager {
     /// @dev The lookahead preconfer matches the one the actual validator is proposing for
     error LookaheadEntryIsCorrect();
     /// @dev Cannot force push a lookahead since it is not lagging behind
-    error LookaheadIsNotLagging();
+    error LookaheadIsNotRequired();
 
     /// @dev Accepts block proposal by an operator and forwards it to TaikoL1 contract
     function newBlockProposal(
@@ -112,6 +112,12 @@ interface IPreconfTaskManager {
     /// @dev In the event that a lookahead was posted but later invalidated, this returns false
     function isLookaheadRequired(uint256 epochTimestamp) external view returns (bool);
 
+    /// @dev Returns the current lookahead tail
+    function getLookaheadTail() external view returns (uint256);
+
     /// @dev Returns the entire lookahead buffer
     function getLookaheadBuffer() external view returns (LookaheadBufferEntry[64] memory);
+
+    /// @dev Returns the lookahead poster for an epoch
+    function getLookaheadPoster(uint256 epochTimestamp) external view returns (address);
 }
