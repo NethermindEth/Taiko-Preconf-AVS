@@ -286,18 +286,17 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
      */
     function forcePushLookahead(LookaheadSetParam[] calldata lookaheadSetParams) external {
         // Sender must be a preconfer
-        if (preconfRegistry.getPreconferIndex(msg.sender) != 0) {
+        if (preconfRegistry.getPreconferIndex(msg.sender) == 0) {
             revert PreconferNotRegistered();
         }
 
-        // Lookahead must be lagging behind
-        LookaheadBufferEntry memory lastLookaheadEntry = lookahead[lookaheadTail % LOOKAHEAD_BUFFER_SIZE];
-        if (lastLookaheadEntry.timestamp >= block.timestamp) {
-            revert LookaheadIsNotLagging();
+        // Lookahead must be missing
+        uint256 nextEpochTimestamp = _getEpochTimestamp(block.timestamp) + PreconfConstants.SECONDS_IN_EPOCH;
+        if (!isLookaheadRequired(nextEpochTimestamp)) {
+            revert LookaheadIsNotRequired();
         }
 
         // Update the lookahead for next epoch
-        uint256 nextEpochTimestamp = _getEpochTimestamp(block.timestamp) + PreconfConstants.SECONDS_IN_EPOCH;
         _updateLookahead(nextEpochTimestamp, lookaheadSetParams);
 
         // Block the preconfer from withdrawing stake from Eigenlayer during the dispute window
@@ -345,7 +344,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
                 uint256 slotTimestamp = lookaheadSetParams[i].timestamp;
 
                 // Each entry must be registered in the preconf registry
-                if (preconfRegistry.getPreconferIndex(preconfer) != 0) {
+                if (preconfRegistry.getPreconferIndex(preconfer) == 0) {
                     revert PreconferNotRegistered();
                 }
 
@@ -420,6 +419,10 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         uint256 randomness = uint256(_getBeaconBlockRoot(lastEpochTimestamp));
         uint256 preconferIndex = randomness % preconfRegistry.getNextPreconferIndex();
 
+        if (preconferIndex == 0) {
+            preconferIndex = 1;
+        }
+
         return preconfRegistry.getPreconferAtIndex(preconferIndex);
     }
 
@@ -437,17 +440,22 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         uint256 lastSlotTimestamp =
             epochTimestamp + PreconfConstants.SECONDS_IN_EPOCH - PreconfConstants.SECONDS_IN_SLOT;
 
-        // Find the entry that fills the last slot of the epoch
-        while (lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].prevTimestamp > lastSlotTimestamp) {
+        // Take the tail to the entry that fills the last slot of the epoch.
+        // This may be an entry in the next epoch who starts preconfing in advanced.
+        // This may also be an empty slot since the lookahead for next epoch is not yet posted.
+        while (lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].prevTimestamp >= lastSlotTimestamp) {
             _lookaheadTail -= 1;
         }
 
         address preconfer = lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].preconfer;
         uint256 prevTimestamp = lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].prevTimestamp;
+        uint256 timestamp = uint256(lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].timestamp);
 
         // Iterate backwards and fill in the slots
-        for (uint256 i = SLOTS_IN_EPOCH - 1; i >= 0; --i) {
-            lookaheadForEpoch[i] = preconfer;
+        for (uint256 i = SLOTS_IN_EPOCH; i > 0; --i) {
+            if (timestamp >= lastSlotTimestamp) {
+                lookaheadForEpoch[i - 1] = preconfer;
+            }
 
             lastSlotTimestamp -= PreconfConstants.SECONDS_IN_SLOT;
             if (lastSlotTimestamp == prevTimestamp) {
@@ -499,7 +507,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
             }
         }
 
-        // Not very gas efficient, but is okay for a view
+        // Not very gas efficient, but is okay for a view expected to be used offchain
         LookaheadSetParam[] memory lookaheadSetParams = new LookaheadSetParam[](index);
         for (uint256 i; i < index; ++i) {
             lookaheadSetParams[i] = lookaheadSetParamsTemp[i];
@@ -512,7 +520,15 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         return lookaheadPosters[epochTimestamp] == address(0);
     }
 
+    function getLookaheadTail() external view returns (uint256) {
+        return lookaheadTail;
+    }
+
     function getLookaheadBuffer() external view returns (LookaheadBufferEntry[LOOKAHEAD_BUFFER_SIZE] memory) {
         return lookahead;
+    }
+
+    function getLookaheadPoster(uint256 epochTimestamp) external view returns (address) {
+        return lookaheadPosters[epochTimestamp];
     }
 }
