@@ -1,7 +1,7 @@
 pub mod consensus_layer;
 pub mod execution_layer;
+pub mod merkle_proofs;
 pub mod slot_clock;
-pub mod ssz_serializer;
 
 use crate::utils::config::ContractAddresses;
 use consensus_layer::ConsensusLayer;
