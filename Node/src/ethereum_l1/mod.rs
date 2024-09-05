@@ -1,5 +1,6 @@
 pub mod consensus_layer;
 pub mod execution_layer;
+pub mod merkle_proofs;
 pub mod slot_clock;
 
 use crate::utils::config::ContractAddresses;

@@ -9,7 +9,10 @@ mod utils;
 
 use anyhow::Error;
 use clap::Parser;
-use node::block_proposed_receiver::BlockProposedEventReceiver;
+use node::{
+    block_proposed_receiver::BlockProposedEventReceiver,
+    lookahead_updated_receiver::LookaheadUpdatedEventReceiver,
+};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -46,7 +49,7 @@ async fn main() -> Result<(), Error> {
 
     let (node_to_p2p_tx, node_to_p2p_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
     let (p2p_to_node_tx, p2p_to_node_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
-    let (node_tx, node_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
+    let (block_proposed_tx, block_proposed_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
     let p2p = p2p_network::AVSp2p::new(p2p_to_node_tx.clone(), node_to_p2p_rx);
     p2p.start(config.p2p_network_config).await;
     let taiko = Arc::new(taiko::Taiko::new(
@@ -57,25 +60,29 @@ async fn main() -> Result<(), Error> {
     ));
 
     let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url, config.validator_index);
-    let block_proposed_event_checker =
-        BlockProposedEventReceiver::new(taiko.clone(), node_tx.clone());
-    BlockProposedEventReceiver::start(block_proposed_event_checker).await;
     let ethereum_l1 = Arc::new(ethereum_l1);
 
     let bls_service = Arc::new(bls::BLSService::new(&config.validator_bls_privkey));
 
     let node = node::Node::new(
-        node_rx,
+        block_proposed_rx,
         node_to_p2p_tx,
         p2p_to_node_rx,
-        taiko,
-        ethereum_l1,
+        taiko.clone(),
+        ethereum_l1.clone(),
         mev_boost,
         config.l2_slot_duration_sec,
         bls_service,
     )
     .await?;
     node.entrypoint().await?;
+
+    let block_proposed_event_checker = BlockProposedEventReceiver::new(taiko, block_proposed_tx);
+    BlockProposedEventReceiver::start(block_proposed_event_checker);
+
+    let lookahead_updated_event_checker = LookaheadUpdatedEventReceiver::new(ethereum_l1.clone());
+    lookahead_updated_event_checker.start();
+
     Ok(())
 }
 

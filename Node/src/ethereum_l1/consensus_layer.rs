@@ -1,6 +1,10 @@
 #![allow(dead_code)] // TODO: remove
+use crate::utils::types::*;
 use anyhow::Error;
-use beacon_api_client::{mainnet::MainnetClientTypes, Client, GenesisDetails, ProposerDuty};
+use beacon_api_client::{
+    mainnet::MainnetClientTypes, BlockId, Client, GenesisDetails, ProposerDuty, StateId,
+};
+use ethereum_consensus::types::mainnet::{BeaconState, SignedBeaconBlock};
 use reqwest;
 
 pub struct ConsensusLayer {
@@ -21,6 +25,26 @@ impl ConsensusLayer {
 
     pub async fn get_genesis_details(&self) -> Result<GenesisDetails, Error> {
         self.client.get_genesis_details().await.map_err(Error::new)
+    }
+
+    pub async fn get_beacon_state(&self, slot: Slot) -> Result<BeaconState, Error> {
+        let beacon_state = self
+            .client
+            .get_state(StateId::Slot(slot))
+            .await
+            .map_err(Error::new)?;
+
+        Ok(beacon_state)
+    }
+
+    pub async fn get_beacon_block(&self, slot: Slot) -> Result<SignedBeaconBlock, Error> {
+        let beacon_block = self
+            .client
+            .get_beacon_block(BlockId::Slot(slot))
+            .await
+            .map_err(Error::new)?;
+
+        Ok(beacon_block)
     }
 }
 

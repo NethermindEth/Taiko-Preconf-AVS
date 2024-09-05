@@ -1,7 +1,4 @@
-use crate::{
-    ethereum_l1::{slot_clock::Slot, EthereumL1},
-    utils::types::*,
-};
+use crate::{ethereum_l1::EthereumL1, utils::types::*};
 use anyhow::Error;
 use std::sync::Arc;
 

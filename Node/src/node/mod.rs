@@ -1,12 +1,12 @@
 use crate::{
     bls::BLSService,
-    ethereum_l1::{execution_layer::PreconfTaskManager, slot_clock::Epoch, EthereumL1},
+    ethereum_l1::{execution_layer::PreconfTaskManager, EthereumL1},
     mev_boost::MevBoost,
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::{
         block_proposed::BlockProposed, commit::L2TxListsCommit,
         preconfirmation_message::PreconfirmationMessage,
-        preconfirmation_proof::PreconfirmationProof,
+        preconfirmation_proof::PreconfirmationProof, types::*,
     },
 };
 use anyhow::{anyhow as any_err, Error};
@@ -25,6 +25,7 @@ use tokio::time::{sleep, Duration};
 use tracing::info;
 
 pub mod block_proposed_receiver;
+pub mod lookahead_updated_receiver;
 mod operator;
 mod preconfirmation_helper;
 use preconfirmation_helper::PreconfirmationHelper;
@@ -33,7 +34,7 @@ const OLDEST_BLOCK_DISTANCE: u64 = 256;
 
 pub struct Node {
     taiko: Arc<Taiko>,
-    node_rx: Option<Receiver<BlockProposed>>,
+    node_block_proposed_rx: Option<Receiver<BlockProposed>>,
     node_to_p2p_tx: Sender<Vec<u8>>,
     p2p_to_node_rx: Option<Receiver<Vec<u8>>>,
     gas_used: u64,
@@ -66,7 +67,7 @@ impl Node {
         let operator = Operator::new(ethereum_l1.clone(), current_epoch)?;
         Ok(Self {
             taiko,
-            node_rx: Some(node_rx),
+            node_block_proposed_rx: Some(node_rx),
             node_to_p2p_tx,
             p2p_to_node_rx: Some(p2p_to_node_rx),
             gas_used: 0,
@@ -100,8 +101,10 @@ impl Node {
         let taiko = self.taiko.clone();
         let is_preconfer_now = self.is_preconfer_now.clone();
         let preconfirmation_txs = self.preconfirmation_txs.clone();
-        if let Some(node_rx) = self.node_rx.take() {
-            let p2p_to_node_rx = self.p2p_to_node_rx.take().unwrap();
+        if let (Some(node_rx), Some(p2p_to_node_rx)) = (
+            self.node_block_proposed_rx.take(),
+            self.p2p_to_node_rx.take(),
+        ) {
             tokio::spawn(async move {
                 Self::handle_incoming_messages(
                     node_rx,
@@ -115,7 +118,7 @@ impl Node {
                 .await;
             });
         } else {
-            tracing::error!("node_rx has already been moved");
+            tracing::error!("Some of the node_rx, p2p_to_node_rx, or lookahead_updated_rx has already been moved");
         }
     }
 
@@ -262,27 +265,7 @@ impl Node {
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
         let current_epoch = self.ethereum_l1.slot_clock.get_current_epoch()?;
         if current_epoch != self.epoch {
-            tracing::debug!(
-                "Current epoch changed from {} to {}",
-                self.epoch,
-                current_epoch
-            );
-            self.epoch = current_epoch;
-
-            self.operator = Operator::new(self.ethereum_l1.clone(), current_epoch)?;
-            self.operator.update_preconfer_lookahead_for_epoch().await?;
-
-            self.cl_lookahead = self
-                .ethereum_l1
-                .consensus_layer
-                .get_lookahead(self.epoch + 1)
-                .await?;
-            self.lookahead_preconfer_buffer = Some(
-                self.ethereum_l1
-                    .execution_layer
-                    .get_lookahead_preconfer_buffer()
-                    .await?,
-            );
+            self.new_epoch_started(current_epoch).await?;
         }
 
         let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
@@ -302,6 +285,28 @@ impl Node {
                 tracing::debug!("Not my slot to preconfirm: {}", current_slot);
             }
         }
+
+        Ok(())
+    }
+
+    async fn new_epoch_started(&mut self, new_epoch: u64) -> Result<(), Error> {
+        tracing::debug!("Current epoch changed from {} to {}", self.epoch, new_epoch);
+        self.epoch = new_epoch;
+
+        self.operator = Operator::new(self.ethereum_l1.clone(), new_epoch)?;
+        self.operator.update_preconfer_lookahead_for_epoch().await?;
+
+        self.cl_lookahead = self
+            .ethereum_l1
+            .consensus_layer
+            .get_lookahead(self.epoch + 1)
+            .await?;
+        self.lookahead_preconfer_buffer = Some(
+            self.ethereum_l1
+                .execution_layer
+                .get_lookahead_preconfer_buffer()
+                .await?,
+        );
 
         Ok(())
     }

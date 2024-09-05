@@ -14,7 +14,7 @@ impl BlockProposedEventReceiver {
         Self { taiko, node_tx }
     }
 
-    pub async fn start(receiver: Self) {
+    pub fn start(receiver: Self) {
         tokio::spawn(async move {
             receiver.check_for_events().await;
         });
