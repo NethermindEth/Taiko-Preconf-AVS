@@ -42,7 +42,7 @@ pub struct Node {
     mev_boost: MevBoost,
     epoch: Epoch,
     cl_lookahead: Vec<ProposerDuty>,
-    lookahead_preconfer_buffer: Option<[PreconfTaskManager::LookaheadEntry; 64]>,
+    lookahead_preconfer_buffer: Option<[PreconfTaskManager::LookaheadBufferEntry; 64]>,
     l2_slot_duration_sec: u64,
     preconfirmed_blocks: Arc<Mutex<HashMap<u64, PreconfirmationProof>>>,
     is_preconfer_now: Arc<AtomicBool>,
@@ -64,7 +64,7 @@ impl Node {
         bls_service: Arc<BLSService>,
     ) -> Result<Self, Error> {
         let current_epoch = ethereum_l1.slot_clock.get_current_epoch()?;
-        let operator = Operator::new(ethereum_l1.clone());
+        let operator = Operator::new(ethereum_l1.clone(), current_epoch)?;
         Ok(Self {
             taiko,
             node_block_proposed_rx: Some(node_rx),
@@ -228,6 +228,7 @@ impl Node {
         if let Some(block) = preconfirmed_blocks.get(&block_proposed.block_id) {
             //Signature is already verified on precof insertion
             if block.commit_hash != block_proposed.tx_list_hash {
+                // TODO: simulate proveIncorrectPreconfirmation instead of checking
                 info!(
                     "Block tx_list_hash is not correct for block_id: {}. Calling proof of incorrect preconfirmation.",
                     block_proposed.block_id
@@ -269,7 +270,7 @@ impl Node {
 
         let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
 
-        match self.operator.get_status(current_slot)? {
+        match self.operator.get_status(current_slot).await? {
             OperatorStatus::PreconferAndProposer => {
                 self.preconfirm_last_slot().await?;
             }
@@ -290,17 +291,10 @@ impl Node {
 
     async fn new_epoch_started(&mut self, new_epoch: u64) -> Result<(), Error> {
         tracing::debug!("Current epoch changed from {} to {}", self.epoch, new_epoch);
-        let new_epoch_timestamp = self
-            .ethereum_l1
-            .slot_clock
-            .get_epoch_begin_timestamp(new_epoch)?;
-
         self.epoch = new_epoch;
 
-        self.operator = Operator::new(self.ethereum_l1.clone());
-        self.operator
-            .update_preconfer_lookahead_for_epoch(new_epoch_timestamp, &self.cl_lookahead)
-            .await?;
+        self.operator = Operator::new(self.ethereum_l1.clone(), new_epoch)?;
+        self.operator.update_preconfer_lookahead_for_epoch().await?;
 
         self.cl_lookahead = self
             .ethereum_l1
@@ -319,7 +313,6 @@ impl Node {
 
     async fn get_lookahead_params(
         &mut self,
-        current_epoch_timestamp: u64,
     ) -> Result<(u64, Vec<PreconfTaskManager::LookaheadSetParam>), Error> {
         let current_timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
@@ -341,11 +334,7 @@ impl Node {
                 "get_lookahead_params: Preconfer not found in lookahead"
             ))? as u64;
 
-        if self
-            .operator
-            .should_post_lookahead(current_epoch_timestamp)
-            .await?
-        {
+        if self.operator.should_post_lookahead().await? {
             let lookahead_params = self
                 .ethereum_l1
                 .execution_layer
@@ -417,12 +406,7 @@ impl Node {
             self.ethereum_l1.slot_clock.get_current_slot()?
         );
 
-        let current_epoch_timestamp = self
-            .ethereum_l1
-            .slot_clock
-            .get_epoch_begin_timestamp(self.epoch)?;
-        let (lookahead_pointer, lookahead_params) =
-            self.get_lookahead_params(current_epoch_timestamp).await?;
+        let (lookahead_pointer, lookahead_params) = self.get_lookahead_params().await?;
 
         let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;
         if pending_tx_lists.tx_list_bytes.is_empty() {

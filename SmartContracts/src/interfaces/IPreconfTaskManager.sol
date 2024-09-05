@@ -47,8 +47,6 @@ interface IPreconfTaskManager {
     event ProvedIncorrectPreconfirmation(address indexed preconfer, uint256 indexed blockId, address indexed disputer);
     event ProvedIncorrectLookahead(address indexed poster, uint256 indexed timestamp, address indexed disputer);
 
-    /// @dev The block proposer is not the randomly chosen fallback preconfer for the current slot/timestamp
-    error SenderIsNotTheFallbackPreconfer();
     /// @dev The current (or provided) timestamp does not fall in the range provided by the lookahead pointer
     error InvalidLookaheadPointer();
     /// @dev The block proposer is not the assigned preconfer for the current slot/timestamp
@@ -65,14 +63,12 @@ interface IPreconfTaskManager {
     error PreconfirmationIsCorrect();
     /// @dev The sent block metadata does not match the one retrieved from Taiko
     error MetadataMismatch();
-    /// @dev The expected validator has been slashed on CL
-    error ExpectedValidatorMustNotBeSlashed();
     /// @dev The lookahead poster for the epoch has already been slashed or there is no lookahead for epoch
     error PosterAlreadySlashedOrLookaheadIsEmpty();
     /// @dev The lookahead preconfer matches the one the actual validator is proposing for
     error LookaheadEntryIsCorrect();
     /// @dev Cannot force push a lookahead since it is not lagging behind
-    error LookaheadIsNotLagging();
+    error LookaheadIsNotRequired();
 
     /// @dev Accepts block proposal by an operator and forwards it to TaikoL1 contract
     function newBlockProposal(
@@ -116,6 +112,12 @@ interface IPreconfTaskManager {
     /// @dev In the event that a lookahead was posted but later invalidated, this returns false
     function isLookaheadRequired(uint256 epochTimestamp) external view returns (bool);
 
+    /// @dev Returns the current lookahead tail
+    function getLookaheadTail() external view returns (uint256);
+
     /// @dev Returns the entire lookahead buffer
     function getLookaheadBuffer() external view returns (LookaheadBufferEntry[64] memory);
+
+    /// @dev Returns the lookahead poster for an epoch
+    function getLookaheadPoster(uint256 epochTimestamp) external view returns (address);
 }

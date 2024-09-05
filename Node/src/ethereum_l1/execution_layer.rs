@@ -537,14 +537,33 @@ impl ExecutionLayer {
         Ok(params)
     }
 
-    pub async fn get_lookahead_preconfer_buffer(
+    pub async fn get_lookahead_preconfer_addresses_for_epoch(
         &self,
-    ) -> Result<[PreconfTaskManager::LookaheadEntry; 64], Error> {
+        epoch_begin_timestamp: u64,
+    ) -> Result<Vec<PreconferAddress>, Error> {
         let provider = self.create_provider();
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
 
-        let lookahead = contract.getLookahead().call().await?._0;
+        let lookahead = contract
+            .getLookaheadForEpoch(U256::from(epoch_begin_timestamp))
+            .call()
+            .await?
+            ._0;
+        Ok(lookahead
+            .iter()
+            .map(|addr| addr.into_array())
+            .collect::<Vec<PreconferAddress>>())
+    }
+
+    pub async fn get_lookahead_preconfer_buffer(
+        &self,
+    ) -> Result<[PreconfTaskManager::LookaheadBufferEntry; 64], Error> {
+        let provider = self.create_provider();
+        let contract =
+            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
+
+        let lookahead = contract.getLookaheadBuffer().call().await?._0;
 
         Ok(lookahead)
     }

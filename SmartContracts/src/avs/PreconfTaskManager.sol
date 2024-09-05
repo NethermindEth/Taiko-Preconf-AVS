@@ -26,9 +26,10 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     uint256 internal constant LOOKAHEAD_BUFFER_SIZE = 64;
     LookaheadBufferEntry[LOOKAHEAD_BUFFER_SIZE] internal lookahead;
 
-    // Maps the epoch timestamp to the lookahead poster, correctness status and fallback preconfer
+    // Maps the epoch timestamp to the lookahead poster.
+    // If the lookahead and the poster has been slashed, it maps to the 0-address.
     // Note: This may be optimised to re-use existing slots and reduce gas cost.
-    mapping(uint256 epochTimestamp => LookaheadMetadata) internal lookaheadMetadatas;
+    mapping(uint256 epochTimestamp => address poster) internal lookaheadPosters;
 
     // Maps the block height to the associated proposer
     // This is required since the stored block in Taiko has this contract as the proposer
@@ -77,24 +78,18 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         LookaheadBufferEntry memory lookaheadEntry = lookahead[lookaheadPointer % LOOKAHEAD_BUFFER_SIZE];
 
         uint256 currentEpochTimestamp = _getEpochTimestamp(block.timestamp);
-        LookaheadMetadata memory lookaheadMetadata = lookaheadMetadatas[currentEpochTimestamp];
 
-        // Revert if the lookahead was proven incorrect and the sender is not the fallback preconfer
-        if (lookaheadMetadata.incorrect && msg.sender != lookaheadMetadata.fallbackPreconfer) {
-            revert SenderIsNotTheFallbackPreconfer();
-        } else {
-            // The current L1 block's timestamp must be within the range retrieved from the lookahead entry.
-            // The preconfer is allowed to propose a block in advanced if there are no other entries in the
-            // lookahead between the present slot and the preconfer's own slot.
-            //
-            // ------[Last slot with an entry]---[X]---[X]----[X]----[Preconfer]-------
-            // ------[     prevTimestamp     ]---[ ]---[ ]----[ ]----[timestamp]-------
-            //
-            if (block.timestamp <= lookaheadEntry.prevTimestamp || block.timestamp > lookaheadEntry.timestamp) {
-                revert InvalidLookaheadPointer();
-            } else if (msg.sender != lookaheadEntry.preconfer) {
-                revert SenderIsNotThePreconfer();
-            }
+        // The current L1 block's timestamp must be within the range retrieved from the lookahead entry.
+        // The preconfer is allowed to propose a block in advanced if there are no other entries in the
+        // lookahead between the present slot and the preconfer's own slot.
+        //
+        // ------[Last slot with an entry]---[X]---[X]----[X]----[Preconfer]-------
+        // ------[     prevTimestamp     ]---[ ]---[ ]----[ ]----[timestamp]-------
+        //
+        if (block.timestamp <= lookaheadEntry.prevTimestamp || block.timestamp > lookaheadEntry.timestamp) {
+            revert InvalidLookaheadPointer();
+        } else if (msg.sender != lookaheadEntry.preconfer) {
+            revert SenderIsNotThePreconfer();
         }
 
         uint256 nextEpochTimestamp = currentEpochTimestamp + PreconfConstants.SECONDS_IN_EPOCH;
@@ -181,10 +176,10 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     ) external {
         uint256 epochTimestamp = _getEpochTimestamp(slotTimestamp);
 
-        LookaheadMetadata memory lookaheadMetadata = lookaheadMetadatas[epochTimestamp];
+        address poster = lookaheadPosters[epochTimestamp];
 
-        // The poster must not already be slashed
-        if (lookaheadMetadata.incorrect || lookaheadMetadata.poster == address(0)) {
+        // Poster must not have been slashed
+        if (poster == address(0)) {
             revert PosterAlreadySlashedOrLookaheadIsEmpty();
         }
 
@@ -241,15 +236,46 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
             revert LookaheadEntryIsCorrect();
         }
 
+        uint256 epochEndTimestamp = epochTimestamp + PreconfConstants.SECONDS_IN_EPOCH;
+
         // If it is the current epoch's lookahead being proved incorrect then insert a fallback preconfer
-        if (block.timestamp < epochTimestamp + PreconfConstants.SECONDS_IN_EPOCH) {
-            lookaheadMetadatas[epochTimestamp].fallbackPreconfer = getFallbackPreconfer(epochTimestamp);
+        if (block.timestamp < epochEndTimestamp) {
+            uint256 _lookaheadTail = lookaheadTail;
+
+            // Get to the entry in the next epoch that connects to a slot in the current epoch
+            while (lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].prevTimestamp >= epochEndTimestamp) {
+                _lookaheadTail -= 1;
+            }
+
+            uint256 lastSlotTimestamp = epochEndTimestamp - PreconfConstants.SECONDS_IN_SLOT;
+
+            // Switch the connection to the last slot of the current epoch
+            lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].prevTimestamp = uint40(lastSlotTimestamp);
+
+            // Add the fallback preconfer to the last slot of the current epoch
+            _lookaheadTail -= 1;
+            lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE] = LookaheadBufferEntry({
+                isFallback: true,
+                timestamp: uint40(lastSlotTimestamp),
+                prevTimestamp: uint40(epochTimestamp - PreconfConstants.SECONDS_IN_SLOT),
+                preconfer: getFallbackPreconfer(epochTimestamp)
+            });
+
+            _lookaheadTail -= 1;
+
+            // Nullify the rest of the lookahead entries for this epoch
+            while (lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].timestamp >= epochTimestamp) {
+                lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE] =
+                    LookaheadBufferEntry({isFallback: false, timestamp: 0, prevTimestamp: 0, preconfer: address(0)});
+                _lookaheadTail -= 1;
+            }
         }
 
-        lookaheadMetadatas[epochTimestamp].incorrect = true;
-        preconfServiceManager.slashOperator(lookaheadMetadata.poster);
+        // Slash the poster
+        lookaheadPosters[epochTimestamp] = address(0);
+        preconfServiceManager.slashOperator(poster);
 
-        emit ProvedIncorrectLookahead(lookaheadMetadata.poster, slotTimestamp, msg.sender);
+        emit ProvedIncorrectLookahead(poster, slotTimestamp, msg.sender);
     }
 
     /**
@@ -260,18 +286,17 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
      */
     function forcePushLookahead(LookaheadSetParam[] calldata lookaheadSetParams) external {
         // Sender must be a preconfer
-        if (preconfRegistry.getPreconferIndex(msg.sender) != 0) {
+        if (preconfRegistry.getPreconferIndex(msg.sender) == 0) {
             revert PreconferNotRegistered();
         }
 
-        // Lookahead must be lagging behind
-        LookaheadBufferEntry memory lastLookaheadEntry = lookahead[lookaheadTail % LOOKAHEAD_BUFFER_SIZE];
-        if (lastLookaheadEntry.timestamp >= block.timestamp) {
-            revert LookaheadIsNotLagging();
+        // Lookahead must be missing
+        uint256 nextEpochTimestamp = _getEpochTimestamp(block.timestamp) + PreconfConstants.SECONDS_IN_EPOCH;
+        if (!isLookaheadRequired(nextEpochTimestamp)) {
+            revert LookaheadIsNotRequired();
         }
 
         // Update the lookahead for next epoch
-        uint256 nextEpochTimestamp = _getEpochTimestamp(block.timestamp) + PreconfConstants.SECONDS_IN_EPOCH;
         _updateLookahead(nextEpochTimestamp, lookaheadSetParams);
 
         // Block the preconfer from withdrawing stake from Eigenlayer during the dispute window
@@ -319,7 +344,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
                 uint256 slotTimestamp = lookaheadSetParams[i].timestamp;
 
                 // Each entry must be registered in the preconf registry
-                if (preconfRegistry.getPreconferIndex(preconfer) != 0) {
+                if (preconfRegistry.getPreconferIndex(preconfer) == 0) {
                     revert PreconferNotRegistered();
                 }
 
@@ -343,7 +368,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         }
 
         lookaheadTail = _lookaheadTail;
-        lookaheadMetadatas[epochTimestamp].poster = msg.sender;
+        lookaheadPosters[epochTimestamp] = msg.sender;
 
         // We directly use the lookahead set params even in the case of a fallback preconfer to
         // assist the nodes in identifying an incorrect lookahead. The contents of this event can be matched against
@@ -394,6 +419,10 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         uint256 randomness = uint256(_getBeaconBlockRoot(lastEpochTimestamp));
         uint256 preconferIndex = randomness % preconfRegistry.getNextPreconferIndex();
 
+        if (preconferIndex == 0) {
+            preconferIndex = 1;
+        }
+
         return preconfRegistry.getPreconferAtIndex(preconferIndex);
     }
 
@@ -407,35 +436,32 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     function getLookaheadForEpoch(uint256 epochTimestamp) external view returns (address[SLOTS_IN_EPOCH] memory) {
         address[SLOTS_IN_EPOCH] memory lookaheadForEpoch;
 
-        LookaheadMetadata memory lookaheadMetadata = lookaheadMetadatas[epochTimestamp];
+        uint256 _lookaheadTail = lookaheadTail;
+        uint256 lastSlotTimestamp =
+            epochTimestamp + PreconfConstants.SECONDS_IN_EPOCH - PreconfConstants.SECONDS_IN_SLOT;
 
-        if (lookaheadMetadata.incorrect) {
-            for (uint256 i; i < SLOTS_IN_EPOCH; ++i) {
-                lookaheadForEpoch[i] = lookaheadMetadata.fallbackPreconfer;
+        // Take the tail to the entry that fills the last slot of the epoch.
+        // This may be an entry in the next epoch who starts preconfing in advanced.
+        // This may also be an empty slot since the lookahead for next epoch is not yet posted.
+        while (lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].prevTimestamp >= lastSlotTimestamp) {
+            _lookaheadTail -= 1;
+        }
+
+        address preconfer = lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].preconfer;
+        uint256 prevTimestamp = lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].prevTimestamp;
+        uint256 timestamp = uint256(lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].timestamp);
+
+        // Iterate backwards and fill in the slots
+        for (uint256 i = SLOTS_IN_EPOCH; i > 0; --i) {
+            if (timestamp >= lastSlotTimestamp) {
+                lookaheadForEpoch[i - 1] = preconfer;
             }
-        } else {
-            uint256 _lookaheadTail = lookaheadTail;
-            uint256 lastSlotTimestamp =
-                epochTimestamp + PreconfConstants.SECONDS_IN_EPOCH - PreconfConstants.SECONDS_IN_SLOT;
 
-            // Find the entry that fills the last slot of the epoch
-            while (lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].prevTimestamp > lastSlotTimestamp) {
+            lastSlotTimestamp -= PreconfConstants.SECONDS_IN_SLOT;
+            if (lastSlotTimestamp == prevTimestamp) {
                 _lookaheadTail -= 1;
-            }
-
-            address preconfer = lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].preconfer;
-            uint256 prevTimestamp = lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].prevTimestamp;
-
-            // Iterate backwards and fill in the slots
-            for (uint256 i = SLOTS_IN_EPOCH - 1; i >= 0; --i) {
-                lookaheadForEpoch[i] = preconfer;
-
-                lastSlotTimestamp -= PreconfConstants.SECONDS_IN_SLOT;
-                if (lastSlotTimestamp == prevTimestamp) {
-                    _lookaheadTail -= 1;
-                    preconfer = lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].preconfer;
-                    prevTimestamp = lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].prevTimestamp;
-                }
+                preconfer = lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].preconfer;
+                prevTimestamp = lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].prevTimestamp;
             }
         }
 
@@ -481,7 +507,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
             }
         }
 
-        // Not very gas efficient, but is okay for a view
+        // Not very gas efficient, but is okay for a view expected to be used offchain
         LookaheadSetParam[] memory lookaheadSetParams = new LookaheadSetParam[](index);
         for (uint256 i; i < index; ++i) {
             lookaheadSetParams[i] = lookaheadSetParamsTemp[i];
@@ -491,10 +517,18 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     }
 
     function isLookaheadRequired(uint256 epochTimestamp) public view returns (bool) {
-        return lookaheadMetadatas[epochTimestamp].poster == address(0);
+        return lookaheadPosters[epochTimestamp] == address(0);
+    }
+
+    function getLookaheadTail() external view returns (uint256) {
+        return lookaheadTail;
     }
 
     function getLookaheadBuffer() external view returns (LookaheadBufferEntry[LOOKAHEAD_BUFFER_SIZE] memory) {
         return lookahead;
+    }
+
+    function getLookaheadPoster(uint256 epochTimestamp) external view returns (address) {
+        return lookaheadPosters[epochTimestamp];
     }
 }
