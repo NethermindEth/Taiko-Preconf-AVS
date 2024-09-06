@@ -160,6 +160,41 @@ impl Node {
         }
     }
 
+    async fn is_valid_preconfer(
+        ethereum_l1: Arc<EthereumL1>,
+        preconfer: alloy::primitives::Address,
+    ) -> Result<(), Error> {
+        // check valid preconfer
+        let preconfer_buffer = ethereum_l1
+            .execution_layer
+            .get_lookahead_preconfer_buffer()
+            .await?;
+
+        // get current timestamp
+        let current_timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs();
+        // get current preconfer
+        let current_preconfer = preconfer_buffer
+            .iter()
+            .find(|&entry| {
+                current_timestamp > entry.prevTimestamp && current_timestamp <= entry.timestamp
+            })
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "is_valid_preconfer: Preconfer is not in the lookahead preconfer buffer"
+                )
+            })?;
+
+        if current_preconfer.preconfer == preconfer {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!(
+                "is_valid_preconfer: P2P message Preconfer is not equal to current preconfer"
+            ))
+        }
+    }
+
     async fn check_preconfirmation_message(
         msg: PreconfirmationMessage,
         preconfirmed_blocks: &Arc<Mutex<HashMap<u64, PreconfirmationProof>>>,
@@ -167,7 +202,6 @@ impl Node {
         taiko: Arc<Taiko>,
     ) {
         tracing::debug!("Node received message from p2p: {:?}", msg);
-        // TODO check valid preconfer
         // check hash
         match L2TxListsCommit::from_preconf(msg.block_height, msg.tx_list_bytes, taiko.chain_id)
             .hash()
@@ -179,7 +213,14 @@ impl Node {
                         .execution_layer
                         .recover_address_from_msg(&msg.proof.commit_hash, &msg.proof.signature)
                     {
-                        Ok(_) => {
+                        Ok(preconfer) => {
+                            // check valid preconfer address
+                            if let Err(e) =
+                                Self::is_valid_preconfer(ethereum_l1.clone(), preconfer).await
+                            {
+                                tracing::error!("Error: {} for block_id: {}", e, msg.block_height);
+                                return;
+                            }
                             // Add to preconfirmation map
                             preconfirmed_blocks
                                 .lock()
