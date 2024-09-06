@@ -8,7 +8,7 @@ pub struct BLSService {
 
 impl BLSService {
     pub fn new(pk: &str) -> Self {
-        let pk_bytes = hex::decode(pk).unwrap();
+        let pk_bytes = alloy::hex::decode(pk).unwrap();
         let sk = bls::os2ip(&pk_bytes);
         let pk = bls::sk_to_pk(sk);
 
