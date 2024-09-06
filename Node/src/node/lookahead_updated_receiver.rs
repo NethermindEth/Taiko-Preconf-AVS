@@ -1,9 +1,12 @@
-use crate::ethereum_l1::{execution_layer::PreconfTaskManager, merkle_proofs::*, EthereumL1};
+use crate::{
+    ethereum_l1::{execution_layer::PreconfTaskManager, merkle_proofs::*, EthereumL1},
+    utils::types::*,
+};
 use anyhow::Error;
 use beacon_api_client::ProposerDuty;
 use futures_util::StreamExt;
 use std::{sync::Arc, time::Duration};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 type LookaheadUpdated = Vec<PreconfTaskManager::LookaheadSetParam>;
 
@@ -47,9 +50,8 @@ impl LookaheadUpdatedEventReceiver {
                             "Received lookahead updated event with {} params.",
                             lookahead_params.len()
                         );
-                        if let Err(e) = self.check_lookahead_correctness(&lookahead_params).await {
-                            error!("Error checking lookahead correctness: {:?}", e);
-                        }
+                        let handler = LookaheadUpdatedEventHandler::new(self.ethereum_l1.clone());
+                        handler.handle_lookahead_updated_event(lookahead_params);
                     }
                     Err(e) => {
                         error!("Error receiving lookahead updated event: {:?}", e);
@@ -63,13 +65,32 @@ impl LookaheadUpdatedEventReceiver {
             }
         }
     }
+}
+
+pub struct LookaheadUpdatedEventHandler {
+    ethereum_l1: Arc<EthereumL1>,
+}
+
+impl LookaheadUpdatedEventHandler {
+    pub fn new(ethereum_l1: Arc<EthereumL1>) -> Self {
+        Self { ethereum_l1 }
+    }
+
+    pub fn handle_lookahead_updated_event(
+        self,
+        lookahead_params: Vec<PreconfTaskManager::LookaheadSetParam>,
+    ) {
+        tokio::spawn(async move {
+            if let Err(e) = self.check_lookahead_correctness(lookahead_params).await {
+                error!("Error checking lookahead correctness: {:?}", e);
+            }
+        });
+    }
 
     async fn check_lookahead_correctness(
         &self,
-        lookahead_updated_next_epoch: &LookaheadUpdated,
+        lookahead_updated_next_epoch: LookaheadUpdated,
     ) -> Result<(), Error> {
-        // TODO: wait for the epoch to start
-
         let epoch = self
             .ethereum_l1
             .slot_clock
@@ -98,7 +119,14 @@ impl LookaheadUpdatedEventReceiver {
             if param.preconfer != updated_param.preconfer
                 || param.timestamp != updated_param.timestamp
             {
-                self.prove_incorrect_lookahead(param.timestamp.try_into()?, &epoch_duties[i])
+                let slot_timestamp = param.timestamp.try_into()?;
+                let slot = self
+                    .ethereum_l1
+                    .slot_clock
+                    .slot_of(Duration::from_secs(slot_timestamp))?;
+                self.wait_for_the_slot_to_prove_incorrect_lookahead(slot + 1)
+                    .await?;
+                self.prove_incorrect_lookahead(slot, slot_timestamp, &epoch_duties[i])
                     .await?;
             }
         }
@@ -106,16 +134,28 @@ impl LookaheadUpdatedEventReceiver {
         Ok(())
     }
 
+    async fn wait_for_the_slot_to_prove_incorrect_lookahead(
+        &self,
+        slot: Slot,
+    ) -> Result<(), Error> {
+        tokio::time::sleep(
+            self.ethereum_l1
+                .slot_clock
+                .duration_to_slot_from_now(slot)?,
+        )
+        .await;
+        Ok(())
+    }
+
     async fn prove_incorrect_lookahead(
         &self,
+        slot: Slot,
         slot_timestamp: u64,
         epoch_duty: &ProposerDuty,
     ) -> Result<(), Error> {
-        let slot = self
-            .ethereum_l1
-            .slot_clock
-            .slot_of(Duration::from_secs(slot_timestamp))?;
         info!("Lookahead mismatch found for slot: {}", slot);
+
+        let next_slot = slot + 1;
 
         let lookahead_pointer = self.find_lookahead_pointer(slot_timestamp).await?;
 
@@ -123,7 +163,7 @@ impl LookaheadUpdatedEventReceiver {
         let beacon_state = self
             .ethereum_l1
             .consensus_layer
-            .get_beacon_state(slot)
+            .get_beacon_state(next_slot)
             .await?;
         let validators = beacon_state.validators();
         let validator_index = validators
@@ -141,18 +181,13 @@ impl LookaheadUpdatedEventReceiver {
                 validator_index,
             )?;
 
-        let beacon_state = self
-            .ethereum_l1
-            .consensus_layer
-            .get_beacon_state(slot)
-            .await?;
         let (beacon_state_proof, beacon_state_root) =
             create_merkle_proof_for_validator_list_being_part_of_beacon_state(&beacon_state)?;
 
         let beacon_block = self
             .ethereum_l1
             .consensus_layer
-            .get_beacon_block(slot)
+            .get_beacon_block(next_slot)
             .await?;
         let (beacon_block_proof_for_state, beacon_block_proof_for_proposer_index) =
             create_merkle_proofs_for_beacon_block_containing_beacon_state_and_validator_index(
