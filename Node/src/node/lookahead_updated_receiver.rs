@@ -95,12 +95,9 @@ impl LookaheadUpdatedEventReceiver {
             .zip(lookahead_updated_next_epoch.iter())
             .enumerate()
         {
-            if param.preconfer != updated_param.preconfer {
-                if param.timestamp != updated_param.timestamp {
-                    warn!("Lookahead timestamp mismatch at index {i}: param.timestamp: {}, updated_param.timestamp: {}", param.timestamp, updated_param.timestamp);
-                    continue;
-                }
-
+            if param.preconfer != updated_param.preconfer
+                || param.timestamp != updated_param.timestamp
+            {
                 self.prove_incorrect_lookahead(param.timestamp.try_into()?, &epoch_duties[i])
                     .await?;
             }
@@ -119,6 +116,9 @@ impl LookaheadUpdatedEventReceiver {
             .slot_clock
             .slot_of(Duration::from_secs(slot_timestamp))?;
         info!("Lookahead mismatch found for slot: {}", slot);
+
+        let lookahead_pointer = self.find_lookahead_pointer(slot_timestamp).await?;
+
         let pub_key = &epoch_duty.public_key;
         let beacon_state = self
             .ethereum_l1
@@ -162,7 +162,7 @@ impl LookaheadUpdatedEventReceiver {
         self.ethereum_l1
             .execution_layer
             .prove_incorrect_lookahead(
-                0, //TODO: pass lookahead pointer
+                lookahead_pointer,
                 slot_timestamp,
                 pub_key.as_ref().try_into()?,
                 &ssz_encoded_validator,
@@ -176,5 +176,23 @@ impl LookaheadUpdatedEventReceiver {
                 beacon_block_proof_for_proposer_index,
             )
             .await
+    }
+
+    async fn find_lookahead_pointer(&self, slot_timestamp: u64) -> Result<u64, Error> {
+        let lookahead_preconfer_buffer = self
+            .ethereum_l1
+            .execution_layer
+            .get_lookahead_preconfer_buffer()
+            .await?;
+
+        lookahead_preconfer_buffer
+            .iter()
+            .position(|entry| {
+                slot_timestamp > entry.prevTimestamp && slot_timestamp <= entry.timestamp
+            })
+            .ok_or(anyhow::anyhow!(
+                "find_lookahead_pointer: Lookahead pointer not found"
+            ))
+            .map(|i| i as u64)
     }
 }
