@@ -111,27 +111,62 @@ impl LookaheadUpdatedEventHandler {
             .get_lookahead_params_for_epoch_using_cl_lookahead(epoch_begin_timestamp, &epoch_duties)
             .await?;
 
-        for (i, (param, updated_param)) in epoch_lookahead_params
+        if let Some(slot_timestamp) = Self::find_a_slot_timestamp_to_prove_incorrect_lookahead(
+            &epoch_lookahead_params,
+            &lookahead_updated_next_epoch,
+        )? {
+            let slot = self
+                .ethereum_l1
+                .slot_clock
+                .slot_of(Duration::from_secs(slot_timestamp))?;
+            let corresponding_epoch_slot_index =
+                (slot % self.ethereum_l1.slot_clock.get_slots_per_epoch()) as usize;
+            self.wait_for_the_slot_to_prove_incorrect_lookahead(slot + 1)
+                .await?;
+            self.prove_incorrect_lookahead(
+                slot,
+                slot_timestamp,
+                &epoch_duties[corresponding_epoch_slot_index],
+            )
+            .await?;
+        }
+
+        Ok(())
+    }
+
+    fn find_a_slot_timestamp_to_prove_incorrect_lookahead(
+        lookahead_params: &[PreconfTaskManager::LookaheadSetParam],
+        lookahead_updated_event_params: &[PreconfTaskManager::LookaheadSetParam],
+    ) -> Result<Option<u64>, Error> {
+        // compare corresponding params in the two lists
+        for (param, updated_param) in lookahead_params
             .iter()
-            .zip(lookahead_updated_next_epoch.iter())
-            .enumerate()
+            .zip(lookahead_updated_event_params.iter())
         {
             if param.preconfer != updated_param.preconfer
                 || param.timestamp != updated_param.timestamp
             {
-                let slot_timestamp = param.timestamp.try_into()?;
-                let slot = self
-                    .ethereum_l1
-                    .slot_clock
-                    .slot_of(Duration::from_secs(slot_timestamp))?;
-                self.wait_for_the_slot_to_prove_incorrect_lookahead(slot + 1)
-                    .await?;
-                self.prove_incorrect_lookahead(slot, slot_timestamp, &epoch_duties[i])
-                    .await?;
+                return Ok(Some(updated_param.timestamp.try_into()?));
             }
         }
 
-        Ok(())
+        if lookahead_params.len() > lookahead_updated_event_params.len() {
+            // the lookahead updated doesn't contain enough params
+            let first_proper_lookahead_params_missing_in_the_event =
+                &lookahead_params[lookahead_updated_event_params.len()];
+            return Ok(Some(
+                first_proper_lookahead_params_missing_in_the_event
+                    .timestamp
+                    .try_into()?,
+            ));
+        } else if lookahead_params.len() < lookahead_updated_event_params.len() {
+            // the lookahead updated contains additional, wrong params
+            let first_additional_wrong_param =
+                &lookahead_updated_event_params[lookahead_params.len()];
+            return Ok(Some(first_additional_wrong_param.timestamp.try_into()?));
+        }
+
+        return Ok(None);
     }
 
     async fn wait_for_the_slot_to_prove_incorrect_lookahead(
