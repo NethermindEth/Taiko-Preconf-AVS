@@ -164,29 +164,21 @@ impl Node {
         ethereum_l1: Arc<EthereumL1>,
         preconfer: alloy::primitives::Address,
     ) -> Result<(), Error> {
-        // check valid preconfer
-        let preconfer_buffer = ethereum_l1
+        // get current lookahead
+        let epoch_begin_timestamp = ethereum_l1
+            .slot_clock
+            .get_epoch_begin_timestamp(ethereum_l1.slot_clock.get_current_epoch()?)?;
+
+        let current_lookahead = ethereum_l1
             .execution_layer
-            .get_lookahead_preconfer_buffer()
+            .get_lookahead_preconfer_addresses_for_epoch(epoch_begin_timestamp)
             .await?;
 
-        // get current timestamp
-        let current_timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs();
-        // get current preconfer
-        let current_preconfer = preconfer_buffer
-            .iter()
-            .find(|&entry| {
-                current_timestamp > entry.prevTimestamp && current_timestamp <= entry.timestamp
-            })
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "is_valid_preconfer: Preconfer is not in the lookahead preconfer buffer"
-                )
-            })?;
+        // get slot number in epoch
+        let slot_of_epoch = ethereum_l1.slot_clock.get_current_slot_of_epoch()?;
 
-        if current_preconfer.preconfer == preconfer {
+        // get current preconfer
+        if current_lookahead[slot_of_epoch as usize] == preconfer {
             Ok(())
         } else {
             Err(anyhow::anyhow!(
