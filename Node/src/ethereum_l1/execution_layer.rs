@@ -1,5 +1,8 @@
 use super::slot_clock::SlotClock;
-use crate::utils::{config, types::*};
+use crate::{
+    bls::BLSService,
+    utils::{config, types::*},
+};
 use alloy::{
     consensus::TypedTransaction,
     contract::EventPoller,
@@ -31,6 +34,7 @@ pub struct ExecutionLayer {
     slot_clock: Arc<SlotClock>,
     preconf_registry_expiry_sec: u64,
     chain_id: u64,
+    bls_service: Arc<BLSService>,
 }
 
 pub struct ContractAddresses {
@@ -109,6 +113,15 @@ sol!(
     "src/ethereum_l1/abi/PreconfRegistry.json"
 );
 
+sol! (
+    struct MessageData {
+        uint256 chainId;
+        uint8 op;
+        uint256 expiry;
+        address prefer;
+    }
+);
+
 pub struct EventPollerLookaheadUpdated(
     pub  EventPoller<
         alloy::transports::http::Http<reqwest::Client>,
@@ -123,6 +136,7 @@ impl ExecutionLayer {
         contract_addresses: &config::ContractAddresses,
         slot_clock: Arc<SlotClock>,
         preconf_registry_expiry_sec: u64,
+        bls_service: Arc<BLSService>,
     ) -> Result<Self, Error> {
         tracing::debug!("Creating ExecutionLayer with RPC URL: {}", rpc_url);
 
@@ -147,6 +161,7 @@ impl ExecutionLayer {
             slot_clock,
             preconf_registry_expiry_sec,
             chain_id,
+            bls_service,
         })
     }
 
@@ -474,6 +489,125 @@ impl ExecutionLayer {
         Ok(())
     }
 
+    fn u64_array_to_u256_array(arr: [u64; 6]) -> [U256; 2] {
+        let mut res_arr: [u8; 32] = [0; 32];
+        res_arr[16..24].copy_from_slice(&arr[0].to_be_bytes());
+        res_arr[24..32].copy_from_slice(&arr[1].to_be_bytes());
+        let res1 = U256::from_be_bytes(res_arr);
+
+        let mut res_arr: [u8; 32] = [0; 32];
+        res_arr[0..8].copy_from_slice(&arr[2].to_be_bytes());
+        res_arr[8..16].copy_from_slice(&arr[3].to_be_bytes());
+        res_arr[16..24].copy_from_slice(&arr[4].to_be_bytes());
+        res_arr[24..32].copy_from_slice(&arr[5].to_be_bytes());
+        let res2 = U256::from_be_bytes(res_arr);
+
+        [res1, res2]
+    }
+
+    pub async fn add_validator(&self) -> Result<(), Error> {
+        let provider = self.create_provider();
+
+        // Build add message
+        // Operation.ADD
+        let operation = 1;
+        // Message expired after 60 seconds
+        let expiry = U256::from(self.slot_clock.get_now_plus_minute()?);
+
+        let data = MessageData::from((
+            U256::from(self.chain_id),
+            operation,
+            expiry,
+            self.preconfer_address,
+        ));
+        let message = data.abi_encode_packed();
+
+        // Convert bls public key to G1Point
+        let pk_point = self.bls_service.get_public_key();
+
+        let pubkey = PreconfRegistry::G1Point {
+            x: Self::u64_array_to_u256_array(pk_point.x.0 .0),
+            y: Self::u64_array_to_u256_array(pk_point.y.0 .0),
+        };
+
+        // Sign message and convert to G2Point
+        let signature_point = self.bls_service.sign_as_point(&message, &vec![]);
+
+        let signature = PreconfRegistry::G2Point {
+            x: Self::u64_array_to_u256_array(signature_point.x.c0.0 .0),
+            x_I: Self::u64_array_to_u256_array(signature_point.x.c1.0 .0),
+            y: Self::u64_array_to_u256_array(signature_point.y.c0.0 .0),
+            y_I: Self::u64_array_to_u256_array(signature_point.y.c1.0 .0),
+        };
+
+        // Call contract
+        let params = vec![PreconfRegistry::AddValidatorParam {
+            pubkey,
+            signature,
+            signatureExpiry: expiry,
+        }];
+
+        let preconf_registry =
+            PreconfRegistry::new(self.contract_addresses.avs.preconf_registry, provider);
+        let tx_hash = preconf_registry
+            .addValidators(params)
+            .send()
+            .await?
+            .watch()
+            .await?;
+        tracing::debug!("Add validator to preconfer: {tx_hash}");
+
+        Ok(())
+    }
+
+    pub async fn subscribe_to_validator_added_event(
+        &self,
+    ) -> Result<
+        EventPoller<
+            alloy::transports::http::Http<reqwest::Client>,
+            PreconfRegistry::ValidatorAdded,
+        >,
+        Error,
+    > {
+        let provider = self.create_provider();
+        let registry = PreconfRegistry::new(self.contract_addresses.avs.preconf_registry, provider);
+
+        let validator_added_filter = registry.ValidatorAdded_filter().watch().await?;
+        tracing::debug!("Subscribed to ValidatorAdded event");
+
+        Ok(validator_added_filter)
+    }
+
+    pub async fn wait_for_the_validator_added_event(
+        &self,
+        validator_added_filter: EventPoller<
+            alloy::transports::http::Http<reqwest::Client>,
+            PreconfRegistry::ValidatorAdded,
+        >,
+    ) -> Result<(), Error> {
+        let mut stream = validator_added_filter.into_stream();
+        while let Some(log) = stream.next().await {
+            match log {
+                Ok(log) => {
+                    tracing::info!(
+                        "Received ValidatorAdded for:\npubkey hash: {}\npreconfer: {}",
+                        log.0.pubKeyHash,
+                        log.0.preconfer
+                    );
+                    if log.0.preconfer == self.preconfer_address {
+                        tracing::info!("Validator added!");
+                        break;
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Error receiving log: {:?}", e);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn subscribe_to_lookahead_updated_event(
         &self,
     ) -> Result<EventPollerLookaheadUpdated, Error> {
@@ -600,6 +734,10 @@ impl ExecutionLayer {
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
         let chain_id = provider.get_chain_id().await?;
 
+        let bls_service = Arc::new(crate::bls::BLSService::new(
+            "0x14d50ac943d01069c206543a0bed3836f6062b35270607ebf1d1f238ceda26f1",
+        ));
+
         Ok(Self {
             rpc_url,
             signer,
@@ -621,6 +759,7 @@ impl ExecutionLayer {
             },
             preconf_registry_expiry_sec: 120,
             chain_id,
+            bls_service,
         })
     }
 

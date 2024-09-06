@@ -114,6 +114,11 @@ impl SlotClock {
         let slot = self.slot_of(Duration::from_secs(timestamp))?;
         Ok(slot / self.slots_per_epoch)
     }
+
+    pub fn get_now_plus_minute(&self) -> Result<u64, Error> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        Ok(now.as_secs() + 60)
+    }
 }
 
 #[cfg(test)]

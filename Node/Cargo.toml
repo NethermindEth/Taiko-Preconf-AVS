@@ -36,7 +36,7 @@ futures-util = "0.3"
 ethereum_ssz = "0.7"
 ethereum_ssz_derive = "0.7"
 tree_hash = "0.8"
-blst = "0.3"
+bls_on_arkworks = "0.3.0"
 
 [dev-dependencies]
 mockito = "1.4"
