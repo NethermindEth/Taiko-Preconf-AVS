@@ -208,7 +208,8 @@ impl Node {
                         Ok(preconfer) => {
                             // check valid preconfer address
                             if let Err(e) =
-                                Self::is_valid_preconfer(ethereum_l1.clone(), preconfer.into()).await
+                                Self::is_valid_preconfer(ethereum_l1.clone(), preconfer.into())
+                                    .await
                             {
                                 tracing::error!("Error: {} for block_id: {}", e, msg.block_height);
                                 return;
@@ -401,13 +402,11 @@ impl Node {
                     .iter()
                     .map(|(_, value)| value.clone())
                     .collect();
+                // Get slot_id
+                let slot_id = self.ethereum_l1.slot_clock.get_current_slot()?;
 
                 self.mev_boost
-                    .force_inclusion(
-                        constraints,
-                        self.ethereum_l1.clone(),
-                        self.bls_service.clone(),
-                    )
+                    .force_inclusion(constraints, slot_id, self.bls_service.clone())
                     .await?;
 
                 preconfirmation_txs.clear();
