@@ -7,6 +7,7 @@ pub struct Operator {
     epoch_begin_timestamp: u64,
     lookahead_required_contract_called: bool,
     lookahead_preconfer_addresses: Vec<PreconferAddress>,
+    lookahead_preconfer_addresses_next_epoch: Option<Vec<PreconferAddress>>,
     l1_slots_per_epoch: u64,
 }
 
@@ -25,6 +26,7 @@ impl Operator {
             epoch_begin_timestamp,
             lookahead_required_contract_called: false,
             lookahead_preconfer_addresses: vec![],
+            lookahead_preconfer_addresses_next_epoch: None,
             l1_slots_per_epoch,
         })
     }
@@ -48,7 +50,8 @@ impl Operator {
         if self.lookahead_preconfer_addresses[slot as usize]
             == self.ethereum_l1.execution_layer.get_preconfer_address()
         {
-            if self.is_the_final_slot_to_preconf(slot) {
+            let next_preconfer_address = self.get_next_preconfer_address(slot).await?;
+            if self.is_the_final_slot_to_preconf(next_preconfer_address) {
                 return Ok(Status::PreconferAndProposer);
             }
             return Ok(Status::Preconfer);
@@ -57,10 +60,30 @@ impl Operator {
         Ok(Status::None)
     }
 
-    fn is_the_final_slot_to_preconf(&self, slot_mod_slots_per_epoch: Slot) -> bool {
-        slot_mod_slots_per_epoch == self.l1_slots_per_epoch - 1
-            || self.lookahead_preconfer_addresses[(slot_mod_slots_per_epoch + 1) as usize]
-                != self.ethereum_l1.execution_layer.get_preconfer_address()
+    async fn get_next_preconfer_address(
+        &mut self,
+        slot_mod_slots_per_epoch: Slot,
+    ) -> Result<PreconferAddress, Error> {
+        if slot_mod_slots_per_epoch == self.l1_slots_per_epoch - 1 {
+            let lookahead_preconfer_addresses_next_epoch = self
+                .ethereum_l1
+                .execution_layer
+                .get_lookahead_preconfer_addresses_for_epoch(
+                    self.epoch_begin_timestamp
+                        + self.ethereum_l1.slot_clock.get_epoch_duration_secs(),
+                )
+                .await?;
+            let address = lookahead_preconfer_addresses_next_epoch[0];
+            self.lookahead_preconfer_addresses_next_epoch =
+                Some(lookahead_preconfer_addresses_next_epoch);
+            Ok(address)
+        } else {
+            Ok(self.lookahead_preconfer_addresses[(slot_mod_slots_per_epoch + 1) as usize])
+        }
+    }
+
+    fn is_the_final_slot_to_preconf(&self, next_preconfer_address: PreconferAddress) -> bool {
+        next_preconfer_address != self.ethereum_l1.execution_layer.get_preconfer_address()
     }
 
     pub async fn should_post_lookahead(&mut self) -> Result<bool, Error> {
@@ -79,11 +102,17 @@ impl Operator {
     }
 
     pub async fn update_preconfer_lookahead_for_epoch(&mut self) -> Result<(), Error> {
-        self.lookahead_preconfer_addresses = self
-            .ethereum_l1
-            .execution_layer
-            .get_lookahead_preconfer_addresses_for_epoch(self.epoch_begin_timestamp)
-            .await?;
+        if let Some(lookahead_preconfer_addresses_next_epoch) =
+            self.lookahead_preconfer_addresses_next_epoch.take()
+        {
+            self.lookahead_preconfer_addresses = lookahead_preconfer_addresses_next_epoch;
+        } else {
+            self.lookahead_preconfer_addresses = self
+                .ethereum_l1
+                .execution_layer
+                .get_lookahead_preconfer_addresses_for_epoch(self.epoch_begin_timestamp)
+                .await?;
+        }
         Ok(())
     }
 }
