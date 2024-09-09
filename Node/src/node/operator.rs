@@ -11,6 +11,7 @@ pub struct Operator {
     l1_slots_per_epoch: u64,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum Status {
     None,
     Preconfer,
@@ -32,9 +33,11 @@ impl Operator {
     }
 
     pub async fn get_status(&mut self, slot: Slot) -> Result<Status, Error> {
-        if self.lookahead_preconfer_addresses.len() < self.l1_slots_per_epoch as usize {
+        if self.lookahead_preconfer_addresses.len() != self.l1_slots_per_epoch as usize {
             return Err(anyhow::anyhow!(
-                "Operator::get_status: Not enough lookahead params"
+                "Operator::get_status: Incorrect lookahead params, should be {} but {} given",
+                self.l1_slots_per_epoch,
+                self.lookahead_preconfer_addresses.len()
             ));
         }
 
@@ -114,5 +117,106 @@ impl Operator {
                 .await?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ethereum_l1::{consensus_layer::ConsensusLayer, slot_clock::SlotClock};
+
+    use mockall_double::double;
+
+    #[double]
+    use crate::ethereum_l1::execution_layer::ExecutionLayer;
+
+    #[tokio::test]
+    async fn test_get_status() {
+        let mut execution_layer = ExecutionLayer::default();
+        execution_layer
+            .expect_get_lookahead_preconfer_addresses_for_epoch()
+            .returning(|_| {
+                Ok(vec![[1u8; 20], [1u8; 20]]
+                    .into_iter()
+                    .chain(std::iter::repeat([0u8; 20]).take(30))
+                    .collect())
+            });
+
+        let mut operator = create_operator(0, execution_layer).unwrap();
+        operator
+            .update_preconfer_lookahead_for_epoch()
+            .await
+            .unwrap();
+        let status = operator.get_status(32).await.unwrap();
+        assert_eq!(status, Status::Preconfer);
+
+        let status = operator.get_status(33).await.unwrap();
+        assert_eq!(status, Status::PreconferAndProposer);
+
+        let status = operator.get_status(34).await.unwrap();
+        assert_eq!(status, Status::None);
+    }
+
+    #[tokio::test]
+    async fn test_get_status_last_slot_preconfer_and_proposer() {
+        let mut execution_layer = ExecutionLayer::default();
+        execution_layer
+            .expect_get_lookahead_preconfer_addresses_for_epoch()
+            .returning(|epoch_begin_timestamp| {
+                if epoch_begin_timestamp == 0 {
+                    Ok(vec![[1u8; 20]; 32])
+                } else {
+                    Ok(vec![[0u8; 20]; 32])
+                }
+            });
+
+        let mut operator = create_operator(0, execution_layer).unwrap();
+        operator
+            .update_preconfer_lookahead_for_epoch()
+            .await
+            .unwrap();
+        let status = operator.get_status(31).await.unwrap();
+        assert_eq!(status, Status::PreconferAndProposer);
+    }
+
+    #[tokio::test]
+    async fn test_get_status_last_slot_preconfer() {
+        let mut execution_layer = ExecutionLayer::default();
+        execution_layer
+            .expect_get_lookahead_preconfer_addresses_for_epoch()
+            .returning(|epoch_begin_timestamp| {
+                if epoch_begin_timestamp == 0 {
+                    Ok(vec![[1u8; 20]; 32])
+                } else {
+                    Ok(vec![[1u8; 20]]
+                        .into_iter()
+                        .chain(std::iter::repeat([0u8; 20]).take(31))
+                        .collect())
+                }
+            });
+
+        let mut operator = create_operator(0, execution_layer).unwrap();
+        operator
+            .update_preconfer_lookahead_for_epoch()
+            .await
+            .unwrap();
+        let status = operator.get_status(31).await.unwrap();
+        assert_eq!(status, Status::Preconfer);
+    }
+
+    fn create_operator(
+        epoch: Epoch,
+        mut execution_layer: ExecutionLayer,
+    ) -> Result<Operator, Error> {
+        execution_layer
+            .expect_get_preconfer_address()
+            .returning(|| PreconferAddress::from([1u8; 20]));
+        let ethereum_l1 = Arc::new(EthereumL1 {
+            slot_clock: Arc::new(SlotClock::new(0, 0, 12, 32)),
+            consensus_layer: ConsensusLayer::new("http://localhost:5052").unwrap(),
+            execution_layer,
+        });
+
+        Operator::new(ethereum_l1, epoch)
     }
 }
