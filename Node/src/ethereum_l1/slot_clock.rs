@@ -57,6 +57,11 @@ impl SlotClock {
         }
     }
 
+    pub fn duration_to_slot_from_now(&self, slot: Slot) -> Result<Duration, Error> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        self.duration_to_slot(slot, now)
+    }
+
     pub fn slot_of(&self, now: Duration) -> Result<Slot, Error> {
         let genesis = self.genesis_duration;
 
