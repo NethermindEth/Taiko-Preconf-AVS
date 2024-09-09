@@ -162,7 +162,7 @@ impl Node {
 
     async fn is_valid_preconfer(
         ethereum_l1: Arc<EthereumL1>,
-        preconfer: alloy::primitives::Address,
+        preconfer: PreconferAddress,
     ) -> Result<(), Error> {
         // get current lookahead
         let epoch_begin_timestamp = ethereum_l1
@@ -208,7 +208,7 @@ impl Node {
                         Ok(preconfer) => {
                             // check valid preconfer address
                             if let Err(e) =
-                                Self::is_valid_preconfer(ethereum_l1.clone(), preconfer).await
+                                Self::is_valid_preconfer(ethereum_l1.clone(), preconfer.into()).await
                             {
                                 tracing::error!("Error: {} for block_id: {}", e, msg.block_height);
                                 return;
