@@ -39,7 +39,6 @@ impl Registration {
 
         self.ethereum_l1
             .execution_layer
-            //todo
             .add_validator()
             .await?;
 
