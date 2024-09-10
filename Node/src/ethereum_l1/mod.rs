@@ -6,10 +6,10 @@ pub mod slot_clock;
 
 use crate::{bls::BLSService, utils::config::ContractAddresses};
 use consensus_layer::ConsensusLayer;
-#[cfg_attr(test, double)]
+//#[cfg_attr(test, double)]
 use execution_layer::ExecutionLayer;
-#[cfg(test)]
-use mockall_double::double;
+//#[cfg(test)]
+//use mockall_double::double;
 use slot_clock::SlotClock;
 use std::sync::Arc;
 

@@ -1,6 +1,7 @@
 use crate::ethereum_l1::EthereumL1;
 use anyhow::Error;
 
+mod tests;
 pub struct Registration {
     ethereum_l1: EthereumL1,
 }
@@ -37,10 +38,7 @@ impl Registration {
             .subscribe_to_validator_added_event()
             .await?;
 
-        self.ethereum_l1
-            .execution_layer
-            .add_validator()
-            .await?;
+        self.ethereum_l1.execution_layer.add_validator().await?;
 
         self.ethereum_l1
             .execution_layer

@@ -208,7 +208,8 @@ impl Node {
                         Ok(preconfer) => {
                             // check valid preconfer address
                             if let Err(e) =
-                                Self::is_valid_preconfer(ethereum_l1.clone(), preconfer.into()).await
+                                Self::is_valid_preconfer(ethereum_l1.clone(), preconfer.into())
+                                    .await
                             {
                                 tracing::error!("Error: {} for block_id: {}", e, msg.block_height);
                                 return;

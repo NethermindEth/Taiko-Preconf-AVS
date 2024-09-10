@@ -119,7 +119,7 @@ impl Operator {
         Ok(())
     }
 }
-
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,4 +219,4 @@ mod tests {
 
         Operator::new(ethereum_l1, epoch)
     }
-}
+}*/

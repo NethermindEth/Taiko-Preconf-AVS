@@ -278,8 +278,10 @@ impl ExecutionLayer {
             self.contract_addresses.eigen_layer.strategy_manager,
             &provider,
         );
+        let one_eth = U256::from(1000000000000000000u64);
         let tx_hash = strategy_manager
-            .depositIntoStrategy(Address::ZERO, Address::ZERO, U256::from(1))
+            .depositIntoStrategy(Address::ZERO, Address::ZERO, one_eth)
+            .value(one_eth)
             .send()
             .await?
             .watch()
