@@ -120,6 +120,15 @@ impl SlotClock {
         Ok(slot / self.slots_per_epoch)
     }
 
+    pub fn get_now_plus_minute(&self) -> Result<u64, Error> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        Ok(now.as_secs() + 60)
+    }
+
+    pub fn get_epoch_duration_secs(&self) -> u64 {
+        self.slot_duration.as_secs() * self.slots_per_epoch
+    }
+
     pub fn get_current_slot_of_epoch(&self) -> Result<Slot, Error> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let cur_slot = self.slot_of(now)?;
@@ -190,5 +199,14 @@ mod tests {
 
         let current_epoch = slot_clock.get_current_epoch().unwrap();
         assert!(current_epoch > 0);
+    }
+
+    #[test]
+    fn test_get_epoch_duration_secs() {
+        let genesis_slot = Slot::from(0u64);
+        let slot_clock = SlotClock::new(genesis_slot, 0, 12, 32);
+
+        let epoch_duration = slot_clock.get_epoch_duration_secs();
+        assert_eq!(epoch_duration, 384); // 12 slots per epoch * 32 seconds per slot
     }
 }

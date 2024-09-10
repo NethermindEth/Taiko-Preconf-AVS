@@ -29,4 +29,21 @@ impl Registration {
 
         Ok(())
     }
+
+    pub async fn add_validator(&self) -> Result<(), Error> {
+        let validator_added_filter = self
+            .ethereum_l1
+            .execution_layer
+            .subscribe_to_validator_added_event()
+            .await?;
+
+        self.ethereum_l1.execution_layer.add_validator().await?;
+
+        self.ethereum_l1
+            .execution_layer
+            .wait_for_the_validator_added_event(validator_added_filter)
+            .await?;
+
+        Ok(())
+    }
 }

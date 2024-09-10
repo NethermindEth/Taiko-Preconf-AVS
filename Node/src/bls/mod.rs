@@ -19,15 +19,11 @@ impl BLSService {
         bls::sign(self.sk, message, dst).unwrap()
     }
 
-    #[allow(dead_code)]
-    // TODO: used in AddValidator call
     pub fn sign_as_point(&self, message: &Vec<u8>, dst: &Vec<u8>) -> G2AffinePoint {
         let sign = self.sign(message, dst);
         bls::signature_to_point(&sign).unwrap()
     }
 
-    #[allow(dead_code)]
-    // TODO: used in AddValidator call
     pub fn get_public_key(&self) -> G1AffinePoint {
         bls::pubkey_to_point(&self.pk).unwrap()
     }

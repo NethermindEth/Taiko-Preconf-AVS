@@ -69,7 +69,10 @@ impl SignedConstraints {
             .as_bytes()
             .to_vec();
         // Sign message
-        let signature: [u8; 96] = bls.sign(&data, &dst).try_into().unwrap();
+        let signature: [u8; 96] = bls
+            .sign(&data, &dst)
+            .try_into()
+            .expect("Vec should have exactly 96 elements");
         Self { message, signature }
     }
 }
