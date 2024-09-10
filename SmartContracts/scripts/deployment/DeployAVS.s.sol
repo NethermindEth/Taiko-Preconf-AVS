@@ -15,6 +15,7 @@ import {ISlasher} from "src/interfaces/eigenlayer-mvp/ISlasher.sol";
 import {ITaikoL1} from "src/interfaces/taiko/ITaikoL1.sol";
 
 import {console2} from "forge-std/Script.sol";
+import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
 import {ProxyAdmin} from "openzeppelin-contracts/proxy/transparent/ProxyAdmin.sol";
 import {ITransparentUpgradeableProxy} from "openzeppelin-contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
@@ -25,6 +26,7 @@ contract DeployAVS is BaseScript {
 
     // Required by task manager
     address public taikoL1 = vm.envAddress("TAIKO_L1");
+    address public taikoToken = vm.envAddress("TAIKO_TOKEN");
     uint256 public beaconGenesisTimestamp = vm.envUint("BEACON_GENESIS_TIMESTAMP");
     address public beaconBlockRootContract = vm.envAddress("BEACON_BLOCK_ROOT_CONTRACT");
 
@@ -53,7 +55,11 @@ contract DeployAVS is BaseScript {
         // Upgrade proxies with implementations
         proxyAdmin.upgrade(ITransparentUpgradeableProxy(preconfRegistry), address(preconfRegistryImpl));
         proxyAdmin.upgrade(ITransparentUpgradeableProxy(preconfServiceManager), address(preconfServiceManagerImpl));
-        proxyAdmin.upgrade(ITransparentUpgradeableProxy(preconfTaskManager), address(preconfTaskManagerImpl));
+        proxyAdmin.upgradeAndCall(
+            ITransparentUpgradeableProxy(preconfTaskManager),
+            address(preconfTaskManagerImpl),
+            abi.encodeCall(PreconfTaskManager.initialize, IERC20(taikoToken))
+        );
 
         console2.log("Proxy admin: ", address(proxyAdmin));
         console2.log("Preconf Registry: ", preconfRegistry);
