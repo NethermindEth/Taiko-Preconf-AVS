@@ -22,6 +22,8 @@ const MESSAGE_QUEUE_SIZE: usize = 100;
 struct Cli {
     #[clap(long, help = "Start registration as a preconfer")]
     register: bool,
+    #[clap(long, help = "Add validator to preconfer")]
+    add_validator: bool,
 }
 
 #[tokio::main]
@@ -29,6 +31,8 @@ async fn main() -> Result<(), Error> {
     init_logging();
     let args = Cli::parse();
     let config = utils::config::Config::read_env_variables();
+
+    let bls_service = Arc::new(bls::BLSService::new(&config.validator_bls_privkey));
 
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
         &config.mev_boost_url,
@@ -38,12 +42,19 @@ async fn main() -> Result<(), Error> {
         config.l1_slot_duration_sec,
         config.l1_slots_per_epoch,
         config.preconf_registry_expiry_sec,
+        bls_service.clone(),
     )
     .await?;
 
     if args.register {
         let registration = registration::Registration::new(ethereum_l1);
         registration.register().await?;
+        return Ok(());
+    }
+
+    if args.add_validator {
+        let registration = registration::Registration::new(ethereum_l1);
+        registration.add_validator().await?;
         return Ok(());
     }
 
@@ -61,8 +72,6 @@ async fn main() -> Result<(), Error> {
 
     let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url, config.validator_index);
     let ethereum_l1 = Arc::new(ethereum_l1);
-
-    let bls_service = Arc::new(bls::BLSService::new(&config.validator_bls_privkey));
 
     let node = node::Node::new(
         block_proposed_rx,

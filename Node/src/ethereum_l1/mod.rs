@@ -4,7 +4,7 @@ pub mod execution_layer;
 pub mod merkle_proofs;
 pub mod slot_clock;
 
-use crate::utils::config::ContractAddresses;
+use crate::{bls::BLSService, utils::config::ContractAddresses};
 use consensus_layer::ConsensusLayer;
 #[cfg_attr(test, double)]
 use execution_layer::ExecutionLayer;
@@ -28,6 +28,7 @@ impl EthereumL1 {
         slot_duration_sec: u64,
         slots_per_epoch: u64,
         preconf_registry_expiry_sec: u64,
+        bls_service: Arc<BLSService>,
     ) -> Result<Self, anyhow::Error> {
         let consensus_layer = ConsensusLayer::new(consensus_rpc_url)?;
         let genesis_details = consensus_layer.get_genesis_details().await?;
@@ -44,6 +45,7 @@ impl EthereumL1 {
             contract_addresses,
             slot_clock.clone(),
             preconf_registry_expiry_sec,
+            bls_service,
         )
         .await?;
 

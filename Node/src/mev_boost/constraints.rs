@@ -31,7 +31,7 @@ impl ConstraintsMessage {
 pub struct SignedConstraints {
     message: ConstraintsMessage,
     #[serde(serialize_with = "serialize_data_as_hex")]
-    signature: [u8; 192],
+    signature: [u8; 96],
 }
 
 fn serialize_vec_as_hex<S>(data: &Vec<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
@@ -47,7 +47,7 @@ where
     seq.end()
 }
 
-fn serialize_data_as_hex<S>(data: &[u8; 192], serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_data_as_hex<S>(data: &[u8; 96], serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
@@ -59,7 +59,10 @@ impl SignedConstraints {
     pub fn new(message: ConstraintsMessage, bls: Arc<BLSService>) -> Self {
         let data = message.merkle_root().unwrap();
         // TODO check signature
-        let signature = bls.sign(&data, &[]).serialize();
+        let signature = bls.sign(&data.to_vec(), &vec![]);
+        let signature = signature
+            .try_into()
+            .expect("Vec should have exactly 96 elements");
         Self { message, signature }
     }
 }
