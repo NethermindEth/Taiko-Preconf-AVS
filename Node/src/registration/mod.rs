@@ -34,7 +34,6 @@ impl Registration {
         let validator_added_filter = self
             .ethereum_l1
             .execution_layer
-            //todo
             .subscribe_to_validator_added_event()
             .await?;
 
@@ -46,7 +45,6 @@ impl Registration {
 
         self.ethereum_l1
             .execution_layer
-            //todo
             .wait_for_the_validator_added_event(validator_added_filter)
             .await?;
 
