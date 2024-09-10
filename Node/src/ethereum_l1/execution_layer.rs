@@ -1,4 +1,7 @@
-use super::slot_clock::SlotClock;
+use super::{
+    block_proposed::{BlockProposed, EventPollerBlockProposed, TaikoEvents},
+    slot_clock::SlotClock,
+};
 use crate::utils::{config, types::*};
 use alloy::{
     consensus::TypedTransaction,
@@ -347,28 +350,64 @@ impl ExecutionLayer {
         Ok(nonce)
     }
 
-    pub async fn prove_incorrect_preconfirmation(
+    pub async fn check_and_prove_incorrect_preconfirmation(
         &self,
-        block_id: u64,
         chain_id: u64,
         tx_list_hash: [u8; 32],
         signature: [u8; 65],
+        block_proposed: &BlockProposed,
     ) -> Result<(), Error> {
         let provider = self.create_provider();
 
         let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
 
-        let _header = PreconfTaskManager::PreconfirmationHeader {
-            blockId: U256::from(block_id),
+        let header = PreconfTaskManager::PreconfirmationHeader {
+            blockId: block_proposed.event_data().blockId,
             chainId: U256::from(chain_id),
             txListHash: B256::from(tx_list_hash),
         };
-        let _signature = Bytes::from(signature);
+        let signature = Bytes::from(signature);
 
-        // TODO: use new paremeter BlockMetadata
-        let result = contract.proveIncorrectPreconfirmation(header, signature.call().await?;
-        tracing::debug!("Proved incorrect preconfirmation: {result}");
+        let proposed_meta = &block_proposed.event_data().meta;
+        let meta = PreconfTaskManager::BlockMetadata {
+            l1Hash: proposed_meta.l1Hash,
+            difficulty: proposed_meta.difficulty,
+            blobHash: proposed_meta.blobHash,
+            extraData: proposed_meta.extraData,
+            depositsHash: proposed_meta.depositsHash,
+            coinbase: proposed_meta.coinbase,
+            id: proposed_meta.id,
+            gasLimit: proposed_meta.gasLimit,
+            timestamp: proposed_meta.timestamp,
+            l1Height: proposed_meta.l1Height,
+            minTier: proposed_meta.minTier,
+            blobUsed: proposed_meta.blobUsed,
+            parentMetaHash: proposed_meta.parentMetaHash,
+            sender: proposed_meta.sender,
+            blobTxListOffset: proposed_meta.blobTxListOffset,
+            blobTxListLength: proposed_meta.blobTxListLength,
+        };
+        let result = contract
+            .proveIncorrectPreconfirmation(meta.clone(), header.clone(), signature.clone())
+            .call()
+            .await;
+        if let Ok(_) = result {
+            tracing::debug!("Proved incorrect preconfirmation using eth_call, sending tx");
+            let tx_hash = contract
+                .proveIncorrectPreconfirmation(meta, header, signature)
+                .send()
+                .await?
+                .watch()
+                .await?;
+            tracing::debug!("Proved incorrect preconfirmation, tx sent: {tx_hash}");
+        } else {
+            tracing::debug!(
+                "Preconfirmation correct for the block {}",
+                block_proposed.block_id()
+            );
+        }
+
         Ok(())
     }
 
@@ -488,6 +527,19 @@ impl ExecutionLayer {
         tracing::debug!("Subscribed to lookahead updated event");
 
         Ok(EventPollerLookaheadUpdated(lookahead_updated_filter))
+    }
+
+    pub async fn subscribe_to_block_proposed_event(
+        &self,
+    ) -> Result<EventPollerBlockProposed, Error> {
+        let provider = self.create_provider();
+        let taiko_events =
+            TaikoEvents::new(self.contract_addresses.avs.preconf_task_manager, provider); //TODO fix the address
+
+        let block_proposed_filter = taiko_events.BlockProposed_filter().watch().await?;
+        tracing::debug!("Subscribed to block proposed event");
+
+        Ok(EventPollerBlockProposed(block_proposed_filter))
     }
 
     pub async fn get_lookahead_params_for_epoch_using_cl_lookahead(

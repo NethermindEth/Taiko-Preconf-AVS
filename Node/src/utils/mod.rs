@@ -1,4 +1,3 @@
-pub mod block_proposed;
 pub mod commit;
 pub mod config;
 pub mod preconfirmation_message;

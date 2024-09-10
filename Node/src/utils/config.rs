@@ -13,7 +13,6 @@ pub struct Config {
     pub l2_slot_duration_sec: u64,
     pub validator_bls_pubkey: String,
     pub validator_bls_privkey: String,
-    pub block_proposed_receiver_timeout_sec: u64,
     pub preconf_registry_expiry_sec: u64,
     pub contract_addresses: ContractAddresses,
     pub p2p_network_config: P2PNetworkConfig,
@@ -173,12 +172,6 @@ impl Config {
             "0x0".to_string()
         });
 
-        let block_proposed_receiver_timeout_sec =
-            std::env::var("BLOCK_PROPOSED_RECEIVER_TIMEOUT_SEC")
-                .unwrap_or("120".to_string())
-                .parse::<u64>()
-                .expect("BLOCK_PROPOSED_RECEIVER_TIMEOUT_SEC must be a number");
-
         let preconf_registry_expiry_sec = std::env::var("PRECONF_REGISTRY_EXPIRY_SEC")
             .unwrap_or("3600".to_string())
             .parse::<u64>()
@@ -239,7 +232,6 @@ impl Config {
             l2_slot_duration_sec,
             validator_bls_pubkey: validator_pubkey,
             validator_bls_privkey,
-            block_proposed_receiver_timeout_sec,
             preconf_registry_expiry_sec,
             contract_addresses,
             p2p_network_config,
@@ -258,7 +250,6 @@ L1 slot duration: {}
 L1 slots per epoch: {}
 L2 slot duration: {}
 Validator pubkey: {}
-Block proposed receiver timeout: {}
 Preconf registry expiry seconds: {}
 Contract addresses: {:#?}
 p2p_network_config: {}
@@ -271,7 +262,6 @@ p2p_network_config: {}
             config.l1_slots_per_epoch,
             config.l2_slot_duration_sec,
             config.validator_bls_pubkey,
-            config.block_proposed_receiver_timeout_sec,
             config.preconf_registry_expiry_sec,
             config.contract_addresses,
             config.p2p_network_config,

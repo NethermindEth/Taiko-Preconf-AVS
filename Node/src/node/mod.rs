@@ -1,11 +1,10 @@
 use crate::{
     bls::BLSService,
-    ethereum_l1::{execution_layer::PreconfTaskManager, EthereumL1},
+    ethereum_l1::{block_proposed::BlockProposed, execution_layer::PreconfTaskManager, EthereumL1},
     mev_boost::MevBoost,
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::{
-        block_proposed::BlockProposed, commit::L2TxListsCommit,
-        preconfirmation_message::PreconfirmationMessage,
+        commit::L2TxListsCommit, preconfirmation_message::PreconfirmationMessage,
         preconfirmation_proof::PreconfirmationProof, types::*,
     },
 };
@@ -22,7 +21,6 @@ use tokio::sync::{
     Mutex,
 };
 use tokio::time::{sleep, Duration};
-use tracing::info;
 
 pub mod block_proposed_receiver;
 pub mod lookahead_updated_receiver;
@@ -135,16 +133,16 @@ impl Node {
             tokio::select! {
                 Some(block_proposed) = node_rx.recv() => {
                     if !is_preconfer_now.load(Ordering::Acquire) {
-                        tracing::debug!("Node received block proposed event: {:?}", block_proposed);
+                        tracing::debug!("Node received block proposed event: {:?}", block_proposed.block_id());
                         if let Err(e) = Self::check_preconfirmed_blocks_correctness(&preconfirmed_blocks, taiko.chain_id, &block_proposed, ethereum_l1.clone()).await {
                             tracing::error!("Failed to check preconfirmed blocks correctness: {}", e);
                         }
-                        if let Err(e) = Self::clean_old_blocks(&preconfirmed_blocks, block_proposed.block_id).await {
+                        if let Err(e) = Self::clean_old_blocks(&preconfirmed_blocks, block_proposed.block_id()).await {
                             tracing::error!("Failed to clean old blocks: {}", e);
                         }
                     } else {
-                        tracing::debug!("Node is Preconfer and received block proposed event: {:?}", block_proposed);
-                        preconfirmation_txs.lock().await.remove(&block_proposed.block_id);
+                        tracing::debug!("Node is Preconfer and received block proposed event: {:?}", block_proposed.block_id());
+                        preconfirmation_txs.lock().await.remove(&block_proposed.block_id());
                     }
                 },
                 Some(p2p_message) = p2p_to_node_rx.recv() => {
@@ -208,7 +206,8 @@ impl Node {
                         Ok(preconfer) => {
                             // check valid preconfer address
                             if let Err(e) =
-                                Self::is_valid_preconfer(ethereum_l1.clone(), preconfer.into()).await
+                                Self::is_valid_preconfer(ethereum_l1.clone(), preconfer.into())
+                                    .await
                             {
                                 tracing::error!("Error: {} for block_id: {}", e, msg.block_height);
                                 return;
@@ -258,24 +257,16 @@ impl Node {
         ethereum_l1: Arc<EthereumL1>,
     ) -> Result<(), Error> {
         let preconfirmed_blocks = preconfirmed_blocks.lock().await;
-        if let Some(block) = preconfirmed_blocks.get(&block_proposed.block_id) {
-            //Signature is already verified on precof insertion
-            if block.commit_hash != block_proposed.tx_list_hash {
-                // TODO: simulate proveIncorrectPreconfirmation instead of checking
-                info!(
-                    "Block tx_list_hash is not correct for block_id: {}. Calling proof of incorrect preconfirmation.",
-                    block_proposed.block_id
-                );
-                ethereum_l1
-                    .execution_layer
-                    .prove_incorrect_preconfirmation(
-                        block_proposed.block_id,
-                        chain_id,
-                        block.commit_hash,
-                        block.signature,
-                    )
-                    .await?;
-            }
+        if let Some(preconf_block) = preconfirmed_blocks.get(&block_proposed.block_id()) {
+            ethereum_l1
+                .execution_layer
+                .check_and_prove_incorrect_preconfirmation(
+                    chain_id,
+                    preconf_block.commit_hash,
+                    preconf_block.signature,
+                    block_proposed,
+                )
+                .await?;
         }
         Ok(())
     }
