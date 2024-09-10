@@ -18,6 +18,8 @@ use beacon_api_client::ProposerDuty;
 use ecdsa::SigningKey;
 use futures_util::StreamExt;
 use k256::Secp256k1;
+#[cfg(test)]
+use mockall::automock;
 use rand_core::{OsRng, RngCore};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -116,6 +118,8 @@ pub struct EventPollerLookaheadUpdated(
     >,
 );
 
+#[cfg_attr(test, allow(dead_code))]
+#[cfg_attr(test, automock)]
 impl ExecutionLayer {
     pub async fn new(
         rpc_url: &str,
