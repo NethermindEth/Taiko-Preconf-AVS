@@ -352,7 +352,7 @@ impl ExecutionLayer {
     ) -> Result<(), Error> {
         let provider = self.create_provider();
 
-        let _contract =
+        let contract =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
 
         let _header = PreconfTaskManager::PreconfirmationHeader {
@@ -363,9 +363,8 @@ impl ExecutionLayer {
         let _signature = Bytes::from(signature);
 
         // TODO: use new paremeter BlockMetadata
-        // let builder = contract.proveIncorrectPreconfirmation(header, signature);
-        // let tx_hash = builder.send().await?.watch().await?;
-        // tracing::debug!("Proved incorrect preconfirmation: {tx_hash}");
+        let result = contract.proveIncorrectPreconfirmation(header, signature.call().await?;
+        tracing::debug!("Proved incorrect preconfirmation: {result}");
         Ok(())
     }
 
