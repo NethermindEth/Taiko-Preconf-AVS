@@ -123,6 +123,14 @@ impl SlotClock {
     pub fn get_epoch_duration_secs(&self) -> u64 {
         self.slot_duration.as_secs() * self.slots_per_epoch
     }
+
+    pub fn get_current_slot_of_epoch(&self) -> Result<Slot, Error> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let cur_slot = self.slot_of(now)?;
+        let cur_epoch = cur_slot / self.slots_per_epoch;
+        let epoch_start_slot = cur_epoch * self.slots_per_epoch;
+        Ok(cur_slot - epoch_start_slot)
+    }
 }
 
 #[cfg(test)]

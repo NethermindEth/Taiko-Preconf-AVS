@@ -160,6 +160,33 @@ impl Node {
         }
     }
 
+    async fn is_valid_preconfer(
+        ethereum_l1: Arc<EthereumL1>,
+        preconfer: PreconferAddress,
+    ) -> Result<(), Error> {
+        // get current lookahead
+        let epoch_begin_timestamp = ethereum_l1
+            .slot_clock
+            .get_epoch_begin_timestamp(ethereum_l1.slot_clock.get_current_epoch()?)?;
+
+        let current_lookahead = ethereum_l1
+            .execution_layer
+            .get_lookahead_preconfer_addresses_for_epoch(epoch_begin_timestamp)
+            .await?;
+
+        // get slot number in epoch
+        let slot_of_epoch = ethereum_l1.slot_clock.get_current_slot_of_epoch()?;
+
+        // get current preconfer
+        if current_lookahead[slot_of_epoch as usize] == preconfer {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!(
+                "is_valid_preconfer: P2P message Preconfer is not equal to current preconfer"
+            ))
+        }
+    }
+
     async fn check_preconfirmation_message(
         msg: PreconfirmationMessage,
         preconfirmed_blocks: &Arc<Mutex<HashMap<u64, PreconfirmationProof>>>,
@@ -167,7 +194,6 @@ impl Node {
         taiko: Arc<Taiko>,
     ) {
         tracing::debug!("Node received message from p2p: {:?}", msg);
-        // TODO check valid preconfer
         // check hash
         match L2TxListsCommit::from_preconf(msg.block_height, msg.tx_list_bytes, taiko.chain_id)
             .hash()
@@ -179,7 +205,14 @@ impl Node {
                         .execution_layer
                         .recover_address_from_msg(&msg.proof.commit_hash, &msg.proof.signature)
                     {
-                        Ok(_) => {
+                        Ok(preconfer) => {
+                            // check valid preconfer address
+                            if let Err(e) =
+                                Self::is_valid_preconfer(ethereum_l1.clone(), preconfer.into()).await
+                            {
+                                tracing::error!("Error: {} for block_id: {}", e, msg.block_height);
+                                return;
+                            }
                             // Add to preconfirmation map
                             preconfirmed_blocks
                                 .lock()
