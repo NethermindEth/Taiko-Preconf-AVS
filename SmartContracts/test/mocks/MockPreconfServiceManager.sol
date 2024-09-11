@@ -2,5 +2,9 @@
 pragma solidity 0.8.25;
 
 contract MockPreconfServiceManager {
-    function lockStakeUntil(address operator, uint256 timestamp) external {}
+    mapping(address => uint256) public stakeLockTimestamps;
+
+    function lockStakeUntil(address operator, uint256 timestamp) external {
+        stakeLockTimestamps[operator] = timestamp;
+    }
 }
