@@ -119,8 +119,9 @@ impl Operator {
         Ok(())
     }
 }
-/*
+
 #[cfg(test)]
+#[cfg(feature = "use_mock")]
 mod tests {
     use super::*;
     use crate::ethereum_l1::{consensus_layer::ConsensusLayer, slot_clock::SlotClock};
@@ -219,4 +220,4 @@ mod tests {
 
         Operator::new(ethereum_l1, epoch)
     }
-}*/
+}

@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[cfg(not(feature = "use_mock"))]
 mod tests {
     use alloy::{
         node_bindings::Anvil,

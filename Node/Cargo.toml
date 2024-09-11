@@ -42,3 +42,6 @@ bls_on_arkworks = "0.3.0"
 mockall_double = "0.3"
 mockall = "0.13"
 mockito = "1.4"
+
+[features]
+use_mock = []
