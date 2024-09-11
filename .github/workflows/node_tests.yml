@@ -20,14 +20,17 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    - uses: actions/checkout@v4
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
-    - name: Change directory to Node
-      working-directory: ./Node
-      run: echo "Switched to Node directory"
     - name: Update dependencies
+      working-directory: ./Node
       run: cargo update
     - name: Build
+      working-directory: ./Node
       run: cargo build --verbose
     - name: Run tests
+      working-directory: ./Node
       run: cargo test --verbose
