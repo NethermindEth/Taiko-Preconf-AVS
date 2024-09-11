@@ -53,7 +53,11 @@ contract DeployAVS is BaseScript {
         );
 
         // Upgrade proxies with implementations
-        proxyAdmin.upgrade(ITransparentUpgradeableProxy(preconfRegistry), address(preconfRegistryImpl));
+        proxyAdmin.upgradeAndCall(
+            ITransparentUpgradeableProxy(preconfRegistry),
+            address(preconfRegistryImpl),
+            abi.encodeCall(PreconfRegistry.initialize, ())
+        );
         proxyAdmin.upgrade(ITransparentUpgradeableProxy(preconfServiceManager), address(preconfServiceManagerImpl));
         proxyAdmin.upgradeAndCall(
             ITransparentUpgradeableProxy(preconfTaskManager),

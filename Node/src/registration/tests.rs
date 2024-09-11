@@ -198,7 +198,7 @@ fn check_foundry_installed() -> bool {
         assert!(
             contract
                 // TODO fix to 1 once contract is fixed
-                .getPreconferAtIndex(U256::from(0))
+                .getPreconferAtIndex(U256::from(1))
                 .call()
                 .await
                 .unwrap()
