@@ -27,7 +27,7 @@ impl Taiko {
                 .await?,
         )?;
 
-        if !result.tx_list_bytes.is_empty() {
+        if !result.tx_list_rlp_bytes.is_empty() {
             Self::print_number_of_received_txs(&result);
         }
 
@@ -50,15 +50,11 @@ impl Taiko {
         }
     }
 
-    pub async fn advance_head_to_new_l2_block(
-        &self,
-        tx_lists: Value,
-        gas_used: u64,
-    ) -> Result<Value, Error> {
+    pub async fn advance_head_to_new_l2_block(&self, tx_lists: Value) -> Result<Value, Error> {
         tracing::debug!("Submitting new L2 blocks");
         let payload = serde_json::json!({
             "TxLists": tx_lists,
-            "gasUsed": gas_used,
+            "gasUsed": 0u64,    //TODO remove here and in the driver
         });
         self.rpc_driver
             .call_method("RPC.AdvanceL2ChainHeadWithNewBlocks", vec![payload])
@@ -120,10 +116,7 @@ mod test {
             ]
         });
 
-        let response = taiko
-            .advance_head_to_new_l2_block(value, 1234)
-            .await
-            .unwrap();
+        let response = taiko.advance_head_to_new_l2_block(value).await.unwrap();
         assert_eq!(
             response["result"],
             "Request received and processed successfully"

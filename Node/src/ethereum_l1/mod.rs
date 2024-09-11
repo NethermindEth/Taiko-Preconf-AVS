@@ -1,9 +1,9 @@
+pub mod block_proposed;
 pub mod consensus_layer;
 mod el_with_cl_tests;
 pub mod execution_layer;
 pub mod merkle_proofs;
 pub mod slot_clock;
-pub mod block_proposed;
 
 use crate::{bls::BLSService, utils::config::ContractAddresses};
 use consensus_layer::ConsensusLayer;

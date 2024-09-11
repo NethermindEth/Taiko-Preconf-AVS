@@ -1,16 +1,16 @@
 #![allow(dead_code)] // TODO: remove
-use crate::taiko::l2_tx_lists::RPCReplyL2TxLists;
+use crate::utils::types::*;
+use crate::{taiko::l2_tx_lists::RPCReplyL2TxLists, utils::bytes_tools::hash_bytes_with_keccak};
+use alloy_rlp::{Encodable, RlpDecodable, RlpEncodable};
 use anyhow::Error;
 use secp256k1::{ecdsa::Signature, Message, Secp256k1, SecretKey};
-use serde::{Deserialize, Serialize};
-use tiny_keccak::{Hasher, Keccak};
 
 //https://github.com/NethermindEth/Taiko-Preconf-AVS/blob/caf9fbbde0dd84947af5a7b26610ffd38525d932/SmartContracts/src/avs/PreconfTaskManager.sol#L175
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, RlpEncodable, RlpDecodable, PartialEq)]
 pub struct L2TxListsCommit {
     pub block_height: [u8; 32],
     pub chain_id: [u8; 32],
-    pub tx_list_bytes: Vec<u8>,
+    pub tx_list_hash: [u8; 32],
 }
 
 impl L2TxListsCommit {
@@ -24,11 +24,11 @@ impl L2TxListsCommit {
         L2TxListsCommit {
             block_height,
             chain_id,
-            tx_list_bytes: reply.tx_list_bytes[0].clone(), // TODO check for other indexes
+            tx_list_hash: hash_bytes_with_keccak(reply.tx_list_rlp_bytes[0].as_slice()),
         }
     }
 
-    pub fn from_preconf(block_height: u64, tx_list_bytes: Vec<u8>, chain_id: u64) -> Self {
+    pub fn from_preconf(block_height: u64, tx_list_hash: L2TxListHash, chain_id: u64) -> Self {
         let block_height_bytes = block_height.to_le_bytes(); // Convert u64 to a [u8; 8] array
         let mut block_height = [0u8; 32];
         block_height[24..].copy_from_slice(&block_height_bytes);
@@ -38,19 +38,16 @@ impl L2TxListsCommit {
         L2TxListsCommit {
             block_height,
             chain_id,
-            tx_list_bytes,
+            tx_list_hash,
         }
     }
 }
 
 impl L2TxListsCommit {
     pub fn hash(&self) -> Result<[u8; 32], Error> {
-        let serialized = serde_json::to_vec(&self)?;
-        let mut hasher = Keccak::v256();
-        hasher.update(&serialized);
-        let mut result = [0u8; 32];
-        hasher.finalize(&mut result);
-        Ok(result)
+        let mut buffer = Vec::<u8>::new();
+        self.encode(&mut buffer);
+        Ok(hash_bytes_with_keccak(&buffer.as_slice()))
     }
 
     pub fn sign(&self, private_key: &str) -> Result<Signature, Error> {
@@ -69,7 +66,7 @@ mod tests {
     #[test]
     fn test_hash() {
         let commit = L2TxListsCommit {
-            tx_list_bytes: vec![1, 2, 3, 4, 5],
+            tx_list_hash: [1u8; 32],
             chain_id: [0u8; 32],
             block_height: [0u8; 32],
         };
@@ -85,7 +82,7 @@ mod tests {
         let mut block_height = [0u8; 32];
         block_height[31] = 1;
         let commit = L2TxListsCommit {
-            tx_list_bytes: vec![1, 2, 3, 4, 5],
+            tx_list_hash: [1u8; 32],
             chain_id: [0u8; 32],
             block_height,
         };

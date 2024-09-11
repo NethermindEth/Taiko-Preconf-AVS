@@ -8,7 +8,7 @@ sol!(
     "src/ethereum_l1/abi/TaikoEvents.json"
 );
 
-pub struct BlockProposed{
+pub struct BlockProposed {
     event_data: TaikoEvents::BlockProposed,
     block_id: u64,
 }
@@ -16,7 +16,10 @@ pub struct BlockProposed{
 impl BlockProposed {
     pub fn new(event_data: TaikoEvents::BlockProposed) -> Result<Self, Error> {
         let block_id = event_data.blockId.try_into()?;
-        Ok(Self { event_data, block_id })
+        Ok(Self {
+            event_data,
+            block_id,
+        })
     }
 
     pub fn block_id(&self) -> u64 {

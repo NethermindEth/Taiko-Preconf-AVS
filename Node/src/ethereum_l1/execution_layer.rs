@@ -368,8 +368,8 @@ impl ExecutionLayer {
     pub async fn check_and_prove_incorrect_preconfirmation(
         &self,
         chain_id: u64,
-        tx_list_hash: [u8; 32],
-        signature: [u8; 65],
+        preconf_tx_list_hash: [u8; 32],
+        preconf_signature: [u8; 65],
         block_proposed: &BlockProposed,
     ) -> Result<(), Error> {
         let provider = self.create_provider();
@@ -380,9 +380,9 @@ impl ExecutionLayer {
         let header = PreconfTaskManager::PreconfirmationHeader {
             blockId: block_proposed.event_data().blockId,
             chainId: U256::from(chain_id),
-            txListHash: B256::from(tx_list_hash),
+            txListHash: B256::from(preconf_tx_list_hash),
         };
-        let signature = Bytes::from(signature);
+        let signature = Bytes::from(preconf_signature);
 
         let proposed_meta = &block_proposed.event_data().meta;
         let meta = PreconfTaskManager::BlockMetadata {

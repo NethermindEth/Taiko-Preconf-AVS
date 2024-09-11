@@ -1,20 +1,31 @@
+pub mod block_proposed_receiver;
+mod commit;
+pub mod lookahead_updated_receiver;
+mod operator;
+mod preconfirmation_helper;
+mod preconfirmation_message;
+mod preconfirmation_proof;
+
 use crate::{
     bls::BLSService,
     ethereum_l1::{block_proposed::BlockProposed, execution_layer::PreconfTaskManager, EthereumL1},
     mev_boost::MevBoost,
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
-    utils::{
-        commit::L2TxListsCommit, preconfirmation_message::PreconfirmationMessage,
-        preconfirmation_proof::PreconfirmationProof, types::*,
-    },
+    utils::types::*,
 };
 use anyhow::{anyhow as any_err, Error};
 use beacon_api_client::ProposerDuty;
+use commit::L2TxListsCommit;
 use operator::{Operator, Status as OperatorStatus};
-use std::sync::atomic::Ordering;
+use preconfirmation_helper::PreconfirmationHelper;
+use preconfirmation_message::PreconfirmationMessage;
+use preconfirmation_proof::PreconfirmationProof;
 use std::{
     collections::HashMap,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
 use tokio::sync::{
     mpsc::{Receiver, Sender},
@@ -22,27 +33,22 @@ use tokio::sync::{
 };
 use tokio::time::{sleep, Duration};
 
-pub mod block_proposed_receiver;
-pub mod lookahead_updated_receiver;
-mod operator;
-mod preconfirmation_helper;
-use preconfirmation_helper::PreconfirmationHelper;
-
 const OLDEST_BLOCK_DISTANCE: u64 = 256;
+
+type PreconfirmedBlocks = Arc<Mutex<HashMap<u64, PreconfirmationMessage>>>;
 
 pub struct Node {
     taiko: Arc<Taiko>,
     node_block_proposed_rx: Option<Receiver<BlockProposed>>,
     node_to_p2p_tx: Sender<Vec<u8>>,
     p2p_to_node_rx: Option<Receiver<Vec<u8>>>,
-    gas_used: u64,
     ethereum_l1: Arc<EthereumL1>,
     mev_boost: MevBoost,
     epoch: Epoch,
     cl_lookahead: Vec<ProposerDuty>,
     lookahead_preconfer_buffer: Option<[PreconfTaskManager::LookaheadBufferEntry; 64]>,
     l2_slot_duration_sec: u64,
-    preconfirmed_blocks: Arc<Mutex<HashMap<u64, PreconfirmationProof>>>,
+    preconfirmed_blocks: PreconfirmedBlocks,
     is_preconfer_now: Arc<AtomicBool>,
     preconfirmation_txs: Arc<Mutex<HashMap<u64, Vec<u8>>>>, // block_id -> tx
     operator: Operator,
@@ -68,7 +74,6 @@ impl Node {
             node_block_proposed_rx: Some(node_rx),
             node_to_p2p_tx,
             p2p_to_node_rx: Some(p2p_to_node_rx),
-            gas_used: 0,
             ethereum_l1,
             mev_boost,
             epoch: current_epoch,
@@ -123,7 +128,7 @@ impl Node {
     async fn handle_incoming_messages(
         mut node_rx: Receiver<BlockProposed>,
         mut p2p_to_node_rx: Receiver<Vec<u8>>,
-        preconfirmed_blocks: Arc<Mutex<HashMap<u64, PreconfirmationProof>>>,
+        preconfirmed_blocks: PreconfirmedBlocks,
         ethereum_l1: Arc<EthereumL1>,
         taiko: Arc<Taiko>,
         is_preconfer_now: Arc<AtomicBool>,
@@ -187,13 +192,13 @@ impl Node {
 
     async fn check_preconfirmation_message(
         msg: PreconfirmationMessage,
-        preconfirmed_blocks: &Arc<Mutex<HashMap<u64, PreconfirmationProof>>>,
+        preconfirmed_blocks: &PreconfirmedBlocks,
         ethereum_l1: Arc<EthereumL1>,
         taiko: Arc<Taiko>,
     ) {
         tracing::debug!("Node received message from p2p: {:?}", msg);
         // check hash
-        match L2TxListsCommit::from_preconf(msg.block_height, msg.tx_list_bytes, taiko.chain_id)
+        match L2TxListsCommit::from_preconf(msg.block_height, msg.tx_list_hash, taiko.chain_id)
             .hash()
         {
             Ok(hash) => {
@@ -216,12 +221,9 @@ impl Node {
                             preconfirmed_blocks
                                 .lock()
                                 .await
-                                .insert(msg.block_height, msg.proof);
+                                .insert(msg.block_height, msg.clone());
                             // Advance head
-                            if let Err(e) = taiko
-                                .advance_head_to_new_l2_block(msg.tx_lists, msg.gas_used)
-                                .await
-                            {
+                            if let Err(e) = taiko.advance_head_to_new_l2_block(msg.tx_lists).await {
                                 tracing::error!(
                                     "Failed to advance head: {} for block_id: {}",
                                     e,
@@ -251,7 +253,7 @@ impl Node {
     }
 
     async fn check_preconfirmed_blocks_correctness(
-        preconfirmed_blocks: &Arc<Mutex<HashMap<u64, PreconfirmationProof>>>,
+        preconfirmed_blocks: &PreconfirmedBlocks,
         chain_id: u64,
         block_proposed: &BlockProposed,
         ethereum_l1: Arc<EthereumL1>,
@@ -262,8 +264,8 @@ impl Node {
                 .execution_layer
                 .check_and_prove_incorrect_preconfirmation(
                     chain_id,
-                    preconf_block.commit_hash,
-                    preconf_block.signature,
+                    preconf_block.tx_list_hash,
+                    preconf_block.proof.signature,
                     block_proposed,
                 )
                 .await?;
@@ -433,7 +435,7 @@ impl Node {
         let (lookahead_pointer, lookahead_params) = self.get_lookahead_params().await?;
 
         let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;
-        if pending_tx_lists.tx_list_bytes.is_empty() {
+        if pending_tx_lists.tx_list_rlp_bytes.is_empty() {
             return Ok(());
         }
 
@@ -447,24 +449,26 @@ impl Node {
             commit_hash,
             signature,
         };
-        let preconf_message = PreconfirmationMessage {
-            block_height: new_block_height,
-            tx_lists: pending_tx_lists.tx_lists.clone(),
-            tx_list_bytes: pending_tx_lists.tx_list_bytes[0].clone(), //TODO: handle rest tx lists
-            gas_used: self.gas_used,
-            proof: proof.clone(),
-        };
+        let preconf_message = PreconfirmationMessage::new(
+            new_block_height,
+            pending_tx_lists.tx_lists.clone(),
+            &pending_tx_lists.tx_list_rlp_bytes[0], //TODO: handle rest tx lists
+            proof.clone(),
+        );
         self.send_preconfirmations_to_the_avs_p2p(preconf_message.clone())
             .await?;
         self.taiko
-            .advance_head_to_new_l2_block(pending_tx_lists.tx_lists, self.gas_used)
+            .advance_head_to_new_l2_block(pending_tx_lists.tx_lists)
             .await?;
+
+        let compressed_tx_list =
+            crate::utils::bytes_tools::compress(&pending_tx_lists.tx_list_rlp_bytes[0])?; //TODO: handle rest tx lists
         let tx = self
             .ethereum_l1
             .execution_layer
             .propose_new_block(
                 nonce,
-                pending_tx_lists.tx_list_bytes[0].clone(), //TODO: handle rest tx lists
+                compressed_tx_list,
                 pending_tx_lists.parent_meta_hash,
                 lookahead_pointer,
                 lookahead_params,
@@ -481,7 +485,7 @@ impl Node {
         self.preconfirmed_blocks
             .lock()
             .await
-            .insert(new_block_height, proof);
+            .insert(new_block_height, preconf_message);
 
         Ok(())
     }
@@ -502,7 +506,7 @@ impl Node {
     }
 
     async fn clean_old_blocks(
-        preconfirmed_blocks: &Arc<Mutex<HashMap<u64, PreconfirmationProof>>>,
+        preconfirmed_blocks: &PreconfirmedBlocks,
         current_block_height: u64,
     ) -> Result<(), Error> {
         let oldest_block_to_keep = current_block_height - OLDEST_BLOCK_DISTANCE;
