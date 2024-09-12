@@ -187,12 +187,12 @@ impl Config {
 
         // Load P2P config from env
         // Load Ipv4 address from env
-        let address = std::env::var("ADDRESS").unwrap_or_else(|_| "0.0.0.0".to_string());
+        let address = std::env::var("P2P_ADDRESS").unwrap_or_else(|_| "0.0.0.0".to_string());
         let ipv4 = address.parse().unwrap();
 
         // Load boot node from env
         let boot_nodes: Option<Vec<String>> =
-            if let Ok(bootnode_enr) = std::env::var("BOOTNODE_ENR") {
+            if let Ok(bootnode_enr) = std::env::var("P2P_BOOTNODE_ENR") {
                 Some(vec![bootnode_enr])
             } else {
                 None
