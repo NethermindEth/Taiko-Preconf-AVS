@@ -7,6 +7,7 @@ pub struct Config {
     pub taiko_driver_url: String,
     pub avs_node_ecdsa_private_key: String,
     pub mev_boost_url: String,
+    pub l1_rpc_url: String,
     pub l1_beacon_url: String,
     pub l1_slot_duration_sec: u64,
     pub l1_slots_per_epoch: u64,
@@ -186,12 +187,12 @@ impl Config {
 
         // Load P2P config from env
         // Load Ipv4 address from env
-        let address = std::env::var("ADDRESS").unwrap_or_else(|_| "0.0.0.0".to_string());
+        let address = std::env::var("P2P_ADDRESS").unwrap_or_else(|_| "0.0.0.0".to_string());
         let ipv4 = address.parse().unwrap();
 
         // Load boot node from env
         let boot_nodes: Option<Vec<String>> =
-            if let Ok(bootnode_enr) = std::env::var("BOOTNODE_ENR") {
+            if let Ok(bootnode_enr) = std::env::var("P2P_BOOTNODE_ENR") {
                 Some(vec![bootnode_enr])
             } else {
                 None
@@ -232,6 +233,7 @@ impl Config {
             avs_node_ecdsa_private_key,
             mev_boost_url: std::env::var("MEV_BOOST_URL")
                 .unwrap_or("http://127.0.0.1:8080".to_string()),
+            l1_rpc_url: std::env::var("L1_RPC_URL").unwrap_or("http://127.0.0.1:8545".to_string()),
             l1_beacon_url: std::env::var("L1_BEACON_URL")
                 .unwrap_or("http://127.0.0.1:4000".to_string()),
             l1_slot_duration_sec,
@@ -253,6 +255,7 @@ Configuration:
 Taiko proposer URL: {},
 Taiko driver URL: {},
 MEV Boost URL: {},
+L1 RPC URL: {},
 Consensus layer URL: {}
 L1 slot duration: {}
 L1 slots per epoch: {}
@@ -262,10 +265,13 @@ Block proposed receiver timeout: {}
 Preconf registry expiry seconds: {}
 Contract addresses: {:#?}
 p2p_network_config: {}
+taiko chain id: {}
+validator index: {}
 "#,
             config.taiko_proposer_url,
             config.taiko_driver_url,
             config.mev_boost_url,
+            config.l1_rpc_url,
             config.l1_beacon_url,
             config.l1_slot_duration_sec,
             config.l1_slots_per_epoch,
@@ -275,6 +281,8 @@ p2p_network_config: {}
             config.preconf_registry_expiry_sec,
             config.contract_addresses,
             config.p2p_network_config,
+            config.taiko_chain_id,
+            config.validator_index,
         );
 
         config
