@@ -7,8 +7,9 @@ import {BLSSignatureChecker} from "./utils/BLSSignatureChecker.sol";
 import {IPreconfRegistry} from "../interfaces/IPreconfRegistry.sol";
 import {IPreconfServiceManager} from "../interfaces/IPreconfServiceManager.sol";
 import {IAVSDirectory} from "../interfaces/eigenlayer-mvp/IAVSDirectory.sol";
+import {Initializable} from "openzeppelin-contracts-upgradeable/proxy/utils/Initializable.sol";
 
-contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker {
+contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable {
     using BLS12381 for BLS12381.G1Point;
 
     IPreconfServiceManager internal immutable preconfServiceManager;
@@ -29,6 +30,9 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker {
 
     constructor(IPreconfServiceManager _preconfServiceManager) {
         preconfServiceManager = _preconfServiceManager;
+    }
+
+    function initialize() external initializer {
         nextPreconferIndex = 1;
     }
 
