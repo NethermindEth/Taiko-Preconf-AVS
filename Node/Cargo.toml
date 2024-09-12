@@ -36,8 +36,8 @@ clap = "4.5"
 futures-util = "0.3"
 ethereum_ssz = "0.7"
 ethereum_ssz_derive = "0.7"
-tree_hash = "0.8"
 bls_on_arkworks = "0.3.0"
+rand = "0.8" 
 flate2 = "1.0"
 
 [dev-dependencies]

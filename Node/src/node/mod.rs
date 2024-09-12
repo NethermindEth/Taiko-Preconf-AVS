@@ -394,13 +394,11 @@ impl Node {
                     .iter()
                     .map(|(_, value)| value.clone())
                     .collect();
+                // Get slot_id
+                let slot_id = self.ethereum_l1.slot_clock.get_current_slot()?;
 
                 self.mev_boost
-                    .force_inclusion(
-                        constraints,
-                        self.ethereum_l1.clone(),
-                        self.bls_service.clone(),
-                    )
+                    .force_inclusion(constraints, slot_id, self.bls_service.clone())
                     .await?;
 
                 preconfirmation_txs.clear();
