@@ -23,6 +23,7 @@ use futures_util::StreamExt;
 use k256::Secp256k1;
 #[cfg(test)]
 use mockall::automock;
+use num_bigint::BigUint;
 use rand_core::{OsRng, RngCore};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -495,22 +496,6 @@ impl ExecutionLayer {
         Ok(())
     }
 
-    fn u64_array_to_u256_array(arr: [u64; 6]) -> [U256; 2] {
-        let mut res_arr: [u8; 32] = [0; 32];
-        res_arr[16..24].copy_from_slice(&arr[0].to_be_bytes());
-        res_arr[24..32].copy_from_slice(&arr[1].to_be_bytes());
-        let res1 = U256::from_be_bytes(res_arr);
-
-        let mut res_arr: [u8; 32] = [0; 32];
-        res_arr[0..8].copy_from_slice(&arr[2].to_be_bytes());
-        res_arr[8..16].copy_from_slice(&arr[3].to_be_bytes());
-        res_arr[16..24].copy_from_slice(&arr[4].to_be_bytes());
-        res_arr[24..32].copy_from_slice(&arr[5].to_be_bytes());
-        let res2 = U256::from_be_bytes(res_arr);
-
-        [res1, res2]
-    }
-
     pub async fn add_validator(&self) -> Result<(), Error> {
         let provider = self.create_provider();
 
@@ -530,20 +515,19 @@ impl ExecutionLayer {
 
         // Convert bls public key to G1Point
         let pk_point = self.bls_service.get_public_key();
-
         let pubkey = PreconfRegistry::G1Point {
-            x: Self::u64_array_to_u256_array(pk_point.x.0 .0),
-            y: Self::u64_array_to_u256_array(pk_point.y.0 .0),
+            x: BLSService::biguint_to_u256_array(BigUint::from(pk_point.x)),
+            y: BLSService::biguint_to_u256_array(BigUint::from(pk_point.y)),
         };
 
         // Sign message and convert to G2Point
         let signature_point = self.bls_service.sign_as_point(&message, &vec![]);
 
         let signature = PreconfRegistry::G2Point {
-            x: Self::u64_array_to_u256_array(signature_point.x.c0.0 .0),
-            x_I: Self::u64_array_to_u256_array(signature_point.x.c1.0 .0),
-            y: Self::u64_array_to_u256_array(signature_point.y.c0.0 .0),
-            y_I: Self::u64_array_to_u256_array(signature_point.y.c1.0 .0),
+            x: BLSService::biguint_to_u256_array(BigUint::from(signature_point.x.c0)),
+            x_I: BLSService::biguint_to_u256_array(BigUint::from(signature_point.x.c1)),
+            y: BLSService::biguint_to_u256_array(BigUint::from(signature_point.y.c0)),
+            y_I: BLSService::biguint_to_u256_array(BigUint::from(signature_point.y.c1)),
         };
 
         // Call contract

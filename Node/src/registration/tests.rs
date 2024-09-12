@@ -6,15 +6,22 @@ mod tests {
         primitives::{Address, U256},
         providers::ProviderBuilder,
         sol,
+        sol_types::SolValue,
     };
+
     use std::{borrow::Cow, process::Command, sync::Arc};
 
     sol! {
         #[allow(missing_docs)]
-        // solc v0.8.26; solc Counter.sol --via-ir --optimize --bin
         #[sol(rpc)]
         contract IPreconfRegistry {
+            struct Validator {
+                address preconfer;
+                uint40 startProposingAt;
+                uint40 stopProposingAt;
+            }
             function getPreconferAtIndex(uint256 index) external view returns (address);
+            function getValidator(bytes32 pubKeyHash) external view returns (Validator memory);
         }
     }
 
@@ -33,16 +40,12 @@ mod tests {
             .to_string()
     }
 
+    fn check_foundry_installed() -> bool {
+        // Run `forge --version` to check if Foundry is installed
+        let output = Command::new("forge").arg("--version").output().unwrap();
 
-fn check_foundry_installed() -> bool {
-    // Run `forge --version` to check if Foundry is installed
-    let output = Command::new("forge")
-        .arg("--version")
-        .output()
-        .unwrap();
-
-    return output.status.success()
-}
+        return output.status.success();
+    }
 
     #[tokio::test]
     async fn test() {
@@ -115,7 +118,7 @@ fn check_foundry_installed() -> bool {
         // Deploy AVS
         let output = Command::new("forge")
             .arg("script")
-            .arg("scripts/deployment/DeployAVS.s.sol")
+            .arg("scripts/deployment/mock/DeployMockAVS.s.sol")
             .arg("--rpc-url")
             .arg(rpc_url.to_string())
             .arg("--private-key")
@@ -148,9 +151,11 @@ fn check_foundry_installed() -> bool {
         let preconf_task_manager = get_contract_address(&output, "Preconf Task Manager");
 
         // Create a new BLSService with private key from Docker container
-        let bls_service = Arc::new(BLSService::new(
-            "0x14d50ac943d01069c206543a0bed3836f6062b35270607ebf1d1f238ceda26f1",
-        ));
+        //let bls_service = Arc::new(BLSService::new(
+        //    "0x14d50ac943d01069c206543a0bed3836f6062b35270607ebf1d1f238ceda26f1",
+        //));
+        // Create a new BLSService with random private key
+        let bls_service = Arc::new(BLSService::generate_key());
 
         // Create AVS contract addresses
         let avs_contracts = AvsContractAddresses {
@@ -193,12 +198,11 @@ fn check_foundry_installed() -> bool {
             println!("Error find while registering: {}", e);
         }
 
-        // TODO : Check if the preconfer is registered by PreconfRegistry.getPreconferAtIndex
+        // Check if the preconfer is registered by PreconfRegistry.getPreconferAtIndex
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
         let contract = IPreconfRegistry::new(preconf_regestry.parse().unwrap(), provider);
         assert!(
             contract
-                // TODO fix to 1 once contract is fixed
                 .getPreconferAtIndex(U256::from(1))
                 .call()
                 .await
@@ -207,6 +211,26 @@ fn check_foundry_installed() -> bool {
                 == user_address
         );
 
+        // Add validator to registry
+        if let Err(e) = registration.add_validator().await {
+            println!("Error occurred while adding validator: {}", e);
+        }
+
+        // Copy logic form smart contract to get public key hash
+        let pk_compressed = bls_service.get_public_key_compressed();
+        let mut res_arr: [u8; 32] = [0; 32];
+        res_arr[16..32].copy_from_slice(&pk_compressed[0..16]);
+        let res1 = U256::from_be_bytes(res_arr);
+        let mut res_arr: [u8; 32] = [0; 32];
+        res_arr.copy_from_slice(&pk_compressed[16..48]);
+        let res2 = U256::from_be_bytes(res_arr);
+        let memory = [res1, res2];
+        let encoded = memory.abi_encode_packed();
+        let pub_key_hash = alloy::primitives::keccak256(encoded);
+
+        // Get the validator from the PreconfRegistry
+        let res = contract.getValidator(pub_key_hash).call().await.unwrap()._0;
+        assert!(res.preconfer == user_address);
         assert!(true);
     }
 }
