@@ -24,7 +24,7 @@ impl L2TxListsCommit {
         L2TxListsCommit {
             block_height,
             chain_id,
-            tx_list_hash: hash_bytes_with_keccak(reply.tx_list_rlp_bytes[0].as_slice()),
+            tx_list_hash: hash_bytes_with_keccak(reply.tx_list_bytes[0].as_slice()),
         }
     }
 

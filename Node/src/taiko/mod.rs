@@ -27,7 +27,7 @@ impl Taiko {
                 .await?,
         )?;
 
-        if !result.tx_list_rlp_bytes.is_empty() {
+        if !result.tx_list_bytes.is_empty() {
             Self::print_number_of_received_txs(&result);
         }
 

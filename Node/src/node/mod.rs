@@ -435,7 +435,7 @@ impl Node {
         let (lookahead_pointer, lookahead_params) = self.get_lookahead_params().await?;
 
         let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;
-        if pending_tx_lists.tx_list_rlp_bytes.is_empty() {
+        if pending_tx_lists.tx_list_bytes.is_empty() {
             return Ok(());
         }
 
@@ -449,10 +449,12 @@ impl Node {
             commit_hash,
             signature,
         };
+        let uncompressed_tx_list =
+            crate::utils::bytes_tools::decompress_with_zlib(&pending_tx_lists.tx_list_bytes[0])?; //TODO: handle rest tx lists
         let preconf_message = PreconfirmationMessage::new(
             new_block_height,
             pending_tx_lists.tx_lists.clone(),
-            &pending_tx_lists.tx_list_rlp_bytes[0], //TODO: handle rest tx lists
+            &uncompressed_tx_list,
             proof.clone(),
         );
         self.send_preconfirmations_to_the_avs_p2p(preconf_message.clone())
@@ -461,14 +463,12 @@ impl Node {
             .advance_head_to_new_l2_block(pending_tx_lists.tx_lists)
             .await?;
 
-        let compressed_tx_list =
-            crate::utils::bytes_tools::compress(&pending_tx_lists.tx_list_rlp_bytes[0])?; //TODO: handle rest tx lists
         let tx = self
             .ethereum_l1
             .execution_layer
             .propose_new_block(
                 nonce,
-                compressed_tx_list,
+                pending_tx_lists.tx_list_bytes[0].clone(), //TODO: handle rest tx lists,
                 pending_tx_lists.parent_meta_hash,
                 lookahead_pointer,
                 lookahead_params,
