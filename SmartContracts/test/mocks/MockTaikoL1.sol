@@ -7,6 +7,7 @@ contract MockTaikoL1 is ITaikoL1 {
     bytes public params;
     bytes public txList;
     uint256 public blockId;
+    Block public blk;
 
     function proposeBlock(bytes calldata _params, bytes calldata _txList)
         external
@@ -24,10 +25,18 @@ contract MockTaikoL1 is ITaikoL1 {
         return (a, b);
     }
 
-    function getBlock(uint64 _blockId) external view returns (Block memory blk_) {}
+    function getBlock(uint64) external view returns (Block memory blk_) {
+        return blk;
+    }
 
     /// @dev Force set for testing
     function setBlockId(uint256 id) external {
         blockId = id;
+    }
+
+    /// @dev Force set for testing
+    function setBlock(bytes32 metahash, uint256 proposedAt) external {
+        blk.metaHash = metahash;
+        blk.proposedAt = uint64(proposedAt);
     }
 }
