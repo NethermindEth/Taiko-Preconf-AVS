@@ -7,13 +7,13 @@ pub struct Config {
     pub taiko_driver_url: String,
     pub avs_node_ecdsa_private_key: String,
     pub mev_boost_url: String,
+    pub l1_rpc_url: String,
     pub l1_beacon_url: String,
     pub l1_slot_duration_sec: u64,
     pub l1_slots_per_epoch: u64,
     pub l2_slot_duration_sec: u64,
     pub validator_bls_pubkey: String,
     pub validator_bls_privkey: String,
-    pub block_proposed_receiver_timeout_sec: u64,
     pub preconf_registry_expiry_sec: u64,
     pub contract_addresses: ContractAddresses,
     pub p2p_network_config: P2PNetworkConfig,
@@ -173,12 +173,6 @@ impl Config {
             "0x0".to_string()
         });
 
-        let block_proposed_receiver_timeout_sec =
-            std::env::var("BLOCK_PROPOSED_RECEIVER_TIMEOUT_SEC")
-                .unwrap_or("120".to_string())
-                .parse::<u64>()
-                .expect("BLOCK_PROPOSED_RECEIVER_TIMEOUT_SEC must be a number");
-
         let preconf_registry_expiry_sec = std::env::var("PRECONF_REGISTRY_EXPIRY_SEC")
             .unwrap_or("3600".to_string())
             .parse::<u64>()
@@ -186,12 +180,12 @@ impl Config {
 
         // Load P2P config from env
         // Load Ipv4 address from env
-        let address = std::env::var("ADDRESS").unwrap_or_else(|_| "0.0.0.0".to_string());
+        let address = std::env::var("P2P_ADDRESS").unwrap_or_else(|_| "0.0.0.0".to_string());
         let ipv4 = address.parse().unwrap();
 
         // Load boot node from env
         let boot_nodes: Option<Vec<String>> =
-            if let Ok(bootnode_enr) = std::env::var("BOOTNODE_ENR") {
+            if let Ok(bootnode_enr) = std::env::var("P2P_BOOTNODE_ENR") {
                 Some(vec![bootnode_enr])
             } else {
                 None
@@ -232,6 +226,7 @@ impl Config {
             avs_node_ecdsa_private_key,
             mev_boost_url: std::env::var("MEV_BOOST_URL")
                 .unwrap_or("http://127.0.0.1:8080".to_string()),
+            l1_rpc_url: std::env::var("L1_RPC_URL").unwrap_or("http://127.0.0.1:8545".to_string()),
             l1_beacon_url: std::env::var("L1_BEACON_URL")
                 .unwrap_or("http://127.0.0.1:4000".to_string()),
             l1_slot_duration_sec,
@@ -239,7 +234,6 @@ impl Config {
             l2_slot_duration_sec,
             validator_bls_pubkey: validator_pubkey,
             validator_bls_privkey,
-            block_proposed_receiver_timeout_sec,
             preconf_registry_expiry_sec,
             contract_addresses,
             p2p_network_config,
@@ -253,28 +247,32 @@ Configuration:
 Taiko proposer URL: {},
 Taiko driver URL: {},
 MEV Boost URL: {},
+L1 RPC URL: {},
 Consensus layer URL: {}
 L1 slot duration: {}
 L1 slots per epoch: {}
 L2 slot duration: {}
 Validator pubkey: {}
-Block proposed receiver timeout: {}
 Preconf registry expiry seconds: {}
 Contract addresses: {:#?}
 p2p_network_config: {}
+taiko chain id: {}
+validator index: {}
 "#,
             config.taiko_proposer_url,
             config.taiko_driver_url,
             config.mev_boost_url,
+            config.l1_rpc_url,
             config.l1_beacon_url,
             config.l1_slot_duration_sec,
             config.l1_slots_per_epoch,
             config.l2_slot_duration_sec,
             config.validator_bls_pubkey,
-            config.block_proposed_receiver_timeout_sec,
             config.preconf_registry_expiry_sec,
             config.contract_addresses,
             config.p2p_network_config,
+            config.taiko_chain_id,
+            config.validator_index,
         );
 
         config

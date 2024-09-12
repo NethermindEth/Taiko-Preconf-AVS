@@ -29,3 +29,6 @@ jobs:
     - name: Run tests
       working-directory: ./Node
       run: cargo test --verbose
+    - name: Run tests with use_mock feature
+      working-directory: ./Node
+      run: cargo test --features use_mock --verbose

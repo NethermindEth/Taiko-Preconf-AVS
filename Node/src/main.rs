@@ -35,7 +35,7 @@ async fn main() -> Result<(), Error> {
     let bls_service = Arc::new(bls::BLSService::new(&config.validator_bls_privkey));
 
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
-        &config.mev_boost_url,
+        &config.l1_rpc_url,
         &config.avs_node_ecdsa_private_key,
         &config.contract_addresses,
         &config.l1_beacon_url,
@@ -66,7 +66,6 @@ async fn main() -> Result<(), Error> {
     let taiko = Arc::new(taiko::Taiko::new(
         &config.taiko_proposer_url,
         &config.taiko_driver_url,
-        config.block_proposed_receiver_timeout_sec,
         config.taiko_chain_id,
     ));
 
@@ -86,7 +85,8 @@ async fn main() -> Result<(), Error> {
     .await?;
     node.entrypoint().await?;
 
-    let block_proposed_event_checker = BlockProposedEventReceiver::new(taiko, block_proposed_tx);
+    let block_proposed_event_checker =
+        BlockProposedEventReceiver::new(ethereum_l1.clone(), block_proposed_tx);
     BlockProposedEventReceiver::start(block_proposed_event_checker);
 
     let lookahead_updated_event_checker = LookaheadUpdatedEventReceiver::new(ethereum_l1.clone());

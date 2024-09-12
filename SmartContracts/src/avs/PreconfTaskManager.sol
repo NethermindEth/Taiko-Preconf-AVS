@@ -2,7 +2,6 @@
 pragma solidity 0.8.25;
 
 import {ITaikoL1} from "../interfaces/taiko/ITaikoL1.sol";
-import {MerkleUtils} from "../libraries/MerkleUtils.sol";
 import {EIP4788} from "../libraries/EIP4788.sol";
 import {PreconfConstants} from "./PreconfConstants.sol";
 import {IPreconfTaskManager} from "../interfaces/IPreconfTaskManager.sol";
@@ -530,5 +529,9 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
 
     function getLookaheadPoster(uint256 epochTimestamp) external view returns (address) {
         return lookaheadPosters[epochTimestamp];
+    }
+
+    function getBlockProposer(uint256 blockId) external view returns (address) {
+        return blockIdToProposer[blockId];
     }
 }
