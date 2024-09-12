@@ -37,10 +37,7 @@ impl Registration {
             .subscribe_to_validator_added_event()
             .await?;
 
-        self.ethereum_l1
-            .execution_layer
-            .add_validator()
-            .await?;
+        self.ethereum_l1.execution_layer.add_validator().await?;
 
         self.ethereum_l1
             .execution_layer

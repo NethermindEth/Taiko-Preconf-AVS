@@ -1,4 +1,5 @@
-use crate::utils::preconfirmation_proof::PreconfirmationProof;
+use super::preconfirmation_proof::PreconfirmationProof;
+use crate::utils::{bytes_tools::hash_bytes_with_keccak, types::*};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -6,9 +7,24 @@ use serde_json::Value;
 pub struct PreconfirmationMessage {
     pub block_height: u64,
     pub tx_lists: Value,
-    pub tx_list_bytes: Vec<u8>,
-    pub gas_used: u64,
+    pub tx_list_hash: L2TxListHash,
     pub proof: PreconfirmationProof,
+}
+
+impl PreconfirmationMessage {
+    pub fn new(
+        block_height: u64,
+        tx_lists: Value,
+        tx_list_rlp_bytes: &Vec<u8>,
+        proof: PreconfirmationProof,
+    ) -> Self {
+        PreconfirmationMessage {
+            block_height,
+            tx_lists,
+            tx_list_hash: hash_bytes_with_keccak(tx_list_rlp_bytes.as_slice()),
+            proof,
+        }
+    }
 }
 
 impl From<PreconfirmationMessage> for Vec<u8> {
