@@ -9,10 +9,6 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
-defaults:
-  run:
-    working-directory: Node
-
 jobs:
   build:
 
@@ -20,11 +16,19 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
     - name: Update dependencies
+      working-directory: ./Node
       run: cargo update
     - name: Build
+      working-directory: ./Node
       run: cargo build --verbose
     - name: Run tests
+      working-directory: ./Node
       run: cargo test --verbose
+    - name: Run tests with use_mock feature
+      working-directory: ./Node
+      run: cargo test --features=use_mock --verbose

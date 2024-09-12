@@ -14,7 +14,7 @@ contract PreconfServiceManager is IPreconfServiceManager {
     mapping(address operator => uint256 timestamp) public stakeLockedUntil;
 
     constructor(address _preconfRegistry, address _preconfTaskManager, IAVSDirectory _avsDirectory, ISlasher _slasher) {
-        _preconfRegistry;
+        preconfRegistry = _preconfRegistry;
         preconfTaskManager = _preconfTaskManager;
         avsDirectory = _avsDirectory;
         slasher = _slasher;

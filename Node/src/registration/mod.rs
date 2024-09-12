@@ -1,6 +1,7 @@
 use crate::ethereum_l1::EthereumL1;
 use anyhow::Error;
 
+mod tests;
 pub struct Registration {
     ethereum_l1: EthereumL1,
 }
