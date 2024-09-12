@@ -120,4 +120,7 @@ interface IPreconfTaskManager {
 
     /// @dev Returns the lookahead poster for an epoch
     function getLookaheadPoster(uint256 epochTimestamp) external view returns (address);
+
+    /// @dev Returns the block proposer for a block
+    function getBlockProposer(uint256 blockId) external view returns (address);
 }
