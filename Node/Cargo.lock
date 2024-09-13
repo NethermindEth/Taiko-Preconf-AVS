@@ -7226,6 +7226,7 @@ dependencies = [
  "mockall",
  "mockall_double",
  "mockito",
+ "num-bigint",
  "p2p-network",
  "rand 0.8.5",
  "rand_core 0.6.4",
