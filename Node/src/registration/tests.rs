@@ -49,7 +49,7 @@ mod tests {
 
     #[tokio::test]
     async fn test() {
-        // TODO check forge
+        // Check forge
         if !check_foundry_installed() {
             println!("Error: Foundry not installed!");
             return;
@@ -150,11 +150,7 @@ mod tests {
         let preconf_service_manager = get_contract_address(&output, "Preconf Service Manager");
         let preconf_task_manager = get_contract_address(&output, "Preconf Task Manager");
 
-        // Create a new BLSService with private key from Docker container
-        //let bls_service = Arc::new(BLSService::new(
-        //    "0x14d50ac943d01069c206543a0bed3836f6062b35270607ebf1d1f238ceda26f1",
-        //));
-        // Create a new BLSService with random private key
+        // Create a new BLSService with a random private key
         let bls_service = Arc::new(BLSService::generate_key());
 
         // Create AVS contract addresses
