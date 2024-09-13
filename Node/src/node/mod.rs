@@ -447,12 +447,10 @@ impl Node {
             commit_hash,
             signature,
         };
-        let uncompressed_tx_list =
-            crate::utils::bytes_tools::decompress_with_zlib(&pending_tx_lists.tx_list_bytes[0])?; //TODO: handle rest tx lists
         let preconf_message = PreconfirmationMessage::new(
             new_block_height,
             pending_tx_lists.tx_lists.clone(),
-            &uncompressed_tx_list,
+            &pending_tx_lists.tx_list_bytes[0], //TODO: handle rest tx lists
             proof.clone(),
         );
         self.send_preconfirmations_to_the_avs_p2p(preconf_message.clone())
