@@ -33,16 +33,12 @@ mod tests {
             .to_string()
     }
 
+    fn check_foundry_installed() -> bool {
+        // Run `forge --version` to check if Foundry is installed
+        let output = Command::new("forge").arg("--version").output().unwrap();
 
-fn check_foundry_installed() -> bool {
-    // Run `forge --version` to check if Foundry is installed
-    let output = Command::new("forge")
-        .arg("--version")
-        .output()
-        .unwrap();
-
-    return output.status.success()
-}
+        return output.status.success();
+    }
 
     #[tokio::test]
     async fn test() {
