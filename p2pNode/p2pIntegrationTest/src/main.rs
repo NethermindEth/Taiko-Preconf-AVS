@@ -7,7 +7,7 @@ use std::path::Path;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task;
-use tracing::info;
+use tracing::{info, warn};
 
 const BOOT_NODE_PATH: &str = "/shared/enr.txt";
 
@@ -19,7 +19,7 @@ fn read_boot_node() -> Result<String, io::Error> {
     info!("Boot node: {}", contents);
     Ok(contents)
 }
-
+ 
 fn write_boot_node(enr: &str) -> Result<(), io::Error> {
     info!("Writing boot node to {} end {}", BOOT_NODE_PATH, enr);
     let mut file = File::create(BOOT_NODE_PATH)?;
@@ -64,6 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Save boot node if it is not specified in shared directory
     if config.boot_nodes.is_none() {
+        warn!("Boot node not specified yet. Saving to {}", BOOT_NODE_PATH);
         write_boot_node(&p2p.get_local_enr()).unwrap();
     }
 

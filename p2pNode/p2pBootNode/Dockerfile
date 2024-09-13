@@ -1,7 +1,7 @@
-FROM rust:1.77 as builder
+FROM rust:1.80 as builder
 
 # Set the working directory inside the container
-WORKDIR /usr/src/p2p-node
+WORKDIR /usr/src/p2p-boot-node
 
 # Copy the entire project into the container
 COPY . .
@@ -13,10 +13,11 @@ RUN cargo build --release
 FROM ubuntu:latest
 
 # Copy the build artifact from the builder stage
-COPY --from=builder /usr/src/p2p-node/target/release/p2p-node /usr/local/bin/p2p-node
+COPY --from=builder /usr/src/p2p-boot-node/target/release/p2p-boot-node /usr/local/bin/p2p-boot-node
 
 # Expose the port that the server will run on
 EXPOSE 9000
 
 # Run the binary
-CMD ["p2p-node"]
+# CMD in docker-compose
+# CMD ["p2p-boot-node"]
