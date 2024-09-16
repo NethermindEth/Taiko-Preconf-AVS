@@ -1,8 +1,8 @@
 use discv5::{enr, enr::CombinedKey, ConfigBuilder, Discv5, Event, ListenConfig};
-use std::net::Ipv4Addr;
-use tracing::{info, error};
 use std::fs::File;
 use std::io::{self, Write};
+use std::net::Ipv4Addr;
+use tracing::{error, info};
 
 const BOOT_NODE_PATH: &str = "/shared/enr.txt";
 
@@ -12,7 +12,6 @@ fn write_boot_node(enr: &str) -> Result<(), io::Error> {
     file.write_all(enr.as_bytes())?;
     Ok(())
 }
-
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

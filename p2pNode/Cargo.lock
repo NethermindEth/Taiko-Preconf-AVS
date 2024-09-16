@@ -3123,6 +3123,7 @@ name = "p2p-node"
 version = "0.0.1"
 dependencies = [
  "p2p-network",
+ "rand 0.8.5",
  "tokio",
  "tracing",
  "tracing-subscriber",

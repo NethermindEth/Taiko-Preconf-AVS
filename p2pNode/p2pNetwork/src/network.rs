@@ -149,7 +149,7 @@ impl P2PNetwork {
         loop {
             tokio::select! {
                 Some(message) = self.node_to_p2p_rx.recv() => {
-                    debug!("AVS p2p sent block to p2p: {:?}", message);
+                    debug!("Sent message to p2p with size: {}", message.len());
                     let topic = gossipsub::IdentTopic::new(self.topic_name.clone());
                     //encode message
                     if let Err(e) = self.swarm

@@ -1,5 +1,6 @@
 use p2p_network::generate_secp256k1;
 use p2p_network::network::{P2PNetwork, P2PNetworkConfig};
+use rand::Rng;
 use std::fs::File;
 use std::io::Write;
 use std::io::{self, Read};
@@ -8,6 +9,14 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task;
 use tracing::{info, warn};
+
+fn generate_1mb_vec(count: u32) -> Vec<u8> {
+    let count: u8 = if count > 255 { 0u8 } else { count as u8 };
+    let mut vec = vec![0u8; 1_048_576]; // 1 MB of zeros initially
+    vec[0] = count;
+    rand::thread_rng().fill(&mut vec[1..]); // Fill with random data
+    vec
+}
 
 const BOOT_NODE_PATH: &str = "/shared/enr.txt";
 
@@ -19,7 +28,7 @@ fn read_boot_node() -> Result<String, io::Error> {
     info!("Boot node: {}", contents);
     Ok(contents)
 }
- 
+
 fn write_boot_node(enr: &str) -> Result<(), io::Error> {
     info!("Writing boot node to {} end {}", BOOT_NODE_PATH, enr);
     let mut file = File::create(BOOT_NODE_PATH)?;
@@ -76,23 +85,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let send_prefix = std::env::var("SEND_PREFIX").unwrap();
     info!("SEND PREFIX: {send_prefix}");
     let mut send_count = 1;
-    let mut send_interval = tokio::time::interval(Duration::from_secs(20));
+    let mut send_interval = tokio::time::interval(Duration::from_secs(40));
     // Run
     loop {
         tokio::select! {
             _ = send_interval.tick() => {
                 send_count += 1;
-                let data = format!("{send_prefix}-{send_count}");
-                info!("SEND Message: {:#?}", &data);
+                let data = generate_1mb_vec(send_count);
+                info!("SEND Message: {}", send_count);
 
                 node_to_p2p_tx
-                    .send(data.as_bytes().to_vec())
+                    .send(data)
                     .await
                     .unwrap();
             }
             Some(message) = node_rx.recv() => {
-                let string = String::from_utf8(message).expect("Invalid UTF-8");
-                info!("Node received message: {}", string);
+                info!("Node received message: {} size {}", message[0], message.len());
             }
         }
     }
