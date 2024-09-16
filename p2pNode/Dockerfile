@@ -7,7 +7,7 @@ WORKDIR /usr/src/p2p-node
 COPY . .
 
 # Build the project in release mode
-RUN cargo build --release
+RUN cargo build -p p2p-node --release
 
 # Use ubuntu as the base image
 FROM ubuntu:latest
