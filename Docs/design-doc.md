@@ -65,14 +65,14 @@ end
     - Provide the latest preconfed state to users.
 - (3)~(5) is repeated 4 times until the end of the slot.
 - (6) L1 proposer submits the preconfirmed L2 blocks to the L1 Taiko inbox contract.
-    - Since proposers do not build blocks in the current PBS pipeline, they will use inclusion lists to force the builder to include the L2 blocks in the L1 block. More on this is in [Appendix: MEV-Boost Modification for Forced Inclusion List](https://www.notion.so/Appendix-MEV-Boost-Modification-for-Forced-Inclusion-List-685e9b4e89eb43b48c5b172c220be7a7?pvs=21) .
+    - Since proposers do not build blocks in the current PBS pipeline, they will use inclusion lists to force the builder to include the L2 blocks in the L1 block. More on this is in [Appendix: MEV-Boost Modification for Forced Inclusion List](#Appendix-MEV-Boost-Modification-for-Forced-Inclusion-List) .
 - (7) A disputer, who can be anyone, submits fraud proofs if the preconfed block published in (4) contradicts the L2 blocks submitted in (6).
 
 # Components
 
 The PoC will be implemented as an [EigenLayer AVS](https://www.eigenlayer.xyz/ecosystem?category=Rollup%2CAVS%2COperator). Two main components are involved: the *AVS smart contracts* and the *AVS operator node*.
 
-In this section, we will explore what each of these components does at a high level. Further details on how these components interact will be covered in the following [Implementation](https://www.notion.so/Implementation-1debf554210242cd9880d7c7e5e16282?pvs=21) section.
+In this section, we will explore what each of these components does at a high level. Further details on how these components interact will be covered in the following [Implementation](#Implementation) section.
 
 ### **AVS smart contracts**
 
@@ -99,7 +99,7 @@ They will be responsible for:
 
 # Implementation
 
-In this section, we will outline how the PoC will implement each step in the [The Seven Steps for Preconfirmations](https://www.notion.so/The-Seven-Steps-for-Preconfirmations-fb88cdf993c24e60b931f20568f9cde5?pvs=21).
+In this section, we will outline how the PoC will implement each step in the [The Seven Steps for Preconfirmations](#The-Seven-Steps-for-Preconfirmations).
 
 ## Step 1: Registration
 
@@ -170,7 +170,7 @@ p(p): Preconfer
 p(n): Non-preconfer
 ```
 
-The preconfer that submitted the lookahead is slashed if the lookahead is wrong, which can be proven after the invalid preconfer’s slot passes. Details on the slashing conditions are explained in the [Step 7: Slashing](https://www.notion.so/Step-7-Slashing-bb151c894bb54c47b8d220f3f7055720?pvs=21) section.
+The preconfer that submitted the lookahead is slashed if the lookahead is wrong, which can be proven after the invalid preconfer’s slot passes. Details on the slashing conditions are explained in the [Step 7: Slashing](#Step-7-Slashing) section.
 
 ### **Empty Lookahead**
 
@@ -282,7 +282,7 @@ Note that, as illustrated above, the AVS operator node will discard the preconfi
 The preconfers will need to eventually include their preconfed L2 transactions to the L1 to avoid being slashed. There are two scenarios to consider depending on when this inclusion happens:
 
 - **The preconfer is the proposer of the current slot**:
-    - In this case, the preconfirmer will submit the list of preconfirmed transactions to the L1 builders via forced inclusion lists in MEV-Boost. Since the current version of MEV-Boost does not support forced inclusion lists, we will implement our own fork of MEV-Boost to add this functionality. More details on this fork can be found in [Appendix: MEV-Boost Modification for Forced Inclusion List](https://www.notion.so/Appendix-MEV-Boost-Modification-for-Forced-Inclusion-List-685e9b4e89eb43b48c5b172c220be7a7?pvs=21)
+    - In this case, the preconfirmer will submit the list of preconfirmed transactions to the L1 builders via forced inclusion lists in MEV-Boost. Since the current version of MEV-Boost does not support forced inclusion lists, we will implement our own fork of MEV-Boost to add this functionality. More details on this fork can be found in [Appendix: MEV-Boost Modification for Forced Inclusion List](#Appendix-MEV-Boost-Modification-for-Forced-Inclusion-List)
 - **The preconfer is not the proposer of the current slot**:
     - In this case, the preconfer will submit the list of preconfirmed transactions via the L1 mempool.
 
@@ -331,7 +331,7 @@ end
 - (4) If the sender is the first preconfer of the epoch, verify the `lookahead` (e.g. it is not empty) and update the contract’s view of the lookahead.
 - (5) Process the block and submit the L2 txs to the [TaikoL1 contract](https://github.com/taikoxyz/taiko-mono/blob/ef3d7d5c32e0687e273d149bc7ba1da5642fb9ba/packages/protocol/contracts/L1/TaikoL1.sol#L74).
 - (6) TaikoL1 contract checks if the sender is `PreconfTaskManager`, and aborts if not.
-- (7) If the L2 block is accepted by the TaikoL1 contract, store the `(blockId => proposer, txListHash)` mapping within the `PreconfTaskManager` contract. This mapping will be used in the  [Incorrect Preconfirmation Slashing](https://www.notion.so/Incorrect-Preconfirmation-Slashing-5fe36e637eb54ced88d7a43b8b6c83c4?pvs=21) below.
+- (7) If the L2 block is accepted by the TaikoL1 contract, store the `(blockId => proposer, txListHash)` mapping within the `PreconfTaskManager` contract. This mapping will be used in the  [Incorrect Preconfirmation Slashing](#Incorrect-Preconfirmation-Slashing) below.
 
 ## Step 7: Slashing
 
@@ -339,7 +339,7 @@ The preconfer will be slashed if they equivocate during their preconfirmation du
 
 - **Incorrect Preconfirmation Slashing**: Slashes when the preconfirmed L2 block was not submitted to L1 as promised.
     - Implemented as `proveIncorrectPreconfirmation(..)` function in the `PreconfTaskManager`.
-- **Incorrect Lookahead Slashing:** Slashes when the preconfer [submitted](https://www.notion.so/EXT-Design-Doc-Taiko-Preconfirmation-PoC-74db78ff89df4aa8983ed1e640a05359?pvs=21) an incorrect lookahead.
+- **Incorrect Lookahead Slashing:** Slashes when the preconfer submitted an incorrect lookahead.
     - Implemented as `proveIncorrectLookahead(..)` function in the `PreconfTaskManager`.
 
 For both `proveIncorrectPreconfirmation` and `proveIncorrectLookahead`, the slashing will be conducted by invoicing the `Slasher` contract of EigenLayer core via the `PreconfServiceManager` as the following:
@@ -376,8 +376,8 @@ Next, we will dive deep into how these slashing conditions can be implemented wi
 
 This slashing should happen when the preconfirmed L2 block contradicts with the L2 block submitted to the L1. More concretely, slashing would happen the following two contradict each other:
 
-- The `Preconfirmation` object published by the preconfer at [Step 4: Preconfirmation Publication](https://www.notion.so/Step-4-Preconfirmation-Publication-d6620e19f3334226a96311ed315c92d0?pvs=21)
-- The `(blockId => proposer, txListHash)` mapping which is [recorded](https://www.notion.so/EXT-Design-Doc-Taiko-Preconfirmation-PoC-74db78ff89df4aa8983ed1e640a05359?pvs=21) when the L2 block is submitted to L1.
+- The `Preconfirmation` object published by the preconfer at [Step 4: Preconfirmation Publication](#Step-4-Preconfirmation-Publication)
+- The `(blockId => proposer, txListHash)` mapping which is [recorded](#Updated-Design-Doc-Taiko-Preconfirmation-PoC) when the L2 block is submitted to L1.
 
 Below is a pseudo-code for this slashing condition:
 
@@ -423,7 +423,7 @@ The preconfer that submitted the lookahead is slashed if the lookahead is wrong,
 - (B) Proof that the proposer change was not due to `p8'` being slashed:
     - This can be done via Merkle proof of beacon head of the previous slot, proving that `slashed:false` for `p8'` ([example code](https://github.com/nerolation/slashing-proofoor/tree/main)).
 
-Note that this setup only detects and slashes the incorrect lookahead after the fact, providing a time window during which L2 blocks from an incorrect proposer can be accepted by the Taiko inbox contract. We plan to address this issue by introducing a more robust election mechanism in a future extension ([**Better election mechanism**](https://www.notion.so/Better-election-mechanism-36472dd4639945acb6ef7dce4f20cb5e?pvs=21)).
+Note that this setup only detects and slashes the incorrect lookahead after the fact, providing a time window during which L2 blocks from an incorrect proposer can be accepted by the Taiko inbox contract. We plan to address this issue by introducing a more robust election mechanism in a future extension ([**Better election mechanism**](#Future-Extensions)).
 
 # Future Extensions
 
