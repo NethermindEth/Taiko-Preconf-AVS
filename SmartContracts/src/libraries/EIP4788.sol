@@ -62,12 +62,9 @@ library EIP4788 {
             revert ValidatorProofFailed();
         }
 
-        // Validator list is verified against the beacon state
-        bytes32 stateValidatorsHashTreeRoot =
-            MerkleUtils.mixInLength(inclusionProof.validatorsRoot, inclusionProof.nr_validators);
         if (
             MerkleUtils.verifyProof(
-                inclusionProof.beaconStateProof, inclusionProof.beaconStateRoot, stateValidatorsHashTreeRoot, 11
+                inclusionProof.beaconStateProof, inclusionProof.beaconStateRoot, inclusionProof.validatorsRoot, 11
             )
         ) {
             // Revert if the proof that the validator list is a part of the beacon state fails

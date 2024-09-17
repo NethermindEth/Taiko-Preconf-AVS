@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.25;
 
+import {console2} from "forge-std/Test.sol";
+
 library MerkleUtils {
     uint256 internal constant CHUNKS_LENGTH = 8;
     uint256 internal constant TMP_LENGTH = 4;
@@ -68,10 +70,5 @@ library MerkleUtils {
             | ((v & 0x0000000000000000FFFFFFFFFFFFFFFF0000000000000000FFFFFFFFFFFFFFFF) << 64);
         v = (v >> 128) | (v << 128);
         return bytes32(v);
-    }
-
-    function mixInLength(bytes32 root, uint256 length) internal pure returns (bytes32) {
-        bytes32 littleEndianLength = toLittleEndian(length);
-        return sha256(abi.encodePacked(root, littleEndianLength));
     }
 }
