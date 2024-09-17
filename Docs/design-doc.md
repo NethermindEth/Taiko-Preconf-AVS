@@ -139,6 +139,8 @@ end
     - Note: Since the slasher contract has [not yet been implemented](https://github.com/Layr-Labs/eigenlayer-contracts/blob/a888a1cd1479438dda4b138245a69177b125a973/src/contracts/core/Slasher.sol#L14) in EigenLayer, we will implement our own mock contract for the PoC.
 - (4) The operator registers as a preconfer operator by calling [Registry Coordinator](https://github.com/Layr-Labs/eigenlayer-middleware/blob/mainnet/docs/RegistryCoordinator.md) Eigenlayer middleware.
 
+More detailed design considerations around the registry can be found in [Appendix: Registry Design](#Appendix-Registry-Design). 
+
 ## Step 2: Election
 
 The AVS contract (`PreconfTaskManager`) elects a single preconfer from the set of registered validators for a given slot. There are two cases to consider:
@@ -458,6 +460,44 @@ Bolt currently only supports L1 inclusion preconfirmations and not execution pre
 Another difference is the granularity of preconfs: For the devnet design, they preconf individual txs continuously (like Arbitrum), while our PoC design preconf L2 blocks (like post-Bedrock Optimism). This is because we believe that batching mitigates many of the negative externalities of based preconfirmations mentioned in our recent post ([https://ethresear.ch/t/strawmanning-based-preconfirmations/19695](https://ethresear.ch/t/strawmanning-based-preconfirmations/19695)). Batching also opens doors to effective auctions within the batch (e.g., Flashbots auctions). Such an auction can be run on top of the existing L1 MEV-Boost auction pipeline, enabling us to inherit censorship resistance and liveness of the existing L1 block-building pipeline. In other designs, users must trust an external “gateway” for all the censorship resistance and liveness of the preconfirmations.
 
 We plan to publish more research on these points in the future.
+
+# Appendix: Registry Design
+
+In this section, we delve deeper into the registry design. 
+
+## The Key Question
+
+In Ethereum, there are two types of cryptographic keys:
+
+- **BLS Keys**: Used by validators to sign consensus operations like attestations and block proposals and to identify them in the proposer lookahead.
+- **ECDSA Keys**: These are used to hold ETH and sign transactions on the network.
+
+On the other hand, preconfer signatures are required in preconfirmation publication (step 4) and L1 inclusion (step 6). The question is, what key should the preconfer use to sign the signature in these steps? There are broadly two approaches.
+
+- **Approach 1: Use BLS keys**
+    - Pros:
+        - Validators are already identified using the BLS key, so there is no need to store any additional key mapping in the preconf registry.
+        - Validators can leverage existing BLS key management systems within node operator infrastructures. These systems provide an additional layer of security by allowing validators to **split their BLS keys, distribute them among multiple parties, and require an n-of-m threshold for signing.**
+    - Cons:
+        - When including the preconfed transactions on L1, the transaction batch must be signed with the BLS key in addition to the ECDSA key of the overarching transaction. This is problematic in terms of cost because BLS key verification will require 220K gas in the BLS precompile in an upcoming hard fork based on internal experiments. Given that current Taiko block proposals cost around [110K gas](https://dune.com/queries/3837305/6453697), **this would more than triple the block proposal cost for Taiko blocks.**
+- **Approach 2: Use ECDSA keys**
+    - Pros:
+        - When including the preconfed transactions on L1, **no additional signature is required other than the ECDSA signature of the overarching tx**.
+    - Cons:
+        - Requires managing the BLS key to ECDSA key mapping in the registration contract.
+        - Node operators cannot utilize their existing BLS key management systems and must set up new infrastructure for ECDSA management. Furthermore, since **ECDSA keys cannot be split like BLS keys, they cannot set up an n-of-m threshold for signing as they can for BLS**.
+
+## Our Solution
+
+We believe that the additional gas cost associated with BLS signatures makes Approach 1 impractical. Therefore, we have adopted Approach 2. Our registry design works as following:
+
+- The preoconf registry internally holds a BLS key to ECDSA key mapping.
+- The registration endpoint takes the validator BLS key and signature, then stores the BLS key to ECDSA (= the `msg.sender` of the registration) mapping.
+- The preconfer actions (e.g., proposing L2 blocks to the inbox contract) are signed and verified using the mapped ECDSA key of the validator.
+
+Based on hearings from node operators, this approach's biggest downside is the lack of distributed key management of ECDSA. One potential mitigation would be to allow BLS to ECDSA multi-sig mapping so node operators can operate distributed key management of the individual ECDSA keys of the multi-sig. Since the gas cost of `ECRECOVER` is [3000 gas](https://www.evm.codes/precompiled), on-chain verification of the multi-sig will be significantly lower than BLS signature checks.
+
+You can find our registry implementation here: https://github.com/NethermindEth/Taiko-Preconf-AVS/blob/5bdb53b7e7ab4aa2284dbb4e069eac5e051f2e93/SmartContracts/src/avs/PreconfRegistry.sol
 
 # Appendix: MEV-Boost Modification for Forced Inclusion List
 
