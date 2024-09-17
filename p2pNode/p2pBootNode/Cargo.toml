@@ -1,0 +1,13 @@
+[package]
+name = "p2p-boot-node"
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { version = "1.23.0", features = ["full"] }
+discv5 = { version = "0.6.0", features = ["libp2p"] }
+tracing = { version = "0.1", features = ["log"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
