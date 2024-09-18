@@ -241,18 +241,22 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         if (block.timestamp < epochEndTimestamp) {
             uint256 _lookaheadTail = lookaheadTail;
 
-            // Get to the entry in the next epoch that connects to a slot in the current epoch
-            while (lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].prevTimestamp >= epochEndTimestamp) {
+            uint256 lastSlotTimestamp = epochEndTimestamp - PreconfConstants.SECONDS_IN_SLOT;
+
+            // If the lookahead for next epoch is available
+            if (lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].timestamp >= epochEndTimestamp) {
+                // Get to the entry in the next epoch that connects to a slot in the current epoch
+                while (lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].prevTimestamp >= epochEndTimestamp) {
+                    _lookaheadTail -= 1;
+                }
+
+                // Switch the connection to the last slot of the current epoch
+                lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].prevTimestamp = uint40(lastSlotTimestamp);
+
+                // Head to the last entry in current epoch
                 _lookaheadTail -= 1;
             }
 
-            uint256 lastSlotTimestamp = epochEndTimestamp - PreconfConstants.SECONDS_IN_SLOT;
-
-            // Switch the connection to the last slot of the current epoch
-            lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE].prevTimestamp = uint40(lastSlotTimestamp);
-
-            // Add the fallback preconfer to the last slot of the current epoch
-            _lookaheadTail -= 1;
             lookahead[_lookaheadTail % LOOKAHEAD_BUFFER_SIZE] = LookaheadBufferEntry({
                 isFallback: true,
                 timestamp: uint40(lastSlotTimestamp),
