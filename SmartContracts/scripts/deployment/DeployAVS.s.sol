@@ -9,7 +9,6 @@ import {PreconfServiceManager} from "src/avs/PreconfServiceManager.sol";
 import {PreconfTaskManager} from "src/avs/PreconfTaskManager.sol";
 import {IPreconfRegistry} from "src/interfaces/IPreconfRegistry.sol";
 import {IPreconfServiceManager} from "src/interfaces/IPreconfServiceManager.sol";
-import {IPreconfTaskManager} from "src/interfaces/IPreconfTaskManager.sol";
 import {IAVSDirectory} from "src/interfaces/eigenlayer-mvp/IAVSDirectory.sol";
 import {ISlasher} from "src/interfaces/eigenlayer-mvp/ISlasher.sol";
 import {ITaikoL1} from "src/interfaces/taiko/ITaikoL1.sol";

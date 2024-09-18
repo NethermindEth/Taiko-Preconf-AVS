@@ -7,8 +7,6 @@ import {LookaheadFixtures} from "../fixtures/LookaheadFixtures.sol";
 import {PreconfConstants} from "src/avs/PreconfConstants.sol";
 import {IPreconfTaskManager} from "src/interfaces/IPreconfTaskManager.sol";
 
-import {console2} from "forge-std/Test.sol";
-
 /// @dev The beacon chain data used here is from slot 9000000 on Ethereum mainnet.
 contract IncorrectLookahead is LookaheadFixtures {
     // Most tests in this file use a lookahead that has a preconfer (addr_1) set at slot 16 in epoch 2.
