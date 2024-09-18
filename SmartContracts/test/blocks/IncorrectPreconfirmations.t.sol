@@ -7,8 +7,6 @@ import {PreconfConstants} from "src/avs/PreconfConstants.sol";
 import {IPreconfTaskManager} from "src/interfaces/IPreconfTaskManager.sol";
 import {ITaikoL1} from "src/interfaces/taiko/ITaikoL1.sol";
 
-import {console2} from "forge-std/Test.sol";
-
 contract IncorrectPreconfirmations is BlocksFixtures {
     function setUp() public override {
         super.setUp();
