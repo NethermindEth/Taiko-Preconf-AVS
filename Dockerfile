@@ -1,10 +1,12 @@
-FROM docker.io/library/rust:1.80 as builder
+FROM docker.io/library/rust:1.80 AS builder
 
 # Set the working directory inside the container
 WORKDIR /usr/src/taiko_preconf_avs_node
 
 # Copy the project files
-COPY ../Node /usr/src/taiko_preconf_avs_node/
+COPY ../Node/src /usr/src/taiko_preconf_avs_node/src
+COPY ../Node/Cargo.toml /usr/src/taiko_preconf_avs_node/Cargo.toml
+COPY ../Node/Cargo.lock /usr/src/taiko_preconf_avs_node/Cargo.lock
 
 # Copy the dependency directory
 COPY ../p2pNode/p2pNetwork /usr/src/p2pNode/p2pNetwork
