@@ -22,4 +22,4 @@ COPY --from=builder /usr/src/taiko_preconf_avs_node/target/release/taiko_preconf
 # EXPOSE 9000
 
 # Run the binary
-CMD ["taiko_preconf_avs_node"]
+ENTRYPOINT ["taiko_preconf_avs_node"]
