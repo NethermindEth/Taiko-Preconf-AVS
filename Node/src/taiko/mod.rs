@@ -70,8 +70,6 @@ mod test {
 
     #[tokio::test]
     async fn test_get_pending_l2_tx_lists() {
-        tracing_subscriber::fmt::init();
-
         let (mut rpc_server, taiko) = setup_rpc_server_and_taiko(3030).await;
         let json = taiko.get_pending_l2_tx_lists().await.unwrap().tx_lists;
 
