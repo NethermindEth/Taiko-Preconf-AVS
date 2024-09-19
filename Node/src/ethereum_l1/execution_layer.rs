@@ -139,7 +139,6 @@ pub struct EventPollerLookaheadUpdated(
 impl ExecutionLayer {
     pub async fn new(
         ws_rpc_url: &str,
-        rpc_url: &str,
         avs_node_ecdsa_private_key: &str,
         contract_addresses: &config::ContractAddresses,
         slot_clock: Arc<SlotClock>,
@@ -147,7 +146,7 @@ impl ExecutionLayer {
         bls_service: Arc<BLSService>,
         l1_chain_id: u64,
     ) -> Result<Self, Error> {
-        tracing::debug!("Creating ExecutionLayer with RPC URL: {}", rpc_url);
+        tracing::debug!("Creating ExecutionLayer with WS URL: {}", ws_rpc_url);
 
         let signer = PrivateKeySigner::from_str(avs_node_ecdsa_private_key)?;
         let preconfer_address: Address = signer.address();
@@ -160,12 +159,12 @@ impl ExecutionLayer {
 
         let ws = WsConnect::new(ws_rpc_url.to_string());
 
-        let provider_ws: WsProvider =  ProviderBuilder::new()
-        .with_recommended_fillers()
-        .wallet(wallet.clone())
-        .on_ws(ws.clone())
-        .await
-        .unwrap();
+        let provider_ws: WsProvider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(wallet.clone())
+            .on_ws(ws.clone())
+            .await
+            .unwrap();
 
         Ok(Self {
             provider_ws,
@@ -217,8 +216,10 @@ impl ExecutionLayer {
         lookahead_set_params: Vec<PreconfTaskManager::LookaheadSetParam>,
         send_to_contract: bool,
     ) -> Result<Vec<u8>, Error> {
-        let contract =
-            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, &self.provider_ws);
+        let contract = PreconfTaskManager::new(
+            self.contract_addresses.avs.preconf_task_manager,
+            &self.provider_ws,
+        );
 
         let block_params = BlockParams {
             assignedProver: Address::ZERO,
@@ -249,7 +250,7 @@ impl ExecutionLayer {
                 lookahead_set_params,
             )
             .chain_id(self.l1_chain_id)
-            .nonce(nonce) //TODO how to get it?
+            .nonce(nonce)
             .gas(50_000)
             .max_fee_per_gas(20_000_000_000)
             .max_priority_fee_per_gas(1_000_000_000);
@@ -274,7 +275,8 @@ impl ExecutionLayer {
 
         // Send transaction
         if send_to_contract {
-            let pending = self.provider_ws
+            let pending = self
+                .provider_ws
                 .send_raw_transaction(&buf)
                 .await?
                 .register()
@@ -301,7 +303,10 @@ impl ExecutionLayer {
             .await?;
         tracing::debug!("Deposited into strategy: {tx_hash}");
 
-        let slasher = Slasher::new(self.contract_addresses.eigen_layer.slasher, &self.provider_ws);
+        let slasher = Slasher::new(
+            self.contract_addresses.eigen_layer.slasher,
+            &self.provider_ws,
+        );
         let tx_hash = slasher
             .optIntoSlashing(self.contract_addresses.avs.service_manager)
             .send()
@@ -311,7 +316,8 @@ impl ExecutionLayer {
         tracing::debug!("Opted into slashing: {tx_hash}");
 
         let salt = Self::create_random_salt();
-        let avs_directory = AVSDirectory::new(self.contract_addresses.avs.directory, &self.provider_ws);
+        let avs_directory =
+            AVSDirectory::new(self.contract_addresses.avs.directory, &self.provider_ws);
         let expiration_timestamp =
             U256::from(chrono::Utc::now().timestamp() as u64 + self.preconf_registry_expiry_sec);
         let digest_hash = avs_directory
@@ -337,8 +343,10 @@ impl ExecutionLayer {
             expiry: expiration_timestamp,
         };
 
-        let preconf_registry =
-            PreconfRegistry::new(self.contract_addresses.avs.preconf_registry, &self.provider_ws);
+        let preconf_registry = PreconfRegistry::new(
+            self.contract_addresses.avs.preconf_registry,
+            &self.provider_ws,
+        );
         let tx_hash = preconf_registry
             .registerPreconfer(signature_with_salt_and_expiry)
             .send()
@@ -369,7 +377,8 @@ impl ExecutionLayer {
     }
 
     pub async fn get_preconfer_nonce(&self) -> Result<u64, Error> {
-        let nonce = self.provider_ws
+        let nonce = self
+            .provider_ws
             .get_transaction_count(self.preconfer_address)
             .await?;
         Ok(nonce)
@@ -382,8 +391,10 @@ impl ExecutionLayer {
         preconf_signature: [u8; 65],
         block_proposed: &BlockProposed,
     ) -> Result<(), Error> {
-        let contract =
-            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, &self.provider_ws);
+        let contract = PreconfTaskManager::new(
+            self.contract_addresses.avs.preconf_task_manager,
+            &self.provider_ws,
+        );
 
         let header = PreconfTaskManager::PreconfirmationHeader {
             blockId: block_proposed.event_data().blockId,
@@ -449,8 +460,10 @@ impl ExecutionLayer {
         beacon_block_proof_for_state: Vec<[u8; 32]>,
         beacon_block_proof_for_proposer_index: Vec<[u8; 32]>,
     ) -> Result<(), Error> {
-        let contract =
-            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, &self.provider_ws);
+        let contract = PreconfTaskManager::new(
+            self.contract_addresses.avs.preconf_task_manager,
+            &self.provider_ws,
+        );
 
         let mut validator_chunks: [B256; 8] = Default::default();
         for (i, chunk) in validator.chunks(32).enumerate() {
@@ -499,7 +512,10 @@ impl ExecutionLayer {
         EventPoller<alloy::pubsub::PubSubFrontend, PreconfRegistry::PreconferRegistered>,
         Error,
     > {
-        let registry = PreconfRegistry::new(self.contract_addresses.avs.preconf_registry, &self.provider_ws);
+        let registry = PreconfRegistry::new(
+            self.contract_addresses.avs.preconf_registry,
+            &self.provider_ws,
+        );
 
         let registered_filter = registry.PreconferRegistered_filter().watch().await?;
         tracing::debug!("Subscribed to registered event");
@@ -569,8 +585,10 @@ impl ExecutionLayer {
             signatureExpiry: expiry,
         }];
 
-        let preconf_registry =
-            PreconfRegistry::new(self.contract_addresses.avs.preconf_registry, &self.provider_ws);
+        let preconf_registry = PreconfRegistry::new(
+            self.contract_addresses.avs.preconf_registry,
+            &self.provider_ws,
+        );
         let tx_hash = preconf_registry
             .addValidators(params)
             .send()
@@ -585,7 +603,10 @@ impl ExecutionLayer {
     pub async fn subscribe_to_validator_added_event(
         &self,
     ) -> Result<EventPoller<PubSubFrontend, PreconfRegistry::ValidatorAdded>, Error> {
-        let registry = PreconfRegistry::new(self.contract_addresses.avs.preconf_registry, &self.provider_ws);
+        let registry = PreconfRegistry::new(
+            self.contract_addresses.avs.preconf_registry,
+            &self.provider_ws,
+        );
 
         let validator_added_filter = registry.ValidatorAdded_filter().watch().await?;
         tracing::debug!("Subscribed to ValidatorAdded event");
@@ -622,8 +643,10 @@ impl ExecutionLayer {
     pub async fn subscribe_to_lookahead_updated_event(
         &self,
     ) -> Result<EventPollerLookaheadUpdated, Error> {
-        let task_manager =
-            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, &self.provider_ws);
+        let task_manager = PreconfTaskManager::new(
+            self.contract_addresses.avs.preconf_task_manager,
+            &self.provider_ws,
+        );
 
         let lookahead_updated_filter = task_manager.LookaheadUpdated_filter().watch().await?;
         tracing::debug!("Subscribed to lookahead updated event");
@@ -676,8 +699,10 @@ impl ExecutionLayer {
         epoch_begin_timestamp: u64,
         validator_bls_pub_keys: &[BLSCompressedPublicKey; 32],
     ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
-        let contract =
-            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, &self.provider_ws);
+        let contract = PreconfTaskManager::new(
+            self.contract_addresses.avs.preconf_task_manager,
+            &self.provider_ws,
+        );
 
         let params = contract
             .getLookaheadParamsForEpoch(
@@ -695,8 +720,10 @@ impl ExecutionLayer {
         &self,
         epoch_begin_timestamp: u64,
     ) -> Result<Vec<PreconferAddress>, Error> {
-        let contract =
-            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, &self.provider_ws);
+        let contract = PreconfTaskManager::new(
+            self.contract_addresses.avs.preconf_task_manager,
+            &self.provider_ws,
+        );
 
         let lookahead = contract
             .getLookaheadForEpoch(U256::from(epoch_begin_timestamp))
@@ -712,8 +739,10 @@ impl ExecutionLayer {
     pub async fn get_lookahead_preconfer_buffer(
         &self,
     ) -> Result<[PreconfTaskManager::LookaheadBufferEntry; 64], Error> {
-        let contract =
-            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, &self.provider_ws);
+        let contract = PreconfTaskManager::new(
+            self.contract_addresses.avs.preconf_task_manager,
+            &self.provider_ws,
+        );
 
         let lookahead = contract.getLookaheadBuffer().call().await?._0;
 
@@ -721,8 +750,10 @@ impl ExecutionLayer {
     }
 
     pub async fn is_lookahead_required(&self, epoch_begin_timestamp: u64) -> Result<bool, Error> {
-        let contract =
-            PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, &self.provider_ws);
+        let contract = PreconfTaskManager::new(
+            self.contract_addresses.avs.preconf_task_manager,
+            &self.provider_ws,
+        );
 
         let is_required = contract
             .isLookaheadRequired(U256::from(epoch_begin_timestamp))
@@ -732,7 +763,7 @@ impl ExecutionLayer {
         Ok(is_required._0)
     }
 
-/*     fn create_provider(&self) -> impl Provider<alloy::transports::http::Http<reqwest::Client>> {
+    /*     fn create_provider(&self) -> impl Provider<alloy::transports::http::Http<reqwest::Client>> {
         ProviderBuilder::new()
             .with_recommended_fillers()
             .wallet(self.wallet.clone())
@@ -770,12 +801,12 @@ impl ExecutionLayer {
 
         let ws = WsConnect::new(ws_rpc_url.to_string());
 
-        let provider_ws: WsProvider =  ProviderBuilder::new()
-        .with_recommended_fillers()
-        .wallet(wallet.clone())
-        .on_ws(ws.clone())
-        .await
-        .unwrap();
+        let provider_ws: WsProvider = ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(wallet.clone())
+            .on_ws(ws.clone())
+            .await
+            .unwrap();
 
         Ok(Self {
             provider_ws,

@@ -49,11 +49,10 @@ mod tests {
 
     #[tokio::test]
     async fn test() {
-
         tracing_subscriber::fmt()
-        .with_env_filter("debug")  // Set the log level
-        .with_test_writer()       // Ensure logs go to stdout during tests
-        .init();
+            .with_env_filter("debug") // Set the log level
+            .with_test_writer() // Ensure logs go to stdout during tests
+            .init();
 
         // Check forge
         if !check_foundry_installed() {
@@ -182,7 +181,6 @@ mod tests {
         // Create an Ethereum L1 client
         let eth = EthereumL1::new(
             &ws_rpc_url,
-            &rpc_url.clone(),
             &pk_str,
             &contracts,
             &concensus_url_str,

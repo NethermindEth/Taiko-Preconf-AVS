@@ -8,7 +8,6 @@ pub struct Config {
     pub avs_node_ecdsa_private_key: String,
     pub mev_boost_url: String,
     pub l1_ws_rpc_url: String,
-    pub l1_rpc_url: String,
     pub l1_beacon_url: String,
     pub l1_slot_duration_sec: u64,
     pub l1_slots_per_epoch: u64,
@@ -253,7 +252,6 @@ impl Config {
             mev_boost_url: std::env::var("MEV_BOOST_URL")
                 .unwrap_or("http://127.0.0.1:8080".to_string()),
             l1_ws_rpc_url: std::env::var("L1_WS_RPC_URL").unwrap_or("wss://127.0.0.1".to_string()),
-            l1_rpc_url: std::env::var("L1_RPC_URL").unwrap_or("http://127.0.0.1:8545".to_string()),
             l1_beacon_url: std::env::var("L1_BEACON_URL")
                 .unwrap_or("http://127.0.0.1:4000".to_string()),
             l1_slot_duration_sec,
@@ -275,7 +273,7 @@ Configuration:
 Taiko proposer URL: {},
 Taiko driver URL: {},
 MEV Boost URL: {},
-L1 RPC URL: {},
+L1 WS URL: {},
 Consensus layer URL: {}
 L1 slot duration: {}
 L1 slots per epoch: {}
@@ -291,7 +289,7 @@ enable p2p: {}
             config.taiko_proposer_url,
             config.taiko_driver_url,
             config.mev_boost_url,
-            config.l1_rpc_url,
+            config.l1_ws_rpc_url,
             config.l1_beacon_url,
             config.l1_slot_duration_sec,
             config.l1_slots_per_epoch,

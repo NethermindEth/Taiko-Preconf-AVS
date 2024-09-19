@@ -36,7 +36,6 @@ async fn main() -> Result<(), Error> {
 
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
         &config.l1_ws_rpc_url,
-        &config.l1_rpc_url,
         &config.avs_node_ecdsa_private_key,
         &config.contract_addresses,
         &config.l1_beacon_url,
