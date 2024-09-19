@@ -277,10 +277,19 @@ impl Node {
         // Synchronize with L1 Slot Start Time
         let duration_to_next_slot = self.ethereum_l1.slot_clock.duration_to_next_slot().unwrap();
         sleep(duration_to_next_slot).await;
+
         // Setup protocol if needed
         if let Err(e) = self.check_and_initialize_lookahead().await {
             tracing::error!("Failed to initialize lookahead: {}", e);
         }
+
+        if let Err(err) = self.operator.update_preconfer_lookahead_for_epoch().await {
+            tracing::error!(
+                "Failed to update preconfer lookahead before starting preconfirmation loop: {}",
+                err
+            );
+        }
+
         // start preconfirmation loop
         let mut interval = tokio::time::interval(Duration::from_secs(self.l2_slot_duration_sec));
         loop {
@@ -356,7 +365,7 @@ impl Node {
     }
 
     async fn new_epoch_started(&mut self, new_epoch: u64) -> Result<(), Error> {
-        tracing::debug!("Current epoch changed from {} to {}", self.epoch, new_epoch);
+        tracing::info!("Current epoch changed from {} to {}", self.epoch, new_epoch);
         self.epoch = new_epoch;
 
         self.operator = Operator::new(self.ethereum_l1.clone(), new_epoch)?;
