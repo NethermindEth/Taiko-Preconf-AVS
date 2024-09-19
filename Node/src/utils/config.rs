@@ -50,24 +50,25 @@ impl Config {
         let default_empty_address = "0x0000000000000000000000000000000000000000".to_string();
 
         const AVS_NODE_ECDSA_PRIVATE_KEY: &str = "AVS_NODE_ECDSA_PRIVATE_KEY";
-        let avs_node_ecdsa_private_key = std::env::var(AVS_NODE_ECDSA_PRIVATE_KEY).unwrap_or({
-            warn!(
-                "No AVS node ECDSA private key found in {} env var, using default",
-                AVS_NODE_ECDSA_PRIVATE_KEY
-            );
-            "0x4c0883a69102937d6231471b5dbb6204fe512961708279f2e3e8a5d4b8e3e3e8".to_string()
-        });
+        let avs_node_ecdsa_private_key =
+            std::env::var(AVS_NODE_ECDSA_PRIVATE_KEY).unwrap_or_else(|_| {
+                warn!(
+                    "No AVS node ECDSA private key found in {} env var, using default",
+                    AVS_NODE_ECDSA_PRIVATE_KEY
+                );
+                "0x4c0883a69102937d6231471b5dbb6204fe512961708279f2e3e8a5d4b8e3e3e8".to_string()
+            });
 
         const AVS_PRECONF_TASK_MANAGER_CONTRACT_ADDRESS: &str =
             "AVS_PRECONF_TASK_MANAGER_CONTRACT_ADDRESS";
         let preconf_task_manager = std::env::var(AVS_PRECONF_TASK_MANAGER_CONTRACT_ADDRESS)
-            .unwrap_or({
+            .unwrap_or_else(|_| {
                 warn!("No AVS preconf task manager contract address found in {} env var, using default", AVS_PRECONF_TASK_MANAGER_CONTRACT_ADDRESS);
                 default_empty_address.clone()
             });
 
         const AVS_DIRECTORY_CONTRACT_ADDRESS: &str = "AVS_DIRECTORY_CONTRACT_ADDRESS";
-        let directory = std::env::var(AVS_DIRECTORY_CONTRACT_ADDRESS).unwrap_or({
+        let directory = std::env::var(AVS_DIRECTORY_CONTRACT_ADDRESS).unwrap_or_else(|_| {
             warn!(
                 "No AVS directory contract address found in {} env var, using default",
                 AVS_DIRECTORY_CONTRACT_ADDRESS
@@ -76,22 +77,24 @@ impl Config {
         });
 
         const AVS_SERVICE_MANAGER_CONTRACT_ADDRESS: &str = "AVS_SERVICE_MANAGER_CONTRACT_ADDRESS";
-        let service_manager = std::env::var(AVS_SERVICE_MANAGER_CONTRACT_ADDRESS).unwrap_or({
-            warn!(
-                "No AVS service manager contract address found in {} env var, using default",
-                AVS_SERVICE_MANAGER_CONTRACT_ADDRESS
-            );
-            default_empty_address.clone()
-        });
+        let service_manager =
+            std::env::var(AVS_SERVICE_MANAGER_CONTRACT_ADDRESS).unwrap_or_else(|_| {
+                warn!(
+                    "No AVS service manager contract address found in {} env var, using default",
+                    AVS_SERVICE_MANAGER_CONTRACT_ADDRESS
+                );
+                default_empty_address.clone()
+            });
 
         const AVS_PRECONF_REGISTRY_CONTRACT_ADDRESS: &str = "AVS_PRECONF_REGISTRY_CONTRACT_ADDRESS";
-        let preconf_registry = std::env::var(AVS_PRECONF_REGISTRY_CONTRACT_ADDRESS).unwrap_or({
-            warn!(
-                "No AVS preconf registry contract address found in {} env var, using default",
-                AVS_PRECONF_REGISTRY_CONTRACT_ADDRESS
-            );
-            default_empty_address.clone()
-        });
+        let preconf_registry =
+            std::env::var(AVS_PRECONF_REGISTRY_CONTRACT_ADDRESS).unwrap_or_else(|_| {
+                warn!(
+                    "No AVS preconf registry contract address found in {} env var, using default",
+                    AVS_PRECONF_REGISTRY_CONTRACT_ADDRESS
+                );
+                default_empty_address.clone()
+            });
 
         let avs = AvsContractAddresses {
             preconf_task_manager,
@@ -102,13 +105,13 @@ impl Config {
 
         const EIGEN_LAYER_STRATEGY_MANAGER_CONTRACT_ADDRESS: &str =
             "EIGEN_LAYER_STRATEGY_MANAGER_CONTRACT_ADDRESS";
-        let strategy_manager = std::env::var(EIGEN_LAYER_STRATEGY_MANAGER_CONTRACT_ADDRESS).unwrap_or({
+        let strategy_manager = std::env::var(EIGEN_LAYER_STRATEGY_MANAGER_CONTRACT_ADDRESS).unwrap_or_else(|_| {
             warn!("No Eigen Layer strategy manager contract address found in {} env var, using default", EIGEN_LAYER_STRATEGY_MANAGER_CONTRACT_ADDRESS);
             default_empty_address.clone()
         });
 
         const EIGEN_LAYER_SLASHER_CONTRACT_ADDRESS: &str = "EIGEN_LAYER_SLASHER_CONTRACT_ADDRESS";
-        let slasher = std::env::var(EIGEN_LAYER_SLASHER_CONTRACT_ADDRESS).unwrap_or({
+        let slasher = std::env::var(EIGEN_LAYER_SLASHER_CONTRACT_ADDRESS).unwrap_or_else(|_| {
             warn!(
                 "No Eigen Layer slasher contract address found in {} env var, using default",
                 EIGEN_LAYER_SLASHER_CONTRACT_ADDRESS
@@ -157,9 +160,9 @@ impl Config {
             .expect("L2_SLOT_DURATION_SEC must be a number");
 
         const VALIDATOR_BLS_PRIVATEKEY: &str = "VALIDATOR_BLS_PRIVATEKEY";
-        let validator_bls_privkey = std::env::var(VALIDATOR_BLS_PRIVATEKEY).unwrap_or({
+        let validator_bls_privkey = std::env::var(VALIDATOR_BLS_PRIVATEKEY).unwrap_or_else(|_| {
             warn!(
-                "No validator pubkey found in {} env var, using default",
+                "No validator private key found in {} env var, using default",
                 VALIDATOR_BLS_PRIVATEKEY
             );
             "0x0".to_string()
@@ -172,7 +175,7 @@ impl Config {
 
         // Load P2P config from env
         // Load Ipv4 address from env
-        let address = std::env::var("P2P_ADDRESS").unwrap_or_else(|_| "0.0.0.0".to_string());
+        let address = std::env::var("P2P_ADDRESS").unwrap_or("0.0.0.0".to_string());
         let ipv4 = address.parse().unwrap();
 
         // Load boot node from env
