@@ -26,6 +26,7 @@ pub struct EthereumL1 {
 
 impl EthereumL1 {
     pub async fn new(
+        execution_ws_rpc_url: &str,
         execution_rpc_url: &str,
         avs_node_ecdsa_private_key: &str,
         contract_addresses: &ContractAddresses,
@@ -45,6 +46,7 @@ impl EthereumL1 {
         ));
 
         let execution_layer = ExecutionLayer::new(
+            execution_ws_rpc_url,
             execution_rpc_url,
             avs_node_ecdsa_private_key,
             contract_addresses,

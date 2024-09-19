@@ -7,6 +7,7 @@ pub struct Config {
     pub taiko_driver_url: String,
     pub avs_node_ecdsa_private_key: String,
     pub mev_boost_url: String,
+    pub l1_ws_rpc_url: String,
     pub l1_rpc_url: String,
     pub l1_beacon_url: String,
     pub l1_slot_duration_sec: u64,
@@ -23,6 +24,7 @@ pub struct Config {
 
 #[derive(Debug)]
 pub struct ContractAddresses {
+    pub taiko_l1: String,
     pub eigen_layer: EigenLayerContractAddresses,
     pub avs: AvsContractAddresses,
 }
@@ -120,7 +122,20 @@ impl Config {
             slasher,
         };
 
-        let contract_addresses = ContractAddresses { eigen_layer, avs };
+        const TAIKO_L1_ADDRESS: &str = "L1_TAIKO_ADDRESS";
+        let taiko_l1 = std::env::var(TAIKO_L1_ADDRESS).unwrap_or({
+            warn!(
+                "No TaikoL1 contract address found in {} env var, using default",
+                TAIKO_L1_ADDRESS
+            );
+            default_empty_address.clone()
+        });
+
+        let contract_addresses = ContractAddresses {
+            taiko_l1,
+            eigen_layer,
+            avs,
+        };
 
         let l1_slot_duration_sec = std::env::var("L1_SLOT_DURATION_SEC")
             .unwrap_or("12".to_string())
@@ -226,6 +241,7 @@ impl Config {
             avs_node_ecdsa_private_key,
             mev_boost_url: std::env::var("MEV_BOOST_URL")
                 .unwrap_or("http://127.0.0.1:8080".to_string()),
+            l1_ws_rpc_url: std::env::var("L1_WS_RPC_URL").unwrap_or("wss://127.0.0.1".to_string()),
             l1_rpc_url: std::env::var("L1_RPC_URL").unwrap_or("http://127.0.0.1:8545".to_string()),
             l1_beacon_url: std::env::var("L1_BEACON_URL")
                 .unwrap_or("http://127.0.0.1:4000".to_string()),

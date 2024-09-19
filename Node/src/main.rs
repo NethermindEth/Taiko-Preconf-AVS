@@ -35,6 +35,7 @@ async fn main() -> Result<(), Error> {
     let bls_service = Arc::new(bls::BLSService::new(&config.validator_bls_privkey));
 
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
+        &config.l1_ws_rpc_url,
         &config.l1_rpc_url,
         &config.avs_node_ecdsa_private_key,
         &config.contract_addresses,

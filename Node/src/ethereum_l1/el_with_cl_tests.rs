@@ -14,8 +14,9 @@ mod tests {
 
         let anvil = Anvil::new().try_spawn().unwrap();
         let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
+        let ws_rpc_url = anvil.ws_endpoint();
         let private_key = anvil.keys()[0].clone();
-        let el = ExecutionLayer::new_from_pk(rpc_url, private_key)
+        let el = ExecutionLayer::new_from_pk(ws_rpc_url, rpc_url, private_key)
             .await
             .unwrap();
 

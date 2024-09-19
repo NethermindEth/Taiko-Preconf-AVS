@@ -11,7 +11,8 @@ use alloy::{
     contract::EventPoller,
     network::{Ethereum, EthereumWallet, NetworkWallet},
     primitives::{Address, Bytes, FixedBytes, B256, U256},
-    providers::{Provider, ProviderBuilder},
+    providers::{Provider, ProviderBuilder, WsConnect},
+    pubsub::PubSubFrontend,
     signers::{
         local::{LocalSigner, PrivateKeySigner},
         Signature, SignerSync,
@@ -32,6 +33,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 pub struct ExecutionLayer {
+    ws: WsConnect,
     rpc_url: reqwest::Url,
     signer: LocalSigner<SigningKey<Secp256k1>>,
     wallet: EthereumWallet,
@@ -44,6 +46,7 @@ pub struct ExecutionLayer {
 }
 
 pub struct ContractAddresses {
+    pub taiko_l1: Address,
     pub eigen_layer: EigenLayerContractAddresses,
     pub avs: AvsContractAddresses,
 }
@@ -129,16 +132,14 @@ sol! (
 );
 
 pub struct EventPollerLookaheadUpdated(
-    pub  EventPoller<
-        alloy::transports::http::Http<reqwest::Client>,
-        PreconfTaskManager::LookaheadUpdated,
-    >,
+    pub EventPoller<PubSubFrontend, PreconfTaskManager::LookaheadUpdated>,
 );
 
 #[cfg_attr(test, allow(dead_code))]
 #[cfg_attr(test, automock)]
 impl ExecutionLayer {
     pub async fn new(
+        ws_rpc_url: &str,
         rpc_url: &str,
         avs_node_ecdsa_private_key: &str,
         contract_addresses: &config::ContractAddresses,
@@ -160,7 +161,10 @@ impl ExecutionLayer {
         let provider = ProviderBuilder::new().on_http(rpc_url.parse()?);
         let chain_id = provider.get_chain_id().await?;
 
+        let ws = WsConnect::new(ws_rpc_url.to_string());
+
         Ok(Self {
+            ws,
             rpc_url: rpc_url.parse()?,
             signer,
             wallet,
@@ -192,7 +196,13 @@ impl ExecutionLayer {
             preconf_registry: contract_addresses.avs.preconf_registry.parse()?,
         };
 
-        Ok(ContractAddresses { eigen_layer, avs })
+        let taiko_l1 = contract_addresses.taiko_l1.parse()?;
+
+        Ok(ContractAddresses {
+            taiko_l1,
+            eigen_layer,
+            avs,
+        })
     }
 
     pub async fn propose_new_block(
@@ -493,13 +503,10 @@ impl ExecutionLayer {
     pub async fn subscribe_to_registered_event(
         &self,
     ) -> Result<
-        EventPoller<
-            alloy::transports::http::Http<reqwest::Client>,
-            PreconfRegistry::PreconferRegistered,
-        >,
+        EventPoller<alloy::pubsub::PubSubFrontend, PreconfRegistry::PreconferRegistered>,
         Error,
     > {
-        let provider = self.create_provider();
+        let provider = self.create_provider_ws().await;
         let registry = PreconfRegistry::new(self.contract_addresses.avs.preconf_registry, provider);
 
         let registered_filter = registry.PreconferRegistered_filter().watch().await?;
@@ -510,10 +517,7 @@ impl ExecutionLayer {
 
     pub async fn wait_for_the_registered_event(
         &self,
-        registered_filter: EventPoller<
-            alloy::transports::http::Http<reqwest::Client>,
-            PreconfRegistry::PreconferRegistered,
-        >,
+        registered_filter: EventPoller<PubSubFrontend, PreconfRegistry::PreconferRegistered>,
     ) -> Result<(), Error> {
         let mut stream = registered_filter.into_stream();
         while let Some(log) = stream.next().await {
@@ -590,14 +594,8 @@ impl ExecutionLayer {
 
     pub async fn subscribe_to_validator_added_event(
         &self,
-    ) -> Result<
-        EventPoller<
-            alloy::transports::http::Http<reqwest::Client>,
-            PreconfRegistry::ValidatorAdded,
-        >,
-        Error,
-    > {
-        let provider = self.create_provider();
+    ) -> Result<EventPoller<PubSubFrontend, PreconfRegistry::ValidatorAdded>, Error> {
+        let provider = self.create_provider_ws().await;
         let registry = PreconfRegistry::new(self.contract_addresses.avs.preconf_registry, provider);
 
         let validator_added_filter = registry.ValidatorAdded_filter().watch().await?;
@@ -608,10 +606,7 @@ impl ExecutionLayer {
 
     pub async fn wait_for_the_validator_added_event(
         &self,
-        validator_added_filter: EventPoller<
-            alloy::transports::http::Http<reqwest::Client>,
-            PreconfRegistry::ValidatorAdded,
-        >,
+        validator_added_filter: EventPoller<PubSubFrontend, PreconfRegistry::ValidatorAdded>,
     ) -> Result<(), Error> {
         let mut stream = validator_added_filter.into_stream();
         while let Some(log) = stream.next().await {
@@ -622,6 +617,7 @@ impl ExecutionLayer {
                         log.0.pubKeyHash,
                         log.0.preconfer
                     );
+                    println!("Validator added! {}", log.0.preconfer);
                     if log.0.preconfer == self.preconfer_address {
                         tracing::info!("Validator added!");
                         break;
@@ -639,7 +635,7 @@ impl ExecutionLayer {
     pub async fn subscribe_to_lookahead_updated_event(
         &self,
     ) -> Result<EventPollerLookaheadUpdated, Error> {
-        let provider = self.create_provider();
+        let provider = self.create_provider_ws().await;
         let task_manager =
             PreconfTaskManager::new(self.contract_addresses.avs.preconf_task_manager, provider);
 
@@ -652,9 +648,8 @@ impl ExecutionLayer {
     pub async fn subscribe_to_block_proposed_event(
         &self,
     ) -> Result<EventPollerBlockProposed, Error> {
-        let provider = self.create_provider();
-        let taiko_events =
-            TaikoEvents::new(self.contract_addresses.avs.preconf_task_manager, provider); //TODO fix the address
+        let provider = self.create_provider_ws().await;
+        let taiko_events = TaikoEvents::new(self.contract_addresses.taiko_l1, provider);
 
         let block_proposed_filter = taiko_events.BlockProposed_filter().watch().await?;
         tracing::debug!("Subscribed to block proposed event");
@@ -763,8 +758,18 @@ impl ExecutionLayer {
             .on_http(self.rpc_url.clone())
     }
 
+    async fn create_provider_ws(&self) -> impl Provider<alloy::pubsub::PubSubFrontend> {
+        ProviderBuilder::new()
+            .with_recommended_fillers()
+            .wallet(self.wallet.clone())
+            .on_ws(self.ws.clone())
+            .await
+            .unwrap()
+    }
+
     #[cfg(test)]
     pub async fn new_from_pk(
+        ws_rpc_url: String,
         rpc_url: reqwest::Url,
         private_key: elliptic_curve::SecretKey<k256::Secp256k1>,
     ) -> Result<Self, Error> {
@@ -779,7 +784,10 @@ impl ExecutionLayer {
             "0x14d50ac943d01069c206543a0bed3836f6062b35270607ebf1d1f238ceda26f1",
         ));
 
+        let ws = WsConnect::new(ws_rpc_url.to_string());
+
         Ok(Self {
+            ws,
             rpc_url,
             signer,
             wallet,
@@ -787,6 +795,7 @@ impl ExecutionLayer {
                 .parse()?,
             slot_clock: Arc::new(clock),
             contract_addresses: ContractAddresses {
+                taiko_l1: Address::ZERO,
                 eigen_layer: EigenLayerContractAddresses {
                     strategy_manager: Address::ZERO,
                     slasher: Address::ZERO,
@@ -856,8 +865,9 @@ mod tests {
         // Ensure `anvil` is available in $PATH.
         let anvil = Anvil::new().try_spawn().unwrap();
         let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
+        let ws_rpc_url = anvil.ws_endpoint();
         let private_key = anvil.keys()[0].clone();
-        let el = ExecutionLayer::new_from_pk(rpc_url, private_key)
+        let el = ExecutionLayer::new_from_pk(ws_rpc_url, rpc_url, private_key)
             .await
             .unwrap();
         el.call_test_contract().await.unwrap();
@@ -867,8 +877,9 @@ mod tests {
     async fn test_propose_new_block() {
         let anvil = Anvil::new().try_spawn().unwrap();
         let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
+        let ws_rpc_url = anvil.ws_endpoint();
         let private_key = anvil.keys()[0].clone();
-        let el = ExecutionLayer::new_from_pk(rpc_url, private_key)
+        let el = ExecutionLayer::new_from_pk(ws_rpc_url, rpc_url, private_key)
             .await
             .unwrap();
 
@@ -880,8 +891,9 @@ mod tests {
     async fn test_register() {
         let anvil = Anvil::new().try_spawn().unwrap();
         let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
+        let ws_rpc_url = anvil.ws_endpoint();
         let private_key = anvil.keys()[0].clone();
-        let el = ExecutionLayer::new_from_pk(rpc_url, private_key)
+        let el = ExecutionLayer::new_from_pk(ws_rpc_url, rpc_url, private_key)
             .await
             .unwrap();
 
@@ -893,8 +905,9 @@ mod tests {
     async fn test_get_lookahead_params_for_epoch() {
         let anvil = Anvil::new().try_spawn().unwrap();
         let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
+        let ws_rpc_url = anvil.ws_endpoint();
         let private_key = anvil.keys()[0].clone();
-        let _el = ExecutionLayer::new_from_pk(rpc_url, private_key)
+        let _el = ExecutionLayer::new_from_pk(ws_rpc_url, rpc_url, private_key)
             .await
             .unwrap();
 
@@ -919,8 +932,9 @@ mod tests {
     async fn test_prove_incorrect_lookahead() {
         let anvil = Anvil::new().try_spawn().unwrap();
         let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
+        let ws_rpc_url = anvil.ws_endpoint();
         let private_key = anvil.keys()[0].clone();
-        let el = ExecutionLayer::new_from_pk(rpc_url, private_key)
+        let el = ExecutionLayer::new_from_pk(ws_rpc_url, rpc_url, private_key)
             .await
             .unwrap();
 

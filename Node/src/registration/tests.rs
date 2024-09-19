@@ -56,8 +56,8 @@ mod tests {
         }
 
         let anvil = Anvil::new().spawn();
-        let anvil_url = anvil.endpoint();
-        let rpc_url: reqwest::Url = anvil_url.parse().unwrap();
+        let rpc_url = anvil.endpoint();
+        let ws_rpc_url = anvil.ws_endpoint();
 
         let private_key = anvil.keys()[2].clone();
         let user_address = Address::from_private_key(&private_key.clone().into());
@@ -68,7 +68,7 @@ mod tests {
             .arg("script")
             .arg("scripts/deployment/mock/DeployMockTaikoToken.s.sol")
             .arg("--rpc-url")
-            .arg(rpc_url.to_string())
+            .arg(rpc_url.clone())
             .arg("--private-key")
             .arg(pk_str.clone())
             .arg("--broadcast")
@@ -92,7 +92,7 @@ mod tests {
             .arg("script")
             .arg("scripts/deployment/DeployEigenlayerMVP.s.sol")
             .arg("--rpc-url")
-            .arg(rpc_url.to_string())
+            .arg(rpc_url.clone())
             .arg("--private-key")
             .arg(pk_str.clone())
             .arg("--broadcast")
@@ -120,7 +120,7 @@ mod tests {
             .arg("script")
             .arg("scripts/deployment/mock/DeployMockAVS.s.sol")
             .arg("--rpc-url")
-            .arg(rpc_url.to_string())
+            .arg(rpc_url.clone())
             .arg("--private-key")
             .arg(pk_str.clone())
             .arg("--broadcast")
@@ -167,6 +167,7 @@ mod tests {
             slasher: slasher,
         };
         let contracts = ContractAddresses {
+            taiko_l1: mock_address,
             eigen_layer,
             avs: avs_contracts,
         };
@@ -174,7 +175,8 @@ mod tests {
         let concensus_url_str = "https://docs-demo.quiknode.pro";
         // Create an Ethereum L1 client
         let eth = EthereumL1::new(
-            &rpc_url.to_string(),
+            &ws_rpc_url,
+            &rpc_url.clone(),
             &pk_str,
             &contracts,
             &concensus_url_str,
@@ -195,6 +197,7 @@ mod tests {
         }
 
         // Check if the preconfer is registered by PreconfRegistry.getPreconferAtIndex
+        let rpc_url: reqwest::Url = rpc_url.parse().unwrap();
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
         let contract = IPreconfRegistry::new(preconf_regestry.parse().unwrap(), provider);
         assert!(
