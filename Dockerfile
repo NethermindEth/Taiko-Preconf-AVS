@@ -1,4 +1,4 @@
-FROM docker.io/library/rust:1.79 as builder
+FROM docker.io/library/rust:1.80 as builder
 
 # Set the working directory inside the container
 WORKDIR /usr/src/taiko_preconf_avs_node
