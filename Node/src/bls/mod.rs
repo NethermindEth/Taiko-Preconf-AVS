@@ -1,4 +1,5 @@
 use alloy::primitives::U256;
+use anyhow::Error;
 use bls::types::{G1AffinePoint, G2AffinePoint, PublicKey, SecretKey, Signature};
 use bls_on_arkworks as bls;
 use num_bigint::BigUint;
@@ -12,12 +13,18 @@ pub struct BLSService {
 }
 
 impl BLSService {
-    pub fn new(pk: &str) -> Self {
-        let pk_bytes = alloy::hex::decode(pk).unwrap();
+    pub fn new(private_key: &str) -> Result<Self, Error> {
+        let pk_bytes = alloy::hex::decode(private_key)
+            .map_err(|e| anyhow::anyhow!("BLSService: failed to decode private key: {}", e))?;
         let sk = bls::os2ip(&pk_bytes);
-        let pk = bls::sk_to_pk(sk);
+        let public_key = bls::sk_to_pk(sk);
 
-        Self { pk, sk }
+        tracing::info!(
+            "BLSService: public key: {}",
+            hex::encode(public_key.clone())
+        );
+
+        Ok(Self { pk: public_key, sk })
     }
 
     #[cfg(test)]

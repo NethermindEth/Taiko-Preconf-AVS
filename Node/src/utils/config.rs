@@ -12,13 +12,14 @@ pub struct Config {
     pub l1_slot_duration_sec: u64,
     pub l1_slots_per_epoch: u64,
     pub l2_slot_duration_sec: u64,
-    pub validator_bls_pubkey: String,
     pub validator_bls_privkey: String,
     pub preconf_registry_expiry_sec: u64,
     pub contract_addresses: ContractAddresses,
     pub p2p_network_config: P2PNetworkConfig,
     pub taiko_chain_id: u64,
+    pub l1_chain_id: u64,
     pub validator_index: u64,
+    pub enable_p2p: bool,
 }
 
 #[derive(Debug)]
@@ -155,15 +156,6 @@ impl Config {
             })
             .expect("L2_SLOT_DURATION_SEC must be a number");
 
-        const VALIDATOR_PUBKEY: &str = "VALIDATOR_PUBKEY";
-        let validator_pubkey = std::env::var(VALIDATOR_PUBKEY).unwrap_or({
-            warn!(
-                "No validator pubkey found in {} env var, using default",
-                VALIDATOR_PUBKEY
-            );
-            "0x0".to_string()
-        });
-
         const VALIDATOR_BLS_PRIVATEKEY: &str = "VALIDATOR_BLS_PRIVATEKEY";
         let validator_bls_privkey = std::env::var(VALIDATOR_BLS_PRIVATEKEY).unwrap_or({
             warn!(
@@ -212,10 +204,26 @@ impl Config {
             })
             .expect("TAIKO_CHAIN_ID must be a number");
 
+        let l1_chain_id = std::env::var("L1_CHAIN_ID")
+            .unwrap_or("1".to_string())
+            .parse::<u64>()
+            .map(|val| {
+                if val == 0 {
+                    panic!("L1_CHAIN_ID must be a positive number");
+                }
+                val
+            })
+            .expect("L1_CHAIN_ID must be a number");
+
         let validator_index = std::env::var("VALIDATOR_INDEX")
             .expect("VALIDATOR_INDEX env variable must be set")
             .parse::<u64>()
             .expect("VALIDATOR_INDEX must be a number");
+
+        let enable_p2p = std::env::var("ENABLE_P2P")
+            .unwrap_or("true".to_string())
+            .parse::<bool>()
+            .expect("ENABLE_P2P must be a boolean");
 
         let config = Self {
             taiko_proposer_url: std::env::var("TAIKO_PROPOSER_URL")
@@ -232,13 +240,14 @@ impl Config {
             l1_slot_duration_sec,
             l1_slots_per_epoch,
             l2_slot_duration_sec,
-            validator_bls_pubkey: validator_pubkey,
             validator_bls_privkey,
             preconf_registry_expiry_sec,
             contract_addresses,
             p2p_network_config,
             taiko_chain_id,
+            l1_chain_id,
             validator_index,
+            enable_p2p,
         };
 
         info!(
@@ -252,12 +261,13 @@ Consensus layer URL: {}
 L1 slot duration: {}
 L1 slots per epoch: {}
 L2 slot duration: {}
-Validator pubkey: {}
 Preconf registry expiry seconds: {}
 Contract addresses: {:#?}
 p2p_network_config: {}
 taiko chain id: {}
+l1 chain id: {}
 validator index: {}
+enable p2p: {}
 "#,
             config.taiko_proposer_url,
             config.taiko_driver_url,
@@ -267,12 +277,13 @@ validator index: {}
             config.l1_slot_duration_sec,
             config.l1_slots_per_epoch,
             config.l2_slot_duration_sec,
-            config.validator_bls_pubkey,
             config.preconf_registry_expiry_sec,
             config.contract_addresses,
             config.p2p_network_config,
             config.taiko_chain_id,
+            config.l1_chain_id,
             config.validator_index,
+            config.enable_p2p,
         );
 
         config

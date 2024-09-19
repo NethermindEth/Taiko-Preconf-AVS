@@ -28,9 +28,10 @@ mod tests {
             return; // Skip the rest of the test
         }
         // Create a new BLSService with private key from Docker container
-        let bls_service = Arc::new(BLSService::new(
-            "0x14d50ac943d01069c206543a0bed3836f6062b35270607ebf1d1f238ceda26f1",
-        ));
+        let bls_service = Arc::new(
+            BLSService::new("0x14d50ac943d01069c206543a0bed3836f6062b35270607ebf1d1f238ceda26f1")
+                .unwrap(),
+        );
         // Create mev-boost
         let mev_boost = MevBoost::new(" http://localhost:8080/eth/v1/builder/constraints", 123);
         // Some random constraints
