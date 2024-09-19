@@ -32,7 +32,7 @@ async fn main() -> Result<(), Error> {
     let args = Cli::parse();
     let config = utils::config::Config::read_env_variables();
 
-    let bls_service = Arc::new(bls::BLSService::new(&config.validator_bls_privkey));
+    let bls_service = Arc::new(bls::BLSService::new(&config.validator_bls_privkey)?);
 
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
         &config.l1_ws_rpc_url,
@@ -44,6 +44,7 @@ async fn main() -> Result<(), Error> {
         config.l1_slots_per_epoch,
         config.preconf_registry_expiry_sec,
         bls_service.clone(),
+        config.l1_chain_id,
     )
     .await?;
 
@@ -62,8 +63,10 @@ async fn main() -> Result<(), Error> {
     let (node_to_p2p_tx, node_to_p2p_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
     let (p2p_to_node_tx, p2p_to_node_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
     let (block_proposed_tx, block_proposed_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
-    let p2p = p2p_network::AVSp2p::new(p2p_to_node_tx.clone(), node_to_p2p_rx);
-    p2p.start(config.p2p_network_config).await;
+    if config.enable_p2p {
+        let p2p = p2p_network::AVSp2p::new(p2p_to_node_tx.clone(), node_to_p2p_rx);
+        p2p.start(config.p2p_network_config).await;
+    }
     let taiko = Arc::new(taiko::Taiko::new(
         &config.taiko_proposer_url,
         &config.taiko_driver_url,

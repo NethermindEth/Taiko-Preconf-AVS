@@ -105,17 +105,19 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
                 revert PreconferNotRegistered();
             }
 
-            bytes memory message = _createMessage(ValidatorOp.ADD, addValidatorParams[i].signatureExpiry, msg.sender);
+            // Note: BLS signature checks are commented out for the POC
+
+            // bytes memory message = _createMessage(ValidatorOp.ADD, addValidatorParams[i].signatureExpiry, msg.sender);
 
             // Revert if any signature is invalid
-            if (!verifySignature(message, addValidatorParams[i].signature, addValidatorParams[i].pubkey)) {
-                revert InvalidValidatorSignature();
-            }
+            // if (!verifySignature(message, addValidatorParams[i].signature, addValidatorParams[i].pubkey)) {
+            //     revert InvalidValidatorSignature();
+            // }
 
             // Revert if the signature has expired
-            if (block.timestamp > addValidatorParams[i].signatureExpiry) {
-                revert ValidatorSignatureExpired();
-            }
+            // if (block.timestamp > addValidatorParams[i].signatureExpiry) {
+            //     revert ValidatorSignatureExpired();
+            // }
 
             // Point compress the public key just how it is done on the consensus layer
             uint256[2] memory compressedPubKey = addValidatorParams[i].pubkey.compress();
@@ -167,18 +169,20 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
                 revert ValidatorAlreadyInactive();
             }
 
-            bytes memory message =
-                _createMessage(ValidatorOp.REMOVE, removeValidatorParams[i].signatureExpiry, validator.preconfer);
+            // Note: BLS signature checks have been commented out
 
-            // Revert if any signature is invalid
-            if (!verifySignature(message, removeValidatorParams[i].signature, removeValidatorParams[i].pubkey)) {
-                revert InvalidValidatorSignature();
-            }
+            // bytes memory message =
+            //     _createMessage(ValidatorOp.REMOVE, removeValidatorParams[i].signatureExpiry, validator.preconfer);
 
-            // Revert if the signature has expired
-            if (block.timestamp > removeValidatorParams[i].signatureExpiry) {
-                revert ValidatorSignatureExpired();
-            }
+            // // Revert if any signature is invalid
+            // if (!verifySignature(message, removeValidatorParams[i].signature, removeValidatorParams[i].pubkey)) {
+            //     revert InvalidValidatorSignature();
+            // }
+
+            // // Revert if the signature has expired
+            // if (block.timestamp > removeValidatorParams[i].signatureExpiry) {
+            //     revert ValidatorSignatureExpired();
+            // }
 
             unchecked {
                 // We also need to delay the removal by two epochs to avoid contradicting the lookahead
