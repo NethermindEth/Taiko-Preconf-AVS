@@ -6992,7 +6992,7 @@ dependencies = [
 [[package]]
 name = "ssz_rs"
 version = "0.9.0"
-source = "git+https://github.com/ralexstokes/ssz-rs?rev=84ef2b71aa004f6767420badb42c902ad56b8b72#84ef2b71aa004f6767420badb42c902ad56b8b72"
+source = "git+https://github.com/noahfigueras/ssz-rs?branch=partial_merkle_tree#96ccf1f3b87d8e89d1f7a17c5a882fabaf6d1cdb"
 dependencies = [
  "alloy-primitives 0.7.7",
  "bitvec",
@@ -7004,7 +7004,7 @@ dependencies = [
 [[package]]
 name = "ssz_rs_derive"
 version = "0.9.0"
-source = "git+https://github.com/ralexstokes/ssz-rs?rev=84ef2b71aa004f6767420badb42c902ad56b8b72#84ef2b71aa004f6767420badb42c902ad56b8b72"
+source = "git+https://github.com/noahfigueras/ssz-rs?branch=partial_merkle_tree#96ccf1f3b87d8e89d1f7a17c5a882fabaf6d1cdb"
 dependencies = [
  "proc-macro2",
  "quote",

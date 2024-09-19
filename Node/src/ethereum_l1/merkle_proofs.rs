@@ -78,7 +78,9 @@ pub fn create_merkle_proofs_for_beacon_block_containing_beacon_state_and_validat
 }
 
 pub fn serialize_validator_to_ssz_encoded_bytes(validator: &Validator) -> Result<Vec<u8>, Error> {
-    serialize(validator).map_err(|e| anyhow::anyhow!("Failed to serialize validator: {e}"))
+    validator
+        .chunks()
+        .map_err(|e| anyhow::anyhow!("Failed to read chunks for validator: {e}"))
 }
 
 #[cfg(test)]
@@ -99,7 +101,7 @@ mod tests {
         let validators = List::<_, 2>::try_from(create_validators()).unwrap();
         let validator_index = 1;
 
-        let (leaf, branch, witness, generalized_index) =
+        let (leaf, proof_branch, root_witness, generalized_index) =
             create_merkle_proof_for_validator_being_part_of_validator_list_extended(
                 &validators,
                 validator_index,
@@ -109,12 +111,12 @@ mod tests {
         // Verify the proof
         let proof = Proof {
             leaf: FixedBytes::from(leaf),
-            branch: branch.iter().map(|b| FixedBytes::from(b)).collect(),
+            branch: proof_branch.iter().map(|b| FixedBytes::from(b)).collect(),
             index: generalized_index,
         };
         println!("proof: {:#?}", proof);
 
-        let witness = witness.into();
+        let witness = root_witness.into();
 
         let result = proof.verify(witness);
         assert!(result.is_ok(), "Proof verification should succeed");
@@ -174,10 +176,7 @@ mod tests {
             (BeaconState::Deneb(state1), BeaconState::Deneb(state2)) => {
                 let (proof, witness) = state1.prove(path).expect("Proof generation should succeed");
                 assert_eq!(witness, state1.hash_tree_root().unwrap());
-                let result = proof.verify(witness);
-                if let Err(err) = result {
-                    panic!("{err} for {proof:?} with witness {witness}")
-                }
+                assert!(proof.verify(witness).is_ok());
 
                 let branch = proof.branch;
                 dbg!(&branch);
@@ -221,5 +220,82 @@ mod tests {
             &beacon_block,
         )
         .expect("Proof generation should succeed");
+    }
+
+    #[test]
+    fn test_serialize_validator_to_ssz_encoded_bytes() {
+        let validator = create_validators()[0].clone();
+        let serialized = serialize_validator_to_ssz_encoded_bytes(&validator).unwrap();
+        assert_eq!(
+            serialized.len(),
+            256,
+            "Serialized validator should be 256 bytes"
+        );
+    }
+
+    #[test]
+    fn test_validator_list_beacon_state_use_hex_values() {
+        let leaf = FixedBytes::<32>::try_from(
+            hex::decode("0ccf56d8e76d16306c6e6e78ec20c07be5fa5ae89b18873b43cc823075a5df0b")
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+
+        let branch = vec![
+            FixedBytes::<32>::try_from(
+                hex::decode("8c53160000000000000000000000000000000000000000000000000000000000")
+                    .unwrap()
+                    .as_slice(),
+            )
+            .unwrap(),
+            FixedBytes::<32>::try_from(
+                hex::decode("d9cb62ffd113d2a2b71b4539c54bf01587d8a2a5a7c81baa2c2ae89d245578d6")
+                    .unwrap()
+                    .as_slice(),
+            )
+            .unwrap(),
+            FixedBytes::<32>::try_from(
+                hex::decode("efbad4c97640101fc18122e8b818e8cc3c278a18e05dc601af4095d5519d834a")
+                    .unwrap()
+                    .as_slice(),
+            )
+            .unwrap(),
+            FixedBytes::<32>::try_from(
+                hex::decode("775d61d75ab0731115447847764383a42283b502eb4ed3ca7ba412ac67da5138")
+                    .unwrap()
+                    .as_slice(),
+            )
+            .unwrap(),
+            FixedBytes::<32>::try_from(
+                hex::decode("bb5cf5c0273b8d100f329ea0c78c471d0833f048c7fc264c285c3696d7aed412")
+                    .unwrap()
+                    .as_slice(),
+            )
+            .unwrap(),
+        ];
+
+        // Verify the proof
+        let proof = Proof {
+            leaf,
+            branch,
+            index: 43,
+        };
+
+        let root_witness = FixedBytes::<32>::try_from(
+            hex::decode("cd918afbe365c6dcabab551e32fae5f3f9677433876049dc035e5135122a2e7e")
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+
+        let state_root = root_witness.into();
+        dbg!(&proof);
+        dbg!(&state_root);
+
+        assert!(
+            proof.verify(state_root).is_ok(),
+            "Proof verification should succeed"
+        );
     }
 }

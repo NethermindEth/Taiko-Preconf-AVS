@@ -13,8 +13,6 @@ library EIP4788 {
         bytes32[] validatorProof;
         // Root of the validator list in the beacon state
         bytes32 validatorsRoot;
-        // Number of validators in the validator list
-        uint256 nr_validators;
         // Proof of inclusion of validator list in the beacon state
         bytes32[] beaconStateProof;
         // Root of the beacon state
@@ -62,12 +60,9 @@ library EIP4788 {
             revert ValidatorProofFailed();
         }
 
-        // Validator list is verified against the beacon state
-        bytes32 stateValidatorsHashTreeRoot =
-            MerkleUtils.mixInLength(inclusionProof.validatorsRoot, inclusionProof.nr_validators);
         if (
-            MerkleUtils.verifyProof(
-                inclusionProof.beaconStateProof, inclusionProof.beaconStateRoot, stateValidatorsHashTreeRoot, 11
+            !MerkleUtils.verifyProof(
+                inclusionProof.beaconStateProof, inclusionProof.beaconStateRoot, inclusionProof.validatorsRoot, 11
             )
         ) {
             // Revert if the proof that the validator list is a part of the beacon state fails
@@ -76,7 +71,7 @@ library EIP4788 {
 
         // Beacon state is verified against the beacon block
         if (
-            MerkleUtils.verifyProof(
+            !MerkleUtils.verifyProof(
                 inclusionProof.beaconBlockProofForState, beaconBlockRoot, inclusionProof.beaconStateRoot, 3
             )
         ) {
@@ -86,7 +81,7 @@ library EIP4788 {
 
         // Validator index is verified against the beacon block
         if (
-            MerkleUtils.verifyProof(
+            !MerkleUtils.verifyProof(
                 inclusionProof.beaconBlockProofForProposerIndex,
                 beaconBlockRoot,
                 MerkleUtils.toLittleEndian(inclusionProof.validatorIndex),

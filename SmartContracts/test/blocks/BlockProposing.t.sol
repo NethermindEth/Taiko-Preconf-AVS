@@ -6,8 +6,6 @@ import {BlocksFixtures} from "../fixtures/BlocksFixtures.sol";
 import {PreconfConstants} from "src/avs/PreconfConstants.sol";
 import {IPreconfTaskManager} from "src/interfaces/IPreconfTaskManager.sol";
 
-import {console2} from "forge-std/Test.sol";
-
 contract BlockProposing is BlocksFixtures {
     function setUp() public override {
         super.setUp();

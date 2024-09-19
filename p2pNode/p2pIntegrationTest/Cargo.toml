@@ -9,3 +9,4 @@ tokio = { version = "1.23.0", features = ["full"] }
 tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 p2p-network ={ path = "../p2pNetwork" }
+rand = "0.8"

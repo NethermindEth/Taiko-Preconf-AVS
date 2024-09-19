@@ -6,14 +6,12 @@ import {LookaheadFixtures} from "../fixtures/LookaheadFixtures.sol";
 import {PreconfConstants} from "src/avs/PreconfConstants.sol";
 import {IPreconfTaskManager} from "src/interfaces/IPreconfTaskManager.sol";
 
-import {console2} from "forge-std/Test.sol";
-
 contract LookaheadPosting is LookaheadFixtures {
     function setUp() public override {
         super.setUp();
     }
 
-    function test_ForcePushLookahead_SetsNonEmptyLookaheadInNextEpoch_Case1() external {
+    function test_forcePushLookahead_setsNonEmptyLookaheadInNextEpoch_Case1() external {
         addPreconfersToRegistry(5);
 
         // Arbitrary slot in current epoch
@@ -45,7 +43,7 @@ contract LookaheadPosting is LookaheadFixtures {
         vm.assertEq(preconfTaskManager.getLookaheadPoster(nextEpochStart), addr_1);
     }
 
-    function test_ForcePushLookahead_SetsNonEmptyLookaheadInNextEpoch_Case2() external {
+    function test_forcePushLookahead_setsNonEmptyLookaheadInNextEpoch_Case2() external {
         addPreconfersToRegistry(7);
 
         // Arbitrary slot in current epoch
@@ -85,7 +83,7 @@ contract LookaheadPosting is LookaheadFixtures {
         vm.assertEq(preconfTaskManager.getLookaheadPoster(nextEpochStart), addr_3);
     }
 
-    function test_ForcePushLookahead_SetsNonEmptyLookaheadInNextEpoch_Case3() external {
+    function test_forcePushLookahead_setsNonEmptyLookaheadInNextEpoch_Case3() external {
         addPreconfersToRegistry(10);
 
         // Arbitrary slot in current epoch
@@ -133,7 +131,7 @@ contract LookaheadPosting is LookaheadFixtures {
         vm.assertEq(preconfTaskManager.getLookaheadPoster(nextEpochStart), addr_2);
     }
 
-    function test_ForcePushLookahead_SetsFallbackPreconfer_Case1() external {
+    function test_forcePushLookahead_setsFallbackPreconfer_Case1() external {
         addPreconfersToRegistry(10);
 
         // Arbitrary slot in the current epoch
@@ -173,7 +171,7 @@ contract LookaheadPosting is LookaheadFixtures {
         vm.assertEq(preconfTaskManager.getLookaheadPoster(nextEpochStart), addr_2);
     }
 
-    function test_ForcePushLookahead_SetsFallbackPreconfer_Case2() external {
+    function test_forcePushLookahead_setsFallbackPreconfer_Case2() external {
         addPreconfersToRegistry(10);
 
         // Arbitrary slot in the current epoch
@@ -188,7 +186,7 @@ contract LookaheadPosting is LookaheadFixtures {
         IPreconfTaskManager.LookaheadSetParam[] memory emptyLookaheadSetParams =
             new IPreconfTaskManager.LookaheadSetParam[](0);
 
-        // Unlike case 1, we push the root at a later timestamp to simulate "skipped blocks" and see
+        // Unlike Case 1, we push the root at a later timestamp to simulate "skipped blocks" and see
         // if the contract iterates forward and finds the required root
         beaconBlockRootContract.set(
             PreconfConstants.MAINNET_BEACON_GENESIS + 3 * PreconfConstants.SECONDS_IN_SLOT, bytes32(uint256(4))
@@ -213,7 +211,7 @@ contract LookaheadPosting is LookaheadFixtures {
         vm.assertEq(preconfTaskManager.getLookaheadPoster(nextEpochStart), addr_2);
     }
 
-    function test_ForcePushLookahead_RevertPreconferNotRegistered_Case1() external {
+    function test_forcePushLookahead_revertsWhenPreconferNotRegistered_Case1() external {
         // Add addr_1 through addr_5 to the registry
         addPreconfersToRegistry(5);
 
@@ -226,7 +224,7 @@ contract LookaheadPosting is LookaheadFixtures {
         preconfTaskManager.forcePushLookahead(emptyLookaheadSetParams);
     }
 
-    function test_ForcePushLookahead_RevertPreconferNotRegistered_Case2() external {
+    function test_forcePushLookahead_revertsWhenPreconferNotRegistered_Case2() external {
         // Add addr_1 through addr_5 to the registry
         addPreconfersToRegistry(5);
 
@@ -250,7 +248,7 @@ contract LookaheadPosting is LookaheadFixtures {
         preconfTaskManager.forcePushLookahead(lookaheadSetParams);
     }
 
-    function test_ForcePushLookahead_RevertLookaheadIsNotRequired() external {
+    function test_forcePushLookahead_revertsWhenLookaheadIsNotRequired() external {
         // Add addr_1 through addr_5 to the registry
         addPreconfersToRegistry(5);
 
@@ -281,7 +279,7 @@ contract LookaheadPosting is LookaheadFixtures {
         preconfTaskManager.forcePushLookahead(lookaheadSetParams);
     }
 
-    function test_ForcePushLookahead_RevertInvalidSlotTimestamp_NotMultipleOf12() external {
+    function test_forcePushLookahead_revertsWhenInvalidSlotTimestamp_notMultipleOf12() external {
         // Add addr_1 to the registry
         addPreconfersToRegistry(1);
 
@@ -303,7 +301,7 @@ contract LookaheadPosting is LookaheadFixtures {
         preconfTaskManager.forcePushLookahead(lookaheadSetParams);
     }
 
-    function test_ForcePushLookahead_RevertInvalidSlotTimestamp_ExceedsEpochEnd() external {
+    function test_forcePushLookahead_revertsWhenInvalidSlotTimestamp_exceedsEpochEnd() external {
         // Add addr_1 to the registry
         addPreconfersToRegistry(1);
 
@@ -325,7 +323,7 @@ contract LookaheadPosting is LookaheadFixtures {
         preconfTaskManager.forcePushLookahead(lookaheadSetParams);
     }
 
-    function test_ForcePushLookahead_RevertInvalidSlotTimestamp_NotGreaterThanPrevious() external {
+    function test_forcePushLookahead_revertsWhenInvalidSlotTimestamp_notGreaterThanPrevious() external {
         // Add addr_1 and addr_2 to the registry
         addPreconfersToRegistry(2);
 
@@ -351,7 +349,7 @@ contract LookaheadPosting is LookaheadFixtures {
         preconfTaskManager.forcePushLookahead(lookaheadSetParams);
     }
 
-    function test_ForcePushLookahead_EmitsLookaheadUpdatedEvent() external {
+    function test_forcePushLookahead_emitsLookaheadUpdatedEvent() external {
         // Add addr_1 and addr_2 to the registry
         addPreconfersToRegistry(2);
 

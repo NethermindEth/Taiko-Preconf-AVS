@@ -69,9 +69,4 @@ library MerkleUtils {
         v = (v >> 128) | (v << 128);
         return bytes32(v);
     }
-
-    function mixInLength(bytes32 root, uint256 length) internal pure returns (bytes32) {
-        bytes32 littleEndianLength = toLittleEndian(length);
-        return sha256(abi.encodePacked(root, littleEndianLength));
-    }
 }

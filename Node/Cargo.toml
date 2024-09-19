@@ -38,7 +38,7 @@ ethereum_ssz = "0.7"
 ethereum_ssz_derive = "0.7"
 bls_on_arkworks = "0.3.0"
 num-bigint = "0.4.6"
-rand = "0.8" 
+rand = "0.8"
 
 [dev-dependencies]
 mockall_double = "0.3"
@@ -47,3 +47,7 @@ mockito = "1.4"
 
 [features]
 use_mock = []
+
+# TODO: remove when the bug is fixed (https://github.com/ralexstokes/ssz-rs/issues/163)
+[patch."https://github.com/ralexstokes/ssz-rs"]
+ssz_rs = { git = "https://github.com/noahfigueras/ssz-rs", branch = "partial_merkle_tree" }

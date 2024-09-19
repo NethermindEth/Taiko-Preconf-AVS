@@ -39,7 +39,7 @@ pub struct ExecutionLayer {
     contract_addresses: ContractAddresses,
     slot_clock: Arc<SlotClock>,
     preconf_registry_expiry_sec: u64,
-    chain_id: u64,
+    l1_chain_id: u64,
     bls_service: Arc<BLSService>,
 }
 
@@ -145,6 +145,7 @@ impl ExecutionLayer {
         slot_clock: Arc<SlotClock>,
         preconf_registry_expiry_sec: u64,
         bls_service: Arc<BLSService>,
+        l1_chain_id: u64,
     ) -> Result<Self, Error> {
         tracing::debug!("Creating ExecutionLayer with RPC URL: {}", rpc_url);
 
@@ -157,9 +158,6 @@ impl ExecutionLayer {
         let contract_addresses = Self::parse_contract_addresses(contract_addresses)
             .map_err(|e| Error::msg(format!("Failed to parse contract addresses: {}", e)))?;
 
-        let provider = ProviderBuilder::new().on_http(rpc_url.parse()?);
-        let chain_id = provider.get_chain_id().await?;
-
         Ok(Self {
             rpc_url: rpc_url.parse()?,
             signer,
@@ -168,7 +166,7 @@ impl ExecutionLayer {
             contract_addresses,
             slot_clock,
             preconf_registry_expiry_sec,
-            chain_id,
+            l1_chain_id,
             bls_service,
         })
     }
@@ -237,7 +235,7 @@ impl ExecutionLayer {
                 U256::from(lookahead_pointer),
                 lookahead_set_params,
             )
-            .chain_id(self.chain_id)
+            .chain_id(self.l1_chain_id)
             .nonce(nonce) //TODO how to get it?
             .gas(50_000)
             .max_fee_per_gas(20_000_000_000)
@@ -544,7 +542,7 @@ impl ExecutionLayer {
         let expiry = U256::from(self.slot_clock.get_now_plus_minute()?);
 
         let data = MessageData::from((
-            U256::from(self.chain_id),
+            U256::from(self.l1_chain_id),
             operation,
             expiry,
             self.preconfer_address,
@@ -773,11 +771,14 @@ impl ExecutionLayer {
         let clock = SlotClock::new(0u64, 0u64, 12u64, 32u64);
 
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
-        let chain_id = provider.get_chain_id().await?;
+        let l1_chain_id = provider.get_chain_id().await?;
 
-        let bls_service = Arc::new(crate::bls::BLSService::new(
-            "0x14d50ac943d01069c206543a0bed3836f6062b35270607ebf1d1f238ceda26f1",
-        ));
+        let bls_service = Arc::new(
+            crate::bls::BLSService::new(
+                "0x14d50ac943d01069c206543a0bed3836f6062b35270607ebf1d1f238ceda26f1",
+            )
+            .unwrap(),
+        );
 
         Ok(Self {
             rpc_url,
@@ -799,8 +800,8 @@ impl ExecutionLayer {
                 },
             },
             preconf_registry_expiry_sec: 120,
-            chain_id,
             bls_service,
+            l1_chain_id,
         })
     }
 
