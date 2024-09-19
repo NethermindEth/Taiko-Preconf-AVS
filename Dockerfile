@@ -1,10 +1,10 @@
-FROM rust:1.77 as builder
+FROM docker.io/library/rust:1.79 as builder
 
 # Set the working directory inside the container
 WORKDIR /usr/src/taiko_preconf_avs_node
 
 # Copy the project files
-COPY taiko_preconf_avs_node/ .
+COPY ../Node /usr/src/taiko_preconf_avs_node/
 
 # Copy the dependency directory
 COPY ../p2pNode/p2pNetwork /usr/src/p2pNode/p2pNetwork
