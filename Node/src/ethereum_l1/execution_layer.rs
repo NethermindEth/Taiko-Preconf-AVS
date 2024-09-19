@@ -5,6 +5,7 @@ use super::{
 use crate::{
     bls::BLSService,
     utils::{config, types::*},
+    ethereum_l1::ws_provider::WsProvider,
 };
 use alloy::{
     consensus::TypedTransaction,

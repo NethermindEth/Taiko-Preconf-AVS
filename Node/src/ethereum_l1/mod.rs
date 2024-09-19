@@ -4,6 +4,7 @@ mod el_with_cl_tests;
 pub mod execution_layer;
 pub mod merkle_proofs;
 pub mod slot_clock;
+mod ws_provider;
 
 use crate::{bls::BLSService, utils::config::ContractAddresses};
 use consensus_layer::ConsensusLayer;
