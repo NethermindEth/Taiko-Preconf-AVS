@@ -49,6 +49,12 @@ mod tests {
 
     #[tokio::test]
     async fn test() {
+
+        tracing_subscriber::fmt()
+        .with_env_filter("debug")  // Set the log level
+        .with_test_writer()       // Ensure logs go to stdout during tests
+        .init();
+
         // Check forge
         if !check_foundry_installed() {
             println!("Error: Foundry not installed!");

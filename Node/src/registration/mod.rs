@@ -32,14 +32,16 @@ impl Registration {
     }
 
     pub async fn add_validator(&self) -> Result<(), Error> {
+        println!("Adding validator...");
         let validator_added_filter = self
             .ethereum_l1
             .execution_layer
             .subscribe_to_validator_added_event()
             .await?;
 
+        println!("Validator added");
         self.ethereum_l1.execution_layer.add_validator().await?;
-
+        println!("Validator added event received");
         self.ethereum_l1
             .execution_layer
             .wait_for_the_validator_added_event(validator_added_filter)
