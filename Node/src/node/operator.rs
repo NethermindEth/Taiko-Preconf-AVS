@@ -105,6 +105,13 @@ impl Operator {
     }
 
     pub async fn update_preconfer_lookahead_for_epoch(&mut self) -> Result<(), Error> {
+        tracing::debug!(
+            "Updating preconfer lookahead for epoch: {}",
+            self.ethereum_l1
+                .slot_clock
+                .get_epoch_for_timestamp(self.epoch_begin_timestamp)?
+        );
+
         if let Some(lookahead_preconfer_addresses_next_epoch) =
             self.lookahead_preconfer_addresses_next_epoch.take()
         {

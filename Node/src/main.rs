@@ -99,7 +99,15 @@ async fn main() -> Result<(), Error> {
 }
 
 fn init_logging() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
+    use tracing_subscriber::{fmt, EnvFilter};
+
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new("debug")
+            .add_directive("reqwest=info".parse().unwrap())
+            .add_directive("hyper=info".parse().unwrap())
+            .add_directive("alloy_transport=info".parse().unwrap())
+            .add_directive("alloy_rpc_client=info".parse().unwrap())
+    });
+
+    fmt().with_env_filter(filter).init();
 }
