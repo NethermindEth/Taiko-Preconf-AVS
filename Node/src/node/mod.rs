@@ -277,6 +277,10 @@ impl Node {
         // Synchronize with L1 Slot Start Time
         let duration_to_next_slot = self.ethereum_l1.slot_clock.duration_to_next_slot().unwrap();
         sleep(duration_to_next_slot).await;
+        // Setup protocol if needed
+        if let Err(e) = self.check_and_initialize_lookahead().await {
+            tracing::error!("Failed to initialize lookahead: {}", e);
+        }
         // start preconfirmation loop
         let mut interval = tokio::time::interval(Duration::from_secs(self.l2_slot_duration_sec));
         loop {
@@ -286,6 +290,42 @@ impl Node {
                 tracing::error!("Failed to execute main block preconfirmation step: {}", err);
             }
         }
+    }
+
+    async fn check_and_initialize_lookahead(&mut self) -> Result<(), Error> {
+        // Check that the lookahead tail is equal to zero
+        let is_zero = self
+            .ethereum_l1
+            .execution_layer
+            .is_lookahead_tail_zero()
+            .await?;
+        if is_zero {
+            // Get next epoch
+            let next_epoch = self.ethereum_l1.slot_clock.get_current_epoch()? + 1;
+            // Get CL lookahead for the next epoch
+            self.cl_lookahead = self
+                .ethereum_l1
+                .consensus_layer
+                .get_lookahead(next_epoch)
+                .await?;
+            // Get lookahead params for contract call
+            let lookahead_params = self
+                .ethereum_l1
+                .execution_layer
+                .get_lookahead_params_for_epoch_using_cl_lookahead(
+                    self.ethereum_l1
+                        .slot_clock
+                        .get_epoch_begin_timestamp(next_epoch)?,
+                    &self.cl_lookahead,
+                )
+                .await?;
+            // Force push lookahead to the contract
+            self.ethereum_l1
+                .execution_layer
+                .force_push_lookahead(lookahead_params)
+                .await?;
+        }
+        Ok(())
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
