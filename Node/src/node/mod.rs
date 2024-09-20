@@ -67,8 +67,8 @@ impl Node {
         l2_slot_duration_sec: u64,
         bls_service: Arc<BLSService>,
     ) -> Result<Self, Error> {
-        let current_epoch = ethereum_l1.slot_clock.get_current_epoch()?;
-        let operator = Operator::new(ethereum_l1.clone(), current_epoch)?;
+        let init_epoch = 0;
+        let operator = Operator::new(ethereum_l1.clone(), init_epoch)?;
         Ok(Self {
             taiko,
             node_block_proposed_rx: Some(node_rx),
@@ -76,7 +76,7 @@ impl Node {
             p2p_to_node_rx: Some(p2p_to_node_rx),
             ethereum_l1,
             mev_boost,
-            epoch: current_epoch,
+            epoch: init_epoch,
             cl_lookahead: vec![],
             lookahead_preconfer_buffer: None,
             l2_slot_duration_sec,
@@ -281,13 +281,6 @@ impl Node {
         // Setup protocol if needed
         if let Err(e) = self.check_and_initialize_lookahead().await {
             tracing::error!("Failed to initialize lookahead: {}", e);
-        }
-
-        if let Err(err) = self.operator.update_preconfer_lookahead_for_epoch().await {
-            tracing::error!(
-                "Failed to update preconfer lookahead before starting preconfirmation loop: {}",
-                err
-            );
         }
 
         // start preconfirmation loop
