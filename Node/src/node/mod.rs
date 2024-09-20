@@ -302,30 +302,7 @@ impl Node {
             .is_lookahead_tail_zero()
             .await?;
         if is_zero {
-            // Get next epoch
-            let next_epoch = self.ethereum_l1.slot_clock.get_current_epoch()? + 1;
-            // Get CL lookahead for the next epoch
-            self.cl_lookahead = self
-                .ethereum_l1
-                .consensus_layer
-                .get_lookahead(next_epoch)
-                .await?;
-            // Get lookahead params for contract call
-            let lookahead_params = self
-                .ethereum_l1
-                .execution_layer
-                .get_lookahead_params_for_epoch_using_cl_lookahead(
-                    self.ethereum_l1
-                        .slot_clock
-                        .get_epoch_begin_timestamp(next_epoch)?,
-                    &self.cl_lookahead,
-                )
-                .await?;
-            // Force push lookahead to the contract
-            self.ethereum_l1
-                .execution_layer
-                .force_push_lookahead(lookahead_params)
-                .await?;
+            self.ethereum_l1.force_push_lookahead().await?;
         }
         Ok(())
     }
