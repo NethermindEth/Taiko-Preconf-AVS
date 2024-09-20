@@ -3,6 +3,7 @@ pub mod consensus_layer;
 mod el_with_cl_tests;
 pub mod execution_layer;
 pub mod merkle_proofs;
+mod registration;
 pub mod slot_clock;
 mod ws_provider;
 

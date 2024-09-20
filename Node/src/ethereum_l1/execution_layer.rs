@@ -290,31 +290,44 @@ impl ExecutionLayer {
     }
 
     pub async fn register_preconfer(&self) -> Result<(), Error> {
+        tracing::debug!("Registering preconfer");
         let strategy_manager = StrategyManager::new(
             self.contract_addresses.eigen_layer.strategy_manager,
             &self.provider_ws,
         );
         let one_eth = U256::from(1000000000000000000u64);
-        let tx_hash = strategy_manager
+        match strategy_manager
             .depositIntoStrategy(Address::ZERO, Address::ZERO, one_eth)
             .value(one_eth)
             .send()
-            .await?
-            .watch()
-            .await?;
-        tracing::debug!("Deposited into strategy: {tx_hash}");
+            .await
+        {
+            Ok(receipt) => {
+                let tx_hash = receipt.watch().await?;
+                tracing::info!("Deposited into strategy: {tx_hash}");
+            }
+            Err(err) => {
+                tracing::error!("Depositing into strategy failed: {}", err);
+            }
+        }
 
         let slasher = Slasher::new(
             self.contract_addresses.eigen_layer.slasher,
             &self.provider_ws,
         );
-        let tx_hash = slasher
+        match slasher
             .optIntoSlashing(self.contract_addresses.avs.service_manager)
             .send()
-            .await?
-            .watch()
-            .await?;
-        tracing::debug!("Opted into slashing: {tx_hash}");
+            .await
+        {
+            Ok(receipt) => {
+                let tx_hash = receipt.watch().await?;
+                tracing::info!("Opted into slashing: {tx_hash}");
+            }
+            Err(err) => {
+                tracing::error!("Opting into slashing failed: {}", err);
+            }
+        }
 
         let salt = Self::create_random_salt();
         let avs_directory =
@@ -348,13 +361,18 @@ impl ExecutionLayer {
             self.contract_addresses.avs.preconf_registry,
             &self.provider_ws,
         );
-        let tx_hash = preconf_registry
-            .registerPreconfer(signature_with_salt_and_expiry)
-            .send()
-            .await?
-            .watch()
-            .await?;
-        tracing::debug!("Registered preconfirming: {tx_hash}");
+        let tx = preconf_registry.registerPreconfer(signature_with_salt_and_expiry);
+
+        match tx.send().await {
+            Ok(receipt) => {
+                let tx_hash = receipt.watch().await?;
+                tracing::info!("Preconfer registered: {:?}", tx_hash);
+            }
+            Err(err) => {
+                let err = super::registration::decode_register_preconfer_error(&err.to_string())?;
+                return Err(anyhow::anyhow!("Registering preconfer failed: {}", err));
+            }
+        }
 
         Ok(())
     }
@@ -617,13 +635,18 @@ impl ExecutionLayer {
             self.contract_addresses.avs.preconf_registry,
             &self.provider_ws,
         );
-        let tx_hash = preconf_registry
-            .addValidators(params)
-            .send()
-            .await?
-            .watch()
-            .await?;
-        tracing::debug!("Add validator to preconfer: {tx_hash}");
+        let tx = preconf_registry.addValidators(params);
+
+        match tx.send().await {
+            Ok(receipt) => {
+                let tx_hash = receipt.watch().await?;
+                tracing::info!("Add validator to preconfer successful: {:?}", tx_hash);
+            }
+            Err(err) => {
+                let err = super::registration::decode_add_validator_error(&err.to_string())?;
+                return Err(anyhow::anyhow!("Adding validator failed: {}", err));
+            }
+        }
 
         Ok(())
     }
@@ -661,7 +684,7 @@ impl ExecutionLayer {
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Error receiving log: {:?}", e);
+                    tracing::error!("Error receiving log: {}", e);
                 }
             }
         }
