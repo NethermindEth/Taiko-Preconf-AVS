@@ -330,21 +330,15 @@ impl ExecutionLayer {
         }
 
         let salt = Self::create_random_salt();
-        let avs_directory =
-            AVSDirectory::new(self.contract_addresses.avs.directory, &self.provider_ws);
         let expiration_timestamp =
             U256::from(chrono::Utc::now().timestamp() as u64 + self.preconf_registry_expiry_sec);
-        let digest_hash = avs_directory
-            .calculateOperatorAVSRegistrationDigestHash(
-                self.preconfer_address,
-                self.contract_addresses.avs.service_manager,
-                salt,
-                expiration_timestamp,
-            )
-            .call()
-            .await?;
 
-        let digest_hash_bytes = digest_hash._0.to_vec();
+        #[cfg(not(test))]
+        let digest_hash_bytes = self
+            .calculate_digest_hash(expiration_timestamp, salt)
+            .await?;
+        #[cfg(test)]
+        let digest_hash_bytes = vec![0u8; 32]; // Dummy value for tests
 
         // sign the digest hash with private key
         let signature = self.signer.sign_message_sync(&digest_hash_bytes)?;
@@ -373,6 +367,27 @@ impl ExecutionLayer {
         }
 
         Ok(())
+    }
+
+    async fn calculate_digest_hash(
+        &self,
+        expiration_timestamp: U256,
+        salt: FixedBytes<32>,
+    ) -> Result<Vec<u8>, Error> {
+        let avs_directory =
+            AVSDirectory::new(self.contract_addresses.avs.directory, &self.provider_ws);
+
+        let digest_hash = avs_directory
+            .calculateOperatorAVSRegistrationDigestHash(
+                self.preconfer_address,
+                self.contract_addresses.avs.service_manager,
+                salt,
+                expiration_timestamp,
+            )
+            .call()
+            .await?;
+
+        Ok(digest_hash._0.to_vec())
     }
 
     fn create_random_salt() -> FixedBytes<32> {
