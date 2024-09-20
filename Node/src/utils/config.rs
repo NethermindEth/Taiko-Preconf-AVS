@@ -126,7 +126,7 @@ impl Config {
         };
 
         const TAIKO_L1_ADDRESS: &str = "TAIKO_L1_ADDRESS";
-        let taiko_l1 = std::env::var(TAIKO_L1_ADDRESS).unwrap_or({
+        let taiko_l1 = std::env::var(TAIKO_L1_ADDRESS).unwrap_or_else(|_| {
             warn!(
                 "No TaikoL1 contract address found in {} env var, using default",
                 TAIKO_L1_ADDRESS
