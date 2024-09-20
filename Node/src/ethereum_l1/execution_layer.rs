@@ -341,12 +341,10 @@ impl ExecutionLayer {
                 salt,
                 expiration_timestamp,
             )
-            .send()
-            .await?
-            .watch()
+            .call()
             .await?;
 
-        let digest_hash_bytes = digest_hash.to_vec();
+        let digest_hash_bytes = digest_hash._0.to_vec();
 
         // sign the digest hash with private key
         let signature = self.signer.sign_message_sync(&digest_hash_bytes)?;
