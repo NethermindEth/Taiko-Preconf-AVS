@@ -1,4 +1,3 @@
-#![allow(dead_code)] // TODO: remove
 use crate::utils::types::*;
 use anyhow::Error;
 use beacon_api_client::{
