@@ -565,6 +565,33 @@ impl ExecutionLayer {
         Ok(())
     }
 
+    pub async fn is_lookahead_tail_zero(&self) -> Result<bool, Error> {
+        let contract = PreconfTaskManager::new(
+            self.contract_addresses.avs.preconf_task_manager,
+            &self.provider_ws,
+        );
+        let tail = contract.getLookaheadTail().call().await?._0;
+        Ok(tail.is_zero())
+    }
+
+    pub async fn force_push_lookahead(
+        &self,
+        lookahead_set_params: Vec<PreconfTaskManager::LookaheadSetParam>,
+    ) -> Result<(), Error> {
+        let contract = PreconfTaskManager::new(
+            self.contract_addresses.avs.preconf_task_manager,
+            &self.provider_ws,
+        );
+        let tx_hash = contract
+            .forcePushLookahead(lookahead_set_params)
+            .send()
+            .await?
+            .watch()
+            .await?;
+        tracing::debug!("Force pushed lookahead: {tx_hash}");
+        Ok(())
+    }
+
     pub async fn add_validator(&self) -> Result<(), Error> {
         // Build add message
         // Operation.ADD
