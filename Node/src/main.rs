@@ -24,6 +24,8 @@ struct Cli {
     register: bool,
     #[clap(long, help = "Add validator to preconfer")]
     add_validator: bool,
+    #[clap(long, help = "Force Push lookahead to the PreconfTaskManager contract")]
+    force_push_lookahead: bool,
 }
 
 #[tokio::main]
@@ -56,6 +58,11 @@ async fn main() -> Result<(), Error> {
     if args.add_validator {
         let registration = registration::Registration::new(ethereum_l1);
         registration.add_validator().await?;
+        return Ok(());
+    }
+
+    if args.force_push_lookahead {
+        ethereum_l1.force_push_lookahead().await?;
         return Ok(());
     }
 
