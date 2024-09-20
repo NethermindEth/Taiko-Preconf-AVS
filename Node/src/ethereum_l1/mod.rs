@@ -8,6 +8,7 @@ pub mod slot_clock;
 mod ws_provider;
 
 use crate::{bls::BLSService, utils::config::ContractAddresses};
+use anyhow::Error;
 use consensus_layer::ConsensusLayer;
 #[cfg(not(test))]
 use execution_layer::ExecutionLayer;
@@ -37,7 +38,7 @@ impl EthereumL1 {
         preconf_registry_expiry_sec: u64,
         bls_service: Arc<BLSService>,
         l1_chain_id: u64,
-    ) -> Result<Self, anyhow::Error> {
+    ) -> Result<Self, Error> {
         let consensus_layer = ConsensusLayer::new(consensus_rpc_url)?;
         let genesis_details = consensus_layer.get_genesis_details().await?;
         let slot_clock = Arc::new(SlotClock::new(
@@ -63,5 +64,26 @@ impl EthereumL1 {
             consensus_layer,
             execution_layer,
         })
+    }
+
+    pub async fn force_push_lookahead(&self) -> Result<(), Error> {
+        // Get next epoch
+        let next_epoch = self.slot_clock.get_current_epoch()? + 1;
+        // Get CL lookahead for the next epoch
+        let cl_lookahead = self.consensus_layer.get_lookahead(next_epoch).await?;
+        // Get lookahead params for contract call
+        let lookahead_params = self
+            .execution_layer
+            .get_lookahead_params_for_epoch_using_cl_lookahead(
+                self.slot_clock.get_epoch_begin_timestamp(next_epoch)?,
+                &cl_lookahead,
+            )
+            .await?;
+        // Force push lookahead to the contract
+        self.execution_layer
+            .force_push_lookahead(lookahead_params)
+            .await?;
+
+        Ok(())
     }
 }
