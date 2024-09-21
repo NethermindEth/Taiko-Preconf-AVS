@@ -1,4 +1,5 @@
 use super::{
+    avs_contract_error::AVSContractError,
     block_proposed::{BlockProposed, EventPollerBlockProposed, TaikoEvents},
     slot_clock::SlotClock,
 };
@@ -361,8 +362,7 @@ impl ExecutionLayer {
                 tracing::info!("Preconfer registered: {:?}", tx_hash);
             }
             Err(err) => {
-                let err = super::registration::decode_register_preconfer_error(&err.to_string())?;
-                return Err(anyhow::anyhow!("Registering preconfer failed: {}", err));
+                return Err(anyhow::anyhow!(err.to_avs_contract_error()));
             }
         }
 
@@ -595,13 +595,18 @@ impl ExecutionLayer {
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,
         );
-        let tx_hash = contract
-            .forcePushLookahead(lookahead_set_params)
-            .send()
-            .await?
-            .watch()
-            .await?;
-        tracing::debug!("Force pushed lookahead: {tx_hash}");
+        let tx = contract.forcePushLookahead(lookahead_set_params);
+
+        match tx.send().await {
+            Ok(receipt) => {
+                let tx_hash = receipt.watch().await?;
+                tracing::info!("Force pushed lookahead: {}", tx_hash);
+            }
+            Err(err) => {
+                return Err(anyhow::anyhow!(err.to_avs_contract_error()));
+            }
+        }
+
         Ok(())
     }
 
@@ -656,8 +661,7 @@ impl ExecutionLayer {
                 tracing::info!("Add validator to preconfer successful: {:?}", tx_hash);
             }
             Err(err) => {
-                let err = super::registration::decode_add_validator_error(&err.to_string())?;
-                return Err(anyhow::anyhow!("Adding validator failed: {}", err));
+                return Err(anyhow::anyhow!(err.to_avs_contract_error()));
             }
         }
 
