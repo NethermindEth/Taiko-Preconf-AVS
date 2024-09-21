@@ -27,6 +27,6 @@ contract BLSSignatureChecker {
         BLS12381.G2Point memory msgG2 = message.hashToCurveG2(dst());
 
         // Return the pairing check result
-        return BLS12381.pairing(BLS12381.generatorG1().negate(), sig, pubkey, msgG2);
+        return BLS12381.pairing(pubkey, msgG2, BLS12381.negGeneratorG1(), sig);
     }
 }
