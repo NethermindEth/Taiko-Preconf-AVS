@@ -32,15 +32,15 @@ library BLS12381 {
     }
 
     /// @dev Referenced from https://eips.ethereum.org/EIPS/eip-2537#curve-parameters
-    function generatorG1() internal pure returns (G1Point memory) {
+    function negGeneratorG1() internal pure returns (G1Point memory) {
         return G1Point({
             x: [
                 0x0000000000000000000000000000000017f1d3a73197d7942695638c4fa9ac0f,
                 0xc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb
             ],
             y: [
-                0x0000000000000000000000000000000008b3f481e3aaa0f1a09e30ed741d8ae4,
-                0xfcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1
+                0x00000000000000000000000000000000114d1d6855d545a8aa7d76c8cf2e21f2,
+                0x67816aef1db507c96655b9d5caac42364e6f38ba0ecb751bad54dcd6b939c2ca
             ]
         });
     }
@@ -56,7 +56,7 @@ library BLS12381 {
 
         // Perform word-wise elementary subtraction
         if (fieldModulus[1] < point.y[1]) {
-            yNeg[1] = type(uint256).max - (point.y[1] - fieldModulus[1]);
+            yNeg[1] = type(uint256).max - (point.y[1] - fieldModulus[1]) + 1;
             fieldModulus[0] -= 1; // borrow
         } else {
             yNeg[1] = fieldModulus[1] - point.y[1];
@@ -82,7 +82,7 @@ library BLS12381 {
         // 4. R = Q0 + Q1
         r = q0.plus(q1);
         // 5. P = clear_cofactor(R)
-        // Not needed as map fp to g1 already does it
+        // Not needed as map fp to g2 already does it
     }
 
     /**
@@ -145,7 +145,7 @@ library BLS12381 {
      * @notice Adds two G2 points using the precompile at 0x0e
      */
     function plus(G2Point memory point1, G2Point memory point2) internal view returns (G2Point memory) {
-        G2Point memory r;
+        uint256[8] memory r;
 
         uint256[16] memory input = [
             point1.x[0],
@@ -182,14 +182,14 @@ library BLS12381 {
             if iszero(success) { revert(0, 0) }
         }
 
-        return r;
+        return _resolveG2Point(r);
     }
 
     /**
      * @notice Maps an element of the FP2 field to a G2 point using the precompile at 0x13
      */
     function mapToG2(FieldPoint2 memory fp2) internal view returns (G2Point memory) {
-        G2Point memory r;
+        uint256[8] memory r;
 
         uint256[4] memory input = [fp2.u[0], fp2.u[1], fp2.u_I[0], fp2.u_I[1]];
 
@@ -209,7 +209,7 @@ library BLS12381 {
             if iszero(success) { revert(0, 0) }
         }
 
-        return r;
+        return _resolveG2Point(r);
     }
 
     /**
@@ -220,7 +220,7 @@ library BLS12381 {
         view
         returns (bool)
     {
-        bool r;
+        bool[1] memory r;
 
         uint256[24] memory input = [
             a1.x[0],
@@ -266,7 +266,7 @@ library BLS12381 {
             if iszero(success) { revert(0, 0) }
         }
 
-        return r;
+        return r[0];
     }
 
     //=========
@@ -410,5 +410,14 @@ library BLS12381 {
         }
 
         return false;
+    }
+
+    function _resolveG2Point(uint256[8] memory flattened) internal pure returns (G2Point memory) {
+        return G2Point({
+            x: [flattened[0], flattened[1]],
+            x_I: [flattened[2], flattened[3]],
+            y: [flattened[4], flattened[5]],
+            y_I: [flattened[6], flattened[7]]
+        });
     }
 }

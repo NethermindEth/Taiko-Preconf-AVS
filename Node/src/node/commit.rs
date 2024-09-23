@@ -1,4 +1,3 @@
-#![allow(dead_code)] // TODO: remove
 use crate::utils::types::*;
 use crate::{taiko::l2_tx_lists::RPCReplyL2TxLists, utils::bytes_tools::hash_bytes_with_keccak};
 use alloy_rlp::{Encodable, RlpDecodable, RlpEncodable};
@@ -50,6 +49,7 @@ impl L2TxListsCommit {
         Ok(hash_bytes_with_keccak(&buffer.as_slice()))
     }
 
+    #[allow(dead_code)]
     pub fn sign(&self, private_key: &str) -> Result<Signature, Error> {
         let secp = Secp256k1::new();
         let secret_key = SecretKey::from_slice(&hex::decode(private_key)?)?;
