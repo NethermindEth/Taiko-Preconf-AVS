@@ -252,7 +252,7 @@ impl ExecutionLayer {
             )
             .chain_id(self.l1_chain_id)
             .nonce(nonce)
-            .gas(50_000)
+            .gas(500_000)
             .max_fee_per_gas(20_000_000_000)
             .max_priority_fee_per_gas(1_000_000_000);
 
