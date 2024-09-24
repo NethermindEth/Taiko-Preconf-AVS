@@ -5,12 +5,18 @@ import {IPreconfServiceManager} from "../interfaces/IPreconfServiceManager.sol";
 import {ISlasher} from "../interfaces/eigenlayer-mvp/ISlasher.sol";
 import {IAVSDirectory} from "../interfaces/eigenlayer-mvp/IAVSDirectory.sol";
 
+/**
+ * @dev This contract would serve as the address of the AVS w.r.t the restaking platform being used.
+ * Currently, this is based on a mock version of Eigenlayer that we have created solely for this POC.
+ * This contract may be modified depending on the interface of the restaking contracts.
+ */
 contract PreconfServiceManager is IPreconfServiceManager {
     address internal immutable preconfRegistry;
     address internal immutable preconfTaskManager;
     IAVSDirectory internal immutable avsDirectory;
     ISlasher internal immutable slasher;
 
+    /// @dev This is currently just a flag and not actually being used to lock the stake.
     mapping(address operator => uint256 timestamp) public stakeLockedUntil;
 
     constructor(address _preconfRegistry, address _preconfTaskManager, IAVSDirectory _avsDirectory, ISlasher _slasher) {
