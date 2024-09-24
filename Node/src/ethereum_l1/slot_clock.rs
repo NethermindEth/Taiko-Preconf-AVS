@@ -208,4 +208,14 @@ mod tests {
         let epoch_duration = slot_clock.get_epoch_duration_secs();
         assert_eq!(epoch_duration, 384); // 12 slots per epoch * 32 seconds per slot
     }
+
+
+    #[test]
+    fn test_get_epoch_begin_timestamp() {
+        let genesis_slot = Slot::from(0u64);
+        let slot_clock = SlotClock::new(genesis_slot, 0, 12, 32);
+
+        let epoch_begin_timestamp = slot_clock.get_epoch_begin_timestamp(1).unwrap();
+        assert_eq!(epoch_begin_timestamp, 384);
+    }
 }
