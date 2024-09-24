@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 pub struct Operator {
     ethereum_l1: Arc<EthereumL1>,
-    epoch_begin_timestamp: u64,
+    epoch: u64,
     lookahead_required_contract_called: bool,
     lookahead_preconfer_addresses: Vec<PreconferAddress>,
     lookahead_preconfer_addresses_next_epoch: Option<Vec<PreconferAddress>>,
@@ -22,10 +22,9 @@ impl Operator {
     pub fn new(ethereum_l1: Arc<EthereumL1>, epoch: Epoch) -> Result<Self, Error> {
         tracing::debug!("Operator::new: epoch: {}", epoch);
         let l1_slots_per_epoch = ethereum_l1.slot_clock.get_slots_per_epoch();
-        let epoch_begin_timestamp = ethereum_l1.slot_clock.get_epoch_begin_timestamp(epoch)?;
         Ok(Self {
             ethereum_l1,
-            epoch_begin_timestamp,
+            epoch,
             lookahead_required_contract_called: false,
             lookahead_preconfer_addresses: vec![],
             lookahead_preconfer_addresses_next_epoch: None,
@@ -73,8 +72,9 @@ impl Operator {
                 .ethereum_l1
                 .execution_layer
                 .get_lookahead_preconfer_addresses_for_epoch(
-                    self.epoch_begin_timestamp
-                        + self.ethereum_l1.slot_clock.get_epoch_duration_secs(),
+                    self.ethereum_l1
+                        .slot_clock
+                        .get_epoch_begin_timestamp(self.epoch + 1)?,
                 )
                 .await?;
             let address = lookahead_preconfer_addresses_next_epoch[0];
@@ -90,32 +90,27 @@ impl Operator {
         next_preconfer_address != self.ethereum_l1.execution_layer.get_preconfer_address()
     }
 
-    pub async fn should_post_lookahead(&mut self) -> Result<bool, Error> {
-        if !self.lookahead_required_contract_called {
-            tracing::debug!("Operator::should_post_lookahead: checking if lookahead is required");
-            self.lookahead_required_contract_called = true;
-            if self
-                .ethereum_l1
-                .execution_layer
-                .is_lookahead_required(
-                    self.epoch_begin_timestamp
-                        + self.ethereum_l1.slot_clock.get_epoch_duration_secs(),
-                )
-                .await?
-            {
-                return Ok(true);
-            }
-        }
-        Ok(false)
+    pub async fn should_post_lookahead_for_next_epoch(&mut self) -> Result<bool, Error> {
+        // if !self.lookahead_required_contract_called {
+        //     tracing::debug!("Operator::should_post_lookahead: checking if lookahead is required");
+        //     self.lookahead_required_contract_called = true;
+        self.ethereum_l1
+            .execution_layer
+            .is_lookahead_required(
+                self.ethereum_l1
+                    .slot_clock
+                    .get_epoch_begin_timestamp(self.epoch + 1)?,
+            )
+            .await
+        //     {
+        //         return Ok(true);
+        //     }
+        // }
+        // Ok(false)
     }
 
     pub async fn update_preconfer_lookahead_for_epoch(&mut self) -> Result<(), Error> {
-        tracing::debug!(
-            "Updating preconfer lookahead for epoch: {}",
-            self.ethereum_l1
-                .slot_clock
-                .get_epoch_for_timestamp(self.epoch_begin_timestamp)?
-        );
+        tracing::debug!("Updating preconfer lookahead for epoch: {}", self.epoch);
 
         if let Some(lookahead_preconfer_addresses_next_epoch) =
             self.lookahead_preconfer_addresses_next_epoch.take()
@@ -125,7 +120,11 @@ impl Operator {
             self.lookahead_preconfer_addresses = self
                 .ethereum_l1
                 .execution_layer
-                .get_lookahead_preconfer_addresses_for_epoch(self.epoch_begin_timestamp)
+                .get_lookahead_preconfer_addresses_for_epoch(
+                    self.ethereum_l1
+                        .slot_clock
+                        .get_epoch_begin_timestamp(self.epoch)?,
+                )
                 .await?;
         }
         Ok(())
