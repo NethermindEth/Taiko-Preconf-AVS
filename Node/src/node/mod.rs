@@ -328,6 +328,7 @@ impl Node {
             }
             OperatorStatus::None => {
                 tracing::debug!("Not my slot to preconfirm: {}", current_slot);
+                // self.update_lookahead_when_needed().await?;
             }
         }
 
@@ -383,7 +384,7 @@ impl Node {
     async fn get_lookahead_params(
         &mut self,
     ) -> Result<Option<Vec<PreconfTaskManager::LookaheadSetParam>>, Error> {
-        if self.operator.should_post_lookahead().await? {
+        if self.operator.should_post_lookahead_for_next_epoch().await? {
             tracing::debug!("Should post lookahead params, getting them");
             let lookahead_params = self
                 .ethereum_l1
@@ -557,5 +558,18 @@ impl Node {
             .send(message.into())
             .await
             .map_err(|e| any_err!("Failed to send message to node_to_p2p_tx: {}", e))
+    }
+
+    async fn update_lookahead_when_needed(&mut self) -> Result<(), Error> {
+        if let Some(lookahead_params) = self.get_lookahead_params().await? {
+            tracing::debug!("No lookahead posted, force pushing lookahead");
+            self.preconfirmation_helper.increment_nonce();
+            self.ethereum_l1
+                .execution_layer
+                .force_push_lookahead(lookahead_params)
+                .await?;
+        }
+
+        Ok(())
     }
 }
