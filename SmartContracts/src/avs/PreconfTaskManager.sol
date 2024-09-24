@@ -498,7 +498,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
                 validator.preconfer != address(0) && slotTimestamp >= validator.startProposingAt
                     && (validator.stopProposingAt == 0 || slotTimestamp < validator.stopProposingAt)
             ) {
-                lookaheadSetParamsTemp[i] =
+                lookaheadSetParamsTemp[index] =
                     LookaheadSetParam({timestamp: slotTimestamp, preconfer: validator.preconfer});
                 ++index;
             }
