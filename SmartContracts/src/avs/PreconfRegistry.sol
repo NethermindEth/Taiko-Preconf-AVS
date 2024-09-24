@@ -38,8 +38,8 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
 
     /**
      * @notice Registers a preconfer in the registry by giving it a non-zero index
-     * @dev This function internally accesses Eigenlayer via the AVS service manager
-     * @param operatorSignature The signature of the operator in the format expected by Eigenlayer
+     * @dev This function internally accesses the restaking platform via the AVS service manager
+     * @param operatorSignature The signature of the operator in the format expected by the restaking platform
      */
     function registerPreconfer(IAVSDirectory.SignatureWithSaltAndExpiry calldata operatorSignature) external {
         // Preconfer must not have registered already
@@ -94,8 +94,8 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
 
     /**
      * @notice Assigns a validator to a preconfer
-     * @dev The function allows different validators to be assigned to different preconfers, but
-     * generally, it will be called by a preconfer to assign validators to itself.
+     * @dev This function verifies BLS signatures which is a very expensive operation costing about
+     * ~350K units of gas per signature.
      * @param addValidatorParams Contains the public key, signature, expiry, and preconfer
      */
     function addValidators(AddValidatorParam[] calldata addValidatorParams) external {
@@ -170,6 +170,7 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
             }
 
             // Note: BLS signature checks have been commented out
+            // Todo: It would be reasonable to remove BLS checks altogether for validator removals.
 
             // bytes memory message =
             //     _createMessage(ValidatorOp.REMOVE, removeValidatorParams[i].signatureExpiry, validator.preconfer);
