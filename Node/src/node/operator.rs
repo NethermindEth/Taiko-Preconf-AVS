@@ -20,6 +20,7 @@ pub enum Status {
 
 impl Operator {
     pub fn new(ethereum_l1: Arc<EthereumL1>, epoch: Epoch) -> Result<Self, Error> {
+        tracing::debug!("Operator::new: epoch: {}", epoch);
         let l1_slots_per_epoch = ethereum_l1.slot_clock.get_slots_per_epoch();
         let epoch_begin_timestamp = ethereum_l1.slot_clock.get_epoch_begin_timestamp(epoch)?;
         Ok(Self {
@@ -91,11 +92,15 @@ impl Operator {
 
     pub async fn should_post_lookahead(&mut self) -> Result<bool, Error> {
         if !self.lookahead_required_contract_called {
+            tracing::debug!("Operator::should_post_lookahead: checking if lookahead is required");
             self.lookahead_required_contract_called = true;
             if self
                 .ethereum_l1
                 .execution_layer
-                .is_lookahead_required(self.epoch_begin_timestamp)
+                .is_lookahead_required(
+                    self.epoch_begin_timestamp
+                        + self.ethereum_l1.slot_clock.get_epoch_duration_secs(),
+                )
                 .await?
             {
                 return Ok(true);

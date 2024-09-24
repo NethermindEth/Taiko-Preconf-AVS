@@ -356,9 +356,7 @@ impl Node {
         Ok(())
     }
 
-    async fn get_lookahead_params(
-        &mut self,
-    ) -> Result<(u64, Vec<PreconfTaskManager::LookaheadSetParam>), Error> {
+    async fn get_lookahead_pointer(&mut self) -> Result<u64, Error> {
         let current_timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_secs();
@@ -379,7 +377,14 @@ impl Node {
                 "get_lookahead_params: Preconfer not found in lookahead"
             ))? as u64;
 
+        Ok(lookahead_pointer)
+    }
+
+    async fn get_lookahead_params(
+        &mut self,
+    ) -> Result<Option<Vec<PreconfTaskManager::LookaheadSetParam>>, Error> {
         if self.operator.should_post_lookahead().await? {
+            tracing::debug!("Should post lookahead params, getting them");
             let lookahead_params = self
                 .ethereum_l1
                 .execution_layer
@@ -391,10 +396,11 @@ impl Node {
                 )
                 .await?;
 
-            return Ok((lookahead_pointer, lookahead_params));
-        }
+            tracing::debug!("Got Lookahead params: {}", lookahead_params.len());
 
-        Ok((lookahead_pointer, vec![]))
+            return Ok(Some(lookahead_params));
+        }
+        Ok(None)
     }
 
     async fn preconfirm_last_slot(&mut self) -> Result<(), Error> {
@@ -449,15 +455,27 @@ impl Node {
             self.ethereum_l1.slot_clock.get_current_slot()?
         );
 
-        let (lookahead_pointer, lookahead_params) = self.get_lookahead_params().await?;
-
+        let lookahead_params = self.get_lookahead_params().await?;
         let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;
-        if pending_tx_lists.tx_list_bytes.is_empty() {
+        let pending_tx_lists_bytes = if pending_tx_lists.tx_list_bytes.is_empty() {
+            if let Some(lookahead_params) = lookahead_params {
+                tracing::debug!("No pending transactions to preconfirm, force pushing lookahead");
+                self.preconfirmation_helper.increment_nonce();
+                self.ethereum_l1
+                    .execution_layer
+                    .force_push_lookahead(lookahead_params)
+                    .await?;
+            }
             return Ok(());
-        }
+        } else {
+            tracing::debug!(
+                "Pending {} transactions to preconfirm",
+                pending_tx_lists.tx_list_bytes.len()
+            );
+            pending_tx_lists.tx_list_bytes[0].clone() // TODO: handle multiple tx lists
+        };
 
         let new_block_height = pending_tx_lists.parent_block_id + 1;
-        let nonce = self.preconfirmation_helper.get_next_nonce();
 
         let (commit_hash, signature) =
             self.generate_commit_hash_and_signature(&pending_tx_lists, new_block_height)?;
@@ -469,7 +487,7 @@ impl Node {
         let preconf_message = PreconfirmationMessage::new(
             new_block_height,
             pending_tx_lists.tx_lists.clone(),
-            &pending_tx_lists.tx_list_bytes[0], //TODO: handle rest tx lists
+            &pending_tx_lists_bytes,
             proof.clone(),
         );
         self.send_preconfirmations_to_the_avs_p2p(preconf_message.clone())
@@ -478,15 +496,16 @@ impl Node {
             .advance_head_to_new_l2_block(pending_tx_lists.tx_lists)
             .await?;
 
+        let lookahead_pointer = self.get_lookahead_pointer().await?;
         let tx = self
             .ethereum_l1
             .execution_layer
             .propose_new_block(
-                nonce,
-                pending_tx_lists.tx_list_bytes[0].clone(), //TODO: handle rest tx lists,
+                self.preconfirmation_helper.get_next_nonce(),
+                pending_tx_lists_bytes,
                 pending_tx_lists.parent_meta_hash,
                 lookahead_pointer,
-                lookahead_params,
+                lookahead_params.unwrap_or(vec![]),
                 send_to_contract,
             )
             .await?;

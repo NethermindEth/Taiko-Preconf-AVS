@@ -79,6 +79,7 @@ impl EthereumL1 {
                 &cl_lookahead,
             )
             .await?;
+        tracing::debug!("Got {} lookahead params.", lookahead_params.len());
         // Force push lookahead to the contract
         self.execution_layer
             .force_push_lookahead(lookahead_params)
