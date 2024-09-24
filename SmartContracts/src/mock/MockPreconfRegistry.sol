@@ -105,7 +105,7 @@ contract MockPreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializ
                 revert PreconferNotRegistered();
             }
 
-            bytes memory message = _createMessage(ValidatorOp.ADD, addValidatorParams[i].signatureExpiry, msg.sender);
+            // bytes memory message = _createMessage(ValidatorOp.ADD, addValidatorParams[i].signatureExpiry, msg.sender);
 
             // Revert if any signature is invalid
             //if (!verifySignature(message, addValidatorParams[i].signature, addValidatorParams[i].pubkey)) {

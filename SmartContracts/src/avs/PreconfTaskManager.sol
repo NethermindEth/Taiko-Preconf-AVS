@@ -26,12 +26,12 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     LookaheadBufferEntry[LOOKAHEAD_BUFFER_SIZE] internal lookahead;
 
     // Maps the epoch timestamp to the lookahead poster.
-    // If the lookahead and the poster has been slashed, it maps to the 0-address.
+    // If the lookahead poster has been slashed, it maps to the 0-address.
     // Note: This may be optimised to re-use existing slots and reduce gas cost.
     mapping(uint256 epochTimestamp => address poster) internal lookaheadPosters;
 
     // Maps the block height to the associated proposer
-    // This is required since the stored block in Taiko has this contract as the proposer
+    // This is required since the stored block in Taiko has the address of this contract as the proposer
     mapping(uint256 blockId => address proposer) internal blockIdToProposer;
 
     // Cannot be kept in `PreconfConstants` file because solidity expects array sizes
@@ -104,7 +104,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         (, ITaikoL1.SlotB memory slotB) = taikoL1.getStateVariables();
         blockIdToProposer[slotB.numBlocks] = msg.sender;
 
-        // Block the preconfer from withdrawing stake from Eigenlayer during the dispute window
+        // Block the preconfer from withdrawing stake from the restaking service during the dispute window
         preconfServiceManager.lockStakeUntil(msg.sender, block.timestamp + PreconfConstants.DISPUTE_PERIOD);
 
         // Forward the block to Taiko's L1 contract
@@ -144,9 +144,6 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         bytes32 headerHash = keccak256(abi.encodePacked(header.blockId, header.chainId, header.txListHash));
         address preconfSigner = ECDSA.recover(headerHash, signature);
 
-        // Note: It is not required to verify that the preconfSigner is a valid operator. That is implicitly
-        // verified by EL.
-
         // Slash if the preconfirmation was given offchain, but block proposal was missed OR
         // the preconfirmed set of transactions is different from the transactions in the proposed block.
         if (preconfSigner != proposer || header.txListHash != taikoBlockMetadata.blobHash) {
@@ -161,7 +158,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     /**
      * @notice Proves that the lookahead for a specific slot was incorrect
      * @dev The logic in this function only works once the lookahead slot has passed. This is because
-     * we pull the proposer from a beacon block and verify if it is associated with the preconfer.
+     * we pull the proposer from a past beacon block and verify if it is associated with the preconfer.
      * @param lookaheadPointer The pointer to the lookahead entry that represents the incorrect slot
      * @param slotTimestamp The timestamp of the slot for which the lookahead was incorrect
      * @param validatorBLSPubKey The BLS public key of the validator who is proposed the block in the slot
@@ -190,9 +187,6 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         // Verify that the sent validator is the one in Beacon state
         EIP4788.verifyValidator(validatorBLSPubKey, _getBeaconBlockRoot(slotTimestamp), validatorInclusionProof);
 
-        // We pull the preconfer present at the required slot timestamp in the lookahead.
-        // If no preconfer is present for a slot, we simply use the 0-address to denote the preconfer.
-
         LookaheadBufferEntry memory lookaheadEntry = lookahead[lookaheadPointer % LOOKAHEAD_BUFFER_SIZE];
 
         // Validate lookahead pointer
@@ -200,6 +194,8 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
             revert InvalidLookaheadPointer();
         }
 
+        // We pull the preconfer present at the required slot timestamp in the lookahead.
+        // If no preconfer is present for a slot, we simply use the 0-address to denote the preconfer.
         address preconferInLookahead;
         if (lookaheadEntry.timestamp == slotTimestamp && !lookaheadEntry.isFallback) {
             // The slot was dedicated to a specific preconfer
@@ -211,15 +207,13 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
             preconferInLookahead = address(0);
         }
 
-        // Fetch the preconfer associated with the validator from the registry
-
         // Reduce validator's BLS pub key to the pub key hash expected by the registry
         bytes32 validatorPubKeyHash = keccak256(abi.encodePacked(bytes16(0), validatorBLSPubKey));
 
         // Retrieve the validator object
         IPreconfRegistry.Validator memory validatorInRegistry = preconfRegistry.getValidator(validatorPubKeyHash);
 
-        // Retrieve the preconfer
+        // Fetch the preconfer associated with the validator from the registry
         address preconferInRegistry = validatorInRegistry.preconfer;
         if (
             slotTimestamp < validatorInRegistry.startProposingAt
@@ -282,7 +276,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     }
 
     /**
-     * @notice Forces the lookahead to be set for the next epoch if it is lagging behind
+     * @notice Forces the lookahead to be set for the next epoch if it is not already set.
      * @dev This is called once when the system starts up to push the first lookahead, and later anytime
      * when the lookahead is lagging due to missed proposals.
      * @param lookaheadSetParams Collection of timestamps and preconfer addresses to be inserted in the lookahead

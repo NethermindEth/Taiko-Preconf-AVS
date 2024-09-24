@@ -7,8 +7,8 @@ import {BLS12381} from "src/libraries/BLS12381.sol";
 
 /**
  * @dev At the time of writing this (Sept, 2024) foundry does not support the BLS12381 precompile, thus
- * thus a traditional foundry test is not possible for hash to curve functionality. Instead, we test it
- * manually by sending a transaction to a pectra upgrade devnet and verifying the outputs on the explorer.
+ * a traditional foundry test is not possible for hash to curve functionality. Instead, we test it
+ * manually by sending a transaction to a Pectra devnet and verify the outputs on the explorer.
  */
 contract BLSHashToCurveG2 is BaseScript {
     function run() external broadcast {
