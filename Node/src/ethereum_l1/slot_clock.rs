@@ -20,6 +20,7 @@ impl SlotClock {
         slot_duration_sec: u64,
         slots_per_epoch: u64,
     ) -> Self {
+        tracing::info!("SlotClock: genesis_timestamp_sec: {}, genesis_slot: {}", genesis_timestamp_sec, genesis_slot);
         Self {
             genesis_slot,
             genesis_duration: Duration::from_secs(genesis_timestamp_sec),
