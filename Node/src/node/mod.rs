@@ -327,7 +327,7 @@ impl Node {
                 self.preconfirm_block(true).await?;
             }
             OperatorStatus::None => {
-                tracing::debug!("Not my slot to preconfirm: {}", current_slot);
+                tracing::info!("Not my slot to preconfirm: {}", current_slot);
                 // self.update_lookahead_when_needed().await?;
             }
         }
@@ -451,7 +451,7 @@ impl Node {
     }
 
     async fn preconfirm_block(&mut self, send_to_contract: bool) -> Result<(), Error> {
-        tracing::debug!(
+        tracing::info!(
             "Preconfirming for the slot: {:?}",
             self.ethereum_l1.slot_clock.get_current_slot()?
         );

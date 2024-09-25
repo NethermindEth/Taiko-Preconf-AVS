@@ -591,14 +591,28 @@ impl ExecutionLayer {
         &self,
         lookahead_set_params: Vec<PreconfTaskManager::LookaheadSetParam>,
     ) -> Result<(), Error> {
+        tracing::debug!(
+            "Force pushing lookahead, {} params",
+            lookahead_set_params.len()
+        );
+
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,
         );
+
         let tx = contract.forcePushLookahead(lookahead_set_params);
+        let call_result = tx.call().await;
+        if let Err(err) = call_result {
+            tracing::error!(
+                "force_push_lookahead call failed: {}",
+                err.to_avs_contract_error()
+            );
+        }
 
         match tx.send().await {
             Ok(receipt) => {
+                tracing::debug!("Force push lookahead sent");
                 let tx_hash = receipt.watch().await?;
                 tracing::info!("Force pushed lookahead: {}", tx_hash);
             }
@@ -738,6 +752,14 @@ impl ExecutionLayer {
         epoch_begin_timestamp: u64,
         cl_lookahead: &[ProposerDuty],
     ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
+        tracing::debug!(
+            "Epoch {}, timestamp: {}, getting lookahead params for epoch using CL lookahead (first 2): {:?}",
+            self.slot_clock
+                .get_epoch_for_timestamp(epoch_begin_timestamp)?,
+            epoch_begin_timestamp,
+            cl_lookahead.iter().take(2).collect::<Vec<_>>().as_slice()
+        );
+
         if cl_lookahead.len() != self.slot_clock.get_slots_per_epoch() as usize {
             return Err(anyhow::anyhow!(
             "Operator::find_slots_to_preconfirm: unexpected number of proposer duties in the lookahead"
@@ -762,7 +784,7 @@ impl ExecutionLayer {
         .await
     }
 
-    pub async fn get_lookahead_params_for_epoch(
+    async fn get_lookahead_params_for_epoch(
         &self,
         epoch_begin_timestamp: u64,
         validator_bls_pub_keys: &[BLSCompressedPublicKey; 32],
@@ -780,6 +802,11 @@ impl ExecutionLayer {
             .call()
             .await?
             ._0;
+
+        tracing::debug!(
+            "get_lookahead_params_for_epoch params len: {}",
+            params.len()
+        );
 
         Ok(params)
     }
@@ -818,6 +845,11 @@ impl ExecutionLayer {
     }
 
     pub async fn is_lookahead_required(&self, epoch_begin_timestamp: u64) -> Result<bool, Error> {
+        tracing::debug!(
+            "Checking if lookahead is required for epoch: {}",
+            self.slot_clock
+                .get_epoch_for_timestamp(epoch_begin_timestamp)?
+        );
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,
@@ -828,6 +860,7 @@ impl ExecutionLayer {
             .call()
             .await?;
 
+        tracing::debug!("is_lookahead_required: {}", is_required._0);
         Ok(is_required._0)
     }
 

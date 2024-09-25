@@ -91,22 +91,23 @@ impl Operator {
     }
 
     pub async fn should_post_lookahead_for_next_epoch(&mut self) -> Result<bool, Error> {
-        // if !self.lookahead_required_contract_called {
-        //     tracing::debug!("Operator::should_post_lookahead: checking if lookahead is required");
-        //     self.lookahead_required_contract_called = true;
-        self.ethereum_l1
-            .execution_layer
-            .is_lookahead_required(
-                self.ethereum_l1
-                    .slot_clock
-                    .get_epoch_begin_timestamp(self.epoch + 1)?,
-            )
-            .await
-        //     {
-        //         return Ok(true);
-        //     }
-        // }
-        // Ok(false)
+        if !self.lookahead_required_contract_called {
+            tracing::debug!("Operator::should_post_lookahead: checking if lookahead is required");
+            self.lookahead_required_contract_called = true;
+            if self
+                .ethereum_l1
+                .execution_layer
+                .is_lookahead_required(
+                    self.ethereum_l1
+                        .slot_clock
+                        .get_epoch_begin_timestamp(self.epoch + 1)?,
+                )
+                .await?
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     pub async fn update_preconfer_lookahead_for_epoch(&mut self) -> Result<(), Error> {
