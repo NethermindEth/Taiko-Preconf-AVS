@@ -601,12 +601,12 @@ impl ExecutionLayer {
             &self.provider_ws,
         );
 
-        let tx = contract.forcePushLookahead(lookahead_set_params);
+        let tx = contract
+            .forcePushLookahead(lookahead_set_params)
+            .gas(1_000_000);
         match tx.send().await {
             Ok(receipt) => {
-                tracing::debug!("Force push lookahead sent");
-                let tx_hash = receipt.watch().await?;
-                tracing::info!("Force pushed lookahead: {}", tx_hash);
+                tracing::debug!("Force push lookahead sent: {}", receipt.tx_hash());
             }
             Err(err) => {
                 return Err(anyhow::anyhow!(err.to_avs_contract_error()));
@@ -805,8 +805,11 @@ impl ExecutionLayer {
 
     pub async fn get_lookahead_preconfer_addresses_for_epoch(
         &self,
-        epoch_begin_timestamp: u64,
+        epoch: u64,
     ) -> Result<Vec<PreconferAddress>, Error> {
+        tracing::debug!("Getting lookahead preconfer addresses for epoch: {}", epoch);
+        let epoch_begin_timestamp = self.slot_clock.get_epoch_begin_timestamp(epoch)?;
+
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,
