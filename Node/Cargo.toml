@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-alloy = { version = "0.2", features = ["full", "node-bindings", "rlp"] }
+alloy = { version = "0.3", features = ["full", "node-bindings", "rlp"] }
 alloy-rlp = "0.3"
 tokio = { version = "1.38", features = ["full"] }
 tracing = "0.1.40"

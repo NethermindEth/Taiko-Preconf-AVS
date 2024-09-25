@@ -215,7 +215,7 @@ impl ExecutionLayer {
         tx_list: Vec<u8>,
         parent_meta_hash: [u8; 32],
         lookahead_pointer: u64,
-        lookahead_set_params: Vec<PreconfTaskManager::LookaheadSetParam>,
+        lookahead_set_params: Vec<IPreconfTaskManager::LookaheadSetParam>,
         send_to_contract: bool,
     ) -> Result<Vec<u8>, Error> {
         let contract = PreconfTaskManager::new(
@@ -344,7 +344,7 @@ impl ExecutionLayer {
         // sign the digest hash with private key
         let signature = self.signer.sign_message_sync(&digest_hash_bytes)?;
 
-        let signature_with_salt_and_expiry = PreconfRegistry::SignatureWithSaltAndExpiry {
+        let signature_with_salt_and_expiry = IAVSDirectory::SignatureWithSaltAndExpiry {
             signature: Bytes::from(signature.as_bytes()),
             salt,
             expiry: expiration_timestamp,
@@ -428,7 +428,7 @@ impl ExecutionLayer {
             &self.provider_ws,
         );
 
-        let header = PreconfTaskManager::PreconfirmationHeader {
+        let header = IPreconfTaskManager::PreconfirmationHeader {
             blockId: block_proposed.event_data().blockId,
             chainId: U256::from(chain_id),
             txListHash: B256::from(preconf_tx_list_hash),
@@ -436,32 +436,32 @@ impl ExecutionLayer {
         let signature = Bytes::from(preconf_signature);
 
         let proposed_meta = &block_proposed.event_data().meta;
-        let meta = PreconfTaskManager::BlockMetadata {
-            l1Hash: proposed_meta.l1Hash,
-            difficulty: proposed_meta.difficulty,
-            blobHash: proposed_meta.blobHash,
-            extraData: proposed_meta.extraData,
-            depositsHash: proposed_meta.depositsHash,
-            coinbase: proposed_meta.coinbase,
-            id: proposed_meta.id,
-            gasLimit: proposed_meta.gasLimit,
-            timestamp: proposed_meta.timestamp,
-            l1Height: proposed_meta.l1Height,
-            minTier: proposed_meta.minTier,
-            blobUsed: proposed_meta.blobUsed,
-            parentMetaHash: proposed_meta.parentMetaHash,
-            sender: proposed_meta.sender,
-            blobTxListOffset: proposed_meta.blobTxListOffset,
-            blobTxListLength: proposed_meta.blobTxListLength,
-        };
+        // let meta = ITaikoL1::BlockMetadata {
+        //     l1Hash: proposed_meta.l1Hash,
+        //     difficulty: proposed_meta.difficulty,
+        //     blobHash: proposed_meta.blobHash,
+        //     extraData: proposed_meta.extraData,
+        //     depositsHash: proposed_meta.depositsHash,
+        //     coinbase: proposed_meta.coinbase,
+        //     id: proposed_meta.id,
+        //     gasLimit: proposed_meta.gasLimit,
+        //     timestamp: proposed_meta.timestamp,
+        //     l1Height: proposed_meta.l1Height,
+        //     minTier: proposed_meta.minTier,
+        //     blobUsed: proposed_meta.blobUsed,
+        //     parentMetaHash: proposed_meta.parentMetaHash,
+        //     sender: proposed_meta.sender,
+        //     blobTxListOffset: proposed_meta.blobTxListOffset,
+        //     blobTxListLength: proposed_meta.blobTxListLength,
+        // };
         let result = contract
-            .proveIncorrectPreconfirmation(meta.clone(), header.clone(), signature.clone())
+            .proveIncorrectPreconfirmation(proposed_meta.clone(), header.clone(), signature.clone())
             .call()
             .await;
         if let Ok(_) = result {
             tracing::debug!("Proved incorrect preconfirmation using eth_call, sending tx");
             let tx_hash = contract
-                .proveIncorrectPreconfirmation(meta, header, signature)
+                .proveIncorrectPreconfirmation(proposed_meta, header, signature)
                 .send()
                 .await?
                 .watch()
@@ -503,7 +503,7 @@ impl ExecutionLayer {
         }
         let validator_index = U256::from(validator_index);
 
-        let validator_inclusion_proof = PreconfTaskManager::InclusionProof {
+        let validator_inclusion_proof = EIP4788::InclusionProof {
             validator: validator_chunks,
             validatorIndex: validator_index,
             validatorProof: Self::convert_proof_to_fixed_bytes(validator_proof),
@@ -589,7 +589,7 @@ impl ExecutionLayer {
 
     pub async fn force_push_lookahead(
         &self,
-        lookahead_set_params: Vec<PreconfTaskManager::LookaheadSetParam>,
+        lookahead_set_params: Vec<IPreconfTaskManager::LookaheadSetParam>,
     ) -> Result<(), Error> {
         tracing::debug!(
             "Force pushing lookahead, {} params",
@@ -751,7 +751,7 @@ impl ExecutionLayer {
         &self,
         epoch_begin_timestamp: u64,
         cl_lookahead: &[ProposerDuty],
-    ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
+    ) -> Result<Vec<IPreconfTaskManager::LookaheadSetParam>, Error> {
         tracing::debug!(
             "Epoch {}, timestamp: {}, getting lookahead params for epoch using CL lookahead (first 2): {:?}",
             self.slot_clock
@@ -788,7 +788,7 @@ impl ExecutionLayer {
         &self,
         epoch_begin_timestamp: u64,
         validator_bls_pub_keys: &[BLSCompressedPublicKey; 32],
-    ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
+    ) -> Result<Vec<IPreconfTaskManager::LookaheadSetParam>, Error> {
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,
@@ -833,7 +833,7 @@ impl ExecutionLayer {
 
     pub async fn get_lookahead_preconfer_buffer(
         &self,
-    ) -> Result<[PreconfTaskManager::LookaheadBufferEntry; 64], Error> {
+    ) -> Result<[IPreconfTaskManager::LookaheadBufferEntry; 64], Error> {
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,

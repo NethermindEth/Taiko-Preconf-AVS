@@ -1,5 +1,5 @@
 use crate::{
-    ethereum_l1::{execution_layer::PreconfTaskManager, merkle_proofs::*, EthereumL1},
+    ethereum_l1::{execution_layer::IPreconfTaskManager, merkle_proofs::*, EthereumL1},
     utils::types::*,
 };
 use anyhow::Error;
@@ -8,7 +8,7 @@ use futures_util::StreamExt;
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, error, info};
 
-type LookaheadUpdated = Vec<PreconfTaskManager::LookaheadSetParam>;
+type LookaheadUpdated = Vec<IPreconfTaskManager::LookaheadSetParam>;
 
 #[derive(Clone)]
 pub struct LookaheadUpdatedEventReceiver {
@@ -78,7 +78,7 @@ impl LookaheadUpdatedEventHandler {
 
     pub fn handle_lookahead_updated_event(
         self,
-        lookahead_params: Vec<PreconfTaskManager::LookaheadSetParam>,
+        lookahead_params: Vec<IPreconfTaskManager::LookaheadSetParam>,
     ) {
         tokio::spawn(async move {
             if let Err(e) = self.check_lookahead_correctness(lookahead_params).await {
@@ -135,8 +135,8 @@ impl LookaheadUpdatedEventHandler {
     }
 
     fn find_a_slot_timestamp_to_prove_incorrect_lookahead(
-        lookahead_params: &[PreconfTaskManager::LookaheadSetParam],
-        lookahead_updated_event_params: &[PreconfTaskManager::LookaheadSetParam],
+        lookahead_params: &[IPreconfTaskManager::LookaheadSetParam],
+        lookahead_updated_event_params: &[IPreconfTaskManager::LookaheadSetParam],
     ) -> Result<Option<u64>, Error> {
         // compare corresponding params in the two lists
         for (param, updated_param) in lookahead_params

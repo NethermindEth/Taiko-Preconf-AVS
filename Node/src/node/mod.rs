@@ -8,7 +8,9 @@ mod preconfirmation_proof;
 
 use crate::{
     bls::BLSService,
-    ethereum_l1::{block_proposed::BlockProposed, execution_layer::PreconfTaskManager, EthereumL1},
+    ethereum_l1::{
+        block_proposed::BlockProposed, execution_layer::IPreconfTaskManager, EthereumL1,
+    },
     mev_boost::MevBoost,
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::types::*,
@@ -46,7 +48,7 @@ pub struct Node {
     mev_boost: MevBoost,
     epoch: Epoch,
     cl_lookahead: Vec<ProposerDuty>,
-    lookahead_preconfer_buffer: Option<[PreconfTaskManager::LookaheadBufferEntry; 64]>,
+    lookahead_preconfer_buffer: Option<[IPreconfTaskManager::LookaheadBufferEntry; 64]>,
     l2_slot_duration_sec: u64,
     preconfirmed_blocks: PreconfirmedBlocks,
     is_preconfer_now: Arc<AtomicBool>,
@@ -383,7 +385,7 @@ impl Node {
 
     async fn get_lookahead_params(
         &mut self,
-    ) -> Result<Option<Vec<PreconfTaskManager::LookaheadSetParam>>, Error> {
+    ) -> Result<Option<Vec<IPreconfTaskManager::LookaheadSetParam>>, Error> {
         if self.operator.should_post_lookahead_for_next_epoch().await? {
             tracing::debug!("Should post lookahead params, getting them");
             let lookahead_params = self

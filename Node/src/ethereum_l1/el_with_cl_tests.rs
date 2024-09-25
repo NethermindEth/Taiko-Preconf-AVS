@@ -28,7 +28,7 @@ mod tests {
         //     .get_lookahead_params_for_epoch_using_cl_lookahead(1, &duties)
         //     .await
         //     .unwrap();
-        let lookahead_params = Vec::<PreconfTaskManager::LookaheadSetParam>::new();
+        let lookahead_params = Vec::<IPreconfTaskManager::LookaheadSetParam>::new();
 
         el.propose_new_block(0, vec![0; 32], [0; 32], 0, lookahead_params, true)
             .await
