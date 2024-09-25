@@ -602,14 +602,6 @@ impl ExecutionLayer {
         );
 
         let tx = contract.forcePushLookahead(lookahead_set_params);
-        let call_result = tx.call().await;
-        if let Err(err) = call_result {
-            tracing::error!(
-                "force_push_lookahead call failed: {}",
-                err.to_avs_contract_error()
-            );
-        }
-
         match tx.send().await {
             Ok(receipt) => {
                 tracing::debug!("Force push lookahead sent");
