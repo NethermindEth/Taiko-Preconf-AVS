@@ -1,23 +1,24 @@
 use alloy::{
     network::{Ethereum, EthereumWallet},
+    providers::{
+        fillers::{
+            BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
+            WalletFiller,
+        },
+        Identity, RootProvider,
+    },
     pubsub::PubSubFrontend,
 };
 
-pub type WsProvider = alloy::providers::fillers::FillProvider<
-    alloy::providers::fillers::JoinFill<
-        alloy::providers::fillers::JoinFill<
-            alloy::providers::fillers::JoinFill<
-                alloy::providers::fillers::JoinFill<
-                    alloy::providers::Identity,
-                    alloy::providers::fillers::GasFiller,
-                >,
-                alloy::providers::fillers::NonceFiller,
-            >,
-            alloy::providers::fillers::ChainIdFiller,
+pub type WsProvider = FillProvider<
+    JoinFill<
+        JoinFill<
+            Identity,
+            JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
         >,
-        alloy::providers::fillers::WalletFiller<EthereumWallet>,
+        WalletFiller<EthereumWallet>,
     >,
-    alloy::providers::RootProvider<PubSubFrontend>,
+    RootProvider<PubSubFrontend>,
     PubSubFrontend,
     Ethereum,
 >;

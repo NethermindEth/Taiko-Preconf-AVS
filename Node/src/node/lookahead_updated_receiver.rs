@@ -258,7 +258,8 @@ impl LookaheadUpdatedEventHandler {
         lookahead_preconfer_buffer
             .iter()
             .position(|entry| {
-                slot_timestamp > entry.prevTimestamp && slot_timestamp <= entry.timestamp
+                slot_timestamp > entry.prevTimestamp.to::<u64>()
+                    && slot_timestamp <= entry.timestamp.to::<u64>()
             })
             .ok_or(anyhow::anyhow!(
                 "find_lookahead_pointer: Lookahead pointer not found"

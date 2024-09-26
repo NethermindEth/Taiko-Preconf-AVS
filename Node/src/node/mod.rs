@@ -372,8 +372,8 @@ impl Node {
             .iter()
             .position(|entry| {
                 entry.preconfer == self.ethereum_l1.execution_layer.get_preconfer_address()
-                    && current_timestamp > entry.prevTimestamp
-                    && current_timestamp <= entry.timestamp
+                    && current_timestamp > entry.prevTimestamp.to::<u64>()
+                    && current_timestamp <= entry.timestamp.to::<u64>()
             })
             .ok_or(anyhow::anyhow!(
                 "get_lookahead_params: Preconfer not found in lookahead"

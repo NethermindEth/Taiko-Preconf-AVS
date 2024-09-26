@@ -344,7 +344,7 @@ impl ExecutionLayer {
         // sign the digest hash with private key
         let signature = self.signer.sign_message_sync(&digest_hash_bytes)?;
 
-        let signature_with_salt_and_expiry = IAVSDirectory::SignatureWithSaltAndExpiry {
+        let signature_with_salt_and_expiry = PreconfRegistry::SignatureWithSaltAndExpiry {
             signature: Bytes::from(signature.as_bytes()),
             salt,
             expiry: expiration_timestamp,
@@ -436,32 +436,32 @@ impl ExecutionLayer {
         let signature = Bytes::from(preconf_signature);
 
         let proposed_meta = &block_proposed.event_data().meta;
-        // let meta = ITaikoL1::BlockMetadata {
-        //     l1Hash: proposed_meta.l1Hash,
-        //     difficulty: proposed_meta.difficulty,
-        //     blobHash: proposed_meta.blobHash,
-        //     extraData: proposed_meta.extraData,
-        //     depositsHash: proposed_meta.depositsHash,
-        //     coinbase: proposed_meta.coinbase,
-        //     id: proposed_meta.id,
-        //     gasLimit: proposed_meta.gasLimit,
-        //     timestamp: proposed_meta.timestamp,
-        //     l1Height: proposed_meta.l1Height,
-        //     minTier: proposed_meta.minTier,
-        //     blobUsed: proposed_meta.blobUsed,
-        //     parentMetaHash: proposed_meta.parentMetaHash,
-        //     sender: proposed_meta.sender,
-        //     blobTxListOffset: proposed_meta.blobTxListOffset,
-        //     blobTxListLength: proposed_meta.blobTxListLength,
-        // };
+        let meta = ITaikoL1::BlockMetadata {
+            l1Hash: proposed_meta.l1Hash,
+            difficulty: proposed_meta.difficulty,
+            blobHash: proposed_meta.blobHash,
+            extraData: proposed_meta.extraData,
+            depositsHash: proposed_meta.depositsHash,
+            coinbase: proposed_meta.coinbase,
+            id: proposed_meta.id,
+            gasLimit: proposed_meta.gasLimit,
+            timestamp: proposed_meta.timestamp,
+            l1Height: proposed_meta.l1Height,
+            minTier: proposed_meta.minTier,
+            blobUsed: proposed_meta.blobUsed,
+            parentMetaHash: proposed_meta.parentMetaHash,
+            sender: proposed_meta.sender,
+            blobTxListOffset: proposed_meta.blobTxListOffset,
+            blobTxListLength: proposed_meta.blobTxListLength,
+        };
         let result = contract
-            .proveIncorrectPreconfirmation(proposed_meta.clone(), header.clone(), signature.clone())
+            .proveIncorrectPreconfirmation(meta.clone(), header.clone(), signature.clone())
             .call()
             .await;
         if let Ok(_) = result {
             tracing::debug!("Proved incorrect preconfirmation using eth_call, sending tx");
             let tx_hash = contract
-                .proveIncorrectPreconfirmation(proposed_meta, header, signature)
+                .proveIncorrectPreconfirmation(meta, header, signature)
                 .send()
                 .await?
                 .watch()
@@ -633,7 +633,7 @@ impl ExecutionLayer {
 
         // Convert bls public key to G1Point
         let pk_point = self.bls_service.get_public_key();
-        let pubkey = PreconfRegistry::G1Point {
+        let pubkey = BLS12381::G1Point {
             x: BLSService::biguint_to_u256_array(BigUint::from(pk_point.x)),
             y: BLSService::biguint_to_u256_array(BigUint::from(pk_point.y)),
         };
@@ -641,7 +641,7 @@ impl ExecutionLayer {
         // Sign message and convert to G2Point
         let signature_point = self.bls_service.sign_as_point(&message, &vec![]);
 
-        let signature = PreconfRegistry::G2Point {
+        let signature = BLS12381::G2Point {
             x: BLSService::biguint_to_u256_array(BigUint::from(signature_point.x.c0)),
             x_I: BLSService::biguint_to_u256_array(BigUint::from(signature_point.x.c1)),
             y: BLSService::biguint_to_u256_array(BigUint::from(signature_point.y.c0)),
@@ -649,7 +649,7 @@ impl ExecutionLayer {
         };
 
         // Call contract
-        let params = vec![PreconfRegistry::AddValidatorParam {
+        let params = vec![IPreconfRegistry::AddValidatorParam {
             pubkey,
             signature,
             signatureExpiry: expiry,
@@ -691,7 +691,7 @@ impl ExecutionLayer {
 
         // Convert bls public key to G1Point
         let pk_point = self.bls_service.get_public_key();
-        let pubkey = PreconfRegistry::G1Point {
+        let pubkey = BLS12381::G1Point {
             x: BLSService::biguint_to_u256_array(BigUint::from(pk_point.x)),
             y: BLSService::biguint_to_u256_array(BigUint::from(pk_point.y)),
         };
@@ -699,7 +699,7 @@ impl ExecutionLayer {
         // Sign message and convert to G2Point
         let signature_point = self.bls_service.sign_as_point(&message, &vec![]);
 
-        let signature = PreconfRegistry::G2Point {
+        let signature = BLS12381::G2Point {
             x: BLSService::biguint_to_u256_array(BigUint::from(signature_point.x.c0)),
             x_I: BLSService::biguint_to_u256_array(BigUint::from(signature_point.x.c1)),
             y: BLSService::biguint_to_u256_array(BigUint::from(signature_point.y.c0)),
@@ -707,7 +707,7 @@ impl ExecutionLayer {
         };
 
         // Call contract
-        let params = vec![PreconfRegistry::RemoveValidatorParam {
+        let params = vec![IPreconfRegistry::RemoveValidatorParam {
             pubkey,
             signature,
             signatureExpiry: expiry,

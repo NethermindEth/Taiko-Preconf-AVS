@@ -2,7 +2,7 @@
 mod tests {
     use super::super::{
         consensus_layer::tests::setup_server, consensus_layer::ConsensusLayer,
-        execution_layer::ExecutionLayer, execution_layer::PreconfTaskManager,
+        execution_layer::ExecutionLayer, execution_layer::IPreconfTaskManager,
     };
     use alloy::node_bindings::Anvil;
 
