@@ -5,7 +5,6 @@ use std::sync::Arc;
 pub struct Operator {
     ethereum_l1: Arc<EthereumL1>,
     epoch: u64,
-    lookahead_required_contract_called: bool,
     lookahead_preconfer_addresses: Vec<PreconferAddress>,
     l1_slots_per_epoch: u64,
 }
@@ -24,7 +23,6 @@ impl Operator {
         Ok(Self {
             ethereum_l1,
             epoch,
-            lookahead_required_contract_called: false,
             lookahead_preconfer_addresses: vec![],
             l1_slots_per_epoch,
         })
@@ -82,23 +80,14 @@ impl Operator {
     }
 
     pub async fn should_post_lookahead_for_next_epoch(&mut self) -> Result<bool, Error> {
-        if !self.lookahead_required_contract_called {
-            tracing::debug!("Operator::should_post_lookahead: checking if lookahead is required");
-            self.lookahead_required_contract_called = true;
-            if self
-                .ethereum_l1
-                .execution_layer
-                .is_lookahead_required(
-                    self.ethereum_l1
-                        .slot_clock
-                        .get_epoch_begin_timestamp(self.epoch + 1)?,
-                )
-                .await?
-            {
-                return Ok(true);
-            }
-        }
-        Ok(false)
+        self.ethereum_l1
+            .execution_layer
+            .is_lookahead_required(
+                self.ethereum_l1
+                    .slot_clock
+                    .get_epoch_begin_timestamp(self.epoch + 1)?,
+            )
+            .await
     }
 
     pub async fn update_preconfer_lookahead_for_epoch(&mut self) -> Result<(), Error> {
