@@ -18,11 +18,12 @@ Setup:
    RECIPIENT_ADDRESS=<recipient_address>
 
 5. Run the script:
-   python tx_spammer.py [--count COUNT] [--amount AMOUNT]
+   python tx_spammer.py [--count COUNT] [--amount AMOUNT] [--rpc RPC_URL]
 
 CLI Parameters:
 --count: Number of transactions to send (default: 1)
 --amount: Amount of ETH to send per transaction (default: 0.006)
+--rpc: RPC URL for the Taiko network (default: https://RPC.helder.taiko.xyz)
 """
 
 
@@ -47,10 +48,11 @@ if not recipient:
 parser = argparse.ArgumentParser(description='Spam transactions on the Taiko network.')
 parser.add_argument('--count', type=int, default=1, help='Number of transactions to send')
 parser.add_argument('--amount', type=float, default=0.006, help='Amount of ETH to send per transaction')
+parser.add_argument('--rpc', type=str, default='https://RPC.helder.taiko.xyz', help='RPC URL for the Taiko network')
 args = parser.parse_args()
 
 # Connect to the Taiko network
-w3 = Web3(Web3.HTTPProvider('https://RPC.helder.taiko.xyz'))
+w3 = Web3(Web3.HTTPProvider(args.rpc))
 
 # Check if connected
 if not w3.is_connected():
@@ -69,9 +71,10 @@ def send_transaction(nonce : int):
         'gasPrice': w3.to_wei('10', 'gwei'),
         'chainId': w3.eth.chain_id
     }
-    print(f'Sending transaction: {tx}')
+    print(f'Sending transaction: {tx} by RPC: {args.rpc}')
+    print(f'Sending from: {account.address}')
     signed_tx = w3.eth.account.sign_transaction(tx, private_key)
-    tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+    tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
     print(f'Transaction sent: {tx_hash.hex()}')
 
 def spam_transactions(count):
