@@ -7,7 +7,6 @@ pub struct Operator {
     epoch: u64,
     lookahead_required_contract_called: bool,
     lookahead_preconfer_addresses: Vec<PreconferAddress>,
-    lookahead_preconfer_addresses_next_epoch: Option<Vec<PreconferAddress>>,
     l1_slots_per_epoch: u64,
 }
 
@@ -27,7 +26,6 @@ impl Operator {
             epoch,
             lookahead_required_contract_called: false,
             lookahead_preconfer_addresses: vec![],
-            lookahead_preconfer_addresses_next_epoch: None,
             l1_slots_per_epoch,
         })
     }
@@ -71,16 +69,9 @@ impl Operator {
             let lookahead_preconfer_addresses_next_epoch = self
                 .ethereum_l1
                 .execution_layer
-                .get_lookahead_preconfer_addresses_for_epoch(
-                    self.ethereum_l1
-                        .slot_clock
-                        .get_epoch_begin_timestamp(self.epoch + 1)?,
-                )
+                .get_lookahead_preconfer_addresses_for_epoch(self.epoch + 1)
                 .await?;
-            let address = lookahead_preconfer_addresses_next_epoch[0];
-            self.lookahead_preconfer_addresses_next_epoch =
-                Some(lookahead_preconfer_addresses_next_epoch);
-            Ok(address)
+            Ok(lookahead_preconfer_addresses_next_epoch[0])
         } else {
             Ok(self.lookahead_preconfer_addresses[(slot_mod_slots_per_epoch + 1) as usize])
         }
@@ -113,21 +104,11 @@ impl Operator {
     pub async fn update_preconfer_lookahead_for_epoch(&mut self) -> Result<(), Error> {
         tracing::debug!("Updating preconfer lookahead for epoch: {}", self.epoch);
 
-        if let Some(lookahead_preconfer_addresses_next_epoch) =
-            self.lookahead_preconfer_addresses_next_epoch.take()
-        {
-            self.lookahead_preconfer_addresses = lookahead_preconfer_addresses_next_epoch;
-        } else {
-            self.lookahead_preconfer_addresses = self
-                .ethereum_l1
-                .execution_layer
-                .get_lookahead_preconfer_addresses_for_epoch(
-                    self.ethereum_l1
-                        .slot_clock
-                        .get_epoch_begin_timestamp(self.epoch)?,
-                )
-                .await?;
-        }
+        self.lookahead_preconfer_addresses = self
+            .ethereum_l1
+            .execution_layer
+            .get_lookahead_preconfer_addresses_for_epoch(self.epoch)
+            .await?;
         Ok(())
     }
 }

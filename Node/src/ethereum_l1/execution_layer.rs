@@ -601,20 +601,12 @@ impl ExecutionLayer {
             &self.provider_ws,
         );
 
-        let tx = contract.forcePushLookahead(lookahead_set_params);
-        let call_result = tx.call().await;
-        if let Err(err) = call_result {
-            tracing::error!(
-                "force_push_lookahead call failed: {}",
-                err.to_avs_contract_error()
-            );
-        }
-
+        let tx = contract
+            .forcePushLookahead(lookahead_set_params)
+            .gas(1_000_000);
         match tx.send().await {
             Ok(receipt) => {
-                tracing::debug!("Force push lookahead sent");
-                let tx_hash = receipt.watch().await?;
-                tracing::info!("Force pushed lookahead: {}", tx_hash);
+                tracing::debug!("Force push lookahead sent: {}", receipt.tx_hash());
             }
             Err(err) => {
                 return Err(anyhow::anyhow!(err.to_avs_contract_error()));
@@ -673,6 +665,64 @@ impl ExecutionLayer {
             Ok(receipt) => {
                 let tx_hash = receipt.watch().await?;
                 tracing::info!("Add validator to preconfer successful: {:?}", tx_hash);
+            }
+            Err(err) => {
+                return Err(anyhow::anyhow!(err.to_avs_contract_error()));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn remove_validator(&self) -> Result<(), Error> {
+        // Build remove message
+        // Operation.REMOVE
+        let operation = 2;
+        // Message expired after 60 seconds
+        let expiry = U256::from(self.slot_clock.get_now_plus_minute()?);
+
+        let data = MessageData::from((
+            U256::from(self.l1_chain_id),
+            operation,
+            expiry,
+            self.preconfer_address,
+        ));
+        let message = data.abi_encode_packed();
+
+        // Convert bls public key to G1Point
+        let pk_point = self.bls_service.get_public_key();
+        let pubkey = PreconfRegistry::G1Point {
+            x: BLSService::biguint_to_u256_array(BigUint::from(pk_point.x)),
+            y: BLSService::biguint_to_u256_array(BigUint::from(pk_point.y)),
+        };
+
+        // Sign message and convert to G2Point
+        let signature_point = self.bls_service.sign_as_point(&message, &vec![]);
+
+        let signature = PreconfRegistry::G2Point {
+            x: BLSService::biguint_to_u256_array(BigUint::from(signature_point.x.c0)),
+            x_I: BLSService::biguint_to_u256_array(BigUint::from(signature_point.x.c1)),
+            y: BLSService::biguint_to_u256_array(BigUint::from(signature_point.y.c0)),
+            y_I: BLSService::biguint_to_u256_array(BigUint::from(signature_point.y.c1)),
+        };
+
+        // Call contract
+        let params = vec![PreconfRegistry::RemoveValidatorParam {
+            pubkey,
+            signature,
+            signatureExpiry: expiry,
+        }];
+
+        let preconf_registry = PreconfRegistry::new(
+            self.contract_addresses.avs.preconf_registry,
+            &self.provider_ws,
+        );
+        let tx = preconf_registry.removeValidators(params);
+
+        match tx.send().await {
+            Ok(receipt) => {
+                let tx_hash = receipt.watch().await?;
+                tracing::info!("Validator removed successfully: {:?}", tx_hash);
             }
             Err(err) => {
                 return Err(anyhow::anyhow!(err.to_avs_contract_error()));
@@ -813,8 +863,11 @@ impl ExecutionLayer {
 
     pub async fn get_lookahead_preconfer_addresses_for_epoch(
         &self,
-        epoch_begin_timestamp: u64,
+        epoch: u64,
     ) -> Result<Vec<PreconferAddress>, Error> {
+        tracing::debug!("Getting lookahead preconfer addresses for epoch: {}", epoch);
+        let epoch_begin_timestamp = self.slot_clock.get_epoch_begin_timestamp(epoch)?;
+
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,
