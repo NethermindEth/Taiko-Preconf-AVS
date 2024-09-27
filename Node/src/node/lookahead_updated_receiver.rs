@@ -21,6 +21,7 @@ impl LookaheadUpdatedEventReceiver {
     }
 
     pub fn start(self) {
+        info!("Starting lookahead updated event receiver");
         tokio::spawn(async move {
             self.check_for_events().await;
         });
@@ -61,6 +62,7 @@ impl LookaheadUpdatedEventReceiver {
                 None => {
                     error!("No lookahead updated event received, stream closed");
                     // TODO: recreate a stream in this case?
+                    return;
                 }
             }
         }

@@ -18,6 +18,7 @@ impl BlockProposedEventReceiver {
     }
 
     pub fn start(receiver: Self) {
+        info!("Starting block proposed event receiver");
         tokio::spawn(async move {
             receiver.check_for_events().await;
         });
@@ -69,6 +70,7 @@ impl BlockProposedEventReceiver {
                 None => {
                     error!("No block proposed event received, stream closed");
                     // TODO: recreate a stream in this case?
+                    return;
                 }
             }
         }
