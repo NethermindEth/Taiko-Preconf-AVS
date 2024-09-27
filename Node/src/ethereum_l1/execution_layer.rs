@@ -603,6 +603,7 @@ impl ExecutionLayer {
 
         let tx = contract
             .forcePushLookahead(lookahead_set_params)
+            .nonce(self.get_preconfer_nonce().await?)
             .gas(1_000_000);
         match tx.send().await {
             Ok(receipt) => {
