@@ -259,8 +259,7 @@ impl ExecutionLayer {
         // Build transaction
         let tx = builder.as_ref().clone().build_typed_tx();
         let Ok(TypedTransaction::Eip1559(mut tx)) = tx else {
-            // TODO fix
-            panic!("Not EIP1559 transaction");
+            return Err(anyhow::anyhow!("Not EIP1559 transaction"));
         };
 
         // Sign transaction
@@ -279,8 +278,6 @@ impl ExecutionLayer {
             let pending = self
                 .provider_ws
                 .send_raw_transaction(&buf)
-                .await?
-                .register()
                 .await?;
 
             tracing::debug!("Proposed new block, with hash {}", pending.tx_hash());
