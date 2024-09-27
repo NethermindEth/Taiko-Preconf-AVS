@@ -72,6 +72,7 @@ impl BlockProposedEventReceiver {
                 None => {
                     error!("No block proposed event received, stream closed");
                     // TODO: recreate a stream in this case?
+                    return;
                 }
             }
         }

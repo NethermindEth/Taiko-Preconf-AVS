@@ -21,6 +21,7 @@ impl LookaheadUpdatedEventReceiver {
     }
 
     pub fn start(self) {
+        info!("Starting lookahead updated event receiver");
         tokio::spawn(async move {
             self.check_for_events().await;
         });

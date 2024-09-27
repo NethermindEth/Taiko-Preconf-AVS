@@ -1,4 +1,4 @@
-use alloy::{contract::EventPoller, pubsub::PubSubFrontend, sol};
+use alloy::{contract::EventSubscription, sol};
 use anyhow::Error;
 
 sol!(
@@ -30,4 +30,4 @@ impl BlockProposed {
     }
 }
 
-pub struct EventPollerBlockProposed(pub EventPoller<PubSubFrontend, TaikoEvents::BlockProposed>);
+pub struct EventSubscriptionBlockProposed(pub EventSubscription<TaikoEvents::BlockProposed>);
