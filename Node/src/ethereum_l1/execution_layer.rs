@@ -629,7 +629,7 @@ impl ExecutionLayer {
 
     pub async fn force_push_lookahead(
         &self,
-        _lookahead_set_params: Vec<IPreconfTaskManager::LookaheadSetParam>,
+        lookahead_set_params: Vec<IPreconfTaskManager::LookaheadSetParam>,
     ) -> Result<(), Error> {
         tracing::debug!("Force pushing empty lookahead");
 
