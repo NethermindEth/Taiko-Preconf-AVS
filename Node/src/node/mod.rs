@@ -1,5 +1,6 @@
 pub mod block_proposed_receiver;
 mod commit;
+pub mod lookahead_monitor;
 pub mod lookahead_updated_receiver;
 mod operator;
 mod preconfirmation_helper;
@@ -389,9 +390,7 @@ impl Node {
                 .ethereum_l1
                 .execution_layer
                 .get_lookahead_params_for_epoch_using_cl_lookahead(
-                    self.ethereum_l1
-                        .slot_clock
-                        .get_epoch_begin_timestamp(self.epoch + 1)?,
+                    self.epoch + 1,
                     &self.cl_lookahead,
                 )
                 .await?;

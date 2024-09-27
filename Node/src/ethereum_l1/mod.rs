@@ -74,10 +74,7 @@ impl EthereumL1 {
         // Get lookahead params for contract call
         let lookahead_params = self
             .execution_layer
-            .get_lookahead_params_for_epoch_using_cl_lookahead(
-                self.slot_clock.get_epoch_begin_timestamp(next_epoch)?,
-                &cl_lookahead,
-            )
+            .get_lookahead_params_for_epoch_using_cl_lookahead(next_epoch, &cl_lookahead)
             .await?;
         tracing::debug!("Got {} lookahead params.", lookahead_params.len());
         // Force push lookahead to the contract

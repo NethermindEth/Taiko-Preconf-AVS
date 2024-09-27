@@ -88,11 +88,7 @@ impl Operator {
             if self
                 .ethereum_l1
                 .execution_layer
-                .is_lookahead_required(
-                    self.ethereum_l1
-                        .slot_clock
-                        .get_epoch_begin_timestamp(self.epoch + 1)?,
-                )
+                .is_lookahead_required(self.epoch + 1)
                 .await?
             {
                 return Ok(true);
