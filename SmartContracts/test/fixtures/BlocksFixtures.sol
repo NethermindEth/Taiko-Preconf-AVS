@@ -66,9 +66,9 @@ contract BlocksFixtures is BaseTest {
 
     function setupTaikoBlock(uint256 id, uint256 proposedAt, bytes32 txListHash)
         internal
-        returns (ITaikoL1.BlockMetadata memory)
+        returns (ITaikoL1.BlockMetadataV2 memory)
     {
-        ITaikoL1.BlockMetadata memory metadata;
+        ITaikoL1.BlockMetadataV2 memory metadata;
 
         metadata.blobHash = txListHash;
         metadata.id = uint64(id);
