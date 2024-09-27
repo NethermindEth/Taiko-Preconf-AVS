@@ -263,7 +263,7 @@ impl ExecutionLayer {
                     lookahead_set_params.clone(),
                 )
                 .chain_id(self.l1_chain_id)
-                // .nonce(nonce)
+                .nonce(nonce)
                 .gas(GAS_LIMIT)
                 .max_fee_per_gas(MAX_FEE_PER_GAS)
                 .max_priority_fee_per_gas(MAX_PRIORITY_FEE_PER_GAS)
@@ -282,7 +282,7 @@ impl ExecutionLayer {
                 }
             }
 
-            return Ok(vec![]);
+            // return Ok(vec![]);
         }
 
         // TODO check gas parameters
@@ -294,7 +294,7 @@ impl ExecutionLayer {
                 vec![], // lookahead_set_params,
             )
             .chain_id(self.l1_chain_id)
-            // .nonce(nonce)
+            .nonce(nonce)
             .gas(GAS_LIMIT)
             .max_fee_per_gas(MAX_FEE_PER_GAS)
             .max_priority_fee_per_gas(MAX_PRIORITY_FEE_PER_GAS)

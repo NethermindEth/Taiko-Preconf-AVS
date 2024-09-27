@@ -2,7 +2,7 @@ use crate::ethereum_l1::{block_proposed::BlockProposed, EthereumL1};
 use futures_util::StreamExt;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 pub struct BlockProposedEventReceiver {
     ethereum_l1: Arc<EthereumL1>,
@@ -18,6 +18,7 @@ impl BlockProposedEventReceiver {
     }
 
     pub fn start(receiver: Self) {
+        info!("Starting block proposed event receiver");
         tokio::spawn(async move {
             receiver.check_for_events().await;
         });
@@ -39,6 +40,8 @@ impl BlockProposedEventReceiver {
 
         let mut stream = event_poller.0.into_stream();
         loop {
+            debug!("Waiting for block proposed event");
+
             match stream.next().await {
                 Some(log) => match log {
                     Ok(log) => {

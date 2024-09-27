@@ -93,6 +93,13 @@ async fn main() -> Result<(), Error> {
     let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url, config.validator_index);
     let ethereum_l1 = Arc::new(ethereum_l1);
 
+    let block_proposed_event_checker =
+        BlockProposedEventReceiver::new(ethereum_l1.clone(), block_proposed_tx);
+    BlockProposedEventReceiver::start(block_proposed_event_checker);
+
+    let lookahead_updated_event_checker = LookaheadUpdatedEventReceiver::new(ethereum_l1.clone());
+    lookahead_updated_event_checker.start();
+
     let node = node::Node::new(
         block_proposed_rx,
         node_to_p2p_tx,
@@ -105,13 +112,6 @@ async fn main() -> Result<(), Error> {
     )
     .await?;
     node.entrypoint().await?;
-
-    let block_proposed_event_checker =
-        BlockProposedEventReceiver::new(ethereum_l1.clone(), block_proposed_tx);
-    BlockProposedEventReceiver::start(block_proposed_event_checker);
-
-    let lookahead_updated_event_checker = LookaheadUpdatedEventReceiver::new(ethereum_l1.clone());
-    lookahead_updated_event_checker.start();
 
     Ok(())
 }
