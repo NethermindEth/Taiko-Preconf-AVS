@@ -229,7 +229,7 @@ impl ExecutionLayer {
                 &self.wallet,
             ),
             extraData: FixedBytes::from(&[0u8; 32]),
-            parentMetaHash: FixedBytes::from(&parent_meta_hash),
+            parentMetaHash: FixedBytes::from(&[0u8; 32]),
             hookCalls: vec![],
             signature: Bytes::from(vec![0; 32]),
             l1StateBlockNumber: 0,
