@@ -13,8 +13,6 @@ pub struct SlotClock {
     slots_per_epoch: u64,
 }
 
-const EXECUTION_LAG: Duration = Duration::from_secs(12);
-
 impl SlotClock {
     pub fn new(
         genesis_slot: Slot,
@@ -27,17 +25,19 @@ impl SlotClock {
             genesis_timestamp_sec,
             genesis_slot
         );
+
+        let slot_duration = Duration::from_secs(slot_duration_sec);
         Self {
             genesis_slot,
-            genesis_duration: Duration::from_secs(genesis_timestamp_sec) - EXECUTION_LAG,
-            slot_duration: Duration::from_secs(slot_duration_sec),
+            genesis_duration: Duration::from_secs(genesis_timestamp_sec) - slot_duration,
+            slot_duration,
             slots_per_epoch,
         }
     }
 
     pub fn get_time_for_contract(&self) -> Result<u64, Error> {
         Ok(
-            (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)? + EXECUTION_LAG)
+            (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)? + self.slot_duration)
                 .as_secs(),
         )
     }
