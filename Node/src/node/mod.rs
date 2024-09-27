@@ -502,7 +502,6 @@ impl Node {
             .propose_new_block(
                 self.preconfirmation_helper.get_next_nonce(),
                 pending_tx_lists_bytes,
-                pending_tx_lists.parent_meta_hash,
                 lookahead_pointer,
                 lookahead_params.unwrap_or(vec![]),
                 send_to_contract,

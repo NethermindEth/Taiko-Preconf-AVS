@@ -213,7 +213,6 @@ impl ExecutionLayer {
         &self,
         nonce: u64,
         tx_list: Vec<u8>,
-        parent_meta_hash: [u8; 32],
         lookahead_pointer: u64,
         lookahead_set_params: Vec<PreconfTaskManager::LookaheadSetParam>,
         send_to_contract: bool,
@@ -1037,7 +1036,7 @@ mod tests {
             .await
             .unwrap();
 
-        el.propose_new_block(0, vec![0; 32], [0; 32], 0, vec![], true)
+        el.propose_new_block(0, vec![0; 32], 0, vec![], true)
             .await
             .unwrap();
     }
