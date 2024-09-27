@@ -1,6 +1,6 @@
 use super::{
     avs_contract_error::AVSContractError,
-    block_proposed::{BlockProposed, EventPollerBlockProposed, TaikoEvents},
+    block_proposed::{BlockProposed, EventSubscriptionBlockProposed, TaikoEvents},
     slot_clock::SlotClock,
 };
 use crate::{
@@ -223,6 +223,8 @@ impl ExecutionLayer {
             lookahead_set_params.len(),
             nonce
         );
+
+        let nonce = self.get_preconfer_nonce().await?;
 
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
@@ -821,13 +823,16 @@ impl ExecutionLayer {
 
     pub async fn subscribe_to_block_proposed_event(
         &self,
-    ) -> Result<EventPollerBlockProposed, Error> {
+    ) -> Result<EventSubscriptionBlockProposed, Error> {
         let taiko_events = TaikoEvents::new(self.contract_addresses.taiko_l1, &self.provider_ws);
 
-        let block_proposed_filter = taiko_events.BlockProposed_filter().watch().await?;
-        tracing::debug!("Subscribed to block proposed event");
+        let block_proposed_filter = taiko_events.BlockProposed_filter().subscribe().await?;
+        tracing::debug!(
+            "Subscribed to block proposed event: {:?}",
+            block_proposed_filter
+        );
 
-        Ok(EventPollerBlockProposed(block_proposed_filter))
+        Ok(EventSubscriptionBlockProposed(block_proposed_filter))
     }
 
     pub async fn get_lookahead_params_for_epoch_using_cl_lookahead(
