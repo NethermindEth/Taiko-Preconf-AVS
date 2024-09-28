@@ -213,7 +213,6 @@ impl ExecutionLayer {
         &self,
         nonce: u64,
         tx_list: Vec<u8>,
-        parent_meta_hash: [u8; 32],
         lookahead_pointer: u64,
         lookahead_set_params: Vec<PreconfTaskManager::LookaheadSetParam>,
         send_to_contract: bool,
@@ -260,8 +259,7 @@ impl ExecutionLayer {
         // Build transaction
         let tx = builder.as_ref().clone().build_typed_tx();
         let Ok(TypedTransaction::Eip1559(mut tx)) = tx else {
-            // TODO fix
-            panic!("Not EIP1559 transaction");
+            return Err(anyhow::anyhow!("Not EIP1559 transaction"));
         };
 
         // Sign transaction
@@ -280,8 +278,6 @@ impl ExecutionLayer {
             let pending = self
                 .provider_ws
                 .send_raw_transaction(&buf)
-                .await?
-                .register()
                 .await?;
 
             tracing::debug!("Proposed new block, with hash {}", pending.tx_hash());
@@ -800,15 +796,15 @@ impl ExecutionLayer {
 
     pub async fn get_lookahead_params_for_epoch_using_cl_lookahead(
         &self,
-        epoch_begin_timestamp: u64,
+        epoch: u64,
         cl_lookahead: &[ProposerDuty],
     ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
+        let epoch_begin_timestamp = self.slot_clock.get_epoch_begin_timestamp(epoch)?;
         tracing::debug!(
-            "Epoch {}, timestamp: {}, getting lookahead params for epoch using CL lookahead (first 2): {:?}",
-            self.slot_clock
-                .get_epoch_for_timestamp(epoch_begin_timestamp)?,
+            "Epoch {}, timestamp: {}, getting lookahead params for epoch using CL lookahead len: {}",
+            epoch,
             epoch_begin_timestamp,
-            cl_lookahead.iter().take(2).collect::<Vec<_>>().as_slice()
+            cl_lookahead.len()
         );
 
         if cl_lookahead.len() != self.slot_clock.get_slots_per_epoch() as usize {
@@ -898,41 +894,24 @@ impl ExecutionLayer {
         Ok(lookahead)
     }
 
-    pub async fn is_lookahead_required(&self, epoch_begin_timestamp: u64) -> Result<bool, Error> {
-        tracing::debug!(
-            "Checking if lookahead is required for epoch: {}",
-            self.slot_clock
-                .get_epoch_for_timestamp(epoch_begin_timestamp)?
-        );
+    pub async fn is_lookahead_required(&self, epoch: u64) -> Result<bool, Error> {
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,
         );
-
+        let epoch_begin_timestamp = self.slot_clock.get_epoch_begin_timestamp(epoch)?;
         let is_required = contract
             .isLookaheadRequired(U256::from(epoch_begin_timestamp))
             .call()
             .await?;
 
-        tracing::debug!("is_lookahead_required: {}", is_required._0);
+        tracing::debug!(
+            "is_lookahead_required for epoch {}: {}",
+            epoch,
+            is_required._0
+        );
         Ok(is_required._0)
     }
-
-    /*     fn create_provider(&self) -> impl Provider<alloy::transports::http::Http<reqwest::Client>> {
-        ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone())
-    }
-
-    async fn create_provider_ws(&self) -> impl Provider<alloy::pubsub::PubSubFrontend> {
-        ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_ws(self.ws.clone())
-            .await
-            .unwrap()
-    }*/
 
     #[cfg(test)]
     pub async fn new_from_pk(
@@ -1054,7 +1033,7 @@ mod tests {
             .await
             .unwrap();
 
-        el.propose_new_block(0, vec![0; 32], [0; 32], 0, vec![], true)
+        el.propose_new_block(0, vec![0; 32], 0, vec![], true)
             .await
             .unwrap();
     }
