@@ -1,6 +1,6 @@
 use super::{
     avs_contract_error::AVSContractError,
-    block_proposed::{BlockProposed, EventPollerBlockProposed, TaikoEvents},
+    block_proposed::{BlockProposed, EventSubscriptionBlockProposed, TaikoEvents},
     slot_clock::SlotClock,
 };
 use crate::{
@@ -213,7 +213,6 @@ impl ExecutionLayer {
         &self,
         nonce: u64,
         tx_list: Vec<u8>,
-        parent_meta_hash: [u8; 32],
         lookahead_pointer: u64,
         lookahead_set_params: Vec<PreconfTaskManager::LookaheadSetParam>,
         send_to_contract: bool,
@@ -229,7 +228,7 @@ impl ExecutionLayer {
                 &self.wallet,
             ),
             extraData: FixedBytes::from(&[0u8; 32]),
-            parentMetaHash: FixedBytes::from(&parent_meta_hash),
+            parentMetaHash: FixedBytes::from(&[0u8; 32]),
             hookCalls: vec![],
             signature: Bytes::from(vec![0; 32]),
             l1StateBlockNumber: 0,
@@ -253,15 +252,14 @@ impl ExecutionLayer {
             )
             .chain_id(self.l1_chain_id)
             .nonce(nonce)
-            .gas(50_000)
+            .gas(500_000)
             .max_fee_per_gas(20_000_000_000)
             .max_priority_fee_per_gas(1_000_000_000);
 
         // Build transaction
         let tx = builder.as_ref().clone().build_typed_tx();
         let Ok(TypedTransaction::Eip1559(mut tx)) = tx else {
-            // TODO fix
-            panic!("Not EIP1559 transaction");
+            return Err(anyhow::anyhow!("Not EIP1559 transaction"));
         };
 
         // Sign transaction
@@ -280,8 +278,6 @@ impl ExecutionLayer {
             let pending = self
                 .provider_ws
                 .send_raw_transaction(&buf)
-                .await?
-                .register()
                 .await?;
 
             tracing::debug!("Proposed new block, with hash {}", pending.tx_hash());
@@ -591,16 +587,23 @@ impl ExecutionLayer {
         &self,
         lookahead_set_params: Vec<PreconfTaskManager::LookaheadSetParam>,
     ) -> Result<(), Error> {
+        tracing::debug!(
+            "Force pushing lookahead, {} params",
+            lookahead_set_params.len()
+        );
+
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,
         );
-        let tx = contract.forcePushLookahead(lookahead_set_params);
 
+        let tx = contract
+            .forcePushLookahead(lookahead_set_params)
+            .nonce(self.get_preconfer_nonce().await?)
+            .gas(1_000_000);
         match tx.send().await {
             Ok(receipt) => {
-                let tx_hash = receipt.watch().await?;
-                tracing::info!("Force pushed lookahead: {}", tx_hash);
+                tracing::debug!("Force push lookahead sent: {}", receipt.tx_hash());
             }
             Err(err) => {
                 return Err(anyhow::anyhow!(err.to_avs_contract_error()));
@@ -668,6 +671,64 @@ impl ExecutionLayer {
         Ok(())
     }
 
+    pub async fn remove_validator(&self) -> Result<(), Error> {
+        // Build remove message
+        // Operation.REMOVE
+        let operation = 2;
+        // Message expired after 60 seconds
+        let expiry = U256::from(self.slot_clock.get_now_plus_minute()?);
+
+        let data = MessageData::from((
+            U256::from(self.l1_chain_id),
+            operation,
+            expiry,
+            self.preconfer_address,
+        ));
+        let message = data.abi_encode_packed();
+
+        // Convert bls public key to G1Point
+        let pk_point = self.bls_service.get_public_key();
+        let pubkey = PreconfRegistry::G1Point {
+            x: BLSService::biguint_to_u256_array(BigUint::from(pk_point.x)),
+            y: BLSService::biguint_to_u256_array(BigUint::from(pk_point.y)),
+        };
+
+        // Sign message and convert to G2Point
+        let signature_point = self.bls_service.sign_as_point(&message, &vec![]);
+
+        let signature = PreconfRegistry::G2Point {
+            x: BLSService::biguint_to_u256_array(BigUint::from(signature_point.x.c0)),
+            x_I: BLSService::biguint_to_u256_array(BigUint::from(signature_point.x.c1)),
+            y: BLSService::biguint_to_u256_array(BigUint::from(signature_point.y.c0)),
+            y_I: BLSService::biguint_to_u256_array(BigUint::from(signature_point.y.c1)),
+        };
+
+        // Call contract
+        let params = vec![PreconfRegistry::RemoveValidatorParam {
+            pubkey,
+            signature,
+            signatureExpiry: expiry,
+        }];
+
+        let preconf_registry = PreconfRegistry::new(
+            self.contract_addresses.avs.preconf_registry,
+            &self.provider_ws,
+        );
+        let tx = preconf_registry.removeValidators(params);
+
+        match tx.send().await {
+            Ok(receipt) => {
+                let tx_hash = receipt.watch().await?;
+                tracing::info!("Validator removed successfully: {:?}", tx_hash);
+            }
+            Err(err) => {
+                return Err(anyhow::anyhow!(err.to_avs_contract_error()));
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn subscribe_to_validator_added_event(
         &self,
     ) -> Result<EventPoller<PubSubFrontend, PreconfRegistry::ValidatorAdded>, Error> {
@@ -724,20 +785,28 @@ impl ExecutionLayer {
 
     pub async fn subscribe_to_block_proposed_event(
         &self,
-    ) -> Result<EventPollerBlockProposed, Error> {
+    ) -> Result<EventSubscriptionBlockProposed, Error> {
         let taiko_events = TaikoEvents::new(self.contract_addresses.taiko_l1, &self.provider_ws);
 
-        let block_proposed_filter = taiko_events.BlockProposed_filter().watch().await?;
+        let block_proposed_filter = taiko_events.BlockProposed_filter().subscribe().await?;
         tracing::debug!("Subscribed to block proposed event");
 
-        Ok(EventPollerBlockProposed(block_proposed_filter))
+        Ok(EventSubscriptionBlockProposed(block_proposed_filter))
     }
 
     pub async fn get_lookahead_params_for_epoch_using_cl_lookahead(
         &self,
-        epoch_begin_timestamp: u64,
+        epoch: u64,
         cl_lookahead: &[ProposerDuty],
     ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
+        let epoch_begin_timestamp = self.slot_clock.get_epoch_begin_timestamp(epoch)?;
+        tracing::debug!(
+            "Epoch {}, timestamp: {}, getting lookahead params for epoch using CL lookahead len: {}",
+            epoch,
+            epoch_begin_timestamp,
+            cl_lookahead.len()
+        );
+
         if cl_lookahead.len() != self.slot_clock.get_slots_per_epoch() as usize {
             return Err(anyhow::anyhow!(
             "Operator::find_slots_to_preconfirm: unexpected number of proposer duties in the lookahead"
@@ -762,7 +831,7 @@ impl ExecutionLayer {
         .await
     }
 
-    pub async fn get_lookahead_params_for_epoch(
+    async fn get_lookahead_params_for_epoch(
         &self,
         epoch_begin_timestamp: u64,
         validator_bls_pub_keys: &[BLSCompressedPublicKey; 32],
@@ -781,13 +850,21 @@ impl ExecutionLayer {
             .await?
             ._0;
 
+        tracing::debug!(
+            "get_lookahead_params_for_epoch params len: {}",
+            params.len()
+        );
+
         Ok(params)
     }
 
     pub async fn get_lookahead_preconfer_addresses_for_epoch(
         &self,
-        epoch_begin_timestamp: u64,
+        epoch: u64,
     ) -> Result<Vec<PreconferAddress>, Error> {
+        tracing::debug!("Getting lookahead preconfer addresses for epoch: {}", epoch);
+        let epoch_begin_timestamp = self.slot_clock.get_epoch_begin_timestamp(epoch)?;
+
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,
@@ -817,35 +894,24 @@ impl ExecutionLayer {
         Ok(lookahead)
     }
 
-    pub async fn is_lookahead_required(&self, epoch_begin_timestamp: u64) -> Result<bool, Error> {
+    pub async fn is_lookahead_required(&self, epoch: u64) -> Result<bool, Error> {
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,
         );
-
+        let epoch_begin_timestamp = self.slot_clock.get_epoch_begin_timestamp(epoch)?;
         let is_required = contract
             .isLookaheadRequired(U256::from(epoch_begin_timestamp))
             .call()
             .await?;
 
+        tracing::debug!(
+            "is_lookahead_required for epoch {}: {}",
+            epoch,
+            is_required._0
+        );
         Ok(is_required._0)
     }
-
-    /*     fn create_provider(&self) -> impl Provider<alloy::transports::http::Http<reqwest::Client>> {
-        ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_http(self.rpc_url.clone())
-    }
-
-    async fn create_provider_ws(&self) -> impl Provider<alloy::pubsub::PubSubFrontend> {
-        ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(self.wallet.clone())
-            .on_ws(self.ws.clone())
-            .await
-            .unwrap()
-    }*/
 
     #[cfg(test)]
     pub async fn new_from_pk(
@@ -967,7 +1033,7 @@ mod tests {
             .await
             .unwrap();
 
-        el.propose_new_block(0, vec![0; 32], [0; 32], 0, vec![], true)
+        el.propose_new_block(0, vec![0; 32], 0, vec![], true)
             .await
             .unwrap();
     }

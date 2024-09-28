@@ -21,6 +21,7 @@ impl LookaheadUpdatedEventReceiver {
     }
 
     pub fn start(self) {
+        info!("Starting lookahead updated event receiver");
         tokio::spawn(async move {
             self.check_for_events().await;
         });
@@ -61,6 +62,7 @@ impl LookaheadUpdatedEventReceiver {
                 None => {
                     error!("No lookahead updated event received, stream closed");
                     // TODO: recreate a stream in this case?
+                    return;
                 }
             }
         }
@@ -96,10 +98,6 @@ impl LookaheadUpdatedEventHandler {
             .slot_clock
             .get_epoch_for_timestamp(lookahead_updated_next_epoch[0].timestamp.try_into()?)?;
 
-        let epoch_begin_timestamp = self
-            .ethereum_l1
-            .slot_clock
-            .get_epoch_begin_timestamp(epoch)?;
         let epoch_duties = self
             .ethereum_l1
             .consensus_layer
@@ -108,7 +106,7 @@ impl LookaheadUpdatedEventHandler {
         let epoch_lookahead_params = self
             .ethereum_l1
             .execution_layer
-            .get_lookahead_params_for_epoch_using_cl_lookahead(epoch_begin_timestamp, &epoch_duties)
+            .get_lookahead_params_for_epoch_using_cl_lookahead(epoch, &epoch_duties)
             .await?;
 
         if let Some(slot_timestamp) = Self::find_a_slot_timestamp_to_prove_incorrect_lookahead(

@@ -20,6 +20,7 @@ pub struct Config {
     pub l1_chain_id: u64,
     pub validator_index: u64,
     pub enable_p2p: bool,
+    pub enable_preconfirmation: bool,
 }
 
 #[derive(Debug)]
@@ -242,6 +243,11 @@ impl Config {
             .parse::<bool>()
             .expect("ENABLE_P2P must be a boolean");
 
+        let enable_preconfirmation = std::env::var("ENABLE_PRECONFIRMATION")
+            .unwrap_or("true".to_string())
+            .parse::<bool>()
+            .expect("ENABLE_PRECONFIRMATION must be a boolean");
+
         let config = Self {
             taiko_proposer_url: std::env::var("TAIKO_PROPOSER_URL")
                 .unwrap_or("http://127.0.0.1:1234".to_string()),
@@ -265,6 +271,7 @@ impl Config {
             l1_chain_id,
             validator_index,
             enable_p2p,
+            enable_preconfirmation,
         };
 
         info!(
@@ -285,6 +292,7 @@ taiko chain id: {}
 l1 chain id: {}
 validator index: {}
 enable p2p: {}
+enable preconfirmation: {}
 "#,
             config.taiko_proposer_url,
             config.taiko_driver_url,
@@ -301,6 +309,7 @@ enable p2p: {}
             config.l1_chain_id,
             config.validator_index,
             config.enable_p2p,
+            config.enable_preconfirmation,
         );
 
         config

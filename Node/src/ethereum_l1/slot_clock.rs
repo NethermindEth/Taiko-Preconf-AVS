@@ -20,6 +20,11 @@ impl SlotClock {
         slot_duration_sec: u64,
         slots_per_epoch: u64,
     ) -> Self {
+        tracing::info!(
+            "SlotClock: genesis_timestamp_sec: {}, genesis_slot: {}",
+            genesis_timestamp_sec,
+            genesis_slot
+        );
         Self {
             genesis_slot,
             genesis_duration: Duration::from_secs(genesis_timestamp_sec),
@@ -124,10 +129,6 @@ impl SlotClock {
         Ok(now.as_secs() + 60)
     }
 
-    pub fn get_epoch_duration_secs(&self) -> u64 {
-        self.slot_duration.as_secs() * self.slots_per_epoch
-    }
-
     pub fn get_current_slot_of_epoch(&self) -> Result<Slot, Error> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let cur_slot = self.slot_of(now)?;
@@ -201,11 +202,11 @@ mod tests {
     }
 
     #[test]
-    fn test_get_epoch_duration_secs() {
+    fn test_get_epoch_begin_timestamp() {
         let genesis_slot = Slot::from(0u64);
         let slot_clock = SlotClock::new(genesis_slot, 0, 12, 32);
 
-        let epoch_duration = slot_clock.get_epoch_duration_secs();
-        assert_eq!(epoch_duration, 384); // 12 slots per epoch * 32 seconds per slot
+        let epoch_begin_timestamp = slot_clock.get_epoch_begin_timestamp(1).unwrap();
+        assert_eq!(epoch_begin_timestamp, 384);
     }
 }

@@ -24,6 +24,8 @@ struct Cli {
     register: bool,
     #[clap(long, help = "Add validator to preconfer")]
     add_validator: bool,
+    #[clap(long, help = "Remove validator for preconfer")]
+    remove_validator: bool,
     #[clap(long, help = "Force Push lookahead to the PreconfTaskManager contract")]
     force_push_lookahead: bool,
 }
@@ -31,6 +33,9 @@ struct Cli {
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     init_logging();
+
+    tracing::info!("Starting AVS Node");
+
     let args = Cli::parse();
     let config = utils::config::Config::read_env_variables();
 
@@ -61,6 +66,12 @@ async fn main() -> Result<(), Error> {
         return Ok(());
     }
 
+    if args.remove_validator {
+        let registration = registration::Registration::new(ethereum_l1);
+        registration.remove_validator().await?;
+        return Ok(());
+    }
+
     if args.force_push_lookahead {
         ethereum_l1.force_push_lookahead().await?;
         return Ok(());
@@ -82,25 +93,33 @@ async fn main() -> Result<(), Error> {
     let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url, config.validator_index);
     let ethereum_l1 = Arc::new(ethereum_l1);
 
-    let node = node::Node::new(
-        block_proposed_rx,
-        node_to_p2p_tx,
-        p2p_to_node_rx,
-        taiko.clone(),
-        ethereum_l1.clone(),
-        mev_boost,
-        config.l2_slot_duration_sec,
-        bls_service,
-    )
-    .await?;
-    node.entrypoint().await?;
-
     let block_proposed_event_checker =
         BlockProposedEventReceiver::new(ethereum_l1.clone(), block_proposed_tx);
     BlockProposedEventReceiver::start(block_proposed_event_checker);
 
     let lookahead_updated_event_checker = LookaheadUpdatedEventReceiver::new(ethereum_l1.clone());
     lookahead_updated_event_checker.start();
+
+    if config.enable_preconfirmation {
+        let node = node::Node::new(
+            block_proposed_rx,
+            node_to_p2p_tx,
+            p2p_to_node_rx,
+            taiko.clone(),
+            ethereum_l1.clone(),
+            mev_boost,
+            config.l2_slot_duration_sec,
+            bls_service,
+        )
+        .await?;
+        node.entrypoint().await?;
+    } else {
+        let lookahead_monitor = node::lookahead_monitor::LookaheadMonitor::new(
+            ethereum_l1.clone(),
+            config.l1_slot_duration_sec,
+        );
+        lookahead_monitor.start().await;
+    }
 
     Ok(())
 }

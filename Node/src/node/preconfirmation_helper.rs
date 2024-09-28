@@ -22,6 +22,10 @@ impl PreconfirmationHelper {
         nonce
     }
 
+    pub fn increment_nonce(&mut self) {
+        self.nonce += 1;
+    }
+
     pub fn increment_final_slot_perconfirmation(&mut self) {
         self.final_slot_perconfirmation_count += 1;
     }

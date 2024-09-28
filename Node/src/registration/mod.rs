@@ -47,4 +47,9 @@ impl Registration {
 
         Ok(())
     }
+
+    pub async fn remove_validator(&self) -> Result<(), Error> {
+        self.ethereum_l1.execution_layer.remove_validator().await?;
+        Ok(())
+    }
 }
