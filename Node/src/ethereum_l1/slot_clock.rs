@@ -37,7 +37,8 @@ impl SlotClock {
 
     pub fn get_time_for_contract(&self) -> Result<u64, Error> {
         Ok(
-            (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)? + self.slot_duration)
+            (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?
+                + self.slot_duration)
                 .as_secs(),
         )
     }
