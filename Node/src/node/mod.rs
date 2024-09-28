@@ -9,7 +9,7 @@ mod preconfirmation_proof;
 
 use crate::{
     bls::BLSService,
-    ethereum_l1::{block_proposed::BlockProposed, execution_layer::PreconfTaskManager, EthereumL1},
+    ethereum_l1::{block_proposed::BlockProposedV2, execution_layer::PreconfTaskManager, EthereumL1},
     mev_boost::MevBoost,
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::types::*,
@@ -40,7 +40,7 @@ type PreconfirmedBlocks = Arc<Mutex<HashMap<u64, PreconfirmationMessage>>>;
 
 pub struct Node {
     taiko: Arc<Taiko>,
-    node_block_proposed_rx: Option<Receiver<BlockProposed>>,
+    node_block_proposed_rx: Option<Receiver<BlockProposedV2>>,
     node_to_p2p_tx: Sender<Vec<u8>>,
     p2p_to_node_rx: Option<Receiver<Vec<u8>>>,
     ethereum_l1: Arc<EthereumL1>,
@@ -59,7 +59,7 @@ pub struct Node {
 
 impl Node {
     pub async fn new(
-        node_rx: Receiver<BlockProposed>,
+        node_rx: Receiver<BlockProposedV2>,
         node_to_p2p_tx: Sender<Vec<u8>>,
         p2p_to_node_rx: Receiver<Vec<u8>>,
         taiko: Arc<Taiko>,
@@ -127,7 +127,7 @@ impl Node {
     }
 
     async fn handle_incoming_messages(
-        mut node_rx: Receiver<BlockProposed>,
+        mut node_rx: Receiver<BlockProposedV2>,
         mut p2p_to_node_rx: Receiver<Vec<u8>>,
         preconfirmed_blocks: PreconfirmedBlocks,
         ethereum_l1: Arc<EthereumL1>,
@@ -256,7 +256,7 @@ impl Node {
     async fn check_preconfirmed_blocks_correctness(
         preconfirmed_blocks: &PreconfirmedBlocks,
         chain_id: u64,
-        block_proposed: &BlockProposed,
+        block_proposed: &BlockProposedV2,
         ethereum_l1: Arc<EthereumL1>,
     ) -> Result<(), Error> {
         let preconfirmed_blocks = preconfirmed_blocks.lock().await;
