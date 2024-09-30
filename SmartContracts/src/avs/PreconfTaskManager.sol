@@ -76,7 +76,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     ) external payable {
         LookaheadBufferEntry memory lookaheadEntry = lookahead[lookaheadPointer % LOOKAHEAD_BUFFER_SIZE];
 
-        uint256 currentEpochTimestamp = _getEpochTimestamp(block.timestamp);
+        uint256 epochTimestamp = _getEpochTimestamp(block.timestamp);
 
         // The current L1 block's timestamp must be within the range retrieved from the lookahead entry.
         // The preconfer is allowed to propose a block in advanced if there are no other entries in the
@@ -91,11 +91,11 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
             revert SenderIsNotThePreconfer();
         }
 
-        uint256 nextEpochTimestamp = currentEpochTimestamp + PreconfConstants.SECONDS_IN_EPOCH;
+        uint256 nextEpochTimestamp = epochTimestamp + PreconfConstants.SECONDS_IN_EPOCH;
 
         // Update the lookahead for the next epoch.
         // Only called during the first block proposal of the current epoch.
-        if (isLookaheadRequired(nextEpochTimestamp)) {
+        if (_isLookaheadRequired(epochTimestamp, nextEpochTimestamp)) {
             _updateLookahead(nextEpochTimestamp, lookaheadSetParams);
         }
 
@@ -288,8 +288,9 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         }
 
         // Lookahead must be missing
-        uint256 nextEpochTimestamp = _getEpochTimestamp(block.timestamp) + PreconfConstants.SECONDS_IN_EPOCH;
-        if (!isLookaheadRequired(nextEpochTimestamp)) {
+        uint256 epochTimestamp = _getEpochTimestamp(block.timestamp);
+        uint256 nextEpochTimestamp = epochTimestamp + PreconfConstants.SECONDS_IN_EPOCH;
+        if (!_isLookaheadRequired(epochTimestamp, nextEpochTimestamp)) {
             revert LookaheadIsNotRequired();
         }
 
@@ -404,6 +405,12 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         return bytes32(0);
     }
 
+    function _isLookaheadRequired(uint256 epochTimestamp, uint256 nextEpochTimestamp) internal view returns (bool) {
+        // If it's the first slot of current epoch, we don't need the lookahead since the offchain
+        // node may not have access to it yet.
+        return block.timestamp != epochTimestamp && lookaheadPosters[nextEpochTimestamp] == address(0);
+    }
+
     //=======
     // Views
     //=======
@@ -513,8 +520,11 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         return lookaheadSetParams;
     }
 
-    function isLookaheadRequired(uint256 epochTimestamp) public view returns (bool) {
-        return lookaheadPosters[epochTimestamp] == address(0);
+    /// @dev Returns true if the contract is expecting a lookahead for the next epoch
+    function isLookaheadRequired() external view returns (bool) {
+        uint256 epochTimestamp = _getEpochTimestamp(block.timestamp);
+        uint256 nextEpochTimestamp = epochTimestamp + PreconfConstants.SECONDS_IN_EPOCH;
+        return _isLookaheadRequired(epochTimestamp, nextEpochTimestamp);
     }
 
     function getLookaheadTail() external view returns (uint256) {
