@@ -110,7 +110,7 @@ interface IPreconfTaskManager {
 
     /// @dev Returns true is a lookahead is not posted for an epoch
     /// @dev In the event that a lookahead was posted but later invalidated, this returns false
-    function isLookaheadRequired(uint256 epochTimestamp) external view returns (bool);
+    function isLookaheadRequired() external view returns (bool);
 
     /// @dev Returns the current lookahead tail
     function getLookaheadTail() external view returns (uint256);

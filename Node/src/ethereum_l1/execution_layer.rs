@@ -1,6 +1,6 @@
 use super::{
     avs_contract_error::AVSContractError,
-    block_proposed::{BlockProposedV2, EventSubscriptionBlockProposedV2, TaikoEvents},
+    block_proposed::{BlockProposed, EventSubscriptionBlockProposed, TaikoEvents},
     slot_clock::SlotClock,
 };
 use crate::{
@@ -219,7 +219,11 @@ impl ExecutionLayer {
             coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(
                 &self.wallet,
             ),
+            extraData: FixedBytes::from(&[0u8; 32]),
             parentMetaHash: FixedBytes::from(&[0u8; 32]),
+            hookCalls: vec![],
+            signature: Bytes::from(vec![0; 32]),
+            l1StateBlockNumber: 0,
             timestamp: 0,
             blobTxListOffset: 0,
             blobTxListLength: 0,
@@ -778,13 +782,13 @@ impl ExecutionLayer {
 
     pub async fn subscribe_to_block_proposed_event(
         &self,
-    ) -> Result<EventSubscriptionBlockProposedV2, Error> {
+    ) -> Result<EventSubscriptionBlockProposed, Error> {
         let taiko_events = TaikoEvents::new(self.contract_addresses.taiko_l1, &self.provider_ws);
 
-        let block_proposed_filter = taiko_events.BlockProposedV2_filter().subscribe().await?;
+        let block_proposed_filter = taiko_events.BlockProposed_filter().subscribe().await?;
         tracing::debug!("Subscribed to block proposed event");
 
-        Ok(EventSubscriptionBlockProposedV2(block_proposed_filter))
+        Ok(EventSubscriptionBlockProposed(block_proposed_filter))
     }
 
     pub async fn get_lookahead_params_for_epoch_using_cl_lookahead(

@@ -30,4 +30,4 @@ impl BlockProposedV2 {
     }
 }
 
-pub struct EventSubscriptionBlockProposedV2(pub EventSubscription<TaikoEvents::BlockProposedV2>);
+pub struct EventSubscriptionBlockProposed(pub EventSubscription<TaikoEvents::BlockProposed>);

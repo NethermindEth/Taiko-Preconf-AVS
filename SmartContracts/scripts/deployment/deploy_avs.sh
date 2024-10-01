@@ -9,6 +9,7 @@ set -e
 : "${BEACON_GENESIS_TIMESTAMP:?Environment variable BEACON_GENESIS_TIMESTAMP is required}"
 : "${BEACON_BLOCK_ROOT_CONTRACT:?Environment variable BEACON_BLOCK_ROOT_CONTRACT is required}"
 echo "BEACON_GENESIS_TIMESTAMP: $BEACON_GENESIS_TIMESTAMP"
+
 forge script scripts/deployment/DeployAVS.s.sol:DeployAVS \
   --fork-url $FORK_URL \
   --broadcast \
