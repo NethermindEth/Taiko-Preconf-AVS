@@ -479,7 +479,6 @@ impl ExecutionLayer {
         validator_index: usize,
         validator_proof: Vec<[u8; 32]>,
         validators_root: [u8; 32],
-        nr_validators: u64,
         beacon_state_proof: Vec<[u8; 32]>,
         beacon_state_root: [u8; 32],
         beacon_block_proof_for_state: Vec<[u8; 32]>,
@@ -501,7 +500,6 @@ impl ExecutionLayer {
             validatorIndex: validator_index,
             validatorProof: Self::convert_proof_to_fixed_bytes(validator_proof),
             validatorsRoot: FixedBytes::from(validators_root),
-            nr_validators: U256::from(nr_validators),
             beaconStateProof: Self::convert_proof_to_fixed_bytes(beacon_state_proof),
             beaconStateRoot: FixedBytes::from(beacon_state_root),
             beaconBlockProofForState: Self::convert_proof_to_fixed_bytes(
@@ -891,23 +889,21 @@ impl ExecutionLayer {
         Ok(lookahead)
     }
 
-    pub async fn is_lookahead_required(&self, epoch: u64) -> Result<bool, Error> {
+    pub async fn is_lookahead_required(&self) -> Result<bool, Error> {
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,
         );
-        let epoch_begin_timestamp = self.slot_clock.get_epoch_begin_timestamp(epoch)?;
-        let is_required = contract
-            .isLookaheadRequired(U256::from(epoch_begin_timestamp))
-            .call()
-            .await?;
 
-        tracing::debug!(
-            "is_lookahead_required for epoch {}: {}",
-            epoch,
-            is_required._0
-        );
-        Ok(is_required._0)
+        let is_required = contract.isLookaheadRequired().call().await;
+
+        match is_required {
+            Ok(is_required) => {
+                tracing::debug!("is_lookahead_required for next epoch: {}", is_required._0);
+                Ok(is_required._0)
+            }
+            Err(err) => Err(anyhow::anyhow!(err.to_avs_contract_error())),
+        }
     }
 
     #[cfg(test)]
@@ -1093,7 +1089,6 @@ mod tests {
         let validator_index = 0;
         let validator_proof = vec![[3u8; 32]; 5];
         let validators_root = [4u8; 32];
-        let nr_validators = 1000;
         let beacon_state_proof = vec![[5u8; 32]; 5];
         let beacon_state_root = [6u8; 32];
         let beacon_block_proof_for_state = vec![[7u8; 32]; 5];
@@ -1109,7 +1104,6 @@ mod tests {
                 validator_index,
                 validator_proof,
                 validators_root,
-                nr_validators,
                 beacon_state_proof,
                 beacon_state_root,
                 beacon_block_proof_for_state,
