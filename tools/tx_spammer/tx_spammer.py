@@ -82,6 +82,6 @@ def spam_transactions(count):
     for _ in range(count):
         send_transaction(nonce)
         nonce += 1
-        time.sleep(0.01)  # Add a delay to avoid nonce issues
+        time.sleep(2)  # Add a delay to avoid nonce issues
 
 spam_transactions(args.count)
