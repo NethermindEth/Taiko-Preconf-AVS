@@ -221,7 +221,7 @@ mod tests {
             .expect_get_preconfer_address()
             .returning(|| PreconferAddress::from([1u8; 20]));
         let ethereum_l1 = Arc::new(EthereumL1 {
-            slot_clock: Arc::new(SlotClock::new(0, 0, 12, 32)),
+            slot_clock: Arc::new(SlotClock::new(0, 12, 12, 32)),
             consensus_layer: ConsensusLayer::new("http://localhost:5052").unwrap(),
             execution_layer,
         });

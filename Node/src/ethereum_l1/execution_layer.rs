@@ -914,7 +914,7 @@ impl ExecutionLayer {
     ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_signing_key(private_key.into());
         let wallet = EthereumWallet::from(signer.clone());
-        let clock = SlotClock::new(0u64, 0u64, 12u64, 32u64);
+        let clock = SlotClock::new(0u64, 12u64, 12u64, 32u64);
 
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
         let l1_chain_id = provider.get_chain_id().await?;
