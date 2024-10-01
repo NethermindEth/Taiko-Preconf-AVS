@@ -73,16 +73,25 @@ sol!(
 );
 
 sol! {
+    /// @dev Hook and it's data (currently used only during proposeBlock)
+    struct HookCall {
+        address hook;
+        bytes data;
+    }
+
     /// @dev Represents proposeBlock's _data input parameter
-    struct BlockParamsV2 {
-        address proposer;
+    struct BlockParams {
+        address assignedProver; // DEPRECATED, value ignored.
         address coinbase;
+        bytes32 extraData;
         bytes32 parentMetaHash;
-        uint64 anchorBlockId; // NEW
-        uint64 timestamp; // NEW
-        uint32 blobTxListOffset; // NEW
-        uint32 blobTxListLength; // NEW
-        uint8 blobIndex; // NEW
+        HookCall[] hookCalls; // DEPRECATED, value ignored.
+        bytes signature;
+        uint32 l1StateBlockNumber;
+        uint64 timestamp;
+        uint32 blobTxListOffset;
+        uint32 blobTxListLength;
+        uint8 blobIndex;
     }
 }
 
@@ -213,9 +222,8 @@ impl ExecutionLayer {
             &self.provider_ws,
         );
 
-        let block_params = BlockParamsV2 {
-            proposer: Address::ZERO,
-            anchorBlockId: 0,
+        let block_params = BlockParams {
+            assignedProver: Address::ZERO,
             coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(
                 &self.wallet,
             ),
@@ -230,15 +238,15 @@ impl ExecutionLayer {
             blobIndex: 0,
         };
 
-        let encoded_block_params = Bytes::from(BlockParamsV2::abi_encode_sequence(&block_params));
+        let encoded_block_params = Bytes::from(BlockParams::abi_encode_sequence(&block_params));
 
         let tx_list = Bytes::from(tx_list);
 
         // TODO check gas parameters
         let builder = contract
             .newBlockProposal(
-                vec![encoded_block_params],
-                vec![tx_list],
+                encoded_block_params,
+                tx_list,
                 U256::from(lookahead_pointer),
                 lookahead_set_params,
             )
@@ -406,7 +414,7 @@ impl ExecutionLayer {
         chain_id: u64,
         preconf_tx_list_hash: [u8; 32],
         preconf_signature: [u8; 65],
-        block_proposed: &BlockProposedV2,
+        block_proposed: &BlockProposed,
     ) -> Result<(), Error> {
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
@@ -421,33 +429,23 @@ impl ExecutionLayer {
         let signature = Bytes::from(preconf_signature);
 
         let proposed_meta = &block_proposed.event_data().meta;
-        let meta = PreconfTaskManager::BlockMetadataV2 {
-            anchorBlockHash: proposed_meta.anchorBlockHash,
+        let meta = PreconfTaskManager::BlockMetadata {
+            l1Hash: proposed_meta.l1Hash,
             difficulty: proposed_meta.difficulty,
             blobHash: proposed_meta.blobHash,
             extraData: proposed_meta.extraData,
+            depositsHash: proposed_meta.depositsHash,
             coinbase: proposed_meta.coinbase,
             id: proposed_meta.id,
             gasLimit: proposed_meta.gasLimit,
             timestamp: proposed_meta.timestamp,
-            anchorBlockId: proposed_meta.anchorBlockId,
-            baseFeeConfig: PreconfTaskManager::BaseFeeConfig {
-                adjustmentQuotient: proposed_meta.baseFeeConfig.adjustmentQuotient,
-                sharingPctg: proposed_meta.baseFeeConfig.sharingPctg,
-                gasIssuancePerSecond: proposed_meta.baseFeeConfig.gasIssuancePerSecond,
-                 minGasExcess: proposed_meta.baseFeeConfig.minGasExcess,
-                 maxGasIssuancePerBlock: proposed_meta.baseFeeConfig.maxGasIssuancePerBlock,
-            },
-            parentMetaHash: proposed_meta.parentMetaHash,
+            l1Height: proposed_meta.l1Height,
+            minTier: proposed_meta.minTier,
             blobUsed: proposed_meta.blobUsed,
+            parentMetaHash: proposed_meta.parentMetaHash,
+            sender: proposed_meta.sender,
             blobTxListOffset: proposed_meta.blobTxListOffset,
             blobTxListLength: proposed_meta.blobTxListLength,
-            blobIndex: proposed_meta.blobIndex,
-            livenessBond: proposed_meta.livenessBond,
-            proposedAt: proposed_meta.proposedAt,
-            proposedIn: proposed_meta.proposedIn,
-            minTier: proposed_meta.minTier,
-            proposer: proposed_meta.proposer
         };
         let result = contract
             .proveIncorrectPreconfirmation(meta.clone(), header.clone(), signature.clone())
@@ -481,6 +479,7 @@ impl ExecutionLayer {
         validator_index: usize,
         validator_proof: Vec<[u8; 32]>,
         validators_root: [u8; 32],
+        nr_validators: u64,
         beacon_state_proof: Vec<[u8; 32]>,
         beacon_state_root: [u8; 32],
         beacon_block_proof_for_state: Vec<[u8; 32]>,
@@ -502,6 +501,7 @@ impl ExecutionLayer {
             validatorIndex: validator_index,
             validatorProof: Self::convert_proof_to_fixed_bytes(validator_proof),
             validatorsRoot: FixedBytes::from(validators_root),
+            nr_validators: U256::from(nr_validators),
             beaconStateProof: Self::convert_proof_to_fixed_bytes(beacon_state_proof),
             beaconStateRoot: FixedBytes::from(beacon_state_root),
             beaconBlockProofForState: Self::convert_proof_to_fixed_bytes(
@@ -1093,6 +1093,7 @@ mod tests {
         let validator_index = 0;
         let validator_proof = vec![[3u8; 32]; 5];
         let validators_root = [4u8; 32];
+        let nr_validators = 1000;
         let beacon_state_proof = vec![[5u8; 32]; 5];
         let beacon_state_root = [6u8; 32];
         let beacon_block_proof_for_state = vec![[7u8; 32]; 5];
@@ -1108,6 +1109,7 @@ mod tests {
                 validator_index,
                 validator_proof,
                 validators_root,
+                nr_validators,
                 beacon_state_proof,
                 beacon_state_root,
                 beacon_block_proof_for_state,

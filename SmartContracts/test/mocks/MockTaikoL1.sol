@@ -7,28 +7,17 @@ contract MockTaikoL1 is ITaikoL1 {
     bytes public params;
     bytes public txList;
     uint256 public blockId;
-    BlockV2 public blk;
+    Block public blk;
 
-    function proposeBlockV2(bytes calldata _params, bytes calldata _txList)
+    function proposeBlock(bytes calldata _params, bytes calldata _txList)
         external
         payable
-        returns (BlockMetadataV2 memory meta_)
+        returns (BlockMetadata memory a, EthDeposit[] memory b)
     {
         params = _params;
         txList = _txList;
 
-        return meta_;
-    }
-
-    function proposeBlocksV2(bytes[] calldata _params, bytes[] calldata _txLists)
-        external
-        payable
-        returns (BlockMetadataV2[] memory meta_)
-    {
-        params = _params[0];
-        txList = _txLists[0];
-
-        return meta_;
+        return (a, b);
     }
 
     function getStateVariables() external view returns (SlotA memory a, SlotB memory b) {
@@ -36,7 +25,7 @@ contract MockTaikoL1 is ITaikoL1 {
         return (a, b);
     }
 
-    function getBlockV2(uint64) external view returns (BlockV2 memory blk_) {
+    function getBlock(uint64) external view returns (Block memory blk_) {
         return blk;
     }
 

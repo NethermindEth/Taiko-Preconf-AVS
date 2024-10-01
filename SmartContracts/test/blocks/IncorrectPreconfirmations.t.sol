@@ -17,7 +17,7 @@ contract IncorrectPreconfirmations is BlocksFixtures {
         proposeBlock();
 
         // Sets the block metadata for block id 1 in taikoL1
-        ITaikoL1.BlockMetadataV2 memory metadata = setupTaikoBlock(1, vm.getBlockTimestamp(), keccak256("taiko_blobhash"));
+        ITaikoL1.BlockMetadata memory metadata = setupTaikoBlock(1, vm.getBlockTimestamp(), keccak256("taiko_blobhash"));
 
         // Get addr_1 to sign a preconfirmation header for block id 1 with a different transaction hash
         IPreconfTaskManager.PreconfirmationHeader memory header = IPreconfTaskManager.PreconfirmationHeader({
@@ -41,7 +41,7 @@ contract IncorrectPreconfirmations is BlocksFixtures {
         proposeBlock();
 
         // Sets the block metadata for block id 1 in taikoL1
-        ITaikoL1.BlockMetadataV2 memory metadata = setupTaikoBlock(1, vm.getBlockTimestamp(), keccak256("taiko_blobhash"));
+        ITaikoL1.BlockMetadata memory metadata = setupTaikoBlock(1, vm.getBlockTimestamp(), keccak256("taiko_blobhash"));
 
         // Get addr_2 to sign a preconfirmation header for block id 1
         IPreconfTaskManager.PreconfirmationHeader memory header = IPreconfTaskManager.PreconfirmationHeader({
@@ -66,7 +66,7 @@ contract IncorrectPreconfirmations is BlocksFixtures {
         proposeBlock();
 
         // Sets the block metadata for block id 1 in taikoL1
-        ITaikoL1.BlockMetadataV2 memory metadata = setupTaikoBlock(1, vm.getBlockTimestamp(), keccak256("taiko_blobhash"));
+        ITaikoL1.BlockMetadata memory metadata = setupTaikoBlock(1, vm.getBlockTimestamp(), keccak256("taiko_blobhash"));
 
         // Get addr_1 to sign a preconfirmation header for block id 1
         IPreconfTaskManager.PreconfirmationHeader memory header = IPreconfTaskManager.PreconfirmationHeader({
@@ -91,7 +91,7 @@ contract IncorrectPreconfirmations is BlocksFixtures {
         proposeBlock();
 
         // Sets the block metadata for block id 1 in taikoL1
-        ITaikoL1.BlockMetadataV2 memory metadata = setupTaikoBlock(1, vm.getBlockTimestamp(), keccak256("taiko_blobhash"));
+        ITaikoL1.BlockMetadata memory metadata = setupTaikoBlock(1, vm.getBlockTimestamp(), keccak256("taiko_blobhash"));
 
         // Get addr_1 to sign a preconfirmation header for block id 1 with incorrect chain ID
         IPreconfTaskManager.PreconfirmationHeader memory header = IPreconfTaskManager.PreconfirmationHeader({
@@ -113,11 +113,11 @@ contract IncorrectPreconfirmations is BlocksFixtures {
         proposeBlock();
 
         // Sets the block metadata for block id 1 in taikoL1
-        ITaikoL1.BlockMetadataV2 memory correctMetadata =
+        ITaikoL1.BlockMetadata memory correctMetadata =
             setupTaikoBlock(1, vm.getBlockTimestamp(), keccak256("taiko_blobhash"));
 
         // Create incorrect metadata
-        ITaikoL1.BlockMetadataV2 memory incorrectMetadata = correctMetadata;
+        ITaikoL1.BlockMetadata memory incorrectMetadata = correctMetadata;
         incorrectMetadata.blobHash = keccak256("incorrect_blobhash");
 
         // Get addr_1 to sign a preconfirmation header for block id 1
@@ -140,7 +140,7 @@ contract IncorrectPreconfirmations is BlocksFixtures {
         proposeBlock();
 
         // Sets the block metadata for block id 1 in taikoL1
-        ITaikoL1.BlockMetadataV2 memory metadata = setupTaikoBlock(1, vm.getBlockTimestamp(), keccak256("taiko_blobhash"));
+        ITaikoL1.BlockMetadata memory metadata = setupTaikoBlock(1, vm.getBlockTimestamp(), keccak256("taiko_blobhash"));
 
         // Get addr_1 to sign a correct preconfirmation header for block id 1
         IPreconfTaskManager.PreconfirmationHeader memory header = IPreconfTaskManager.PreconfirmationHeader({
@@ -162,7 +162,7 @@ contract IncorrectPreconfirmations is BlocksFixtures {
         proposeBlock();
 
         // Sets the block metadata for block id 1 in taikoL1
-        ITaikoL1.BlockMetadataV2 memory metadata = setupTaikoBlock(1, vm.getBlockTimestamp(), keccak256("taiko_blobhash"));
+        ITaikoL1.BlockMetadata memory metadata = setupTaikoBlock(1, vm.getBlockTimestamp(), keccak256("taiko_blobhash"));
 
         // Get addr_2 to sign an incorrect preconfirmation header for block id 1
         IPreconfTaskManager.PreconfirmationHeader memory header = IPreconfTaskManager.PreconfirmationHeader({
@@ -209,13 +209,6 @@ contract IncorrectPreconfirmations is BlocksFixtures {
 
         // Address 1 proposes the block
         vm.prank(addr_1);
-
-         bytes[] memory blockParams = new bytes[](1);
-        blockParams[0] = bytes("Block Params");
-
-        bytes[] memory txnLists = new bytes[](1);
-        txnLists[0] = bytes("Txn List");
-
-        preconfTaskManager.newBlockProposal(blockParams, txnLists, 1, lookaheadSetParams);
+        preconfTaskManager.newBlockProposal("Block Params", "Txn List", 1, lookaheadSetParams);
     }
 }

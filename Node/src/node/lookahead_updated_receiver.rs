@@ -237,6 +237,7 @@ impl LookaheadUpdatedEventHandler {
                 validator_index,
                 validator_proof,
                 validators_root,
+                validators.len() as u64,
                 beacon_state_proof,
                 beacon_state_root,
                 beacon_block_proof_for_state,

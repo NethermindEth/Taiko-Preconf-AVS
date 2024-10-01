@@ -33,13 +33,7 @@ contract BlockProposing is BlocksFixtures {
 
         // Address 1 proposes the block
         vm.prank(addr_1);
-        bytes[] memory blockParams = new bytes[](1);
-        blockParams[0] = bytes("Block Params");
-
-        bytes[] memory txnLists = new bytes[](1);
-        txnLists[0] = bytes("Txn List");
-
-        preconfTaskManager.newBlockProposal(blockParams, txnLists, 1, lookaheadSetParams);
+        preconfTaskManager.newBlockProposal("Block Params", "Txn List", 1, lookaheadSetParams);
 
         // Check that the block proposer has been set correctly
         vm.assertEq(preconfTaskManager.getBlockProposer(4), addr_1);
@@ -71,14 +65,7 @@ contract BlockProposing is BlocksFixtures {
 
         // Address 3 proposes the block in advance
         vm.prank(addr_3);
-        
-        bytes[] memory blockParams = new bytes[](1);
-        blockParams[0] = bytes("Block Params 2");
-
-        bytes[] memory txnLists = new bytes[](1);
-        txnLists[0] = bytes("Txn List 2");
-
-        preconfTaskManager.newBlockProposal(blockParams, txnLists, 2, lookaheadSetParams);
+        preconfTaskManager.newBlockProposal("Block Params 2", "Txn List 2", 2, lookaheadSetParams);
 
         // Check that the block proposer has been set correctly
         vm.assertEq(preconfTaskManager.getBlockProposer(5), addr_3);
@@ -110,13 +97,7 @@ contract BlockProposing is BlocksFixtures {
 
         // Address 1 proposes the block at its dedicated slot
         vm.prank(addr_1);
-
-        bytes[] memory blockParams = new bytes[](1);
-        blockParams[0] = bytes("Block Params 3");
-
-        bytes[] memory txnLists = new bytes[](1);
-        txnLists[0] = bytes("Txn List 3");
-        preconfTaskManager.newBlockProposal(blockParams, txnLists, 1, lookaheadSetParams);
+        preconfTaskManager.newBlockProposal("Block Params 3", "Txn List 3", 1, lookaheadSetParams);
 
         // Check that the block proposer has been set correctly
         vm.assertEq(preconfTaskManager.getBlockProposer(6), addr_1);
@@ -149,14 +130,7 @@ contract BlockProposing is BlocksFixtures {
         // Address 1 proposes the block
         vm.prank(addr_1);
         vm.deal(addr_1, 1 ether);
-
-        bytes[] memory blockParams = new bytes[](1);
-        blockParams[0] = bytes("Block Params");
-
-        bytes[] memory txnLists = new bytes[](1);
-        txnLists[0] = bytes("Txn List");
-
-        preconfTaskManager.newBlockProposal{value: 1 ether}(blockParams, txnLists, 1, lookaheadSetParams);
+        preconfTaskManager.newBlockProposal{value: 1 ether}("Block Params", "Txn List", 1, lookaheadSetParams);
 
         // Verify Taiko's balance
         vm.assertEq(address(taikoL1).balance, 1 ether);
@@ -189,14 +163,7 @@ contract BlockProposing is BlocksFixtures {
 
         // Address 1 proposes a block and updates the lookahead
         vm.prank(addr_1);
-
-        bytes[] memory blockParams = new bytes[](1);
-        blockParams[0] = bytes("Block Params");
-
-        bytes[] memory txnLists = new bytes[](1);
-        txnLists[0] = bytes("Txn List");
-
-        preconfTaskManager.newBlockProposal(blockParams, txnLists, 1, lookaheadSetParams);
+        preconfTaskManager.newBlockProposal("Block Params", "Txn List", 1, lookaheadSetParams);
 
         // Verify that the lookahead for the next epoch has been updated
         IPreconfTaskManager.LookaheadBufferEntry[64] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
@@ -231,15 +198,8 @@ contract BlockProposing is BlocksFixtures {
 
         vm.prank(addr_1);
         vm.expectRevert(IPreconfTaskManager.InvalidLookaheadPointer.selector);
-
-        bytes[] memory blockParams = new bytes[](1);
-        blockParams[0] = bytes("Block Params");
-
-        bytes[] memory txnLists = new bytes[](1);
-        txnLists[0] = bytes("Txn List");
-
         preconfTaskManager.newBlockProposal(
-            blockParams, txnLists, 1, new IPreconfTaskManager.LookaheadSetParam[](0)
+            "Block Params", "Txn List", 1, new IPreconfTaskManager.LookaheadSetParam[](0)
         );
     }
 
@@ -254,15 +214,8 @@ contract BlockProposing is BlocksFixtures {
 
         vm.prank(addr_3);
         vm.expectRevert(IPreconfTaskManager.InvalidLookaheadPointer.selector);
-
-        bytes[] memory blockParams = new bytes[](1);
-        blockParams[0] = bytes("Block Params");
-
-        bytes[] memory txnLists = new bytes[](1);
-        txnLists[0] = bytes("Txn List");
-
         preconfTaskManager.newBlockProposal(
-            blockParams, txnLists, 2, new IPreconfTaskManager.LookaheadSetParam[](0)
+            "Block Params", "Txn List", 2, new IPreconfTaskManager.LookaheadSetParam[](0)
         );
     }
 
@@ -277,15 +230,8 @@ contract BlockProposing is BlocksFixtures {
 
         vm.prank(addr_3);
         vm.expectRevert(IPreconfTaskManager.InvalidLookaheadPointer.selector);
-
-        bytes[] memory blockParams = new bytes[](1);
-        blockParams[0] = bytes("Block Params");
-
-        bytes[] memory txnLists = new bytes[](1);
-        txnLists[0] = bytes("Txn List");
-
         preconfTaskManager.newBlockProposal(
-           blockParams, txnLists, 2, new IPreconfTaskManager.LookaheadSetParam[](0)
+            "Block Params", "Txn List", 2, new IPreconfTaskManager.LookaheadSetParam[](0)
         );
     }
 
@@ -301,15 +247,8 @@ contract BlockProposing is BlocksFixtures {
         // Try to propose with a different address than the expected preconfer
         vm.prank(addr_2); // addr_2 is not the expected preconfer (It is addr_3)
         vm.expectRevert(IPreconfTaskManager.SenderIsNotThePreconfer.selector);
-
-        bytes[] memory blockParams = new bytes[](1);
-        blockParams[0] = bytes("Block Params");
-
-        bytes[] memory txnLists = new bytes[](1);
-        txnLists[0] = bytes("Txn List");
-
         preconfTaskManager.newBlockProposal(
-            blockParams, txnLists, 2, new IPreconfTaskManager.LookaheadSetParam[](0)
+            "Block Params", "Txn List", 2, new IPreconfTaskManager.LookaheadSetParam[](0)
         );
     }
 }
