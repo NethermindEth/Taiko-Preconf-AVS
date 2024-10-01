@@ -41,7 +41,7 @@ impl LookaheadMonitor {
         if self
             .ethereum_l1
             .execution_layer
-            .is_lookahead_required(next_epoch)
+            .is_lookahead_required()
             .await?
         {
             debug!("Lookahead is required, pushing it");
