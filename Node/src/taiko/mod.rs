@@ -1,6 +1,7 @@
 use crate::utils::rpc_client::RpcClient;
 use anyhow::Error;
 use serde_json::Value;
+use tracing::debug;
 
 pub mod l2_tx_lists;
 
@@ -29,6 +30,11 @@ impl Taiko {
 
         if !result.tx_list_bytes.is_empty() {
             Self::print_number_of_received_txs(&result);
+            debug!(
+                "Parent meta hash: 0x{}",
+                hex::encode(result.parent_meta_hash)
+            );
+            debug!("Parent block id: {}", result.parent_block_id);
         }
 
         Ok(result)
