@@ -7188,6 +7188,7 @@ name = "taiko_preconf_avs_node"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "alloy-json-rpc",
  "alloy-rlp",
  "anyhow",
  "beacon-api-client",
