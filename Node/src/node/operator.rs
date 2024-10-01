@@ -32,16 +32,21 @@ impl Operator {
 
     #[cfg(debug_assertions)]
     pub async fn print_preconfer_slots(&self, base_slot: Slot) {
-        tracing::info!("Preconfer slots:");
         let preconfer = &self.ethereum_l1.execution_layer.get_preconfer_address();
-        self.lookahead_preconfer_addresses
+        let preconfer_slots: Vec<String> = self
+            .lookahead_preconfer_addresses
             .iter()
             .enumerate()
-            .for_each(|(i, address)| {
+            .filter_map(|(i, address)| {
                 if address == preconfer {
-                    tracing::info!("Preconfer slot: {}", base_slot + i as u64);
+                    Some((base_slot + i as u64).to_string())
+                } else {
+                    None
                 }
-            });
+            })
+            .collect();
+
+        tracing::debug!("Preconfer slots: {}", preconfer_slots.join(", "));
     }
 
     pub async fn get_status(&mut self, slot: Slot) -> Result<Status, Error> {

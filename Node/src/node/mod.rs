@@ -333,7 +333,11 @@ impl Node {
     }
 
     async fn new_epoch_started(&mut self, new_epoch: u64) -> Result<(), Error> {
-        tracing::info!("Current epoch changed from {} to {}", self.epoch, new_epoch);
+        tracing::info!(
+            "⏰ Current epoch changed from {} to {}",
+            self.epoch,
+            new_epoch
+        );
         self.epoch = new_epoch;
 
         self.operator = Operator::new(self.ethereum_l1.clone(), new_epoch)?;
@@ -450,9 +454,11 @@ impl Node {
     }
 
     async fn preconfirm_block(&mut self, send_to_contract: bool) -> Result<(), Error> {
+        let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
         tracing::info!(
-            "Preconfirming for the slot: {:?}",
-            self.ethereum_l1.slot_clock.get_current_slot()?
+            "Preconfirming for the slot: {} ({})",
+            current_slot,
+            self.ethereum_l1.slot_clock.slot_of_epoch(current_slot)
         );
 
         let lookahead_params = self.get_lookahead_params().await?;
@@ -476,7 +482,6 @@ impl Node {
             pending_tx_lists.tx_list_bytes[0].clone() // TODO: handle multiple tx lists
         };
 
-        tracing::debug!("Parent block id: {}", pending_tx_lists.parent_block_id);
         let new_block_height = pending_tx_lists.parent_block_id + 1;
 
         let (commit_hash, signature) =
