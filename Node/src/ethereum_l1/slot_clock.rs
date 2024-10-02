@@ -281,6 +281,7 @@ mod tests {
             genesis_timestamp,
             slot_duration,
             slot_per_epoch,
+            L2_SLOT_DURATION,
         );
 
         let epoch_begin_timestamp = slot_clock
