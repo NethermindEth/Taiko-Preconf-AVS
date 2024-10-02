@@ -189,6 +189,7 @@ mod tests {
             60,
             bls_service.clone(),
             1,
+            3,
         )
         .await
         .unwrap();
