@@ -1,4 +1,7 @@
-use crate::{ethereum_l1::EthereumL1, utils::types::*};
+use crate::{
+    ethereum_l1::{execution_layer::PreconfTaskManager, EthereumL1},
+    utils::types::*,
+};
 use anyhow::Error;
 use std::sync::Arc;
 
@@ -6,6 +9,7 @@ pub struct Operator {
     ethereum_l1: Arc<EthereumL1>,
     epoch: u64,
     lookahead_preconfer_addresses: Vec<PreconferAddress>,
+    lookahead_preconfer_buffer: Vec<PreconfTaskManager::LookaheadBufferEntry>,
     l1_slots_per_epoch: u64,
 }
 
@@ -24,6 +28,7 @@ impl Operator {
             ethereum_l1,
             epoch,
             lookahead_preconfer_addresses: vec![],
+            lookahead_preconfer_buffer: vec![],
             l1_slots_per_epoch,
         })
     }
@@ -113,7 +118,44 @@ impl Operator {
             .execution_layer
             .get_lookahead_preconfer_addresses_for_epoch(self.epoch)
             .await?;
+
+        self.lookahead_preconfer_buffer = self
+            .ethereum_l1
+            .execution_layer
+            .get_lookahead_preconfer_buffer()
+            .await?
+            .to_vec();
         Ok(())
+    }
+
+    pub fn get_lookahead_pointer(&mut self) -> Result<u64, Error> {
+        let contract_timestamp = self.ethereum_l1.slot_clock.get_real_time_for_contract()?;
+
+        let lookahead_pointer = self
+            .lookahead_preconfer_buffer
+            .iter()
+            .position(|entry| {
+                entry.preconfer == self.ethereum_l1.execution_layer.get_preconfer_address()
+                    && contract_timestamp > entry.prevTimestamp
+                    && contract_timestamp <= entry.timestamp
+            })
+            .ok_or_else(|| {
+                let buffer_str = self
+                    .lookahead_preconfer_buffer
+                    .iter()
+                    .map(|entry| {
+                        format!(
+                            "{}, {}, {}, {}",
+                            entry.isFallback, entry.timestamp, entry.prevTimestamp, entry.preconfer
+                        )
+                    })
+                    .collect::<Vec<String>>()
+                    .join("; ");
+                tracing::debug!("Lookahead buffer: [{}]", buffer_str);
+                anyhow::anyhow!("get_lookahead_params: Preconfer not found in lookahead")
+            })? as u64;
+
+        Ok(lookahead_pointer)
     }
 }
 

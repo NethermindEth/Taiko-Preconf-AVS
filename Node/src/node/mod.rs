@@ -46,7 +46,6 @@ pub struct Node {
     ethereum_l1: Arc<EthereumL1>,
     mev_boost: MevBoost,
     epoch: Epoch,
-    lookahead_preconfer_buffer: Option<[PreconfTaskManager::LookaheadBufferEntry; 64]>,
     l2_slot_duration_sec: u64,
     preconfirmed_blocks: PreconfirmedBlocks,
     is_preconfer_now: Arc<AtomicBool>,
@@ -77,7 +76,6 @@ impl Node {
             ethereum_l1,
             mev_boost,
             epoch: init_epoch,
-            lookahead_preconfer_buffer: None,
             l2_slot_duration_sec,
             preconfirmed_blocks: Arc::new(Mutex::new(HashMap::new())),
             is_preconfer_now: Arc::new(AtomicBool::new(false)),
@@ -347,37 +345,7 @@ impl Node {
             .print_preconfer_slots(self.ethereum_l1.slot_clock.get_current_slot()?)
             .await;
 
-        // TODO Move it to operator
-        self.lookahead_preconfer_buffer = Some(
-            self.ethereum_l1
-                .execution_layer
-                .get_lookahead_preconfer_buffer()
-                .await?,
-        );
-
         Ok(())
-    }
-
-    async fn get_lookahead_pointer(&mut self) -> Result<u64, Error> {
-        let contract_timestamp = self.ethereum_l1.slot_clock.get_real_time_for_contract()?;
-
-        let lookahead_pointer = self
-            .lookahead_preconfer_buffer
-            .as_ref()
-            .ok_or(anyhow::anyhow!(
-                "get_lookahead_params: lookahead_preconfer_buffer is None"
-            ))?
-            .iter()
-            .position(|entry| {
-                entry.preconfer == self.ethereum_l1.execution_layer.get_preconfer_address()
-                    && contract_timestamp > entry.prevTimestamp
-                    && contract_timestamp <= entry.timestamp
-            })
-            .ok_or(anyhow::anyhow!(
-                "get_lookahead_params: Preconfer not found in lookahead"
-            ))? as u64;
-
-        Ok(lookahead_pointer)
     }
 
     async fn get_lookahead_params(
@@ -455,7 +423,8 @@ impl Node {
     async fn preconfirm_block(&mut self, send_to_contract: bool) -> Result<(), Error> {
         let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
         info!(
-            "Preconfirming for the slot: {} ({})",
+            "Preconfirming for the epoch: {} and the slot: {} ({})",
+            self.epoch,
             current_slot,
             self.ethereum_l1.slot_clock.slot_of_epoch(current_slot)
         );
@@ -466,10 +435,18 @@ impl Node {
             if let Some(lookahead_params) = lookahead_params {
                 debug!("No pending transactions to preconfirm, force pushing lookahead");
                 self.preconfirmation_helper.increment_nonce();
-                self.ethereum_l1
+                if let Err(err) = self
+                    .ethereum_l1
                     .execution_layer
                     .force_push_lookahead(lookahead_params)
-                    .await?;
+                    .await
+                {
+                    if err.to_string().contains("AlreadyKnown") {
+                        debug!("Force push lookahead already known");
+                    } else {
+                        error!("Failed to force push lookahead: {}", err);
+                    }
+                }
             }
             // No transactions skip preconfirmation step
             return Ok(());
@@ -502,7 +479,7 @@ impl Node {
             .advance_head_to_new_l2_block(pending_tx_lists.tx_lists)
             .await?;
 
-        let lookahead_pointer = self.get_lookahead_pointer().await?;
+        let lookahead_pointer = self.operator.get_lookahead_pointer()?;
         let tx = self
             .ethereum_l1
             .execution_layer
