@@ -168,7 +168,9 @@ impl Node {
         // get current lookahead
         let epoch_begin_timestamp = ethereum_l1
             .slot_clock
-            .get_epoch_begin_timestamp(ethereum_l1.slot_clock.get_current_epoch()?)?;
+            .get_real_epoch_begin_timestamp_for_contract(
+                ethereum_l1.slot_clock.get_current_epoch()?,
+            )?;
 
         let current_lookahead = ethereum_l1
             .execution_layer
@@ -361,7 +363,7 @@ impl Node {
     }
 
     async fn get_lookahead_pointer(&mut self) -> Result<u64, Error> {
-        let contract_timestamp = self.ethereum_l1.slot_clock.get_time_for_contract()?;
+        let contract_timestamp = self.ethereum_l1.slot_clock.get_real_time_for_contract()?;
 
         let lookahead_pointer = self
             .lookahead_preconfer_buffer
