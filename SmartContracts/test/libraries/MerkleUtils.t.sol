@@ -20,6 +20,7 @@ contract TestMerkleUtils is BaseTest {
         chunks[7] = keccak256("chunk7");
 
         bytes32 chunk0 = keccak256(abi.encodePacked(chunks[0], chunks[0]));
+        // bytes32 chunk0 = chunks[0];
         bytes32 expectedRoot = keccak256(
             abi.encodePacked(
                 keccak256(
