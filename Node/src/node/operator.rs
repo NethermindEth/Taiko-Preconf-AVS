@@ -1,11 +1,16 @@
-use crate::{ethereum_l1::EthereumL1, utils::types::*};
+use crate::{
+    ethereum_l1::{execution_layer::PreconfTaskManager, EthereumL1},
+    utils::types::*,
+};
 use anyhow::Error;
 use std::sync::Arc;
+use tracing::debug;
 
 pub struct Operator {
     ethereum_l1: Arc<EthereumL1>,
     epoch: u64,
     lookahead_preconfer_addresses: Vec<PreconferAddress>,
+    lookahead_preconfer_buffer: Vec<PreconfTaskManager::LookaheadBufferEntry>,
     l1_slots_per_epoch: u64,
 }
 
@@ -18,12 +23,13 @@ pub enum Status {
 
 impl Operator {
     pub fn new(ethereum_l1: Arc<EthereumL1>, epoch: Epoch) -> Result<Self, Error> {
-        tracing::debug!("Operator::new: epoch: {}", epoch);
+        debug!("Operator::new: epoch: {}", epoch);
         let l1_slots_per_epoch = ethereum_l1.slot_clock.get_slots_per_epoch();
         Ok(Self {
             ethereum_l1,
             epoch,
             lookahead_preconfer_addresses: vec![],
+            lookahead_preconfer_buffer: vec![],
             l1_slots_per_epoch,
         })
     }
@@ -44,7 +50,7 @@ impl Operator {
             })
             .collect();
 
-        tracing::debug!("Preconfer slots: {}", preconfer_slots.join(", "));
+        debug!("Preconfer slots: {}", preconfer_slots.join(", "));
     }
 
     pub async fn get_status(&mut self, slot: Slot) -> Result<Status, Error> {
@@ -106,14 +112,51 @@ impl Operator {
     }
 
     pub async fn update_preconfer_lookahead_for_epoch(&mut self) -> Result<(), Error> {
-        tracing::debug!("Updating preconfer lookahead for epoch: {}", self.epoch);
+        debug!("Updating preconfer lookahead for epoch: {}", self.epoch);
 
         self.lookahead_preconfer_addresses = self
             .ethereum_l1
             .execution_layer
             .get_lookahead_preconfer_addresses_for_epoch(self.epoch)
             .await?;
+
+        self.lookahead_preconfer_buffer = self
+            .ethereum_l1
+            .execution_layer
+            .get_lookahead_preconfer_buffer()
+            .await?
+            .to_vec();
         Ok(())
+    }
+
+    pub fn get_lookahead_pointer(&mut self) -> Result<u64, Error> {
+        let contract_timestamp = self.ethereum_l1.slot_clock.get_real_time_for_contract()?;
+
+        let lookahead_pointer = self
+            .lookahead_preconfer_buffer
+            .iter()
+            .position(|entry| {
+                entry.preconfer == self.ethereum_l1.execution_layer.get_preconfer_address()
+                    && contract_timestamp > entry.prevTimestamp
+                    && contract_timestamp <= entry.timestamp
+            })
+            .ok_or_else(|| {
+                let buffer_str = self
+                    .lookahead_preconfer_buffer
+                    .iter()
+                    .map(|entry| {
+                        format!(
+                            "{}, {}, {}, {}",
+                            entry.isFallback, entry.timestamp, entry.prevTimestamp, entry.preconfer
+                        )
+                    })
+                    .collect::<Vec<String>>()
+                    .join("; ");
+                debug!("Lookahead buffer: [{}]", buffer_str);
+                anyhow::anyhow!("get_lookahead_params: Preconfer not found in lookahead")
+            })? as u64;
+
+        Ok(lookahead_pointer)
     }
 }
 
@@ -139,7 +182,9 @@ mod tests {
                     .chain(std::iter::repeat([0u8; 20]).take(30))
                     .collect())
             });
-
+        execution_layer
+            .expect_get_lookahead_preconfer_buffer()
+            .returning(|| Ok(create_lookahead_buffer()));
         let mut operator = create_operator(0, execution_layer).unwrap();
         operator
             .update_preconfer_lookahead_for_epoch()
@@ -167,6 +212,9 @@ mod tests {
                     Ok(vec![[0u8; 20]; 32])
                 }
             });
+        execution_layer
+            .expect_get_lookahead_preconfer_buffer()
+            .returning(|| Ok(create_lookahead_buffer()));
 
         let mut operator = create_operator(0, execution_layer).unwrap();
         operator
@@ -192,6 +240,9 @@ mod tests {
                         .collect())
                 }
             });
+        execution_layer
+            .expect_get_lookahead_preconfer_buffer()
+            .returning(|| Ok(create_lookahead_buffer()));
 
         let mut operator = create_operator(0, execution_layer).unwrap();
         operator
@@ -216,5 +267,22 @@ mod tests {
         });
 
         Operator::new(ethereum_l1, epoch)
+    }
+
+    fn create_lookahead_buffer() -> [PreconfTaskManager::LookaheadBufferEntry; 64] {
+        use alloy::primitives::Address;
+
+        let mut buffer = vec![];
+        for _ in 0..64 {
+            buffer.push(PreconfTaskManager::LookaheadBufferEntry {
+                isFallback: false,
+                timestamp: 0,
+                prevTimestamp: 0,
+                preconfer: Address::from([0u8; 20]),
+            });
+        }
+        buffer
+            .try_into()
+            .unwrap_or_else(|_| panic!("Failed to convert buffer to array"))
     }
 }
