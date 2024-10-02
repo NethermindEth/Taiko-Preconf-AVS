@@ -32,15 +32,48 @@ contract DeployEigenlayerMVP is BaseScript {
         StrategyManager strategyManagerImpl = new StrategyManager(IDelegationManager(delegationManager));
         Slasher slasherImpl = new Slasher();
 
-        // Upgrade proxies with implementations
-        proxyAdmin.upgrade(ITransparentUpgradeableProxy(avsDirectory), address(avsDirectoryImpl));
-        proxyAdmin.upgrade(ITransparentUpgradeableProxy(delegationManager), address(delegationManagerImpl));
-        proxyAdmin.upgrade(ITransparentUpgradeableProxy(strategyManager), address(strategyManagerImpl));
-        proxyAdmin.upgrade(ITransparentUpgradeableProxy(slasher), address(slasherImpl));
+        // Log the addresses of the implementations
+        console2.log("AVSDirectory Implementation: ", address(avsDirectoryImpl));
+        console2.log("DelegationManager Implementation: ", address(delegationManagerImpl));
+        console2.log("StrategyManager Implementation: ", address(strategyManagerImpl));
+        console2.log("Slasher Implementation: ", address(slasherImpl));
+
+  // Upgrade proxies with implementations
+        try proxyAdmin.upgrade(ITransparentUpgradeableProxy(avsDirectory), address(avsDirectoryImpl)) {
+            console2.log("AVS Directory upgraded successfully");
+        } catch (bytes memory reason) {
+            console2.log("AVS Directory upgrade failed: ", string(reason));
+        }
+
+        try proxyAdmin.upgrade(ITransparentUpgradeableProxy(delegationManager), address(delegationManagerImpl)) {
+            console2.log("Delegation Manager upgraded successfully");
+        } catch (bytes memory reason) {
+            console2.log("Delegation Manager upgrade failed: ", string(reason));
+        }
+
+        try proxyAdmin.upgrade(ITransparentUpgradeableProxy(strategyManager), address(strategyManagerImpl)) {
+            console2.log("Strategy Manager upgraded successfully");
+        } catch (bytes memory reason) {
+            console2.log("Strategy Manager upgrade failed: ", string(reason));
+        }
+
+        try proxyAdmin.upgrade(ITransparentUpgradeableProxy(slasher), address(slasherImpl)) {
+            console2.log("Slasher upgraded successfully");
+        } catch (bytes memory reason) {
+            console2.log("Slasher upgrade failed: ", string(reason));
+        }
 
         console2.log("AVS Directory: ", avsDirectory);
         console2.log("Delegation Manager: ", delegationManager);
         console2.log("Strategy Manager: ", strategyManager);
         console2.log("Slasher: ", slasher);
+    }
+
+    function isContract(address addr) internal view returns (bool) {
+        uint256 size;
+        assembly {
+            size := extcodesize(addr)
+        }
+        return size > 0;
     }
 }
