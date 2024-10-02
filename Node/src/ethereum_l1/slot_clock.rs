@@ -155,7 +155,7 @@ impl SlotClock {
     }
 
     // 0 based L2 slot number within the current L1 slot
-    pub fn get_l2_slot_number(&self) -> Result<u64, Error> {
+    pub fn get_l2_slot_number_within_l1_slot(&self) -> Result<u64, Error> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let slot_begin = self.start_of(self.get_current_slot()?)?;
         Ok(self.which_l2_slot_is_it((now - slot_begin).as_secs()))

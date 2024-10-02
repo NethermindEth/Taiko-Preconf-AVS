@@ -327,7 +327,9 @@ impl Node {
                     self.epoch,
                     current_slot,
                     self.ethereum_l1.slot_clock.slot_of_epoch(current_slot),
-                    self.ethereum_l1.slot_clock.get_l2_slot_number()?
+                    self.ethereum_l1
+                        .slot_clock
+                        .get_l2_slot_number_within_l1_slot()?
                 );
             }
         }
@@ -382,7 +384,12 @@ impl Node {
         debug!("Preconfirming last slot");
         self.preconfirm_block(false).await?;
         const FINAL_L2_SLOT_PERCONFIRMATION: u64 = 3;
-        if self.ethereum_l1.slot_clock.get_l2_slot_number()? == FINAL_L2_SLOT_PERCONFIRMATION {
+        if self
+            .ethereum_l1
+            .slot_clock
+            .get_l2_slot_number_within_l1_slot()?
+            == FINAL_L2_SLOT_PERCONFIRMATION
+        {
             debug!("Last(4th) perconfirmation in the last L1 slot for the preconfer");
             // Last(4th) perconfirmation when we are proposer and preconfer
             self.is_preconfer_now.store(false, Ordering::Release);
@@ -428,7 +435,9 @@ impl Node {
             self.epoch,
             current_slot,
             self.ethereum_l1.slot_clock.slot_of_epoch(current_slot),
-            self.ethereum_l1.slot_clock.get_l2_slot_number()?
+            self.ethereum_l1
+                .slot_clock
+                .get_l2_slot_number_within_l1_slot()?
         );
 
         let lookahead_params = self.get_lookahead_params().await?;
