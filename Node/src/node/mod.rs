@@ -32,7 +32,7 @@ use tokio::sync::{
     Mutex,
 };
 use tokio::time::{sleep, Duration};
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 const OLDEST_BLOCK_DISTANCE: u64 = 256;
 
@@ -120,7 +120,7 @@ impl Node {
                 .await;
             });
         } else {
-            tracing::error!("Some of the node_rx, p2p_to_node_rx, or lookahead_updated_rx has already been moved");
+            error!("Some of the node_rx, p2p_to_node_rx, or lookahead_updated_rx has already been moved");
         }
     }
 
@@ -139,10 +139,10 @@ impl Node {
                     if !is_preconfer_now.load(Ordering::Acquire) {
                         debug!("Node received block proposed event: {:?}", block_proposed.block_id());
                         if let Err(e) = Self::check_preconfirmed_blocks_correctness(&preconfirmed_blocks, taiko.chain_id, &block_proposed, ethereum_l1.clone()).await {
-                            tracing::error!("Failed to check preconfirmed blocks correctness: {}", e);
+                            error!("Failed to check preconfirmed blocks correctness: {}", e);
                         }
                         if let Err(e) = Self::clean_old_blocks(&preconfirmed_blocks, block_proposed.block_id()).await {
-                            tracing::error!("Failed to clean old blocks: {}", e);
+                            error!("Failed to clean old blocks: {}", e);
                         }
                     } else {
                         debug!("Node is Preconfer and received block proposed event: {:?}", block_proposed.block_id());
@@ -212,7 +212,7 @@ impl Node {
                                 Self::is_valid_preconfer(ethereum_l1.clone(), preconfer.into())
                                     .await
                             {
-                                tracing::error!("Error: {} for block_id: {}", e, msg.block_height);
+                                error!("Error: {} for block_id: {}", e, msg.block_height);
                                 return;
                             }
                             // Add to preconfirmation map
@@ -222,18 +222,16 @@ impl Node {
                                 .insert(msg.block_height, msg.clone());
                             // Advance head
                             if let Err(e) = taiko.advance_head_to_new_l2_block(msg.tx_lists).await {
-                                tracing::error!(
+                                error!(
                                     "Failed to advance head: {} for block_id: {}",
-                                    e,
-                                    msg.block_height
+                                    e, msg.block_height
                                 );
                             }
                         }
                         Err(e) => {
-                            tracing::error!(
+                            error!(
                                 "Failed to check signature: {} for block_id: {}",
-                                e,
-                                msg.block_height
+                                e, msg.block_height
                             );
                         }
                     }
@@ -279,7 +277,7 @@ impl Node {
 
         // Setup protocol if needed
         if let Err(e) = self.check_and_initialize_lookahead().await {
-            tracing::error!("Failed to initialize lookahead: {}", e);
+            error!("Failed to initialize lookahead: {}", e);
         }
 
         // start preconfirmation loop
@@ -288,7 +286,7 @@ impl Node {
             interval.tick().await;
 
             if let Err(err) = self.main_block_preconfirmation_step().await {
-                tracing::error!("Failed to execute main block preconfirmation step: {}", err);
+                error!("Failed to execute main block preconfirmation step: {}", err);
             }
         }
     }
