@@ -30,7 +30,7 @@ impl PreconfirmationMessage {
 
 mod serde_json_as_string {
     use serde::{self, Deserialize, Deserializer, Serializer};
-    use serde_json::{Value, to_string, from_str};
+    use serde_json::{from_str, to_string, Value};
 
     pub fn serialize<S>(value: &Value, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -76,19 +76,30 @@ mod tests {
             commit_hash: [3; 32],
             signature: [4; 65],
         };
-        let preconfirmation_message = PreconfirmationMessage::new(
-            block_height,
-            tx_lists,
-            &tx_list_rlp_bytes,
-            proof.clone(),
-        );
-        
+        let preconfirmation_message =
+            PreconfirmationMessage::new(block_height, tx_lists, &tx_list_rlp_bytes, proof.clone());
+
         let bytes: Vec<u8> = preconfirmation_message.clone().into();
         let preconfirmation_message2 = PreconfirmationMessage::from(bytes);
-        assert_eq!(preconfirmation_message2.block_height, preconfirmation_message.block_height);
-        assert_eq!(preconfirmation_message2.tx_lists, preconfirmation_message.tx_lists);
-        assert_eq!(preconfirmation_message2.tx_list_hash, preconfirmation_message.tx_list_hash);
-        assert_eq!(preconfirmation_message2.proof.commit_hash, preconfirmation_message.proof.commit_hash);
-        assert_eq!(preconfirmation_message2.proof.signature, preconfirmation_message.proof.signature);
+        assert_eq!(
+            preconfirmation_message2.block_height,
+            preconfirmation_message.block_height
+        );
+        assert_eq!(
+            preconfirmation_message2.tx_lists,
+            preconfirmation_message.tx_lists
+        );
+        assert_eq!(
+            preconfirmation_message2.tx_list_hash,
+            preconfirmation_message.tx_list_hash
+        );
+        assert_eq!(
+            preconfirmation_message2.proof.commit_hash,
+            preconfirmation_message.proof.commit_hash
+        );
+        assert_eq!(
+            preconfirmation_message2.proof.signature,
+            preconfirmation_message.proof.signature
+        );
     }
 }

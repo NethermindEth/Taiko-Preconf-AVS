@@ -29,14 +29,20 @@ mod tests {
         let commit_hash: [u8; 32] = [1; 32];
         let signature: ECDSASignature = [2; 65];
 
-        let preconfirmation_proof = PreconfirmationProof{
+        let preconfirmation_proof = PreconfirmationProof {
             commit_hash,
-            signature
+            signature,
         };
 
         let bytes: Vec<u8> = preconfirmation_proof.clone().into();
         let preconfirmation_proof_restore: PreconfirmationProof = bytes.into();
-        assert_eq!(preconfirmation_proof_restore.commit_hash, preconfirmation_proof.commit_hash);
-        assert_eq!(preconfirmation_proof_restore.signature, preconfirmation_proof.signature);
+        assert_eq!(
+            preconfirmation_proof_restore.commit_hash,
+            preconfirmation_proof.commit_hash
+        );
+        assert_eq!(
+            preconfirmation_proof_restore.signature,
+            preconfirmation_proof.signature
+        );
     }
 }

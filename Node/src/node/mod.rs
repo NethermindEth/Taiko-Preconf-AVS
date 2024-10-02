@@ -32,6 +32,7 @@ use tokio::sync::{
     Mutex,
 };
 use tokio::time::{sleep, Duration};
+use tracing::{debug, info};
 
 const OLDEST_BLOCK_DISTANCE: u64 = 256;
 
@@ -90,7 +91,7 @@ impl Node {
     /// Consumes the Node and starts two loops:
     /// one for handling incoming messages and one for the block preconfirmation
     pub async fn entrypoint(mut self) -> Result<(), Error> {
-        tracing::info!("Starting node");
+        info!("Starting node");
         self.start_new_msg_receiver_thread();
         self.preconfirmation_loop().await;
         Ok(())
@@ -136,7 +137,7 @@ impl Node {
             tokio::select! {
                 Some(block_proposed) = node_rx.recv() => {
                     if !is_preconfer_now.load(Ordering::Acquire) {
-                        tracing::debug!("Node received block proposed event: {:?}", block_proposed.block_id());
+                        debug!("Node received block proposed event: {:?}", block_proposed.block_id());
                         if let Err(e) = Self::check_preconfirmed_blocks_correctness(&preconfirmed_blocks, taiko.chain_id, &block_proposed, ethereum_l1.clone()).await {
                             tracing::error!("Failed to check preconfirmed blocks correctness: {}", e);
                         }
@@ -144,17 +145,17 @@ impl Node {
                             tracing::error!("Failed to clean old blocks: {}", e);
                         }
                     } else {
-                        tracing::debug!("Node is Preconfer and received block proposed event: {:?}", block_proposed.block_id());
+                        debug!("Node is Preconfer and received block proposed event: {:?}", block_proposed.block_id());
                         preconfirmation_txs.lock().await.remove(&block_proposed.block_id());
                     }
                 },
                 Some(p2p_message) = p2p_to_node_rx.recv() => {
                     if !is_preconfer_now.load(Ordering::Acquire) {
-                        tracing::debug!("Received Message from p2p!");
+                        debug!("Received Message from p2p!");
                         let msg: PreconfirmationMessage = p2p_message.into();
                         Self::advance_l2_head(msg, &preconfirmed_blocks, ethereum_l1.clone(), taiko.clone()).await;
                     } else {
-                        tracing::debug!("Node is Preconfer and received message from p2p: {:?}", p2p_message);
+                        debug!("Node is Preconfer and received message from p2p: {:?}", p2p_message);
                     }
                 }
             }
@@ -166,9 +167,7 @@ impl Node {
         preconfer: PreconferAddress,
     ) -> Result<(), Error> {
         // get current lookahead
-        let epoch = ethereum_l1
-            .slot_clock
-            .get_current_epoch()?;
+        let epoch = ethereum_l1.slot_clock.get_current_epoch()?;
 
         let current_lookahead = ethereum_l1
             .execution_layer
@@ -177,7 +176,7 @@ impl Node {
 
         // get slot number in epoch
         let slot_of_epoch = ethereum_l1.slot_clock.get_current_slot_of_epoch()?;
-        tracing::debug!("slot_of_epoch: {}", slot_of_epoch);
+        debug!("slot_of_epoch: {}", slot_of_epoch);
 
         // get current preconfer
         if current_lookahead[slot_of_epoch as usize] == preconfer {
@@ -196,10 +195,10 @@ impl Node {
         taiko: Arc<Taiko>,
     ) {
         // check hash
-        let tx_list_commit = L2TxListsCommit::from_preconf(msg.block_height, msg.tx_list_hash, taiko.chain_id);
-        tracing::debug!("Match txListCommit");
-        match tx_list_commit.hash()
-        {
+        let tx_list_commit =
+            L2TxListsCommit::from_preconf(msg.block_height, msg.tx_list_hash, taiko.chain_id);
+        debug!("Match txListCommit");
+        match tx_list_commit.hash() {
             Ok(hash) => {
                 if hash == msg.proof.commit_hash {
                     // check signature
@@ -273,7 +272,7 @@ impl Node {
     }
 
     async fn preconfirmation_loop(&mut self) {
-        tracing::debug!("Main perconfirmation loop started");
+        debug!("Main perconfirmation loop started");
         // Synchronize with L1 Slot Start Time
         let duration_to_next_slot = self.ethereum_l1.slot_clock.duration_to_next_slot().unwrap();
         sleep(duration_to_next_slot).await;
@@ -327,7 +326,7 @@ impl Node {
                 self.preconfirm_block(true).await?;
             }
             OperatorStatus::None => {
-                tracing::info!("Not my slot to preconfirm: {}", current_slot);
+                info!("Not my slot to preconfirm: {}", current_slot);
             }
         }
 
@@ -335,10 +334,9 @@ impl Node {
     }
 
     async fn new_epoch_started(&mut self, new_epoch: u64) -> Result<(), Error> {
-        tracing::info!(
+        info!(
             "⏰ Current epoch changed from {} to {}",
-            self.epoch,
-            new_epoch
+            self.epoch, new_epoch
         );
         self.epoch = new_epoch;
 
@@ -388,7 +386,7 @@ impl Node {
         &mut self,
     ) -> Result<Option<Vec<PreconfTaskManager::LookaheadSetParam>>, Error> {
         if self.operator.should_post_lookahead_for_next_epoch().await? {
-            tracing::debug!("Should post lookahead params, getting them");
+            debug!("Should post lookahead params, getting them");
             let cl_lookahead = self
                 .ethereum_l1
                 .consensus_layer
@@ -401,7 +399,7 @@ impl Node {
                 .get_lookahead_params_for_epoch_using_cl_lookahead(self.epoch + 1, &cl_lookahead)
                 .await?;
 
-            tracing::debug!("Got Lookahead params: {}", lookahead_params.len());
+            debug!("Got Lookahead params: {}", lookahead_params.len());
 
             return Ok(Some(lookahead_params));
         }
@@ -409,6 +407,7 @@ impl Node {
     }
 
     async fn preconfirm_last_slot(&mut self) -> Result<(), Error> {
+        debug!("Preconfirming last slot");
         self.preconfirm_block(false).await?;
         if self
             .preconfirmation_helper
@@ -419,7 +418,7 @@ impl Node {
 
             let mut preconfirmation_txs = self.preconfirmation_txs.lock().await;
             if !preconfirmation_txs.is_empty() {
-                tracing::debug!("Call MEV Boost for {} txs", preconfirmation_txs.len());
+                debug!("Call MEV Boost for {} txs", preconfirmation_txs.len());
                 // Build constraints
                 let constraints: Vec<Vec<u8>> = preconfirmation_txs
                     .iter()
@@ -457,7 +456,7 @@ impl Node {
 
     async fn preconfirm_block(&mut self, send_to_contract: bool) -> Result<(), Error> {
         let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
-        tracing::info!(
+        info!(
             "Preconfirming for the slot: {} ({})",
             current_slot,
             self.ethereum_l1.slot_clock.slot_of_epoch(current_slot)
@@ -467,7 +466,7 @@ impl Node {
         let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;
         let pending_tx_lists_bytes = if pending_tx_lists.tx_list_bytes.is_empty() {
             if let Some(lookahead_params) = lookahead_params {
-                tracing::debug!("No pending transactions to preconfirm, force pushing lookahead");
+                debug!("No pending transactions to preconfirm, force pushing lookahead");
                 self.preconfirmation_helper.increment_nonce();
                 self.ethereum_l1
                     .execution_layer
@@ -477,7 +476,7 @@ impl Node {
             // No transactions skip preconfirmation step
             return Ok(());
         } else {
-            tracing::debug!(
+            debug!(
                 "Pending {} transactions to preconfirm",
                 pending_tx_lists.tx_list_bytes.len()
             );
@@ -556,7 +555,7 @@ impl Node {
         &self,
         message: PreconfirmationMessage,
     ) -> Result<(), Error> {
-        tracing::debug!("Send message to p2p : {:?}", message);
+        debug!("Send message to p2p : {:?}", message);
         self.node_to_p2p_tx
             .send(message.into())
             .await
