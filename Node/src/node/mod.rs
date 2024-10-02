@@ -489,7 +489,7 @@ impl Node {
             .advance_head_to_new_l2_block(pending_tx_lists.tx_lists)
             .await?;
 
-        let lookahead_pointer = self.operator.get_lookahead_pointer()?;
+        let lookahead_pointer = self.operator.get_lookahead_pointer(current_slot)?;
         let tx = self
             .ethereum_l1
             .execution_layer
