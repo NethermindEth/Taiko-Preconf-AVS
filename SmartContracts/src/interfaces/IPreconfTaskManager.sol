@@ -76,11 +76,11 @@ interface IPreconfTaskManager {
         bytes calldata txList,
         uint256 lookaheadPointer,
         LookaheadSetParam[] calldata lookaheadSetParams
-    ) external payable;
+    ) external;
 
     /// @dev Slashes a preconfer if the txn and ordering in a signed preconf does not match the actual block
     function proveIncorrectPreconfirmation(
-        ITaikoL1.BlockMetadata calldata taikoBlockMetadata,
+        ITaikoL1.BlockMetadataV2 calldata taikoBlockMetadata,
         PreconfirmationHeader calldata header,
         bytes calldata signature
     ) external;

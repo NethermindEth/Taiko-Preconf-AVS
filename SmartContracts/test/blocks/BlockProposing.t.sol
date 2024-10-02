@@ -130,10 +130,7 @@ contract BlockProposing is BlocksFixtures {
         // Address 1 proposes the block
         vm.prank(addr_1);
         vm.deal(addr_1, 1 ether);
-        preconfTaskManager.newBlockProposal{value: 1 ether}("Block Params", "Txn List", 1, lookaheadSetParams);
-
-        // Verify Taiko's balance
-        vm.assertEq(address(taikoL1).balance, 1 ether);
+        preconfTaskManager.newBlockProposal("Block Params", "Txn List", 1, lookaheadSetParams);
     }
 
     function test_newBlockProposal_updatesLookaheadForNextEpoch() external {

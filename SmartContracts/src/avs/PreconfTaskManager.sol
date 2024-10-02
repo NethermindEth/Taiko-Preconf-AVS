@@ -73,7 +73,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         bytes calldata txList,
         uint256 lookaheadPointer,
         LookaheadSetParam[] calldata lookaheadSetParams
-    ) external payable {
+    ) external {
         LookaheadBufferEntry memory lookaheadEntry = lookahead[lookaheadPointer % LOOKAHEAD_BUFFER_SIZE];
 
         uint256 epochTimestamp = _getEpochTimestamp(block.timestamp);
@@ -108,7 +108,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         preconfServiceManager.lockStakeUntil(msg.sender, block.timestamp + PreconfConstants.DISPUTE_PERIOD);
 
         // Forward the block to Taiko's L1 contract
-        taikoL1.proposeBlock{value: msg.value}(blockParams, txList);
+        taikoL1.proposeBlockV2(blockParams, txList);
     }
 
     /**
@@ -120,7 +120,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
      * @param signature The signature of the preconfirmation
      */
     function proveIncorrectPreconfirmation(
-        ITaikoL1.BlockMetadata calldata taikoBlockMetadata,
+        ITaikoL1.BlockMetadataV2 calldata taikoBlockMetadata,
         PreconfirmationHeader calldata header,
         bytes calldata signature
     ) external {
@@ -128,7 +128,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         address proposer = blockIdToProposer[blockId];
 
         // Pull the formalised block from Taiko
-        ITaikoL1.Block memory taikoBlock = taikoL1.getBlock(uint64(blockId));
+        ITaikoL1.BlockV2 memory taikoBlock = taikoL1.getBlockV2(uint64(blockId));
 
         if (block.timestamp - taikoBlock.proposedAt >= PreconfConstants.DISPUTE_PERIOD) {
             // Revert if the dispute window has been missed
