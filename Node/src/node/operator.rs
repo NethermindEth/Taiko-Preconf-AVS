@@ -5,7 +5,6 @@ use std::sync::Arc;
 pub struct Operator {
     ethereum_l1: Arc<EthereumL1>,
     epoch: u64,
-    lookahead_required_contract_called: bool,
     lookahead_preconfer_addresses: Vec<PreconferAddress>,
     l1_slots_per_epoch: u64,
 }
@@ -24,10 +23,28 @@ impl Operator {
         Ok(Self {
             ethereum_l1,
             epoch,
-            lookahead_required_contract_called: false,
             lookahead_preconfer_addresses: vec![],
             l1_slots_per_epoch,
         })
+    }
+
+    #[cfg(debug_assertions)]
+    pub async fn print_preconfer_slots(&self, base_slot: Slot) {
+        let preconfer = &self.ethereum_l1.execution_layer.get_preconfer_address();
+        let preconfer_slots: Vec<String> = self
+            .lookahead_preconfer_addresses
+            .iter()
+            .enumerate()
+            .filter_map(|(i, address)| {
+                if address == preconfer {
+                    Some((base_slot + i as u64).to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        tracing::debug!("Preconfer slots: {}", preconfer_slots.join(", "));
     }
 
     pub async fn get_status(&mut self, slot: Slot) -> Result<Status, Error> {
@@ -82,19 +99,10 @@ impl Operator {
     }
 
     pub async fn should_post_lookahead_for_next_epoch(&mut self) -> Result<bool, Error> {
-        if !self.lookahead_required_contract_called {
-            tracing::debug!("Operator::should_post_lookahead: checking if lookahead is required");
-            self.lookahead_required_contract_called = true;
-            if self
-                .ethereum_l1
-                .execution_layer
-                .is_lookahead_required(self.epoch + 1)
-                .await?
-            {
-                return Ok(true);
-            }
-        }
-        Ok(false)
+        self.ethereum_l1
+            .execution_layer
+            .is_lookahead_required()
+            .await
     }
 
     pub async fn update_preconfer_lookahead_for_epoch(&mut self) -> Result<(), Error> {
@@ -202,7 +210,7 @@ mod tests {
             .expect_get_preconfer_address()
             .returning(|| PreconferAddress::from([1u8; 20]));
         let ethereum_l1 = Arc::new(EthereumL1 {
-            slot_clock: Arc::new(SlotClock::new(0, 0, 12, 32)),
+            slot_clock: Arc::new(SlotClock::new(0, 12, 12, 32)),
             consensus_layer: ConsensusLayer::new("http://localhost:5052").unwrap(),
             execution_layer,
         });

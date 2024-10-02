@@ -33,9 +33,21 @@ from web3 import Web3
 import os
 from dotenv import load_dotenv
 import argparse
+import requests
+import json
 
 # Load environment variables from .env file
 load_dotenv()
+
+def get_beacon_genesis_timestamp(beacon_rpc_url):
+    try:
+        response = requests.get(f"{beacon_rpc_url}/eth/v1/beacon/genesis")
+        response.raise_for_status()
+        genesis_data = json.loads(response.text)
+        return int(genesis_data['data']['genesis_time'])
+    except requests.RequestException as e:
+        print(f"Error fetching beacon genesis timestamp: {e}")
+        return None
 
 private_key = os.getenv('PRIVATE_KEY')
 if not private_key:
@@ -49,7 +61,22 @@ parser = argparse.ArgumentParser(description='Spam transactions on the Taiko net
 parser.add_argument('--count', type=int, default=1, help='Number of transactions to send')
 parser.add_argument('--amount', type=float, default=0.006, help='Amount of ETH to send per transaction')
 parser.add_argument('--rpc', type=str, default='https://RPC.helder.taiko.xyz', help='RPC URL for the Taiko network')
+parser.add_argument('--slots', nargs='+', type=int, default=[],
+                    help='Slots to send transactions (0-31)')
+parser.add_argument('--beacon-rpc', type=str, help='Beacon RPC URL for the Taiko network')
 args = parser.parse_args()
+
+
+genesis_timestamp = None
+if len(args.slots) > 0:
+    if args.beacon_rpc is None:
+        raise Exception("Beacon RPC URL is required when specifying slots")
+    print(f'Sending transactions for slots: {args.slots}')
+    genesis_timestamp = get_beacon_genesis_timestamp(args.beacon_rpc)
+    if genesis_timestamp is None:
+        raise Exception("Failed to get beacon genesis timestamp")
+    else:
+        print(f'Beacon genesis timestamp: {genesis_timestamp}')
 
 # Connect to the Taiko network
 w3 = Web3(Web3.HTTPProvider(args.rpc))
@@ -84,4 +111,25 @@ def spam_transactions(count):
         nonce += 1
         time.sleep(2)  # Add a delay to avoid nonce issues
 
-spam_transactions(args.count)
+
+if len(args.slots) > 0:
+    for slot in args.slots:
+        current_time = int(time.time())
+        current_slot = (current_time - genesis_timestamp) // 12  # Assuming 12-second slot time
+        current_epoch_slot = current_slot % 32
+        print(f'Current slot: {current_slot}, current_epoch_slot: {current_epoch_slot}')
+
+        # Calculate the time until the next occurrence of the desired slot
+        time_since_epoch_start = (current_time - genesis_timestamp) % (32 * 12)
+        time_until_slot = ((slot - current_epoch_slot) % 32) * 12 - (time_since_epoch_start % 12)
+
+        if time_until_slot <= 0:
+            time_until_slot += 32 * 12  # Wait for the next epoch if we've missed the slot in this epoch
+
+        print(f'Waiting {time_until_slot} seconds for slot {slot}')
+        time.sleep(time_until_slot)
+
+        print(f'Spamming transactions for slot {slot}')
+        spam_transactions(args.count)
+else:
+    spam_transactions(args.count)

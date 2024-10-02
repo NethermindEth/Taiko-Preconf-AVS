@@ -83,6 +83,11 @@ impl LookaheadUpdatedEventHandler {
         lookahead_params: Vec<PreconfTaskManager::LookaheadSetParam>,
     ) {
         tokio::spawn(async move {
+            if lookahead_params.is_empty() {
+                debug!("lookahead_params is empty, nothing to verify");
+                return;
+            }
+
             if let Err(e) = self.check_lookahead_correctness(lookahead_params).await {
                 error!("Error checking lookahead correctness: {:?}", e);
             }
@@ -93,6 +98,10 @@ impl LookaheadUpdatedEventHandler {
         &self,
         lookahead_updated_next_epoch: LookaheadUpdated,
     ) -> Result<(), Error> {
+        if lookahead_updated_next_epoch.is_empty() {
+            return Err(anyhow::anyhow!("lookahead_updated_next_epoch is empty"));
+        }
+
         let epoch = self
             .ethereum_l1
             .slot_clock
@@ -237,7 +246,6 @@ impl LookaheadUpdatedEventHandler {
                 validator_index,
                 validator_proof,
                 validators_root,
-                validators.len() as u64,
                 beacon_state_proof,
                 beacon_state_root,
                 beacon_block_proof_for_state,

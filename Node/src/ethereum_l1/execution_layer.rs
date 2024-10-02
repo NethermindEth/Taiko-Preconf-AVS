@@ -10,11 +10,10 @@ use crate::{
 };
 use alloy::{
     consensus::TypedTransaction,
-    contract::EventPoller,
+    contract::EventSubscription,
     network::{Ethereum, EthereumWallet, NetworkWallet},
     primitives::{Address, Bytes, FixedBytes, B256, U256},
     providers::{Provider, ProviderBuilder, WsConnect},
-    pubsub::PubSubFrontend,
     signers::{
         local::{LocalSigner, PrivateKeySigner},
         Signature, SignerSync,
@@ -132,8 +131,8 @@ sol! (
     }
 );
 
-pub struct EventPollerLookaheadUpdated(
-    pub EventPoller<PubSubFrontend, PreconfTaskManager::LookaheadUpdated>,
+pub struct EventSubscriptionLookaheadUpdated(
+    pub EventSubscription<PreconfTaskManager::LookaheadUpdated>,
 );
 
 #[cfg_attr(test, allow(dead_code))]
@@ -350,8 +349,8 @@ impl ExecutionLayer {
         let tx = preconf_registry.registerPreconfer(signature_with_salt_and_expiry);
 
         match tx.send().await {
-            Ok(receipt) => {
-                let tx_hash = receipt.watch().await?;
+            Ok(pending_tx) => {
+                let tx_hash = pending_tx.tx_hash();
                 tracing::info!("Preconfer registered: {:?}", tx_hash);
             }
             Err(err) => {
@@ -453,13 +452,16 @@ impl ExecutionLayer {
             .await;
         if let Ok(_) = result {
             tracing::debug!("Proved incorrect preconfirmation using eth_call, sending tx");
-            let tx_hash = contract
-                .proveIncorrectPreconfirmation(meta, header, signature)
-                .send()
-                .await?
-                .watch()
-                .await?;
-            tracing::debug!("Proved incorrect preconfirmation, tx sent: {tx_hash}");
+            let tx = contract.proveIncorrectPreconfirmation(meta, header, signature);
+            match tx.send().await {
+                Ok(pending_tx) => {
+                    let tx_hash = pending_tx.tx_hash();
+                    tracing::debug!("Proved incorrect preconfirmation, tx sent: {tx_hash}");
+                }
+                Err(err) => {
+                    tracing::error!("Failed to prove incorrect preconfirmation: {}", err);
+                }
+            }
         } else {
             tracing::debug!(
                 "Preconfirmation correct for the block {}",
@@ -479,7 +481,6 @@ impl ExecutionLayer {
         validator_index: usize,
         validator_proof: Vec<[u8; 32]>,
         validators_root: [u8; 32],
-        nr_validators: u64,
         beacon_state_proof: Vec<[u8; 32]>,
         beacon_state_root: [u8; 32],
         beacon_block_proof_for_state: Vec<[u8; 32]>,
@@ -501,7 +502,6 @@ impl ExecutionLayer {
             validatorIndex: validator_index,
             validatorProof: Self::convert_proof_to_fixed_bytes(validator_proof),
             validatorsRoot: FixedBytes::from(validators_root),
-            nr_validators: U256::from(nr_validators),
             beaconStateProof: Self::convert_proof_to_fixed_bytes(beacon_state_proof),
             beaconStateRoot: FixedBytes::from(beacon_state_root),
             beaconBlockProofForState: Self::convert_proof_to_fixed_bytes(
@@ -511,18 +511,21 @@ impl ExecutionLayer {
                 beacon_block_proof_for_proposer_index,
             ),
         };
-        let tx_hash = contract
-            .proveIncorrectLookahead(
-                U256::from(lookahead_pointer),
-                U256::from(slot_timestamp),
-                Bytes::from(validator_bls_pub_key),
-                validator_inclusion_proof,
-            )
-            .send()
-            .await?
-            .watch()
-            .await?;
-        tracing::debug!("Proved incorrect lookahead: {tx_hash}");
+        let tx = contract.proveIncorrectLookahead(
+            U256::from(lookahead_pointer),
+            U256::from(slot_timestamp),
+            Bytes::from(validator_bls_pub_key),
+            validator_inclusion_proof,
+        );
+        match tx.send().await {
+            Ok(pending_tx) => {
+                let tx_hash = pending_tx.tx_hash();
+                tracing::debug!("Proved incorrect lookahead: {tx_hash}");
+            }
+            Err(err) => {
+                tracing::error!("Failed to prove incorrect lookahead: {}", err);
+            }
+        }
 
         Ok(())
     }
@@ -533,16 +536,13 @@ impl ExecutionLayer {
 
     pub async fn subscribe_to_registered_event(
         &self,
-    ) -> Result<
-        EventPoller<alloy::pubsub::PubSubFrontend, PreconfRegistry::PreconferRegistered>,
-        Error,
-    > {
+    ) -> Result<EventSubscription<PreconfRegistry::PreconferRegistered>, Error> {
         let registry = PreconfRegistry::new(
             self.contract_addresses.avs.preconf_registry,
             &self.provider_ws,
         );
 
-        let registered_filter = registry.PreconferRegistered_filter().watch().await?;
+        let registered_filter = registry.PreconferRegistered_filter().subscribe().await?;
         tracing::debug!("Subscribed to registered event");
 
         Ok(registered_filter)
@@ -550,7 +550,7 @@ impl ExecutionLayer {
 
     pub async fn wait_for_the_registered_event(
         &self,
-        registered_filter: EventPoller<PubSubFrontend, PreconfRegistry::PreconferRegistered>,
+        registered_filter: EventSubscription<PreconfRegistry::PreconferRegistered>,
     ) -> Result<(), Error> {
         let mut stream = registered_filter.into_stream();
         while let Some(log) = stream.next().await {
@@ -656,8 +656,8 @@ impl ExecutionLayer {
         let tx = preconf_registry.addValidators(params);
 
         match tx.send().await {
-            Ok(receipt) => {
-                let tx_hash = receipt.watch().await?;
+            Ok(pending_tx) => {
+                let tx_hash = pending_tx.tx_hash();
                 tracing::info!("Add validator to preconfer successful: {:?}", tx_hash);
             }
             Err(err) => {
@@ -714,8 +714,8 @@ impl ExecutionLayer {
         let tx = preconf_registry.removeValidators(params);
 
         match tx.send().await {
-            Ok(receipt) => {
-                let tx_hash = receipt.watch().await?;
+            Ok(pending_tx) => {
+                let tx_hash = pending_tx.tx_hash();
                 tracing::info!("Validator removed successfully: {:?}", tx_hash);
             }
             Err(err) => {
@@ -728,13 +728,13 @@ impl ExecutionLayer {
 
     pub async fn subscribe_to_validator_added_event(
         &self,
-    ) -> Result<EventPoller<PubSubFrontend, PreconfRegistry::ValidatorAdded>, Error> {
+    ) -> Result<EventSubscription<PreconfRegistry::ValidatorAdded>, Error> {
         let registry = PreconfRegistry::new(
             self.contract_addresses.avs.preconf_registry,
             &self.provider_ws,
         );
 
-        let validator_added_filter = registry.ValidatorAdded_filter().watch().await?;
+        let validator_added_filter = registry.ValidatorAdded_filter().subscribe().await?;
         tracing::debug!("Subscribed to ValidatorAdded event");
 
         Ok(validator_added_filter)
@@ -742,7 +742,7 @@ impl ExecutionLayer {
 
     pub async fn wait_for_the_validator_added_event(
         &self,
-        validator_added_filter: EventPoller<PubSubFrontend, PreconfRegistry::ValidatorAdded>,
+        validator_added_filter: EventSubscription<PreconfRegistry::ValidatorAdded>,
     ) -> Result<(), Error> {
         let mut stream = validator_added_filter.into_stream();
         while let Some(log) = stream.next().await {
@@ -768,16 +768,16 @@ impl ExecutionLayer {
 
     pub async fn subscribe_to_lookahead_updated_event(
         &self,
-    ) -> Result<EventPollerLookaheadUpdated, Error> {
+    ) -> Result<EventSubscriptionLookaheadUpdated, Error> {
         let task_manager = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,
         );
 
-        let lookahead_updated_filter = task_manager.LookaheadUpdated_filter().watch().await?;
+        let lookahead_updated_filter = task_manager.LookaheadUpdated_filter().subscribe().await?;
         tracing::debug!("Subscribed to lookahead updated event");
 
-        Ok(EventPollerLookaheadUpdated(lookahead_updated_filter))
+        Ok(EventSubscriptionLookaheadUpdated(lookahead_updated_filter))
     }
 
     pub async fn subscribe_to_block_proposed_event(
@@ -796,7 +796,9 @@ impl ExecutionLayer {
         epoch: u64,
         cl_lookahead: &[ProposerDuty],
     ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
-        let epoch_begin_timestamp = self.slot_clock.get_epoch_begin_timestamp(epoch)?;
+        let epoch_begin_timestamp = self
+            .slot_clock
+            .get_real_epoch_begin_timestamp_for_contract(epoch)?;
         tracing::debug!(
             "Epoch {}, timestamp: {}, getting lookahead params for epoch using CL lookahead len: {}",
             epoch,
@@ -860,7 +862,9 @@ impl ExecutionLayer {
         epoch: u64,
     ) -> Result<Vec<PreconferAddress>, Error> {
         tracing::debug!("Getting lookahead preconfer addresses for epoch: {}", epoch);
-        let epoch_begin_timestamp = self.slot_clock.get_epoch_begin_timestamp(epoch)?;
+        let epoch_begin_timestamp = self
+            .slot_clock
+            .get_real_epoch_begin_timestamp_for_contract(epoch)?;
 
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
@@ -872,6 +876,12 @@ impl ExecutionLayer {
             .call()
             .await?
             ._0;
+
+        tracing::debug!(
+            "getLookaheadForEpoch({}) result: {:?}",
+            epoch_begin_timestamp,
+            lookahead
+        );
         Ok(lookahead
             .iter()
             .map(|addr| addr.into_array())
@@ -891,23 +901,21 @@ impl ExecutionLayer {
         Ok(lookahead)
     }
 
-    pub async fn is_lookahead_required(&self, epoch: u64) -> Result<bool, Error> {
+    pub async fn is_lookahead_required(&self) -> Result<bool, Error> {
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,
         );
-        let epoch_begin_timestamp = self.slot_clock.get_epoch_begin_timestamp(epoch)?;
-        let is_required = contract
-            .isLookaheadRequired(U256::from(epoch_begin_timestamp))
-            .call()
-            .await?;
 
-        tracing::debug!(
-            "is_lookahead_required for epoch {}: {}",
-            epoch,
-            is_required._0
-        );
-        Ok(is_required._0)
+        let is_required = contract.isLookaheadRequired().call().await;
+
+        match is_required {
+            Ok(is_required) => {
+                tracing::debug!("is_lookahead_required for next epoch: {}", is_required._0);
+                Ok(is_required._0)
+            }
+            Err(err) => Err(anyhow::anyhow!(err.to_avs_contract_error())),
+        }
     }
 
     #[cfg(test)]
@@ -918,7 +926,7 @@ impl ExecutionLayer {
     ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_signing_key(private_key.into());
         let wallet = EthereumWallet::from(signer.clone());
-        let clock = SlotClock::new(0u64, 0u64, 12u64, 32u64);
+        let clock = SlotClock::new(0u64, 12u64, 12u64, 32u64);
 
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
         let l1_chain_id = provider.get_chain_id().await?;
@@ -1093,7 +1101,6 @@ mod tests {
         let validator_index = 0;
         let validator_proof = vec![[3u8; 32]; 5];
         let validators_root = [4u8; 32];
-        let nr_validators = 1000;
         let beacon_state_proof = vec![[5u8; 32]; 5];
         let beacon_state_root = [6u8; 32];
         let beacon_block_proof_for_state = vec![[7u8; 32]; 5];
@@ -1109,7 +1116,6 @@ mod tests {
                 validator_index,
                 validator_proof,
                 validators_root,
-                nr_validators,
                 beacon_state_proof,
                 beacon_state_root,
                 beacon_block_proof_for_state,
