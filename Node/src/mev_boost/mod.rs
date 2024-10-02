@@ -49,7 +49,8 @@ impl MevBoost {
 
         let json_data = serde_json::to_value([&signed])?;
 
-        self.post_constraints(json_data).await?;
+        let res = self.post_constraints(json_data).await?;
+        tracing::debug!("MEV Boost response: {:?}", res);
 
         Ok(())
     }

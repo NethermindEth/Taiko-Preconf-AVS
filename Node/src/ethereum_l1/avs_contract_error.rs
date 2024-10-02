@@ -53,11 +53,18 @@ impl AVSContractError for Error {
                     return convert_error_code_to_message(error_code);
                 }
             } else {
-                if e.message.starts_with("Reverted ") && e.message.len() >= 13 {
-                    let code = &e.message[9..13];
-                    let error_code = code.as_bytes();
-                    let error_code = u32::from_be_bytes(error_code.try_into().unwrap_or([0; 4]));
-                    return convert_error_code_to_message(error_code);
+                if e.message.starts_with("Reverted ") {
+                    if e.message.len() == 13 {
+                        let code = &e.message[9..13];
+                        let error_code = code.as_bytes();
+                        let error_code =
+                            u32::from_be_bytes(error_code.try_into().unwrap_or([0; 4]));
+                        return convert_error_code_to_message(error_code);
+                    } else if e.message.len() == 19 {
+                        if let Ok(error_code) = u32::from_str_radix(&e.message[11..], 16) {
+                            return convert_error_code_to_message(error_code);
+                        }
+                    }
                 }
             }
         }
@@ -193,5 +200,19 @@ mod tests {
         assert!(err
             .to_avs_contract_error()
             .starts_with("PreconferNotRegistered"));
+    }
+
+    #[test]
+    fn test_transport_error_validator_active() {
+        let e = TransportError::ErrorResp(ErrorPayload {
+            code: 429,
+            message: "Reverted 0x43f8f5e9".to_string(),
+            data: None,
+        });
+
+        let err = Error::TransportError(e);
+        assert!(err
+            .to_avs_contract_error()
+            .starts_with("ValidatorAlreadyActive"));
     }
 }

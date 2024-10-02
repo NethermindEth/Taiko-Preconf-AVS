@@ -25,12 +25,23 @@ impl SlotClock {
             genesis_timestamp_sec,
             genesis_slot
         );
+
+        let slot_duration = Duration::from_secs(slot_duration_sec);
         Self {
             genesis_slot,
-            genesis_duration: Duration::from_secs(genesis_timestamp_sec),
-            slot_duration: Duration::from_secs(slot_duration_sec),
+            genesis_duration: Duration::from_secs(genesis_timestamp_sec) - slot_duration,
+            slot_duration,
             slots_per_epoch,
         }
+    }
+
+    // returns current real timestamp, the shift is reduced
+    pub fn get_real_time_for_contract(&self) -> Result<u64, Error> {
+        Ok(
+            (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?
+                + self.slot_duration)
+                .as_secs(),
+        )
     }
 
     pub fn get_slots_per_epoch(&self) -> u64 {
@@ -67,7 +78,7 @@ impl SlotClock {
     }
 
     pub fn slot_of(&self, now: Duration) -> Result<Slot, Error> {
-        let genesis = self.genesis_duration;
+        let genesis: Duration = self.genesis_duration;
 
         if now >= genesis {
             let since_genesis = now
@@ -113,9 +124,10 @@ impl SlotClock {
         Ok(slot / self.slots_per_epoch)
     }
 
-    pub fn get_epoch_begin_timestamp(&self, epoch: Epoch) -> Result<u64, Error> {
+    // returns real timestamp, the shift is reduced
+    pub fn get_real_epoch_begin_timestamp_for_contract(&self, epoch: Epoch) -> Result<u64, Error> {
         let slot = epoch * self.slots_per_epoch;
-        let start_of_slot = self.start_of(slot)?;
+        let start_of_slot = self.start_of(slot)? + self.slot_duration;
         Ok(start_of_slot.as_secs())
     }
 
@@ -132,20 +144,26 @@ impl SlotClock {
     pub fn get_current_slot_of_epoch(&self) -> Result<Slot, Error> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let cur_slot = self.slot_of(now)?;
-        let cur_epoch = cur_slot / self.slots_per_epoch;
-        let epoch_start_slot = cur_epoch * self.slots_per_epoch;
-        Ok(cur_slot - epoch_start_slot)
+        Ok(self.slot_of_epoch(cur_slot))
+    }
+
+    pub fn slot_of_epoch(&self, slot: Slot) -> Slot {
+        slot % self.slots_per_epoch
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use ethereum_consensus::phase0::mainnet::SLOTS_PER_EPOCH;
+
     use super::*;
+
+    const SLOT_DURATION: u64 = 12;
 
     #[test]
     fn test_duration_to_next_slot() {
         let genesis_slot = Slot::from(0u64);
-        let slot_clock = SlotClock::new(genesis_slot, 0, 12, 32);
+        let slot_clock = SlotClock::new(genesis_slot, SLOT_DURATION, SLOT_DURATION, 32);
 
         let now = Duration::from_secs(10);
         let duration_to_next_slot = slot_clock.duration_to_next_slot_from(now).unwrap();
@@ -155,7 +173,7 @@ mod tests {
     #[test]
     fn test_slot_of() {
         let genesis_slot = Slot::from(0u64);
-        let slot_clock = SlotClock::new(genesis_slot, 0, 12, 32);
+        let slot_clock = SlotClock::new(genesis_slot, SLOT_DURATION, SLOT_DURATION, 32);
 
         let now = Duration::from_secs(25);
         let slot = slot_clock.slot_of(now).unwrap();
@@ -165,7 +183,7 @@ mod tests {
     #[test]
     fn test_duration_to_slot() {
         let genesis_slot = Slot::from(0u64);
-        let slot_clock = SlotClock::new(genesis_slot, 0, 12, 32);
+        let slot_clock = SlotClock::new(genesis_slot, SLOT_DURATION, SLOT_DURATION, 32);
 
         let now = Duration::from_secs(10);
         let slot = Slot::from(2u64);
@@ -176,7 +194,7 @@ mod tests {
     #[test]
     fn test_start_of() {
         let genesis_slot = Slot::from(0u64);
-        let slot_clock = SlotClock::new(genesis_slot, 0, 12, 32);
+        let slot_clock = SlotClock::new(genesis_slot, SLOT_DURATION, SLOT_DURATION, 32);
 
         let start_of_slot = slot_clock.start_of(Slot::from(3u64)).unwrap();
         assert_eq!(start_of_slot, Duration::from_secs(36));
@@ -204,9 +222,31 @@ mod tests {
     #[test]
     fn test_get_epoch_begin_timestamp() {
         let genesis_slot = Slot::from(0u64);
-        let slot_clock = SlotClock::new(genesis_slot, 0, 12, 32);
+        let genesis_timestamp = 100;
+        let slot_duration = SLOT_DURATION;
+        let slot_per_epoch = SLOTS_PER_EPOCH;
+        let slot_clock = SlotClock::new(
+            genesis_slot,
+            genesis_timestamp,
+            slot_duration,
+            slot_per_epoch,
+        );
 
-        let epoch_begin_timestamp = slot_clock.get_epoch_begin_timestamp(1).unwrap();
-        assert_eq!(epoch_begin_timestamp, 384);
+        let epoch_begin_timestamp = slot_clock
+            .get_real_epoch_begin_timestamp_for_contract(1)
+            .unwrap();
+        assert_eq!(
+            epoch_begin_timestamp,
+            genesis_timestamp + slot_per_epoch * slot_duration
+        );
+    }
+
+    #[test]
+    fn test_get_current_slot_of_epoch() {
+        let genesis_slot = Slot::from(0u64);
+        let slot_clock = SlotClock::new(genesis_slot, 100, SLOT_DURATION, 32);
+
+        assert_eq!(slot_clock.slot_of_epoch(1234), 18);
+        assert_eq!(slot_clock.slot_of_epoch(293482), 10);
     }
 }

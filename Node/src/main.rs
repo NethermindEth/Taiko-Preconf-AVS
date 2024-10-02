@@ -34,7 +34,7 @@ struct Cli {
 async fn main() -> Result<(), Error> {
     init_logging();
 
-    tracing::info!("Starting AVS Node");
+    tracing::info!("🚀 Starting AVS Node");
 
     let args = Cli::parse();
     let config = utils::config::Config::read_env_variables();
