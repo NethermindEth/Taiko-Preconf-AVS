@@ -153,8 +153,8 @@ impl Node {
                 },
                 Some(p2p_message) = p2p_to_node_rx.recv() => {
                     if !is_preconfer_now.load(Ordering::Acquire) {
+                        tracing::debug!("Received Message from p2p!");
                         let msg: PreconfirmationMessage = p2p_message.into();
-                        tracing::debug!("Node received message from p2p: {:?}", msg);
                         Self::check_preconfirmation_message(msg, &preconfirmed_blocks, ethereum_l1.clone(), taiko.clone()).await;
                     } else {
                         tracing::debug!("Node is Preconfer and received message from p2p: {:?}", p2p_message);
@@ -169,17 +169,18 @@ impl Node {
         preconfer: PreconferAddress,
     ) -> Result<(), Error> {
         // get current lookahead
-        let epoch_begin_timestamp = ethereum_l1
+        let epoch = ethereum_l1
             .slot_clock
-            .get_epoch_begin_timestamp(ethereum_l1.slot_clock.get_current_epoch()?)?;
+            .get_current_epoch()?;
 
         let current_lookahead = ethereum_l1
             .execution_layer
-            .get_lookahead_preconfer_addresses_for_epoch(epoch_begin_timestamp)
+            .get_lookahead_preconfer_addresses_for_epoch(epoch)
             .await?;
 
         // get slot number in epoch
         let slot_of_epoch = ethereum_l1.slot_clock.get_current_slot_of_epoch()?;
+        tracing::debug!("slot_of_epoch: {}", slot_of_epoch);
 
         // get current preconfer
         if current_lookahead[slot_of_epoch as usize] == preconfer {
@@ -199,8 +200,9 @@ impl Node {
     ) {
         tracing::debug!("Node received message from p2p: {:?}", msg);
         // check hash
-        match L2TxListsCommit::from_preconf(msg.block_height, msg.tx_list_hash, taiko.chain_id)
-            .hash()
+        let tx_list_commit = L2TxListsCommit::from_preconf(msg.block_height, msg.tx_list_hash, taiko.chain_id);
+        tracing::debug!("Match txListCommit");
+        match tx_list_commit.hash()
         {
             Ok(hash) => {
                 if hash == msg.proof.commit_hash {
@@ -551,6 +553,7 @@ impl Node {
         &self,
         message: PreconfirmationMessage,
     ) -> Result<(), Error> {
+        tracing::debug!("Send message to p2p : {:?}", message);
         self.node_to_p2p_tx
             .send(message.into())
             .await
