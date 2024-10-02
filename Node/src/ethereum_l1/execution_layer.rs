@@ -876,6 +876,12 @@ impl ExecutionLayer {
             .call()
             .await?
             ._0;
+
+        tracing::debug!(
+            "getLookaheadForEpoch({}) result: {:?}",
+            epoch_begin_timestamp,
+            lookahead
+        );
         Ok(lookahead
             .iter()
             .map(|addr| addr.into_array())
