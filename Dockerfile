@@ -1,3 +1,4 @@
+# Build Stage
 FROM docker.io/library/rust:1.80 AS builder
 
 # Set the working directory inside the container
@@ -14,14 +15,21 @@ COPY ../p2pNode/p2pNetwork /usr/src/p2pNode/p2pNetwork
 # Build the project in release mode
 RUN cargo build -p taiko_preconf_avs_node --release
 
-# Use ubuntu as the base image
+# Final Stage
 FROM ubuntu:latest
+
+# Install ca-certificates
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy the build artifact from the builder stage
 COPY --from=builder /usr/src/taiko_preconf_avs_node/target/release/taiko_preconf_avs_node /usr/local/bin/taiko_preconf_avs_node
 
-# Expose the port that the server will run on
+# Ensure ca-certificates are up to date
+RUN update-ca-certificates
+
+# Expose the port that the server will run on (uncomment if needed)
 # EXPOSE 9000
 
-# Run the binary
+# Set the entrypoint
 ENTRYPOINT ["taiko_preconf_avs_node"]
