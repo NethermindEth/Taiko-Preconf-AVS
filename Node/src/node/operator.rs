@@ -130,7 +130,10 @@ impl Operator {
     }
 
     pub fn get_lookahead_pointer(&mut self, slot: Slot) -> Result<u64, Error> {
-        let slot_begin_timestamp = self.ethereum_l1.slot_clock.start_of(slot)?.as_secs();
+        let slot_begin_timestamp = self
+            .ethereum_l1
+            .slot_clock
+            .get_real_slot_begin_timestamp_for_contract(slot)?;
 
         let lookahead_pointer = self
             .lookahead_preconfer_buffer

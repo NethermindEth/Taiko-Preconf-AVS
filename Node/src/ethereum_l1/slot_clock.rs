@@ -125,6 +125,12 @@ impl SlotClock {
         Ok(start_of_slot.as_secs())
     }
 
+    // returns real timestamp, the shift is reduced
+    pub fn get_real_slot_begin_timestamp_for_contract(&self, slot: Slot) -> Result<u64, Error> {
+        let start_of_slot = self.start_of(slot)? + self.slot_duration;
+        Ok(start_of_slot.as_secs())
+    }
+
     pub fn get_epoch_for_timestamp(&self, timestamp: u64) -> Result<Epoch, Error> {
         let slot = self.slot_of(Duration::from_secs(timestamp))?;
         Ok(slot / self.slots_per_epoch)
