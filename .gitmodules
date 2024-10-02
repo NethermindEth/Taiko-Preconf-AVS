@@ -7,6 +7,3 @@
 [submodule "SmartContracts/lib/openzeppelin-contracts"]
 	path = SmartContracts/lib/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
-[submodule "SmartContracts/lib/taiko-protocol"]
-	path = SmartContracts/lib/taiko-protocol
-	url = https://github.com/taikoxyz/taiko-mono
