@@ -367,9 +367,9 @@ impl PeerManager {
 
     fn connected_and_dialling_peers(&self) -> HashSet<PeerId> {
         let mut connected_and_dialling_peers = self.connected_peers.clone();
-        info!("Connected peers: {:?}", connected_and_dialling_peers.len());
+        debug!("Connected peers: {:?}", connected_and_dialling_peers.len());
         connected_and_dialling_peers.extend(self.dialling_peers.clone());
-        info!(
+        debug!(
             "Connected and dialling peers: {:?}",
             connected_and_dialling_peers.len()
         );
@@ -404,7 +404,7 @@ impl PeerManager {
             .take(num_peers as usize)
             .map(|(peer_id, _)| *peer_id)
             .collect::<Vec<_>>();
-        info!("Found {:} peers for redialing", best_peers.len());
+        debug!("Found {:} peers for redialing", best_peers.len());
         debug!("Best peers for redial: {:?}", best_peers);
         best_peers
     }

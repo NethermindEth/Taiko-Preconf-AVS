@@ -51,6 +51,7 @@ async fn main() -> Result<(), Error> {
         config.preconf_registry_expiry_sec,
         bls_service.clone(),
         config.l1_chain_id,
+        config.l2_slot_duration_sec,
     )
     .await?;
 
@@ -133,6 +134,10 @@ fn init_logging() {
             .add_directive("hyper=info".parse().unwrap())
             .add_directive("alloy_transport=info".parse().unwrap())
             .add_directive("alloy_rpc_client=info".parse().unwrap())
+            .add_directive("p2p_network=info".parse().unwrap())
+            .add_directive("libp2p_gossipsub=info".parse().unwrap())
+            .add_directive("discv5=info".parse().unwrap())
+            .add_directive("netlink_proto=info".parse().unwrap())
     });
 
     fmt().with_env_filter(filter).init();

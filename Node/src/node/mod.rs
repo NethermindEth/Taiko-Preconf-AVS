@@ -322,7 +322,15 @@ impl Node {
                 self.preconfirm_block(true).await?;
             }
             OperatorStatus::None => {
-                info!("Not my slot to preconfirm: {}", current_slot);
+                info!(
+                    "Not my slot to preconfirm. Epoch {}, slot: {} ({}), L2 slot: {}",
+                    self.epoch,
+                    current_slot,
+                    self.ethereum_l1.slot_clock.slot_of_epoch(current_slot),
+                    self.ethereum_l1
+                        .slot_clock
+                        .get_l2_slot_number_within_l1_slot()?
+                );
             }
         }
 
@@ -375,10 +383,14 @@ impl Node {
     async fn preconfirm_last_slot(&mut self) -> Result<(), Error> {
         debug!("Preconfirming last slot");
         self.preconfirm_block(false).await?;
+        const FINAL_L2_SLOT_PERCONFIRMATION: u64 = 3;
         if self
-            .preconfirmation_helper
-            .is_last_final_slot_perconfirmation()
+            .ethereum_l1
+            .slot_clock
+            .get_l2_slot_number_within_l1_slot()?
+            == FINAL_L2_SLOT_PERCONFIRMATION
         {
+            debug!("Last(4th) perconfirmation in the last L1 slot for the preconfer");
             // Last(4th) perconfirmation when we are proposer and preconfer
             self.is_preconfer_now.store(false, Ordering::Release);
 
@@ -399,10 +411,6 @@ impl Node {
 
                 preconfirmation_txs.clear();
             }
-        } else {
-            // Increment perconfirmations count when we are proposer and preconfer
-            self.preconfirmation_helper
-                .increment_final_slot_perconfirmation();
         }
 
         Ok(())
@@ -423,10 +431,13 @@ impl Node {
     async fn preconfirm_block(&mut self, send_to_contract: bool) -> Result<(), Error> {
         let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
         info!(
-            "Preconfirming for the epoch: {} and the slot: {} ({})",
+            "Preconfirming for the epoch: {}, slot: {} ({}), L2 slot: {}",
             self.epoch,
             current_slot,
-            self.ethereum_l1.slot_clock.slot_of_epoch(current_slot)
+            self.ethereum_l1.slot_clock.slot_of_epoch(current_slot),
+            self.ethereum_l1
+                .slot_clock
+                .get_l2_slot_number_within_l1_slot()?
         );
 
         let lookahead_params = self.get_lookahead_params().await?;
@@ -530,7 +541,10 @@ impl Node {
         &self,
         message: PreconfirmationMessage,
     ) -> Result<(), Error> {
-        debug!("Send message to p2p : {:?}", message);
+        debug!(
+            "Send message to p2p, tx list hash: {}",
+            hex::encode(message.tx_list_hash)
+        );
         self.node_to_p2p_tx
             .send(message.into())
             .await

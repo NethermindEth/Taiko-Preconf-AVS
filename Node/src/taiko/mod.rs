@@ -57,7 +57,7 @@ impl Taiko {
     }
 
     pub async fn advance_head_to_new_l2_block(&self, tx_lists: Value) -> Result<Value, Error> {
-        tracing::debug!("Submitting new L2 blocks");
+        tracing::debug!("Submitting new L2 blocks to the Taiko driver");
         let payload = serde_json::json!({
             "TxLists": tx_lists,
             "gasUsed": 0u64,    //TODO remove here and in the driver
