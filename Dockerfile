@@ -17,6 +17,10 @@ RUN cargo build -p taiko_preconf_avs_node --release
 # Use ubuntu as the base image
 FROM ubuntu:latest
 
+# Install ca-certificates
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy the build artifact from the builder stage
 COPY --from=builder /usr/src/taiko_preconf_avs_node/target/release/taiko_preconf_avs_node /usr/local/bin/taiko_preconf_avs_node
 
