@@ -38,15 +38,6 @@ impl SlotClock {
         }
     }
 
-    // returns current real timestamp, the shift is reduced
-    pub fn get_real_time_for_contract(&self) -> Result<u64, Error> {
-        Ok(
-            (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?
-                + self.slot_duration)
-                .as_secs(),
-        )
-    }
-
     pub fn get_slots_per_epoch(&self) -> u64 {
         self.slots_per_epoch
     }
@@ -131,6 +122,12 @@ impl SlotClock {
     pub fn get_real_epoch_begin_timestamp_for_contract(&self, epoch: Epoch) -> Result<u64, Error> {
         let slot = epoch * self.slots_per_epoch;
         let start_of_slot = self.start_of(slot)? + self.slot_duration;
+        Ok(start_of_slot.as_secs())
+    }
+
+    pub fn get_epoch_begin_timestamp(&self, epoch: Epoch) -> Result<u64, Error> {
+        let slot = epoch * self.slots_per_epoch;
+        let start_of_slot = self.start_of(slot)?;
         Ok(start_of_slot.as_secs())
     }
 

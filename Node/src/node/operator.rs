@@ -130,15 +130,18 @@ impl Operator {
     }
 
     pub fn get_lookahead_pointer(&mut self) -> Result<u64, Error> {
-        let contract_timestamp = self.ethereum_l1.slot_clock.get_real_time_for_contract()?;
+        let epoch_begin_timestamp = self
+            .ethereum_l1
+            .slot_clock
+            .get_epoch_begin_timestamp(self.epoch)?;
 
         let lookahead_pointer = self
             .lookahead_preconfer_buffer
             .iter()
             .position(|entry| {
                 entry.preconfer == self.ethereum_l1.execution_layer.get_preconfer_address()
-                    && contract_timestamp > entry.prevTimestamp
-                    && contract_timestamp <= entry.timestamp
+                    && epoch_begin_timestamp > entry.prevTimestamp
+                    && epoch_begin_timestamp <= entry.timestamp
             })
             .ok_or_else(|| {
                 let buffer_str = self
@@ -152,6 +155,7 @@ impl Operator {
                     })
                     .collect::<Vec<String>>()
                     .join("; ");
+                debug!("epoch_begin_timestamp: {}", epoch_begin_timestamp);
                 debug!("Lookahead buffer: [{}]", buffer_str);
                 anyhow::anyhow!("get_lookahead_params: Preconfer not found in lookahead")
             })? as u64;
