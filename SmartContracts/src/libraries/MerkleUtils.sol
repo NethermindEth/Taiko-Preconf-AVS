@@ -2,8 +2,6 @@
 // Referenced from: https://ethresear.ch/t/slashing-proofoor-on-chain-slashed-validator-proofs/19421
 pragma solidity 0.8.25;
 
-import {console2} from "forge-std/console2.sol";
-
 library MerkleUtils {
     uint256 internal constant CHUNKS_LENGTH = 8;
     uint256 internal constant TMP_LENGTH = 4;
@@ -30,7 +28,6 @@ library MerkleUtils {
                 break;
             } else {
                 h = hash(tmp[j], h);
-                console2.logBytes32(h);
             }
             j += 1;
         }
@@ -54,14 +51,8 @@ library MerkleUtils {
                 h = sha256(bytes.concat(proofElement, h));
             }
 
-            console2.log("index", index);
-            console2.log("i", i);
-            console2.logBytes32(h);
             index = index / 2;
         }
-
-        console2.log("root");
-        console2.logBytes32(root);
 
         return h == root;
     }
