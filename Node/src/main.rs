@@ -51,6 +51,7 @@ async fn main() -> Result<(), Error> {
         config.preconf_registry_expiry_sec,
         bls_service.clone(),
         config.l1_chain_id,
+        config.l2_slot_duration_sec,
     )
     .await?;
 
