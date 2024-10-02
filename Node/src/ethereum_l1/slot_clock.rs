@@ -125,7 +125,7 @@ impl SlotClock {
 
     pub fn get_epoch_begin_timestamp(&self, epoch: Epoch) -> Result<u64, Error> {
         let slot = epoch * self.slots_per_epoch;
-        let start_of_slot = self.start_of(slot)?;
+        let start_of_slot = self.start_of(slot)? + self.slot_duration;
         Ok(start_of_slot.as_secs())
     }
 
@@ -152,6 +152,8 @@ impl SlotClock {
 
 #[cfg(test)]
 mod tests {
+    use ethereum_consensus::phase0::mainnet::SLOTS_PER_EPOCH;
+
     use super::*;
 
     const SLOT_DURATION: u64 = 12;
@@ -218,10 +220,21 @@ mod tests {
     #[test]
     fn test_get_epoch_begin_timestamp() {
         let genesis_slot = Slot::from(0u64);
-        let slot_clock = SlotClock::new(genesis_slot, SLOT_DURATION, SLOT_DURATION, 32);
+        let genesis_timestamp = 100;
+        let slot_duration = SLOT_DURATION;
+        let slot_per_epoch = SLOTS_PER_EPOCH;
+        let slot_clock = SlotClock::new(
+            genesis_slot,
+            genesis_timestamp,
+            slot_duration,
+            slot_per_epoch,
+        );
 
         let epoch_begin_timestamp = slot_clock.get_epoch_begin_timestamp(1).unwrap();
-        assert_eq!(epoch_begin_timestamp, 384);
+        assert_eq!(
+            epoch_begin_timestamp,
+            genesis_timestamp + slot_per_epoch * slot_duration
+        );
     }
 
     #[test]
