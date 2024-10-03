@@ -251,7 +251,8 @@ impl ExecutionLayer {
             )
             .chain_id(self.l1_chain_id)
             .nonce(nonce)
-            .gas(500_000)
+            .from(self.preconfer_address)
+            .gas(1_000_000)
             .max_fee_per_gas(20_000_000_000)
             .max_priority_fee_per_gas(1_000_000_000);
 
@@ -597,7 +598,11 @@ impl ExecutionLayer {
         let tx = contract
             .forcePushLookahead(lookahead_set_params)
             .nonce(self.get_preconfer_nonce().await?)
-            .gas(1_000_000);
+            .from(self.preconfer_address)
+            .gas(10_000_000)
+            .max_fee_per_gas(20_000_000_000)
+            .max_priority_fee_per_gas(1_000_000_000);
+
         match tx.send().await {
             Ok(receipt) => {
                 tracing::debug!("Force push lookahead sent: {}", receipt.tx_hash());
