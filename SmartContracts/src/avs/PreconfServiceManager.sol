@@ -11,10 +11,10 @@ import {IAVSDirectory} from "../interfaces/eigenlayer-mvp/IAVSDirectory.sol";
  * This contract may be modified depending on the interface of the restaking contracts.
  */
 contract PreconfServiceManager is IPreconfServiceManager {
-    address internal immutable preconfRegistry;
-    address internal immutable preconfTaskManager;
-    IAVSDirectory internal immutable avsDirectory;
-    ISlasher internal immutable slasher;
+    address public immutable preconfRegistry;
+    address public immutable preconfTaskManager;
+    IAVSDirectory public immutable avsDirectory;
+    ISlasher public immutable slasher;
 
     /// @dev This is currently just a flag and not actually being used to lock the stake.
     mapping(address operator => uint256 timestamp) public stakeLockedUntil;
@@ -26,16 +26,9 @@ contract PreconfServiceManager is IPreconfServiceManager {
         slasher = _slasher;
     }
 
-    modifier onlyPreconfTaskManager() {
-        if (msg.sender != address(preconfTaskManager)) {
-            revert SenderIsNotPreconfTaskManager();
-        }
-        _;
-    }
-
-    modifier onlyPreconfRegistry() {
-        if (msg.sender != preconfRegistry) {
-            revert SenderIsNotPreconfRegistry();
+    modifier onlyCallableBy(address allowedSender) {
+        if (msg.sender != allowedSender) {
+            revert SenderIsNotAllowed();
         }
         _;
     }
@@ -43,25 +36,25 @@ contract PreconfServiceManager is IPreconfServiceManager {
     /// @dev Simply relays the call to the AVS directory
     function registerOperatorToAVS(address operator, IAVSDirectory.SignatureWithSaltAndExpiry memory operatorSignature)
         external
-        onlyPreconfRegistry
+        onlyCallableBy(preconfRegistry)
     {
         avsDirectory.registerOperatorToAVS(operator, operatorSignature);
     }
 
     /// @dev Simply relays the call to the AVS directory
-    function deregisterOperatorFromAVS(address operator) external onlyPreconfRegistry {
+    function deregisterOperatorFromAVS(address operator) external onlyCallableBy(preconfRegistry) {
         avsDirectory.deregisterOperatorFromAVS(operator);
     }
 
     /// @dev This not completely functional until Eigenlayer decides the logic of their Slasher.
     ///  for now this simply sets a value in the storage and releases an event.
-    function lockStakeUntil(address operator, uint256 timestamp) external onlyPreconfTaskManager {
+    function lockStakeUntil(address operator, uint256 timestamp) external onlyCallableBy(preconfTaskManager) {
         stakeLockedUntil[operator] = timestamp;
         emit StakeLockedUntil(operator, timestamp);
     }
 
     /// @dev This not completely functional until Eigenlayer decides the logic of their Slasher.
-    function slashOperator(address operator) external onlyPreconfTaskManager {
+    function slashOperator(address operator) external onlyCallableBy(preconfTaskManager) {
         if (slasher.isOperatorSlashed(operator)) {
             revert OperatorAlreadySlashed();
         }
