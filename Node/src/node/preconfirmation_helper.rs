@@ -35,7 +35,6 @@ impl PreconfirmationHelper {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
