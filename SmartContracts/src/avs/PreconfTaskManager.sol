@@ -12,6 +12,10 @@ import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
 import {Initializable} from "openzeppelin-contracts-upgradeable/proxy/utils/Initializable.sol";
 
 contract PreconfTaskManager is IPreconfTaskManager, Initializable {
+    // Cannot be kept in `PreconfConstants` file because solidity expects array sizes
+    // to be stored in the main contract file itself.
+    uint256 internal constant SLOTS_IN_EPOCH = 32;
+
     uint256 internal constant LOOKAHEAD_BUFFER_SIZE = 64;
     uint256 internal constant BLOCK_ID_TO_PROPOSER_BUFFER_SIZE = LOOKAHEAD_BUFFER_SIZE * 2;
     uint256 internal constant LOOKAHEAD_POSTER_BUFFER_SIZE =
@@ -51,9 +55,6 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     mapping(uint256 blockId_mod_BLOCK_ID_TO_PROPOSER_BUFFER_SIZE => ProposerInfo proposerInfo) internal
         blockIdToProposer;
 
-    // Cannot be kept in `PreconfConstants` file because solidity expects array sizes
-    // to be stored in the main contract file itself.
-    uint256 internal constant SLOTS_IN_EPOCH = 32;
 
     uint256[133] private __gap; // = 200 - 67
 
