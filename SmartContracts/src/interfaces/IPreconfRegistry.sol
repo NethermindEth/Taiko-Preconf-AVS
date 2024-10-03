@@ -18,6 +18,8 @@ interface IPreconfRegistry {
     // ^ Note: 40 bits are enough for UNIX timestamp. This way we also compress the data to a single slot.
 
     struct AddValidatorParam {
+        // Preconfer that the validator is added to.
+        address preconfer;
         // The public key of the validator
         BLS12381.G1Point pubkey;
         // The signature of the validator

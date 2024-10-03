@@ -101,23 +101,28 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
     function addValidators(AddValidatorParam[] calldata addValidatorParams) external {
         for (uint256 i; i < addValidatorParams.length; ++i) {
             // Revert if preconfer is not registered
-            if (preconferToIndex[msg.sender] == 0) {
+            if (preconferToIndex[addValidatorParams[i].preconfer] == 0) {
                 revert PreconferNotRegistered();
             }
 
             // Note: BLS signature checks are commented out for the POC
+            bool skipBLSCheck = true;
 
-            // bytes memory message = _createMessage(ValidatorOp.ADD, addValidatorParams[i].signatureExpiry, msg.sender);
+            if (!skipBLSCheck) {
+                bytes memory message = _createMessage(
+                    ValidatorOp.ADD, addValidatorParams[i].signatureExpiry, addValidatorParams[i].preconfer
+                );
 
-            // Revert if any signature is invalid
-            // if (!verifySignature(message, addValidatorParams[i].signature, addValidatorParams[i].pubkey)) {
-            //     revert InvalidValidatorSignature();
-            // }
+                // Revert if any signature is invalid
+                if (!verifySignature(message, addValidatorParams[i].signature, addValidatorParams[i].pubkey)) {
+                    revert InvalidValidatorSignature();
+                }
 
-            // Revert if the signature has expired
-            // if (block.timestamp > addValidatorParams[i].signatureExpiry) {
-            //     revert ValidatorSignatureExpired();
-            // }
+                // Revert if the signature has expired
+                if (block.timestamp > addValidatorParams[i].signatureExpiry) {
+                    revert ValidatorSignatureExpired();
+                }
+            }
 
             // Point compress the public key just how it is done on the consensus layer
             uint256[2] memory compressedPubKey = addValidatorParams[i].pubkey.compress();
