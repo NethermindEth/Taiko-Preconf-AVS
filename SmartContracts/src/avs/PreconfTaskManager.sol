@@ -12,6 +12,10 @@ import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
 import {Initializable} from "openzeppelin-contracts-upgradeable/proxy/utils/Initializable.sol";
 
 contract PreconfTaskManager is IPreconfTaskManager, Initializable {
+    uint256 internal constant BLOCK_ID_TO_PROPOSER_BUFFER_SIZE = 128;
+    uint256 internal constant LOOKAHEAD_POSTER_BUFFER_SIZE = 12 * BLOCK_ID_TO_PROPOSER_BUFFER_SIZE;
+    uint256 internal constant LOOKAHEAD_BUFFER_SIZE = 64;
+
     IPreconfServiceManager internal immutable preconfServiceManager;
     IPreconfRegistry internal immutable preconfRegistry;
     ITaikoL1 internal immutable taikoL1;
@@ -32,18 +36,19 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
 
     // A ring buffer of upcoming preconfers (who are also the L1 validators)
     uint256 internal lookaheadTail;
-    uint256 internal constant LOOKAHEAD_BUFFER_SIZE = 64;
+
     LookaheadBufferEntry[LOOKAHEAD_BUFFER_SIZE] internal lookahead;
 
     // Maps the epoch timestamp to the lookahead poster.
     // If the lookahead poster has been slashed, it maps to the 0-address.
     // Note: This may be optimised to re-use existing slots and reduce gas cost.
-    // 1536 = 128 * 12
-    mapping(uint256 epochTimestamp_mod_1536 => PosterInfo posterInfo) internal lookaheadPosters;
+
+    mapping(uint256 epochTimestamp_mod_LOOKAHEAD_POSTER_BUFFER_SIZE => PosterInfo posterInfo) internal lookaheadPosters;
 
     // Maps the block height to the associated proposer
     // This is required since the stored block in Taiko has the address of this contract as the proposer
-    mapping(uint256 blockId_mod_128 => ProposerInfo proposerInfo) internal blockIdToProposer;
+    mapping(uint256 blockId_mod_BLOCK_ID_TO_PROPOSER_BUFFER_SIZE => ProposerInfo proposerInfo) internal
+        blockIdToProposer;
 
     // Cannot be kept in `PreconfConstants` file because solidity expects array sizes
     // to be stored in the main contract file itself.
@@ -115,7 +120,8 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         // Store the proposer for the block locally
         // Use Taiko's block number to index
         (, ITaikoL1.SlotB memory slotB) = taikoL1.getStateVariables();
-        blockIdToProposer[slotB.numBlocks % 128] = ProposerInfo(msg.sender, uint64(slotB.numBlocks))    ;
+        blockIdToProposer[slotB.numBlocks % BLOCK_ID_TO_PROPOSER_BUFFER_SIZE] =
+            ProposerInfo(msg.sender, uint64(slotB.numBlocks));
 
         // Block the preconfer from withdrawing stake from the restaking service during the dispute window
         preconfServiceManager.lockStakeUntil(msg.sender, block.timestamp + PreconfConstants.DISPUTE_PERIOD);
@@ -282,7 +288,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         }
 
         // Slash the poster
-        lookaheadPosters[epochTimestamp % 1536].poster = address(0);
+        lookaheadPosters[epochTimestamp % LOOKAHEAD_POSTER_BUFFER_SIZE].poster = address(0);
         preconfServiceManager.slashOperator(poster);
 
         emit ProvedIncorrectLookahead(poster, slotTimestamp, msg.sender);
@@ -379,7 +385,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         }
 
         lookaheadTail = _lookaheadTail;
-        lookaheadPosters[epochTimestamp % 1536] = PosterInfo(msg.sender, uint64(epochTimestamp));
+        lookaheadPosters[epochTimestamp % LOOKAHEAD_POSTER_BUFFER_SIZE] = PosterInfo(msg.sender, uint64(epochTimestamp));
 
         // We directly use the lookahead set params even in the case of a fallback preconfer to
         // assist the nodes in identifying an incorrect lookahead. The contents of this event can be matched against
@@ -569,12 +575,12 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     }
 
     function getLookaheadPoster(uint256 epochTimestamp) public view returns (address) {
-        PosterInfo memory pi = lookaheadPosters[epochTimestamp % 1536];
+        PosterInfo memory pi = lookaheadPosters[epochTimestamp % LOOKAHEAD_POSTER_BUFFER_SIZE];
         return pi.epochTimestamp == epochTimestamp ? pi.poster : address(0);
     }
 
     function getBlockProposer(uint256 blockId) public view returns (address) {
-        ProposerInfo memory pi = blockIdToProposer[blockId % 128];
+        ProposerInfo memory pi = blockIdToProposer[blockId % BLOCK_ID_TO_PROPOSER_BUFFER_SIZE];
         return pi.blockId == blockId ? pi.proposer : address(0);
     }
 }
