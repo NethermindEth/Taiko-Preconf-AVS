@@ -38,7 +38,6 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     // to be stored in the main contract file itself.
     uint256 internal constant SLOTS_IN_EPOCH = 32;
 
-
     uint256[133] private __gap; // = 200 - 67
 
     constructor(
