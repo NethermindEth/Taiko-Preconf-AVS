@@ -16,13 +16,19 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     IPreconfRegistry internal immutable preconfRegistry;
     ITaikoL1 internal immutable taikoL1;
 
+    // Cannot be kept in `PreconfConstants` file because solidity expects array sizes
+    // to be stored in the main contract file itself.
+    uint256 internal constant SLOTS_IN_EPOCH = 32;
+    uint256 internal constant LOOKAHEAD_BUFFER_SIZE = 64;
+
     // EIP-4788
     uint256 internal immutable beaconGenesis;
     address internal immutable beaconBlockRootContract;
 
     // A ring buffer of upcoming preconfers (who are also the L1 validators)
     uint256 internal lookaheadTail;
-    uint256 internal constant LOOKAHEAD_BUFFER_SIZE = 64;
+
+    // Since LookaheadBufferEntry uses 1 slot, the fix-size array below uses 64 slots.
     LookaheadBufferEntry[LOOKAHEAD_BUFFER_SIZE] internal lookahead;
 
     // Maps the epoch timestamp to the lookahead poster.
@@ -34,9 +40,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     // This is required since the stored block in Taiko has the address of this contract as the proposer
     mapping(uint256 blockId => address proposer) internal blockIdToProposer;
 
-    // Cannot be kept in `PreconfConstants` file because solidity expects array sizes
-    // to be stored in the main contract file itself.
-    uint256 internal constant SLOTS_IN_EPOCH = 32;
+    uint256[133] private __gap; // = 200 - 67
 
     constructor(
         IPreconfServiceManager _serviceManager,
