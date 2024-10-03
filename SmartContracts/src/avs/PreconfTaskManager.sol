@@ -16,6 +16,16 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     IPreconfRegistry internal immutable preconfRegistry;
     ITaikoL1 internal immutable taikoL1;
 
+    struct PosterInfo {
+        address poster;
+        uint64 epochTimestamp;
+    }
+
+    struct ProposerInfo {
+        address proposer;
+        uint64 blockId;
+    }
+
     // EIP-4788
     uint256 internal immutable beaconGenesis;
     address internal immutable beaconBlockRootContract;
@@ -28,11 +38,12 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     // Maps the epoch timestamp to the lookahead poster.
     // If the lookahead poster has been slashed, it maps to the 0-address.
     // Note: This may be optimised to re-use existing slots and reduce gas cost.
-    mapping(uint256 epochTimestamp => address poster) internal lookaheadPosters;
+    // 1536 = 128 * 12
+    mapping(uint256 epochTimestamp_mod_1536 => PosterInfo posterInfo) internal lookaheadPosters;
 
     // Maps the block height to the associated proposer
     // This is required since the stored block in Taiko has the address of this contract as the proposer
-    mapping(uint256 blockId => address proposer) internal blockIdToProposer;
+    mapping(uint256 blockId_mod_128 => ProposerInfo proposerInfo) internal blockIdToProposer;
 
     // Cannot be kept in `PreconfConstants` file because solidity expects array sizes
     // to be stored in the main contract file itself.
@@ -104,7 +115,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         // Store the proposer for the block locally
         // Use Taiko's block number to index
         (, ITaikoL1.SlotB memory slotB) = taikoL1.getStateVariables();
-        blockIdToProposer[slotB.numBlocks] = msg.sender;
+        blockIdToProposer[slotB.numBlocks % 128] = ProposerInfo(msg.sender, uint64(slotB.numBlocks))    ;
 
         // Block the preconfer from withdrawing stake from the restaking service during the dispute window
         preconfServiceManager.lockStakeUntil(msg.sender, block.timestamp + PreconfConstants.DISPUTE_PERIOD);
@@ -127,7 +138,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         bytes calldata signature
     ) external {
         uint256 blockId = taikoBlockMetadata.id;
-        address proposer = blockIdToProposer[blockId];
+        address proposer = getBlockProposer(blockId);
 
         // Pull the formalised block from Taiko
         ITaikoL1.Block memory taikoBlock = taikoL1.getBlock(uint64(blockId));
@@ -174,7 +185,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     ) external {
         uint256 epochTimestamp = _getEpochTimestamp(slotTimestamp);
 
-        address poster = lookaheadPosters[epochTimestamp];
+        address poster = getLookaheadPoster(epochTimestamp);
 
         // Poster must not have been slashed
         if (poster == address(0)) {
@@ -271,7 +282,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         }
 
         // Slash the poster
-        lookaheadPosters[epochTimestamp] = address(0);
+        lookaheadPosters[epochTimestamp % 1536].poster = address(0);
         preconfServiceManager.slashOperator(poster);
 
         emit ProvedIncorrectLookahead(poster, slotTimestamp, msg.sender);
@@ -368,7 +379,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         }
 
         lookaheadTail = _lookaheadTail;
-        lookaheadPosters[epochTimestamp] = msg.sender;
+        lookaheadPosters[epochTimestamp % 1536] = PosterInfo(msg.sender, uint64(epochTimestamp));
 
         // We directly use the lookahead set params even in the case of a fallback preconfer to
         // assist the nodes in identifying an incorrect lookahead. The contents of this event can be matched against
@@ -410,7 +421,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     function _isLookaheadRequired(uint256 epochTimestamp, uint256 nextEpochTimestamp) internal view returns (bool) {
         // If it's the first slot of current epoch, we don't need the lookahead since the offchain
         // node may not have access to it yet.
-        return block.timestamp != epochTimestamp && lookaheadPosters[nextEpochTimestamp] == address(0);
+        return block.timestamp != epochTimestamp && getLookaheadPoster(nextEpochTimestamp) == address(0);
     }
 
     //=======
@@ -537,11 +548,13 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         return lookahead;
     }
 
-    function getLookaheadPoster(uint256 epochTimestamp) external view returns (address) {
-        return lookaheadPosters[epochTimestamp];
+    function getLookaheadPoster(uint256 epochTimestamp) public view returns (address) {
+        PosterInfo memory pi = lookaheadPosters[epochTimestamp % 1536];
+        return pi.epochTimestamp == epochTimestamp ? pi.poster : address(0);
     }
 
-    function getBlockProposer(uint256 blockId) external view returns (address) {
-        return blockIdToProposer[blockId];
+    function getBlockProposer(uint256 blockId) public view returns (address) {
+        ProposerInfo memory pi = blockIdToProposer[blockId % 128];
+        return pi.blockId == blockId ? pi.proposer : address(0);
     }
 }
