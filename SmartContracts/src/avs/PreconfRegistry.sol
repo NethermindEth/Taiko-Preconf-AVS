@@ -69,10 +69,10 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
     function deregisterPreconfer() external {
         // Preconfer must have registered already
         uint256 removedPreconferIndex = preconferToIndex[msg.sender];
-
         if (removedPreconferIndex == 0) {
             revert PreconferNotRegistered();
         }
+        
         // Remove the preconfer and exchange its index with the last preconfer
         preconferToIndex[msg.sender] = 0;
 
