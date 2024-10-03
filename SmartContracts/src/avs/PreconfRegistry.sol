@@ -68,23 +68,26 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
      */
     function deregisterPreconfer() external {
         // Preconfer must have registered already
-        if (preconferToIndex[msg.sender] == 0) {
+        uint256 removedPreconferIndex = preconferToIndex[msg.sender];
+        if (removedPreconferIndex == 0) {
             revert PreconferNotRegistered();
         }
+        
+        // Remove the preconfer and exchange its index with the last preconfer
+        preconferToIndex[msg.sender] = 0;
 
         unchecked {
-            uint256 _nextPreconferIndex = nextPreconferIndex - 1;
-
             // Update to the decremented index to account for the removed preconfer
-            nextPreconferIndex = _nextPreconferIndex;
+            uint256 lastPreconferIndex = nextPreconferIndex - 1;
+            nextPreconferIndex = lastPreconferIndex;
 
-            uint256 removedPreconferIndex = preconferToIndex[msg.sender];
-            address lastPreconfer = indexToPreconfer[_nextPreconferIndex];
-
-            // Remove the preconfer and exchange its index with the last preconfer
-            preconferToIndex[msg.sender] = 0;
-            preconferToIndex[lastPreconfer] = removedPreconferIndex;
-            indexToPreconfer[removedPreconferIndex] = lastPreconfer;
+            if (removedPreconferIndex == lastPreconferIndex) {
+                indexToPreconfer[removedPreconferIndex] = address(0);
+            } else {
+                address lastPreconfer = indexToPreconfer[lastPreconferIndex];
+                preconferToIndex[lastPreconfer] = removedPreconferIndex;
+                indexToPreconfer[removedPreconferIndex] = lastPreconfer;
+            }
         }
 
         emit PreconferDeregistered(msg.sender);
