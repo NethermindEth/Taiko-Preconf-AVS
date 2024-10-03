@@ -327,6 +327,9 @@ impl Node {
                         .slot_clock
                         .get_l2_slot_number_within_l1_slot()?
                 );
+
+                // TODO: add flag for turning it on
+                self.operator.check_empty_lookahead().await?;
             }
         }
 
