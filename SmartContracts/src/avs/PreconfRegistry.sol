@@ -28,6 +28,8 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
     // Maps a validator's BLS pub key hash to the validator's details
     mapping(bytes32 publicKeyHash => Validator) internal validators;
 
+    uint256[196] private __gap; // = 200 - 4
+
     constructor(IPreconfServiceManager _preconfServiceManager) {
         preconfServiceManager = _preconfServiceManager;
     }
