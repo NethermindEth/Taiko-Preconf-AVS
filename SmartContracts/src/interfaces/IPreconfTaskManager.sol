@@ -43,6 +43,20 @@ interface IPreconfTaskManager {
         address fallbackPreconfer;
     }
 
+    struct PosterInfo {
+        // Address of lookahead poster
+        address poster;
+        // Start timestamp of the epoch for which the lookahead was posted
+        uint64 epochTimestamp;
+    }
+
+    struct ProposerInfo {
+        // Address of the Taiko block proposer
+        address proposer;
+        // Height of the L2 block
+        uint64 blockId;
+    }
+
     event LookaheadUpdated(LookaheadSetParam[]);
     event ProvedIncorrectPreconfirmation(address indexed preconfer, uint256 indexed blockId, address indexed disputer);
     event ProvedIncorrectLookahead(address indexed poster, uint256 indexed timestamp, address indexed disputer);

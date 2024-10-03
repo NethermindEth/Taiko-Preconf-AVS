@@ -16,24 +16,9 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     // to be stored in the main contract file itself.
     uint256 internal constant SLOTS_IN_EPOCH = 32;
 
-    uint256 internal constant LOOKAHEAD_BUFFER_SIZE = 64;
-    uint256 internal constant BLOCK_ID_TO_PROPOSER_BUFFER_SIZE = LOOKAHEAD_BUFFER_SIZE * 2;
-    uint256 internal constant LOOKAHEAD_POSTER_BUFFER_SIZE =
-        PreconfConstants.SECONDS_IN_SLOT * BLOCK_ID_TO_PROPOSER_BUFFER_SIZE;
-
     IPreconfServiceManager internal immutable preconfServiceManager;
     IPreconfRegistry internal immutable preconfRegistry;
     ITaikoL1 internal immutable taikoL1;
-
-    struct PosterInfo {
-        address poster;
-        uint64 epochTimestamp;
-    }
-
-    struct ProposerInfo {
-        address proposer;
-        uint64 blockId;
-    }
 
     // EIP-4788
     uint256 internal immutable beaconGenesis;
@@ -41,20 +26,21 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
 
     // A ring buffer of upcoming preconfers (who are also the L1 validators)
     uint256 internal lookaheadTail;
-
+    uint256 internal constant LOOKAHEAD_BUFFER_SIZE = 64;
     LookaheadBufferEntry[LOOKAHEAD_BUFFER_SIZE] internal lookahead;
 
-    // Maps the epoch timestamp to the lookahead poster.
-    // If the lookahead poster has been slashed, it maps to the 0-address.
-    // Note: This may be optimised to re-use existing slots and reduce gas cost.
-
-    mapping(uint256 epochTimestamp_mod_LOOKAHEAD_POSTER_BUFFER_SIZE => PosterInfo posterInfo) internal lookaheadPosters;
-
-    // Maps the block height to the associated proposer
+    // A ring buffer that maps the block height to the associated proposer
     // This is required since the stored block in Taiko has the address of this contract as the proposer
+    // Stores 2 epochs worth of L2 blocks = 256 (4 blocks / slot)
+    uint256 internal constant BLOCK_ID_TO_PROPOSER_BUFFER_SIZE = LOOKAHEAD_BUFFER_SIZE * 4;
     mapping(uint256 blockId_mod_BLOCK_ID_TO_PROPOSER_BUFFER_SIZE => ProposerInfo proposerInfo) internal
         blockIdToProposer;
 
+    // A ring buffer that maps beginning timestamp of an epoch to the lookahead poster for that epoch
+    // If the lookahead poster has been slashed or the lookahead is not yet posted, the poster is the 0-address
+    // Stores posters for 4 latest epochs
+    uint256 internal constant LOOKAHEAD_POSTER_BUFFER_SIZE = PreconfConstants.SECONDS_IN_EPOCH * 4;
+    mapping(uint256 epochTimestamp_mod_LOOKAHEAD_POSTER_BUFFER_SIZE => PosterInfo posterInfo) internal lookaheadPosters;
 
     uint256[133] private __gap; // = 200 - 67
 
@@ -123,7 +109,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         // Use Taiko's block number to index
         (, ITaikoL1.SlotB memory slotB) = taikoL1.getStateVariables();
         blockIdToProposer[slotB.numBlocks % BLOCK_ID_TO_PROPOSER_BUFFER_SIZE] =
-            ProposerInfo(msg.sender, uint64(slotB.numBlocks));
+            ProposerInfo({proposer: msg.sender, blockId: uint64(slotB.numBlocks)});
 
         // Block the preconfer from withdrawing stake from the restaking service during the dispute window
         preconfServiceManager.lockStakeUntil(msg.sender, block.timestamp + PreconfConstants.DISPUTE_PERIOD);
@@ -387,7 +373,8 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         }
 
         lookaheadTail = _lookaheadTail;
-        lookaheadPosters[epochTimestamp % LOOKAHEAD_POSTER_BUFFER_SIZE] = PosterInfo(msg.sender, uint64(epochTimestamp));
+        lookaheadPosters[epochTimestamp % LOOKAHEAD_POSTER_BUFFER_SIZE] =
+            PosterInfo({poster: msg.sender, epochTimestamp: uint64(epochTimestamp)});
 
         // We directly use the lookahead set params even in the case of a fallback preconfer to
         // assist the nodes in identifying an incorrect lookahead. The contents of this event can be matched against
@@ -577,12 +564,12 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     }
 
     function getLookaheadPoster(uint256 epochTimestamp) public view returns (address) {
-        PosterInfo memory pi = lookaheadPosters[epochTimestamp % LOOKAHEAD_POSTER_BUFFER_SIZE];
-        return pi.epochTimestamp == epochTimestamp ? pi.poster : address(0);
+        PosterInfo memory posterInfo = lookaheadPosters[epochTimestamp % LOOKAHEAD_POSTER_BUFFER_SIZE];
+        return posterInfo.epochTimestamp == epochTimestamp ? posterInfo.poster : address(0);
     }
 
     function getBlockProposer(uint256 blockId) public view returns (address) {
-        ProposerInfo memory pi = blockIdToProposer[blockId % BLOCK_ID_TO_PROPOSER_BUFFER_SIZE];
-        return pi.blockId == blockId ? pi.proposer : address(0);
+        ProposerInfo memory proposerInfo = blockIdToProposer[blockId % BLOCK_ID_TO_PROPOSER_BUFFER_SIZE];
+        return proposerInfo.blockId == blockId ? proposerInfo.proposer : address(0);
     }
 }
