@@ -13,7 +13,7 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
     using BLS12381 for BLS12381.G1Point;
 
     // IPreconfServiceManager internal immutable preconfServiceManager;
-    IAVSDirectory public immutable avsDirectory;
+    IAVSDirectory internal immutable avsDirectory;
 
     uint256 internal nextPreconferIndex;
 

@@ -25,7 +25,7 @@ contract PreconfServiceManager is IPreconfServiceManager {
     }
 
     modifier onlyPreconfTaskManager() {
-        if (msg.sender != address(preconfTaskManager)) {
+        if (msg.sender != preconfTaskManager) {
             revert SenderIsNotPreconfTaskManager();
         }
         _;
