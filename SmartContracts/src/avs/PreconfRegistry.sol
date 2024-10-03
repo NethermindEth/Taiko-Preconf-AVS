@@ -139,7 +139,7 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
             ) {
                 unchecked {
                     validators[pubKeyHash] = Validator({
-                        preconfer: msg.sender,
+                        preconfer: addValidatorParams[i].preconfer,
                         // The delay is crucial in order to not contradict the lookahead
                         startProposingAt: uint40(block.timestamp + PreconfConstants.TWO_EPOCHS),
                         stopProposingAt: uint40(0)
@@ -150,7 +150,7 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
                 revert ValidatorAlreadyActive();
             }
 
-            emit ValidatorAdded(pubKeyHash, msg.sender);
+            emit ValidatorAdded(pubKeyHash, addValidatorParams[i].preconfer);
         }
     }
 
