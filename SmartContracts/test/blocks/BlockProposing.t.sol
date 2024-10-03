@@ -166,7 +166,7 @@ contract BlockProposing is BlocksFixtures {
         preconfTaskManager.newBlockProposal("Block Params", "Txn List", 1, lookaheadSetParams);
 
         // Verify that the lookahead for the next epoch has been updated
-        IPreconfTaskManager.LookaheadBufferEntry[64] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
+        IPreconfTaskManager.LookaheadBufferEntry[128] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
 
         // Check the first entry
         vm.assertEq(lookaheadBuffer[3].preconfer, addr_1);

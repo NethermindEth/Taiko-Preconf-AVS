@@ -34,7 +34,7 @@ contract LookaheadPosting is LookaheadFixtures {
         uint256 lookaheadTail = preconfTaskManager.getLookaheadTail();
         vm.assertEq(lookaheadTail, 1);
 
-        IPreconfTaskManager.LookaheadBufferEntry[64] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
+        IPreconfTaskManager.LookaheadBufferEntry[128] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
         vm.assertEq(lookaheadBuffer[1].preconfer, addr_1);
         vm.assertEq(lookaheadBuffer[1].timestamp, nextEpochStart);
         vm.assertEq(lookaheadBuffer[1].prevTimestamp, 0);
@@ -69,7 +69,7 @@ contract LookaheadPosting is LookaheadFixtures {
         uint256 lookaheadTail = preconfTaskManager.getLookaheadTail();
         vm.assertEq(lookaheadTail, 2);
 
-        IPreconfTaskManager.LookaheadBufferEntry[64] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
+        IPreconfTaskManager.LookaheadBufferEntry[128] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
         vm.assertEq(lookaheadBuffer[1].preconfer, addr_1);
         vm.assertEq(lookaheadBuffer[1].timestamp, nextEpochStart);
         vm.assertEq(lookaheadBuffer[1].prevTimestamp, 0);
@@ -112,7 +112,7 @@ contract LookaheadPosting is LookaheadFixtures {
         uint256 lookaheadTail = preconfTaskManager.getLookaheadTail();
         vm.assertEq(lookaheadTail, 3);
 
-        IPreconfTaskManager.LookaheadBufferEntry[64] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
+        IPreconfTaskManager.LookaheadBufferEntry[128] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
         vm.assertEq(lookaheadBuffer[1].preconfer, addr_1);
         vm.assertEq(lookaheadBuffer[1].timestamp, nextEpochStart);
         vm.assertEq(lookaheadBuffer[1].prevTimestamp, 0);
@@ -161,7 +161,7 @@ contract LookaheadPosting is LookaheadFixtures {
         vm.assertEq(lookaheadTail, 1);
 
         // Verify that addr_4 is inserted as fallback preconfer in lookahead buffer
-        IPreconfTaskManager.LookaheadBufferEntry[64] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
+        IPreconfTaskManager.LookaheadBufferEntry[128] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
         vm.assertEq(lookaheadBuffer[1].preconfer, addr_4);
         vm.assertEq(lookaheadBuffer[1].timestamp, lastSlotTimestampInNextEpoch);
         vm.assertEq(lookaheadBuffer[1].prevTimestamp, 0);
@@ -201,7 +201,7 @@ contract LookaheadPosting is LookaheadFixtures {
         vm.assertEq(lookaheadTail, 1);
 
         // Verify that addr_4 is inserted as fallback preconfer in lookahead buffer
-        IPreconfTaskManager.LookaheadBufferEntry[64] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
+        IPreconfTaskManager.LookaheadBufferEntry[128] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
         vm.assertEq(lookaheadBuffer[1].preconfer, addr_4);
         vm.assertEq(lookaheadBuffer[1].timestamp, lastSlotTimestampInNextEpoch);
         vm.assertEq(lookaheadBuffer[1].prevTimestamp, 0);

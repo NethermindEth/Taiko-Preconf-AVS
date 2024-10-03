@@ -277,7 +277,7 @@ contract IncorrectLookahead is LookaheadFixtures {
             nextEpochStart + PreconfConstants.SECONDS_IN_EPOCH - PreconfConstants.SECONDS_IN_SLOT;
 
         // Verify that the lookahead has the fallback preconfer
-        IPreconfTaskManager.LookaheadBufferEntry[64] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
+        IPreconfTaskManager.LookaheadBufferEntry[128] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
         vm.assertEq(lookaheadBuffer[3].preconfer, addr_4);
         vm.assertEq(lookaheadBuffer[3].timestamp, lastSlotTimestamp);
         vm.assertEq(lookaheadBuffer[3].prevTimestamp, nextEpochStart - PreconfConstants.SECONDS_IN_SLOT);
@@ -343,7 +343,7 @@ contract IncorrectLookahead is LookaheadFixtures {
             nextEpochStart + PreconfConstants.SECONDS_IN_EPOCH - PreconfConstants.SECONDS_IN_SLOT;
 
         // Verify that the lookahead has the fallback preconfer
-        IPreconfTaskManager.LookaheadBufferEntry[64] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
+        IPreconfTaskManager.LookaheadBufferEntry[128] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
         vm.assertEq(lookaheadBuffer[3].preconfer, addr_4);
         vm.assertEq(lookaheadBuffer[3].timestamp, lastSlotTimestamp);
         vm.assertEq(lookaheadBuffer[3].prevTimestamp, nextEpochStart - PreconfConstants.SECONDS_IN_SLOT);

@@ -26,13 +26,13 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
 
     // A ring buffer of upcoming preconfers (who are also the L1 validators)
     uint256 internal lookaheadTail;
-    uint256 internal constant LOOKAHEAD_BUFFER_SIZE = 64;
+    uint256 internal constant LOOKAHEAD_BUFFER_SIZE = 128;
     LookaheadBufferEntry[LOOKAHEAD_BUFFER_SIZE] internal lookahead;
 
     // A ring buffer that maps the block height to the associated proposer
     // This is required since the stored block in Taiko has the address of this contract as the proposer
     // Stores 2 epochs worth of L2 blocks = 256 (4 blocks / slot)
-    uint256 internal constant BLOCK_ID_TO_PROPOSER_BUFFER_SIZE = LOOKAHEAD_BUFFER_SIZE * 4;
+    uint256 internal constant BLOCK_ID_TO_PROPOSER_BUFFER_SIZE = PreconfConstants.TWO_EPOCHS * 4;
     mapping(uint256 blockId_mod_BLOCK_ID_TO_PROPOSER_BUFFER_SIZE => ProposerInfo proposerInfo) internal
         blockIdToProposer;
 

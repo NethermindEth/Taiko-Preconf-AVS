@@ -130,7 +130,7 @@ interface IPreconfTaskManager {
     function getLookaheadTail() external view returns (uint256);
 
     /// @dev Returns the entire lookahead buffer
-    function getLookaheadBuffer() external view returns (LookaheadBufferEntry[64] memory);
+    function getLookaheadBuffer() external view returns (LookaheadBufferEntry[128] memory);
 
     /// @dev Returns the lookahead poster for an epoch
     function getLookaheadPoster(uint256 epochTimestamp) external view returns (address);
