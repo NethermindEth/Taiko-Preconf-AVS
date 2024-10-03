@@ -38,15 +38,6 @@ impl SlotClock {
         }
     }
 
-    // returns current real timestamp, the shift is reduced
-    pub fn get_real_time_for_contract(&self) -> Result<u64, Error> {
-        Ok(
-            (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?
-                + self.slot_duration)
-                .as_secs(),
-        )
-    }
-
     pub fn get_slots_per_epoch(&self) -> u64 {
         self.slots_per_epoch
     }
@@ -134,6 +125,12 @@ impl SlotClock {
         Ok(start_of_slot.as_secs())
     }
 
+    // returns real timestamp, the shift is reduced
+    pub fn get_real_slot_begin_timestamp_for_contract(&self, slot: Slot) -> Result<u64, Error> {
+        let start_of_slot = self.start_of(slot)? + self.slot_duration;
+        Ok(start_of_slot.as_secs())
+    }
+
     pub fn get_epoch_for_timestamp(&self, timestamp: u64) -> Result<Epoch, Error> {
         let slot = self.slot_of(Duration::from_secs(timestamp))?;
         Ok(slot / self.slots_per_epoch)
@@ -155,7 +152,7 @@ impl SlotClock {
     }
 
     // 0 based L2 slot number within the current L1 slot
-    pub fn get_l2_slot_number(&self) -> Result<u64, Error> {
+    pub fn get_l2_slot_number_within_l1_slot(&self) -> Result<u64, Error> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let slot_begin = self.start_of(self.get_current_slot()?)?;
         Ok(self.which_l2_slot_is_it((now - slot_begin).as_secs()))
@@ -281,6 +278,7 @@ mod tests {
             genesis_timestamp,
             slot_duration,
             slot_per_epoch,
+            L2_SLOT_DURATION,
         );
 
         let epoch_begin_timestamp = slot_clock

@@ -14,7 +14,7 @@ use crate::{
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::types::*,
 };
-use anyhow::{anyhow as any_err, Error};
+use anyhow::Error;
 use commit::L2TxListsCommit;
 use operator::{Operator, Status as OperatorStatus};
 use preconfirmation_helper::PreconfirmationHelper;
@@ -327,7 +327,9 @@ impl Node {
                     self.epoch,
                     current_slot,
                     self.ethereum_l1.slot_clock.slot_of_epoch(current_slot),
-                    self.ethereum_l1.slot_clock.get_l2_slot_number()?
+                    self.ethereum_l1
+                        .slot_clock
+                        .get_l2_slot_number_within_l1_slot()?
                 );
             }
         }
@@ -382,7 +384,12 @@ impl Node {
         debug!("Preconfirming last slot");
         self.preconfirm_block(false).await?;
         const FINAL_L2_SLOT_PERCONFIRMATION: u64 = 3;
-        if self.ethereum_l1.slot_clock.get_l2_slot_number()? == FINAL_L2_SLOT_PERCONFIRMATION {
+        if self
+            .ethereum_l1
+            .slot_clock
+            .get_l2_slot_number_within_l1_slot()?
+            == FINAL_L2_SLOT_PERCONFIRMATION
+        {
             debug!("Last(4th) perconfirmation in the last L1 slot for the preconfer");
             // Last(4th) perconfirmation when we are proposer and preconfer
             self.is_preconfer_now.store(false, Ordering::Release);
@@ -428,7 +435,9 @@ impl Node {
             self.epoch,
             current_slot,
             self.ethereum_l1.slot_clock.slot_of_epoch(current_slot),
-            self.ethereum_l1.slot_clock.get_l2_slot_number()?
+            self.ethereum_l1
+                .slot_clock
+                .get_l2_slot_number_within_l1_slot()?
         );
 
         let lookahead_params = self.get_lookahead_params().await?;
@@ -475,13 +484,12 @@ impl Node {
             &pending_tx_lists_bytes,
             proof.clone(),
         );
-        self.send_preconfirmations_to_the_avs_p2p(preconf_message.clone())
-            .await?;
+        self.send_preconfirmations_to_the_avs_p2p(preconf_message.clone());
         self.taiko
             .advance_head_to_new_l2_block(pending_tx_lists.tx_lists)
             .await?;
 
-        let lookahead_pointer = self.operator.get_lookahead_pointer()?;
+        let lookahead_pointer = self.operator.get_lookahead_pointer(current_slot)?;
         let tx = self
             .ethereum_l1
             .execution_layer
@@ -528,17 +536,14 @@ impl Node {
         Ok(())
     }
 
-    async fn send_preconfirmations_to_the_avs_p2p(
-        &self,
-        message: PreconfirmationMessage,
-    ) -> Result<(), Error> {
+    fn send_preconfirmations_to_the_avs_p2p(&self, message: PreconfirmationMessage) {
         debug!(
             "Send message to p2p, tx list hash: {}",
             hex::encode(message.tx_list_hash)
         );
-        self.node_to_p2p_tx
-            .send(message.into())
-            .await
-            .map_err(|e| any_err!("Failed to send message to node_to_p2p_tx: {}", e))
+
+        if let Err(err) = self.node_to_p2p_tx.try_send(message.into()) {
+            error!("Failed to send message to node_to_p2p_tx: {}", err);
+        }
     }
 }

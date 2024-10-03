@@ -134,6 +134,10 @@ fn init_logging() {
             .add_directive("hyper=info".parse().unwrap())
             .add_directive("alloy_transport=info".parse().unwrap())
             .add_directive("alloy_rpc_client=info".parse().unwrap())
+            .add_directive("p2p_network=info".parse().unwrap())
+            .add_directive("libp2p_gossipsub=info".parse().unwrap())
+            .add_directive("discv5=info".parse().unwrap())
+            .add_directive("netlink_proto=info".parse().unwrap())
     });
 
     fmt().with_env_filter(filter).init();
