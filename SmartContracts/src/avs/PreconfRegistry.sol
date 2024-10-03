@@ -119,7 +119,11 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
             //     revert ValidatorSignatureExpired();
             // }
 
-            bytes32 pubKeyHash = _hashBLSPubKey(addValidatorParams[i].pubkey);
+            // Point compress the public key just how it is done on the consensus layer
+            uint256[2] memory compressedPubKey = addValidatorParams[i].pubkey.compress();
+            // Use the hash for ease of mapping
+            bytes32 pubKeyHash = keccak256(abi.encodePacked(compressedPubKey));
+
             Validator memory validator = validators[pubKeyHash];
 
             // Update the validator if it has no preconfer assigned, or if it has stopped proposing
@@ -153,7 +157,11 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
      */
     function removeValidators(RemoveValidatorParam[] calldata removeValidatorParams) external {
         for (uint256 i; i < removeValidatorParams.length; ++i) {
-            bytes32 pubKeyHash = _hashBLSPubKey(removeValidatorParams[i].pubkey);
+            // Point compress the public key just how it is done on the consensus layer
+            uint256[2] memory compressedPubKey = removeValidatorParams[i].pubkey.compress();
+            // Use the hash for ease of mapping
+            bytes32 pubKeyHash = keccak256(abi.encodePacked(compressedPubKey));
+
             Validator memory validator = validators[pubKeyHash];
 
             // Revert if the validator is not active (or already removed, but waiting to stop proposing)
@@ -224,10 +232,5 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
         returns (bytes memory)
     {
         return abi.encodePacked(block.chainid, validatorOp, expiry, preconfer);
-    }
-
-    function _hashBLSPubKey(BLS12381.G1Point calldata pubkey) internal pure returns (bytes32) {
-        uint256[2] memory compressedPubKey = pubkey.compress();
-        return keccak256(abi.encodePacked(compressedPubKey));
     }
 }
