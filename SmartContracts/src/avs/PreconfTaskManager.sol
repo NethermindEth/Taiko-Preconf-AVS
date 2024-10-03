@@ -12,9 +12,10 @@ import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
 import {Initializable} from "openzeppelin-contracts-upgradeable/proxy/utils/Initializable.sol";
 
 contract PreconfTaskManager is IPreconfTaskManager, Initializable {
-    uint256 internal constant BLOCK_ID_TO_PROPOSER_BUFFER_SIZE = 128;
-    uint256 internal constant LOOKAHEAD_POSTER_BUFFER_SIZE = 12 * BLOCK_ID_TO_PROPOSER_BUFFER_SIZE;
     uint256 internal constant LOOKAHEAD_BUFFER_SIZE = 64;
+    uint256 internal constant BLOCK_ID_TO_PROPOSER_BUFFER_SIZE = LOOKAHEAD_BUFFER_SIZE * 2;
+    uint256 internal constant LOOKAHEAD_POSTER_BUFFER_SIZE =
+        PreconfConstants.SECONDS_IN_SLOT * BLOCK_ID_TO_PROPOSER_BUFFER_SIZE;
 
     IPreconfServiceManager internal immutable preconfServiceManager;
     IPreconfRegistry internal immutable preconfRegistry;
