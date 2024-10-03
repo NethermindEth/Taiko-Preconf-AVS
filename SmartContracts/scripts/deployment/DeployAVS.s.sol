@@ -39,9 +39,9 @@ contract DeployAVS is BaseScript {
         address preconfTaskManager = deployProxy(address(emptyContract), address(proxyAdmin), "");
 
         // Deploy implementations
-        PreconfRegistry preconfRegistryImpl = new PreconfRegistry(IPreconfServiceManager(preconfServiceManager));
+        PreconfRegistry preconfRegistryImpl = new PreconfRegistry(IAVSDirectory(avsDirectory));
         PreconfServiceManager preconfServiceManagerImpl = new PreconfServiceManager(
-            preconfRegistry, preconfTaskManager, IAVSDirectory(avsDirectory), ISlasher(slasher)
+            preconfTaskManager, IAVSDirectory(avsDirectory), ISlasher(slasher)
         );
         PreconfTaskManager preconfTaskManagerImpl = new PreconfTaskManager(
             IPreconfServiceManager(preconfServiceManager),

@@ -6,7 +6,7 @@ import {IAVSDirectory} from "./eigenlayer-mvp/IAVSDirectory.sol";
 
 interface IPreconfRegistry {
     struct Validator {
-        // Preconfer that the validator proposer blocks for
+        // Preconfer that the validator proposes blocks for
         address preconfer;
         // Timestamp at which the preconfer may start proposing for the preconfer
         // 2 epochs from validator addition timestamp

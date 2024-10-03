@@ -11,7 +11,6 @@ import {IAVSDirectory} from "../interfaces/eigenlayer-mvp/IAVSDirectory.sol";
  * This contract may be modified depending on the interface of the restaking contracts.
  */
 contract PreconfServiceManager is IPreconfServiceManager {
-    address internal immutable preconfRegistry;
     address internal immutable preconfTaskManager;
     IAVSDirectory internal immutable avsDirectory;
     ISlasher internal immutable slasher;
@@ -19,8 +18,7 @@ contract PreconfServiceManager is IPreconfServiceManager {
     /// @dev This is currently just a flag and not actually being used to lock the stake.
     mapping(address operator => uint256 timestamp) public stakeLockedUntil;
 
-    constructor(address _preconfRegistry, address _preconfTaskManager, IAVSDirectory _avsDirectory, ISlasher _slasher) {
-        preconfRegistry = _preconfRegistry;
+    constructor(address _preconfTaskManager, IAVSDirectory _avsDirectory, ISlasher _slasher) {
         preconfTaskManager = _preconfTaskManager;
         avsDirectory = _avsDirectory;
         slasher = _slasher;
@@ -31,26 +29,6 @@ contract PreconfServiceManager is IPreconfServiceManager {
             revert SenderIsNotPreconfTaskManager();
         }
         _;
-    }
-
-    modifier onlyPreconfRegistry() {
-        if (msg.sender != preconfRegistry) {
-            revert SenderIsNotPreconfRegistry();
-        }
-        _;
-    }
-
-    /// @dev Simply relays the call to the AVS directory
-    function registerOperatorToAVS(address operator, IAVSDirectory.SignatureWithSaltAndExpiry memory operatorSignature)
-        external
-        onlyPreconfRegistry
-    {
-        avsDirectory.registerOperatorToAVS(operator, operatorSignature);
-    }
-
-    /// @dev Simply relays the call to the AVS directory
-    function deregisterOperatorFromAVS(address operator) external onlyPreconfRegistry {
-        avsDirectory.deregisterOperatorFromAVS(operator);
     }
 
     /// @dev This not completely functional until Eigenlayer decides the logic of their Slasher.

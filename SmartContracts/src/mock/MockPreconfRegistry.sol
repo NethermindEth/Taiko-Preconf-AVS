@@ -5,14 +5,13 @@ import {BLS12381} from "../libraries/BLS12381.sol";
 import {PreconfConstants} from "../avs/PreconfConstants.sol";
 import {BLSSignatureChecker} from "../avs/utils/BLSSignatureChecker.sol";
 import {IPreconfRegistry} from "../interfaces/IPreconfRegistry.sol";
-import {IPreconfServiceManager} from "../interfaces/IPreconfServiceManager.sol";
 import {IAVSDirectory} from "../interfaces/eigenlayer-mvp/IAVSDirectory.sol";
 import {Initializable} from "openzeppelin-contracts-upgradeable/proxy/utils/Initializable.sol";
 
 contract MockPreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable {
     using BLS12381 for BLS12381.G1Point;
 
-    IPreconfServiceManager internal immutable preconfServiceManager;
+    IAVSDirectory internal immutable avsDirectory;
 
     uint256 internal nextPreconferIndex;
 
@@ -28,8 +27,8 @@ contract MockPreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializ
     // Maps a validator's BLS pub key hash to the validator's details
     mapping(bytes32 publicKeyHash => Validator) internal validators;
 
-    constructor(IPreconfServiceManager _preconfServiceManager) {
-        preconfServiceManager = _preconfServiceManager;
+    constructor(IAVSDirectory _avsDirectory) {
+        avsDirectory = _avsDirectory;
     }
 
     function initialize() external initializer {
@@ -58,7 +57,7 @@ contract MockPreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializ
 
         emit PreconferRegistered(msg.sender);
 
-        preconfServiceManager.registerOperatorToAVS(msg.sender, operatorSignature);
+        avsDirectory.registerOperatorToAVS(msg.sender, operatorSignature);
     }
 
     /**
@@ -89,7 +88,7 @@ contract MockPreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializ
 
         emit PreconferDeregistered(msg.sender);
 
-        preconfServiceManager.deregisterOperatorFromAVS(msg.sender);
+        avsDirectory.deregisterOperatorFromAVS(msg.sender);
     }
 
     /**

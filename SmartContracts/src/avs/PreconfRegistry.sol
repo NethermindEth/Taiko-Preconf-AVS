@@ -12,7 +12,8 @@ import {Initializable} from "openzeppelin-contracts-upgradeable/proxy/utils/Init
 contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable {
     using BLS12381 for BLS12381.G1Point;
 
-    IPreconfServiceManager internal immutable preconfServiceManager;
+    // IPreconfServiceManager internal immutable preconfServiceManager;
+    IAVSDirectory public immutable avsDirectory;
 
     uint256 internal nextPreconferIndex;
 
@@ -28,8 +29,8 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
     // Maps a validator's BLS pub key hash to the validator's details
     mapping(bytes32 publicKeyHash => Validator) internal validators;
 
-    constructor(IPreconfServiceManager _preconfServiceManager) {
-        preconfServiceManager = _preconfServiceManager;
+    constructor(IAVSDirectory _avsDirectory) {
+        avsDirectory = _avsDirectory;
     }
 
     function initialize() external initializer {
@@ -58,7 +59,7 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
 
         emit PreconferRegistered(msg.sender);
 
-        preconfServiceManager.registerOperatorToAVS(msg.sender, operatorSignature);
+        avsDirectory.registerOperatorToAVS(msg.sender, operatorSignature);
     }
 
     /**
@@ -89,7 +90,7 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
 
         emit PreconferDeregistered(msg.sender);
 
-        preconfServiceManager.deregisterOperatorFromAVS(msg.sender);
+        avsDirectory.deregisterOperatorFromAVS(msg.sender);
     }
 
     /**
