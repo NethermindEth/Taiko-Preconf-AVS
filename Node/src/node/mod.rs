@@ -315,10 +315,6 @@ impl Node {
                 self.preconfirm_last_slot().await?;
             }
             OperatorStatus::Preconfer => {
-                if !self.is_preconfer_now.load(Ordering::Acquire) {
-                    self.is_preconfer_now.store(true, Ordering::Release);
-                    self.start_propose().await?;
-                }
                 self.preconfirm_block(true).await?;
             }
             OperatorStatus::None => {
@@ -440,6 +436,11 @@ impl Node {
                 .get_l2_slot_number_within_l1_slot()?
         );
 
+        if !self.is_preconfer_now.load(Ordering::Acquire) {
+            self.is_preconfer_now.store(true, Ordering::Release);
+            self.start_propose().await?;
+        }
+
         let lookahead_params = self.get_lookahead_params().await?;
         let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;
         let pending_tx_lists_bytes = if pending_tx_lists.tx_list_bytes.is_empty() {
@@ -469,7 +470,10 @@ impl Node {
             pending_tx_lists.tx_list_bytes[0].clone() // TODO: handle multiple tx lists
         };
 
-        let new_block_height = pending_tx_lists.parent_block_id + 1;
+        let new_block_height = self
+            .preconfirmation_helper
+            .get_new_block_id(pending_tx_lists.parent_block_id);
+        debug!("Preconfirming block with the height: {}", new_block_height);
 
         let (commit_hash, signature) =
             self.generate_commit_hash_and_signature(&pending_tx_lists, new_block_height)?;
