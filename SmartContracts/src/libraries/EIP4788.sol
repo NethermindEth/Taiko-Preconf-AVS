@@ -41,10 +41,6 @@ library EIP4788 {
         bytes32 beaconBlockRoot,
         InclusionProof memory inclusionProof
     ) internal pure {
-        if (validatorBLSPubKey.length != 48) {
-            revert InvalidValidatorBLSPubKey();
-        }
-
         // Validator's BLS public key is verified against the hash tree root within Validator chunks
         bytes32 pubKeyHashTreeRoot = sha256(abi.encodePacked(validatorBLSPubKey, bytes16(0)));
         if (pubKeyHashTreeRoot != inclusionProof.validator[0]) {
