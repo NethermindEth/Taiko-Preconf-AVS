@@ -449,7 +449,6 @@ impl Node {
         let pending_tx_lists_bytes = if pending_tx_lists.tx_list_bytes.is_empty() {
             if let Some(lookahead_params) = lookahead_params {
                 debug!("No pending transactions to preconfirm, force pushing lookahead");
-                self.preconfirmation_helper.increment_nonce();
                 if let Err(err) = self
                     .ethereum_l1
                     .execution_layer
@@ -461,6 +460,8 @@ impl Node {
                     } else {
                         error!("Failed to force push lookahead: {}", err);
                     }
+                } else {
+                    self.preconfirmation_helper.increment_nonce();
                 }
             }
             // No transactions skip preconfirmation step
