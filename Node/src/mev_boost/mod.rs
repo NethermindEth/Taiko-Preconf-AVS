@@ -25,7 +25,7 @@ impl MevBoost {
     async fn post_constraints(&self, params: Value) -> Result<Value, Error> {
         let client = Client::new();
         let response = client
-            .post(self.url.clone())
+            .post(self.url.clone() + "/eth/v1/builder/constraints")
             .json(&params)
             .send()
             .await
