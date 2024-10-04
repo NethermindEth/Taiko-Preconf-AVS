@@ -28,7 +28,9 @@ contract MockPreconfRegistry {
     function addValidator(bytes memory pubKey, address preconfer, uint256 startProposingAt, uint256 stopProposingAt)
         external
     {
-        validators[keccak256(pubKey)] = Validator(preconfer, uint40(startProposingAt), uint40(stopProposingAt));
+        require(pubKey.length == 48, "Invalid pubkey length");
+        bytes32 key = keccak256(abi.encodePacked(bytes16(0), pubKey));
+        validators[key] = Validator(preconfer, uint40(startProposingAt), uint40(stopProposingAt));
     }
 
     function getNextPreconferIndex() external view returns (uint256) {

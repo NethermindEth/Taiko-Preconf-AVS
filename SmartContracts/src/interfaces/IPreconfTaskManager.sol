@@ -69,6 +69,8 @@ interface IPreconfTaskManager {
     error LookaheadEntryIsCorrect();
     /// @dev Cannot force push a lookahead since it is not lagging behind
     error LookaheadIsNotRequired();
+    /// @dev Invalid validator BLS pub key
+    error InvalidValidatorBLSPubKey();
 
     /// @dev Accepts block proposal by an operator and forwards it to TaikoL1 contract
     function newBlockProposal(

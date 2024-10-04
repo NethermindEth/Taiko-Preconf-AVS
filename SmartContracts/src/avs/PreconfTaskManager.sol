@@ -210,7 +210,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         }
 
         // Reduce validator's BLS pub key to the pub key hash expected by the registry
-        bytes32 validatorPubKeyHash = keccak256(validatorBLSPubKey);
+        bytes32 validatorPubKeyHash = _hashValidatorBLSPubKey(validatorBLSPubKey);
 
         // Retrieve the validator object
         IPreconfRegistry.Validator memory validatorInRegistry = preconfRegistry.getValidator(validatorPubKeyHash);
@@ -413,6 +413,17 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         return block.timestamp != epochTimestamp && lookaheadPosters[nextEpochTimestamp] == address(0);
     }
 
+    /// @dev Hashes the validator BLS pub key to a 32 byte hash
+    function _hashValidatorBLSPubKey(bytes memory validatorBLSPubKey) internal pure returns (bytes32) {
+        if (validatorBLSPubKey.length == 48) {
+            return keccak256(abi.encodePacked(bytes16(0), validatorBLSPubKey));
+        } else if (validatorBLSPubKey.length == 64) {
+            return keccak256(validatorBLSPubKey);
+        } else {
+            revert InvalidValidatorBLSPubKey();
+        }
+    }
+
     //=======
     // Views
     //=======
@@ -495,7 +506,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
 
             // Fetch the validator object from the registry
             IPreconfRegistry.Validator memory validator =
-                preconfRegistry.getValidator(keccak256(validatorBLSPubKeys[i]));
+                preconfRegistry.getValidator(_hashValidatorBLSPubKey(validatorBLSPubKeys[i]));
 
             // Skip deregistered preconfers
             if (preconfRegistry.getPreconferIndex(validator.preconfer) == 0) {
