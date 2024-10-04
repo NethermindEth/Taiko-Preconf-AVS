@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::Error;
 use std::sync::Arc;
-use tracing::debug;
+use tracing::{debug, error};
 
 pub struct Operator {
     ethereum_l1: Arc<EthereumL1>,
@@ -161,6 +161,40 @@ impl Operator {
             })? as u64;
 
         Ok(lookahead_pointer)
+    }
+
+    pub async fn check_empty_lookahead(&mut self) -> Result<(), Error> {
+        debug!("Checking empty lookahead");
+
+        let is_required = self
+            .ethereum_l1
+            .execution_layer
+            .is_lookahead_required()
+            .await?;
+
+        if is_required {
+            self.update_preconfer_lookahead_for_epoch().await?;
+            if self
+                .lookahead_preconfer_addresses
+                .iter()
+                .all(|addr| *addr == PRECONFER_ADDRESS_ZERO)
+            {
+                debug!("Lookahead is empty, force pushing");
+                match self.ethereum_l1.force_push_lookahead().await {
+                    Ok(_) => {
+                        debug!("Force pushed lookahead");
+                    }
+                    Err(err) => {
+                        if err.to_string().contains("AlreadyKnown") {
+                            debug!("Force push lookahead already known");
+                        } else {
+                            error!("Failed to force push lookahead: {}", err);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
