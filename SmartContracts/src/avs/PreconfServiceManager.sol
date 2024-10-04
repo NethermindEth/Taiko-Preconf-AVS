@@ -19,6 +19,7 @@ contract PreconfServiceManager is IPreconfServiceManager, ReentrancyGuard {
 
     /// @dev This is currently just a flag and not actually being used to lock the stake.
     mapping(address operator => uint256 timestamp) public stakeLockedUntil;
+
     uint256[199] private __gap; // 200 - 1
 
     constructor(address _preconfRegistry, address _preconfTaskManager, IAVSDirectory _avsDirectory, ISlasher _slasher) {
@@ -28,16 +29,9 @@ contract PreconfServiceManager is IPreconfServiceManager, ReentrancyGuard {
         slasher = _slasher;
     }
 
-    modifier onlyPreconfTaskManager() {
-        if (msg.sender != address(preconfTaskManager)) {
-            revert SenderIsNotPreconfTaskManager();
-        }
-        _;
-    }
-
-    modifier onlyPreconfRegistry() {
-        if (msg.sender != preconfRegistry) {
-            revert SenderIsNotPreconfRegistry();
+    modifier onlyCallableBy(address allowedSender) {
+        if (msg.sender != allowedSender) {
+            revert SenderIsNotAllowed();
         }
         _;
     }
@@ -46,28 +40,52 @@ contract PreconfServiceManager is IPreconfServiceManager, ReentrancyGuard {
     function registerOperatorToAVS(address operator, IAVSDirectory.SignatureWithSaltAndExpiry memory operatorSignature)
         external
         nonReentrant
-        onlyPreconfRegistry
+        onlyCallableBy(preconfRegistry)
     {
         avsDirectory.registerOperatorToAVS(operator, operatorSignature);
     }
 
     /// @dev Simply relays the call to the AVS directory
-    function deregisterOperatorFromAVS(address operator) external nonReentrant onlyPreconfRegistry {
+    function deregisterOperatorFromAVS(address operator) external nonReentrant onlyCallableBy(preconfRegistry) {
         avsDirectory.deregisterOperatorFromAVS(operator);
     }
 
     /// @dev This not completely functional until Eigenlayer decides the logic of their Slasher.
     ///  for now this simply sets a value in the storage and releases an event.
-    function lockStakeUntil(address operator, uint256 timestamp) external nonReentrant onlyPreconfTaskManager {
+    function lockStakeUntil(address operator, uint256 timestamp)
+        external
+        nonReentrant
+        onlyCallableBy(preconfTaskManager)
+    {
         stakeLockedUntil[operator] = timestamp;
         emit StakeLockedUntil(operator, timestamp);
     }
 
     /// @dev This not completely functional until Eigenlayer decides the logic of their Slasher.
-    function slashOperator(address operator) external nonReentrant onlyPreconfTaskManager {
+    function slashOperator(address operator) external nonReentrant onlyCallableBy(preconfTaskManager) {
         if (slasher.isOperatorSlashed(operator)) {
             revert OperatorAlreadySlashed();
         }
         slasher.slashOperator(operator);
+    }
+
+    //=======
+    // Views
+    //=======
+
+    function getPreconfRegistry() external view returns (address) {
+        return preconfRegistry;
+    }
+
+    function getPreconfTaskManager() external view returns (address) {
+        return preconfTaskManager;
+    }
+
+    function getAVSDirectory() external view returns (address) {
+        return address(avsDirectory);
+    }
+
+    function getSlasher() external view returns (address) {
+        return address(slasher);
     }
 }

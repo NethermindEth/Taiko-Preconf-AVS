@@ -529,6 +529,26 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         return _isLookaheadRequired(epochTimestamp, nextEpochTimestamp);
     }
 
+    function getPreconfServiceManager() external view returns (address) {
+        return address(preconfServiceManager);
+    }
+
+    function getPreconfRegistry() external view returns (address) {
+        return address(preconfRegistry);
+    }
+
+    function getTaikoL1() external view returns (address) {
+        return address(taikoL1);
+    }
+
+    function getBeaconGenesis() external view returns (uint256) {
+        return beaconGenesis;
+    }
+
+    function getBeaconBlockRootContract() external view returns (address) {
+        return beaconBlockRootContract;
+    }
+
     function getLookaheadTail() external view returns (uint256) {
         return lookaheadTail;
     }
