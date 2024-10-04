@@ -13,7 +13,7 @@ pub struct Config {
     pub l1_slots_per_epoch: u64,
     pub l2_slot_duration_sec: u64,
     pub validator_bls_privkey: String,
-    pub preconf_registry_expiry_sec: u64,
+    pub msg_expiry_sec: u64,
     pub contract_addresses: ContractAddresses,
     pub p2p_network_config: P2PNetworkConfig,
     pub taiko_chain_id: u64,
@@ -183,10 +183,10 @@ impl Config {
             "0x0".to_string()
         });
 
-        let preconf_registry_expiry_sec = std::env::var("PRECONF_REGISTRY_EXPIRY_SEC")
+        let msg_expiry_sec = std::env::var("MSG_EXPIRY_SEC")
             .unwrap_or("3600".to_string())
             .parse::<u64>()
-            .expect("PRECONF_REGISTRY_EXPIRY_SEC must be a number");
+            .expect("MSG_EXPIRY_SEC must be a number");
 
         // Load P2P config from env
         // Load Ipv4 address from env
@@ -264,7 +264,7 @@ impl Config {
             l1_slots_per_epoch,
             l2_slot_duration_sec,
             validator_bls_privkey,
-            preconf_registry_expiry_sec,
+            msg_expiry_sec,
             contract_addresses,
             p2p_network_config,
             taiko_chain_id,
@@ -302,7 +302,7 @@ enable preconfirmation: {}
             config.l1_slot_duration_sec,
             config.l1_slots_per_epoch,
             config.l2_slot_duration_sec,
-            config.preconf_registry_expiry_sec,
+            config.msg_expiry_sec,
             config.contract_addresses,
             config.p2p_network_config,
             config.taiko_chain_id,

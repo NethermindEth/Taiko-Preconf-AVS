@@ -28,6 +28,8 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
     // Maps a validator's BLS pub key hash to the validator's details
     mapping(bytes32 publicKeyHash => Validator) internal validators;
 
+    uint256[196] private __gap; // = 200 - 4
+
     constructor(IPreconfServiceManager _preconfServiceManager) {
         preconfServiceManager = _preconfServiceManager;
     }
@@ -68,23 +70,26 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
      */
     function deregisterPreconfer() external {
         // Preconfer must have registered already
-        if (preconferToIndex[msg.sender] == 0) {
+        uint256 removedPreconferIndex = preconferToIndex[msg.sender];
+        if (removedPreconferIndex == 0) {
             revert PreconferNotRegistered();
         }
+        
+        // Remove the preconfer and exchange its index with the last preconfer
+        preconferToIndex[msg.sender] = 0;
 
         unchecked {
-            uint256 _nextPreconferIndex = nextPreconferIndex - 1;
-
             // Update to the decremented index to account for the removed preconfer
-            nextPreconferIndex = _nextPreconferIndex;
+            uint256 lastPreconferIndex = nextPreconferIndex - 1;
+            nextPreconferIndex = lastPreconferIndex;
 
-            uint256 removedPreconferIndex = preconferToIndex[msg.sender];
-            address lastPreconfer = indexToPreconfer[_nextPreconferIndex];
-
-            // Remove the preconfer and exchange its index with the last preconfer
-            preconferToIndex[msg.sender] = 0;
-            preconferToIndex[lastPreconfer] = removedPreconferIndex;
-            indexToPreconfer[removedPreconferIndex] = lastPreconfer;
+            if (removedPreconferIndex == lastPreconferIndex) {
+                indexToPreconfer[removedPreconferIndex] = address(0);
+            } else {
+                address lastPreconfer = indexToPreconfer[lastPreconferIndex];
+                preconferToIndex[lastPreconfer] = removedPreconferIndex;
+                indexToPreconfer[removedPreconferIndex] = lastPreconfer;
+            }
         }
 
         emit PreconferDeregistered(msg.sender);
@@ -119,11 +124,7 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
             //     revert ValidatorSignatureExpired();
             // }
 
-            // Point compress the public key just how it is done on the consensus layer
-            uint256[2] memory compressedPubKey = addValidatorParams[i].pubkey.compress();
-            // Use the hash for ease of mapping
-            bytes32 pubKeyHash = keccak256(abi.encodePacked(compressedPubKey));
-
+            bytes32 pubKeyHash = _hashBLSPubKey(addValidatorParams[i].pubkey);
             Validator memory validator = validators[pubKeyHash];
 
             // Update the validator if it has no preconfer assigned, or if it has stopped proposing
@@ -157,11 +158,7 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
      */
     function removeValidators(RemoveValidatorParam[] calldata removeValidatorParams) external {
         for (uint256 i; i < removeValidatorParams.length; ++i) {
-            // Point compress the public key just how it is done on the consensus layer
-            uint256[2] memory compressedPubKey = removeValidatorParams[i].pubkey.compress();
-            // Use the hash for ease of mapping
-            bytes32 pubKeyHash = keccak256(abi.encodePacked(compressedPubKey));
-
+            bytes32 pubKeyHash = _hashBLSPubKey(removeValidatorParams[i].pubkey);
             Validator memory validator = validators[pubKeyHash];
 
             // Revert if the validator is not active (or already removed, but waiting to stop proposing)
@@ -232,5 +229,10 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
         returns (bytes memory)
     {
         return abi.encodePacked(block.chainid, validatorOp, expiry, preconfer);
+    }
+
+    function _hashBLSPubKey(BLS12381.G1Point calldata pubkey) internal pure returns (bytes32) {
+        uint256[2] memory compressedPubKey = pubkey.compress();
+        return keccak256(abi.encodePacked(compressedPubKey));
     }
 }

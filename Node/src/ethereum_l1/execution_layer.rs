@@ -40,7 +40,7 @@ pub struct ExecutionLayer {
     preconfer_address: Address,
     contract_addresses: ContractAddresses,
     slot_clock: Arc<SlotClock>,
-    preconf_registry_expiry_sec: u64,
+    msg_expiry_sec: u64,
     l1_chain_id: u64,
     bls_service: Arc<BLSService>,
 }
@@ -143,7 +143,7 @@ impl ExecutionLayer {
         avs_node_ecdsa_private_key: &str,
         contract_addresses: &config::ContractAddresses,
         slot_clock: Arc<SlotClock>,
-        preconf_registry_expiry_sec: u64,
+        msg_expiry_sec: u64,
         bls_service: Arc<BLSService>,
         l1_chain_id: u64,
     ) -> Result<Self, Error> {
@@ -174,7 +174,7 @@ impl ExecutionLayer {
             preconfer_address,
             contract_addresses,
             slot_clock,
-            preconf_registry_expiry_sec,
+            msg_expiry_sec,
             l1_chain_id,
             bls_service,
         })
@@ -324,7 +324,7 @@ impl ExecutionLayer {
 
         let salt = Self::create_random_salt();
         let expiration_timestamp =
-            U256::from(chrono::Utc::now().timestamp() as u64 + self.preconf_registry_expiry_sec);
+            U256::from(chrono::Utc::now().timestamp() as u64 + self.msg_expiry_sec);
 
         #[cfg(not(test))]
         let digest_hash_bytes = self
@@ -615,7 +615,7 @@ impl ExecutionLayer {
         // Operation.ADD
         let operation = 1;
         // Message expired after 60 seconds
-        let expiry = U256::from(self.slot_clock.get_now_plus_minute()?);
+        let expiry = U256::from(chrono::Utc::now().timestamp() as u64 + self.msg_expiry_sec);
 
         let data = MessageData::from((
             U256::from(self.l1_chain_id),
@@ -673,7 +673,7 @@ impl ExecutionLayer {
         // Operation.REMOVE
         let operation = 2;
         // Message expired after 60 seconds
-        let expiry = U256::from(self.slot_clock.get_now_plus_minute()?);
+        let expiry = U256::from(chrono::Utc::now().timestamp() as u64 + self.msg_expiry_sec);
 
         let data = MessageData::from((
             U256::from(self.l1_chain_id),
@@ -967,7 +967,7 @@ impl ExecutionLayer {
                     preconf_registry: Address::ZERO,
                 },
             },
-            preconf_registry_expiry_sec: 120,
+            msg_expiry_sec: 120,
             bls_service,
             l1_chain_id,
         })
