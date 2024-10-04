@@ -31,15 +31,15 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
 
     // A ring buffer that maps the block height to the associated proposer
     // This is required since the stored block in Taiko has the address of this contract as the proposer
-    // Stores 2 epochs worth of L2 blocks = 256 (4 blocks / slot)
-    uint256 internal constant BLOCK_ID_TO_PROPOSER_BUFFER_SIZE = PreconfConstants.TWO_EPOCHS * 4;
+    // Stores 4 epochs worth of L2 blocks = 512 (32 slots * 4 blocks a slot * 4 epochs)
+    uint256 internal constant BLOCK_ID_TO_PROPOSER_BUFFER_SIZE = SLOTS_IN_EPOCH * 16;
     mapping(uint256 blockId_mod_BLOCK_ID_TO_PROPOSER_BUFFER_SIZE => ProposerInfo proposerInfo) internal
         blockIdToProposer;
 
     // A ring buffer that maps beginning timestamp of an epoch to the lookahead poster for that epoch
     // If the lookahead poster has been slashed or the lookahead is not yet posted, the poster is the 0-address
-    // Stores posters for 4 latest epochs
-    uint256 internal constant LOOKAHEAD_POSTER_BUFFER_SIZE = PreconfConstants.SECONDS_IN_EPOCH * 4;
+    // Stores posters for 16 latest epochs
+    uint256 internal constant LOOKAHEAD_POSTER_BUFFER_SIZE = PreconfConstants.SECONDS_IN_EPOCH * 16;
     mapping(uint256 epochTimestamp_mod_LOOKAHEAD_POSTER_BUFFER_SIZE => PosterInfo posterInfo) internal lookaheadPosters;
 
     uint256[133] private __gap; // = 200 - 67
