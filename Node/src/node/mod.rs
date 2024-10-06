@@ -53,6 +53,7 @@ pub struct Node {
     operator: Operator,
     preconfirmation_helper: PreconfirmationHelper,
     bls_service: Arc<BLSService>,
+    always_push_lookahead: bool,
 }
 
 impl Node {
@@ -65,6 +66,7 @@ impl Node {
         mev_boost: MevBoost,
         l2_slot_duration_sec: u64,
         bls_service: Arc<BLSService>,
+        always_push_lookahead: bool,
     ) -> Result<Self, Error> {
         let init_epoch = 0;
         let operator = Operator::new(ethereum_l1.clone(), init_epoch)?;
@@ -83,6 +85,7 @@ impl Node {
             operator,
             preconfirmation_helper: PreconfirmationHelper::new(),
             bls_service,
+            always_push_lookahead,
         })
     }
 
@@ -274,7 +277,7 @@ impl Node {
         sleep(duration_to_next_slot).await;
 
         // Setup protocol if needed
-        if let Err(e) = self.check_and_initialize_lookahead().await {
+        if let Err(e) = self.operator.check_empty_lookahead().await {
             error!("Failed to initialize lookahead: {}", e);
         }
 
@@ -287,19 +290,6 @@ impl Node {
                 error!("Failed to execute main block preconfirmation step: {}", err);
             }
         }
-    }
-
-    async fn check_and_initialize_lookahead(&mut self) -> Result<(), Error> {
-        // Check that the lookahead tail is equal to zero
-        let is_zero = self
-            .ethereum_l1
-            .execution_layer
-            .is_lookahead_tail_zero()
-            .await?;
-        if is_zero {
-            self.ethereum_l1.force_push_lookahead().await?;
-        }
-        Ok(())
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
@@ -328,8 +318,10 @@ impl Node {
                         .get_l2_slot_number_within_l1_slot()?
                 );
 
-                // TODO: add flag for turning it on
-                self.operator.check_empty_lookahead().await?;
+                // Check if we need to push lookahead when we are not preconfer
+                if self.always_push_lookahead {
+                    self.operator.check_empty_lookahead().await?;
+                }
             }
         }
 
@@ -448,20 +440,22 @@ impl Node {
         let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;
         let pending_tx_lists_bytes = if pending_tx_lists.tx_list_bytes.is_empty() {
             if let Some(lookahead_params) = lookahead_params {
-                debug!("No pending transactions to preconfirm, force pushing lookahead");
-                if let Err(err) = self
-                    .ethereum_l1
-                    .execution_layer
-                    .force_push_lookahead(lookahead_params)
-                    .await
-                {
-                    if err.to_string().contains("AlreadyKnown") {
-                        debug!("Force push lookahead already known");
+                if self.ethereum_l1.slot_clock.get_current_slot_of_epoch()? % 4 == 0 {
+                    debug!("No pending transactions to preconfirm, force pushing lookahead");
+                    if let Err(err) = self
+                        .ethereum_l1
+                        .execution_layer
+                        .force_push_lookahead(lookahead_params)
+                        .await
+                    {
+                        if err.to_string().contains("AlreadyKnown") {
+                            debug!("Force push lookahead already known");
+                        } else {
+                            error!("Failed to force push lookahead: {}", err);
+                        }
                     } else {
-                        error!("Failed to force push lookahead: {}", err);
+                        self.preconfirmation_helper.increment_nonce();
                     }
-                } else {
-                    self.preconfirmation_helper.increment_nonce();
                 }
             }
             // No transactions skip preconfirmation step

@@ -31,7 +31,7 @@ impl MevBoost {
             .send()
             .await
             .map_err(|e| anyhow::anyhow!("MEV Boost failed to send message: {}", e))?;
-        
+
         // Check the response status
         if !response.status().is_success() {
             return Err(anyhow::anyhow!(
@@ -39,13 +39,13 @@ impl MevBoost {
                 response.status()
             ));
         }
-        
+
         // Attempt to parse the response as JSON
         let json: Value = response
             .json()
             .await
             .map_err(|e| anyhow::anyhow!("MEV Boost failed to parse JSON: {}", e))?;
-        
+
         Ok(json)
     }
 
