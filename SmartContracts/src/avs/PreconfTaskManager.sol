@@ -42,7 +42,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     uint256 internal constant LOOKAHEAD_POSTER_BUFFER_SIZE = PreconfConstants.SECONDS_IN_EPOCH * 16;
     mapping(uint256 epochTimestamp_mod_LOOKAHEAD_POSTER_BUFFER_SIZE => PosterInfo posterInfo) internal lookaheadPosters;
 
-    uint256[133] private __gap; // = 200 - 67
+    uint256[46] private __gap; // = 50 - 4
 
     constructor(
         IPreconfServiceManager _serviceManager,
