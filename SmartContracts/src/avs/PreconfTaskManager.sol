@@ -27,7 +27,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     // A ring buffer of upcoming preconfers (who are also the L1 validators)
     uint256 internal lookaheadTail;
     uint256 internal constant LOOKAHEAD_BUFFER_SIZE = 128;
-    LookaheadBufferEntry[LOOKAHEAD_BUFFER_SIZE] internal lookahead;
+    mapping(uint256 lookaheadIndex => LookaheadBufferEntry lookaheadBufferEntry) internal lookahead;
 
     // A ring buffer that maps the block height to the associated proposer
     // This is required since the stored block in Taiko has the address of this contract as the proposer
@@ -560,7 +560,11 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     }
 
     function getLookaheadBuffer() external view returns (LookaheadBufferEntry[LOOKAHEAD_BUFFER_SIZE] memory) {
-        return lookahead;
+        LookaheadBufferEntry[LOOKAHEAD_BUFFER_SIZE] memory _lookahead;
+        for (uint256 i; i < LOOKAHEAD_BUFFER_SIZE; ++i) {
+            _lookahead[i] = lookahead[i];
+        }
+        return _lookahead;
     }
 
     function getLookaheadPoster(uint256 epochTimestamp) public view returns (address) {
