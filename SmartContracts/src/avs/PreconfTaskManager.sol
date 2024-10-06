@@ -39,7 +39,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     // This is required since the stored block in Taiko has the address of this contract as the proposer
     mapping(uint256 blockId => address proposer) internal blockIdToProposer;
 
-    uint256[196] private __gap; // = 200 - 4
+    uint256[46] private __gap; // = 50 - 4
 
     constructor(
         IPreconfServiceManager _serviceManager,
