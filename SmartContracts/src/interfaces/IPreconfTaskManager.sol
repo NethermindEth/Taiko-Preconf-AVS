@@ -123,4 +123,19 @@ interface IPreconfTaskManager {
 
     /// @dev Returns the block proposer for a block
     function getBlockProposer(uint256 blockId) external view returns (address);
+
+    /// @dev Returns the preconf service manager contract address
+    function getPreconfServiceManager() external view returns (address);
+
+    /// @dev Returns the preconf registry contract address
+    function getPreconfRegistry() external view returns (address);
+
+    /// @dev Returns the Taiko L1 contract address
+    function getTaikoL1() external view returns (address);
+
+    /// @dev Returns the beacon genesis timestamp
+    function getBeaconGenesis() external view returns (uint256);
+
+    /// @dev Returns the beacon block root contract address
+    function getBeaconBlockRootContract() external view returns (address);
 }
