@@ -263,9 +263,11 @@ contract IncorrectLookahead is LookaheadFixtures {
         // This beacon proposer is not added as a validator for our preconfer in lookahead
         bytes memory beaconProposer = BeaconProofs.validator();
 
+        bytes32 randomness = bytes32(uint256(4));
+
         // Set beacon block root such that addr_4 is randomly selected
         beaconBlockRootContract.set(
-            PreconfConstants.MAINNET_BEACON_GENESIS + PreconfConstants.SECONDS_IN_SLOT, bytes32(uint256(4))
+            PreconfConstants.MAINNET_BEACON_GENESIS + PreconfConstants.SECONDS_IN_SLOT, randomness
         );
 
         // Prove the lookahead to be incorrect
@@ -278,7 +280,9 @@ contract IncorrectLookahead is LookaheadFixtures {
 
         // Verify that the lookahead has the fallback preconfer
         IPreconfTaskManager.LookaheadBufferEntry[128] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
-        vm.assertEq(lookaheadBuffer[3].preconfer, addr_4);
+        vm.assertEq(
+            lookaheadBuffer[3].preconfer, computeFallbackPreconfer(randomness, preconfRegistry.getNextPreconferIndex())
+        );
         vm.assertEq(lookaheadBuffer[3].timestamp, lastSlotTimestamp);
         vm.assertEq(lookaheadBuffer[3].prevTimestamp, nextEpochStart - PreconfConstants.SECONDS_IN_SLOT);
         vm.assertEq(lookaheadBuffer[3].isFallback, true);
@@ -329,9 +333,11 @@ contract IncorrectLookahead is LookaheadFixtures {
         // This beacon proposer is not added as a validator for our preconfer in lookahead
         bytes memory beaconProposer = BeaconProofs.validator();
 
+        bytes32 randomness = bytes32(uint256(4));
+
         // Set beacon block root such that addr_4 is randomly selected
         beaconBlockRootContract.set(
-            PreconfConstants.MAINNET_BEACON_GENESIS + PreconfConstants.SECONDS_IN_SLOT, bytes32(uint256(4))
+            PreconfConstants.MAINNET_BEACON_GENESIS + PreconfConstants.SECONDS_IN_SLOT, randomness
         );
 
         // Prove the lookahead to be incorrect
@@ -344,7 +350,9 @@ contract IncorrectLookahead is LookaheadFixtures {
 
         // Verify that the lookahead has the fallback preconfer
         IPreconfTaskManager.LookaheadBufferEntry[128] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
-        vm.assertEq(lookaheadBuffer[3].preconfer, addr_4);
+        vm.assertEq(
+            lookaheadBuffer[3].preconfer, computeFallbackPreconfer(randomness, preconfRegistry.getNextPreconferIndex())
+        );
         vm.assertEq(lookaheadBuffer[3].timestamp, lastSlotTimestamp);
         vm.assertEq(lookaheadBuffer[3].prevTimestamp, nextEpochStart - PreconfConstants.SECONDS_IN_SLOT);
         vm.assertEq(lookaheadBuffer[3].isFallback, true);

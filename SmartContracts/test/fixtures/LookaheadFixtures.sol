@@ -40,4 +40,8 @@ contract LookaheadFixtures is BaseTest {
             preconfRegistry.registerPreconfer(vm.addr(i));
         }
     }
+
+    function computeFallbackPreconfer(bytes32 randomness, uint256 nextPreconferIndex) internal view returns (address) {
+        return vm.addr(uint256(randomness) % (nextPreconferIndex - 1) + 1);
+    }
 }

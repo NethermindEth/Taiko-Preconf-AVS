@@ -453,14 +453,17 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     /// @dev We use the beacon block root at the first block in the last epoch as randomness to
     ///  decide on the preconfer for the given epoch
     function getFallbackPreconfer(uint256 epochTimestamp) public view returns (address) {
+        uint256 nextPreconferIndex = preconfRegistry.getNextPreconferIndex();
+
+        // Registry must have at least one preconfer
+        if (nextPreconferIndex == 1) {
+            revert NoRegisteredPreconfer();
+        }
+
         // Start of the last epoch
         uint256 lastEpochTimestamp = epochTimestamp - PreconfConstants.SECONDS_IN_EPOCH;
         uint256 randomness = uint256(_getBeaconBlockRoot(lastEpochTimestamp));
-        uint256 preconferIndex = randomness % preconfRegistry.getNextPreconferIndex();
-
-        if (preconferIndex == 0) {
-            preconferIndex = 1;
-        }
+        uint256 preconferIndex = randomness % (nextPreconferIndex - 1) + 1;
 
         return preconfRegistry.getPreconferAtIndex(preconferIndex);
     }

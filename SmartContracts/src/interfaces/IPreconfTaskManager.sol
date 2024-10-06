@@ -83,6 +83,8 @@ interface IPreconfTaskManager {
     error LookaheadEntryIsCorrect();
     /// @dev Cannot force push a lookahead since it is not lagging behind
     error LookaheadIsNotRequired();
+    /// @dev The registry does not have a single registered preconfer
+    error NoRegisteredPreconfer();
 
     /// @dev Accepts block proposal by an operator and forwards it to TaikoL1 contract
     function newBlockProposal(
