@@ -143,7 +143,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
             revert MetadataMismatch();
         }
 
-        bytes32 headerHash = keccak256(abi.encodePacked(header.blockId, header.chainId, header.txListHash));
+        bytes32 headerHash = keccak256(abi.encode("PRECONFIRMATION", header));
         address preconfSigner = ECDSA.recover(headerHash, signature);
 
         // Slash if the preconfirmation was given offchain, but block proposal was missed OR
