@@ -28,7 +28,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
 
     // A ring buffer of upcoming preconfers (who are also the L1 validators)
     uint256 internal lookaheadTail;
-    mapping (uint256 => LookaheadBufferEntry) internal lookahead;
+    mapping(uint256 => LookaheadBufferEntry) internal lookahead;
 
     // Maps the epoch timestamp to the lookahead poster.
     // If the lookahead poster has been slashed, it maps to the 0-address.
@@ -38,8 +38,6 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     // Maps the block height to the associated proposer
     // This is required since the stored block in Taiko has the address of this contract as the proposer
     mapping(uint256 blockId => address proposer) internal blockIdToProposer;
-
-    
 
     uint256[196] private __gap; // = 200 - 4
 
