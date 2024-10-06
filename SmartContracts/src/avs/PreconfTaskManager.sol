@@ -12,6 +12,12 @@ import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
 import {Initializable} from "openzeppelin-contracts-upgradeable/proxy/utils/Initializable.sol";
 
 contract PreconfTaskManager is IPreconfTaskManager, Initializable {
+    // Cannot be kept in `PreconfConstants` file because solidity expects array sizes
+    // to be stored in the main contract file itself.
+    uint256 internal constant SLOTS_IN_EPOCH = 32;
+
+    uint256 internal constant LOOKAHEAD_BUFFER_SIZE = 64;
+
     IPreconfServiceManager internal immutable preconfServiceManager;
     IPreconfRegistry internal immutable preconfRegistry;
     ITaikoL1 internal immutable taikoL1;
@@ -22,8 +28,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
 
     // A ring buffer of upcoming preconfers (who are also the L1 validators)
     uint256 internal lookaheadTail;
-    uint256 internal constant LOOKAHEAD_BUFFER_SIZE = 64;
-    LookaheadBufferEntry[LOOKAHEAD_BUFFER_SIZE] internal lookahead;
+    mapping (uint256 => LookaheadBufferEntry) internal lookahead;
 
     // Maps the epoch timestamp to the lookahead poster.
     // If the lookahead poster has been slashed, it maps to the 0-address.
@@ -34,11 +39,9 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     // This is required since the stored block in Taiko has the address of this contract as the proposer
     mapping(uint256 blockId => address proposer) internal blockIdToProposer;
 
-    // Cannot be kept in `PreconfConstants` file because solidity expects array sizes
-    // to be stored in the main contract file itself.
-    uint256 internal constant SLOTS_IN_EPOCH = 32;
+    
 
-    uint256[133] private __gap; // = 200 - 67
+    uint256[196] private __gap; // = 200 - 4
 
     constructor(
         IPreconfServiceManager _serviceManager,
@@ -533,8 +536,10 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         return lookaheadTail;
     }
 
-    function getLookaheadBuffer() external view returns (LookaheadBufferEntry[LOOKAHEAD_BUFFER_SIZE] memory) {
-        return lookahead;
+    function getLookaheadBuffer() external view returns (LookaheadBufferEntry[LOOKAHEAD_BUFFER_SIZE] memory entries) {
+        for (uint256 i; i < LOOKAHEAD_BUFFER_SIZE; ++i) {
+            entries[i] = lookahead[i];
+        }
     }
 
     function getLookaheadPoster(uint256 epochTimestamp) external view returns (address) {
