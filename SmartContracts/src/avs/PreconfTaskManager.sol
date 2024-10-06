@@ -446,6 +446,13 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         return keccak256(abi.encodePacked(bytes16(0), validatorBLSPubKey));
     }
 
+    function _validateEpochTimestamp(uint256 epochTimestamp) internal view {
+        if (epochTimestamp < beaconGenesis || (epochTimestamp - beaconGenesis) % PreconfConstants.SECONDS_IN_EPOCH != 0)
+        {
+            revert InvalidEpochTimestamp();
+        }
+    }
+
     //=======
     // Views
     //=======
@@ -453,6 +460,8 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     /// @dev We use the beacon block root at the first block in the last epoch as randomness to
     ///  decide on the preconfer for the given epoch
     function getFallbackPreconfer(uint256 epochTimestamp) public view returns (address) {
+        _validateEpochTimestamp(epochTimestamp);
+
         uint256 nextPreconferIndex = preconfRegistry.getNextPreconferIndex();
 
         // Registry must have at least one preconfer
@@ -476,6 +485,8 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
      * @param epochTimestamp The start timestamp of the epoch for which the lookahead is to be generated
      */
     function getLookaheadForEpoch(uint256 epochTimestamp) external view returns (address[SLOTS_IN_EPOCH] memory) {
+        _validateEpochTimestamp(epochTimestamp);
+
         address[SLOTS_IN_EPOCH] memory lookaheadForEpoch;
 
         uint256 _lookaheadTail = lookaheadTail;
@@ -522,6 +533,8 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         view
         returns (LookaheadSetParam[] memory)
     {
+        _validateEpochTimestamp(epochTimestamp);
+
         uint256 index;
         LookaheadSetParam[32] memory lookaheadSetParamsTemp;
 
@@ -597,6 +610,7 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
     }
 
     function getLookaheadPoster(uint256 epochTimestamp) public view returns (address) {
+        _validateEpochTimestamp(epochTimestamp);
         PosterInfo memory posterInfo = lookaheadPosters[epochTimestamp % LOOKAHEAD_POSTER_BUFFER_SIZE];
         return posterInfo.epochTimestamp == epochTimestamp ? posterInfo.poster : address(0);
     }

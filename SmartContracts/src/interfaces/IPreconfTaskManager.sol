@@ -67,6 +67,8 @@ interface IPreconfTaskManager {
     error SenderIsNotThePreconfer();
     /// @dev Preconfer is not present in the registry
     error PreconferNotRegistered();
+    /// @dev  Epoch timestamp is incorrect
+    error InvalidEpochTimestamp();
     /// @dev The timestamp in the lookahead is not of a valid future slot in the present epoch
     error InvalidSlotTimestamp();
     /// @dev The chain id on which the preconfirmation was signed is different from the current chain's id
