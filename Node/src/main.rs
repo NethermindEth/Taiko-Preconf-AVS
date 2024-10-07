@@ -111,6 +111,7 @@ async fn main() -> Result<(), Error> {
             mev_boost,
             config.l2_slot_duration_sec,
             bls_service,
+            config.always_push_lookahead,
         )
         .await?;
         node.entrypoint().await?;
