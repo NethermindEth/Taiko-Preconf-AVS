@@ -198,7 +198,10 @@ impl Node {
         // check hash
         let tx_list_commit =
             L2TxListsCommit::from_preconf(msg.block_height, msg.tx_list_hash, taiko.chain_id);
-        debug!("Match txListCommit");
+        debug!(
+            "Match txListCommit, tx list hash: {}",
+            hex::encode(msg.tx_list_hash)
+        );
         match tx_list_commit.hash() {
             Ok(hash) => {
                 if hash == msg.proof.commit_hash {
@@ -217,6 +220,10 @@ impl Node {
                                 return;
                             }
                             // Add to preconfirmation map
+                            debug!(
+                                "Adding to preconfirmation map block_height: {}",
+                                msg.block_height
+                            );
                             preconfirmed_blocks
                                 .lock()
                                 .await
@@ -266,6 +273,11 @@ impl Node {
                     block_proposed,
                 )
                 .await?;
+        } else {
+            debug!(
+                "No preconfirmed block with block_id: {}",
+                block_proposed.block_id()
+            );
         }
         Ok(())
     }
@@ -528,11 +540,11 @@ impl Node {
         Ok((hash, signature))
     }
 
-    async fn clean_old_blocks(
-        preconfirmed_blocks: &PreconfirmedBlocks,
+    async fn clean_old_blocks<PreconfMessageType>(
+        preconfirmed_blocks: &Arc<Mutex<HashMap<u64, PreconfMessageType>>>,
         current_block_height: u64,
     ) -> Result<(), Error> {
-        let oldest_block_to_keep = current_block_height - OLDEST_BLOCK_DISTANCE;
+        let oldest_block_to_keep = current_block_height.saturating_sub(OLDEST_BLOCK_DISTANCE);
         let mut preconfirmed_blocks = preconfirmed_blocks.lock().await;
         preconfirmed_blocks.retain(|block_height, _| block_height >= &oldest_block_to_keep);
         Ok(())
@@ -546,6 +558,45 @@ impl Node {
 
         if let Err(err) = self.node_to_p2p_tx.try_send(message.into()) {
             error!("Failed to send message to node_to_p2p_tx: {}", err);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use tokio::sync::Mutex;
+
+    #[tokio::test]
+    async fn test_clean_old_blocks() {
+        let preconfirmed_blocks = Arc::new(Mutex::new(HashMap::new()));
+        {
+            let mut blocks = preconfirmed_blocks.lock().await;
+            blocks.insert(1u64, "abc".to_string());
+            blocks.insert(2u64, "def".to_string());
+            blocks.insert(300u64, "ghi".to_string());
+            blocks.insert(301u64, "jkl".to_string());
+        }
+
+        {
+            Node::clean_old_blocks(&preconfirmed_blocks, 10)
+                .await
+                .unwrap();
+            let blocks = preconfirmed_blocks.lock().await;
+            assert_eq!(blocks.len(), 4);
+            assert!(blocks.contains_key(&1));
+            assert!(blocks.contains_key(&2));
+        }
+
+        {
+            Node::clean_old_blocks(&preconfirmed_blocks, 300)
+                .await
+                .unwrap();
+            let blocks = preconfirmed_blocks.lock().await;
+            assert_eq!(blocks.len(), 2);
+            assert!(blocks.contains_key(&300));
+            assert!(blocks.contains_key(&301));
         }
     }
 }
