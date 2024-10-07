@@ -440,7 +440,7 @@ impl Node {
         let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;
         let pending_tx_lists_bytes = if pending_tx_lists.tx_list_bytes.is_empty() {
             if let Some(lookahead_params) = lookahead_params {
-                if self.ethereum_l1.slot_clock.get_current_slot_of_epoch()? % 4 == 0 {
+                if self.ethereum_l1.slot_clock.get_current_slot_of_epoch()? % 4 == 1 {
                     debug!("No pending transactions to preconfirm, force pushing lookahead");
                     if let Err(err) = self
                         .ethereum_l1
