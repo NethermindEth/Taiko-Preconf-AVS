@@ -74,7 +74,7 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
         if (removedPreconferIndex == 0) {
             revert PreconferNotRegistered();
         }
-        
+
         // Remove the preconfer and exchange its index with the last preconfer
         preconferToIndex[msg.sender] = 0;
 
@@ -201,6 +201,10 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
         returns (bytes memory)
     {
         return _createMessage(validatorOp, expiry, preconfer);
+    }
+
+    function getPreconfServiceManager() external view returns (address) {
+        return address(preconfServiceManager);
     }
 
     function getNextPreconferIndex() external view returns (uint256) {
