@@ -207,11 +207,6 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         if (lookaheadEntry.timestamp == slotTimestamp && !lookaheadEntry.isFallback) {
             // The slot was dedicated to a specific preconfer
             preconferInLookahead = lookaheadEntry.preconfer;
-        } else {
-            // The slot was empty and it was the next preconfer who was expected to preconf in advanced, OR
-            // the slot was empty and the preconfer was expected to be the fallback preconfer for the epoch.
-            // We still use the zero address because technically the slot itself was empty in the lookahead.
-            preconferInLookahead = address(0);
         }
 
         // Reduce validator's BLS pub key to the pub key hash expected by the registry
