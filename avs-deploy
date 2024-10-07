@@ -14,22 +14,14 @@ RUN curl -L https://foundry.paradigm.xyz | bash && \
 # Change the working directory to packages/protocol
 WORKDIR /usr/src/app/SmartContracts/
 
-# Forge Install
-RUN /root/.foundry/bin/forge install
-
 # Add Foundry to PATH
 ENV PATH="/root/.foundry/bin:${PATH}"
 
-# Change the working directory to packages/protocol
-WORKDIR /usr/src/app/SmartContracts/
+# Forge Install
+RUN forge install
 
 # Make the script files executable
 RUN chmod +x scripts/deployment/*.sh
-
-# Set environment variables
-ENV PRIVATE_KEY=0x0000000000000000000000000000000000000000000000000000000000000000
-ENV FORK_URL="http://127.0.0.1:32002"
-ENV BEACON_GENESIS_TIMESTAMP=1725950369
 
 # Default command to run if no arguments are provided
 CMD ["sh", "-c", "scripts/deployment/deploy_avs.sh"]

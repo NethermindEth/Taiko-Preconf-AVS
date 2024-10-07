@@ -1,11 +1,15 @@
 set -e
 
-AVS_DIRECTORY=0x7E2E7DD2Aead92e2e6d05707F21D4C36004f8A2B \
-SLASHER=0x86A0679C7987B5BA9600affA994B78D0660088ff \
-TAIKO_L1=0x086f77C5686dfe3F2f8FE487C5f8d357952C8556 \
-TAIKO_TOKEN=0x422A3492e218383753D8006C7Bfa97815B44373F \
-BEACON_GENESIS_TIMESTAMP=1726663179 \
-BEACON_BLOCK_ROOT_CONTRACT=0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02 \
+: "${PRIVATE_KEY:?Environment variable PRIVATE_KEY is required}"
+: "${FORK_URL:?Environment variable FORK_URL is required}"
+: "${AVS_DIRECTORY:?Environment variable AVS_DIRECTORY is required}"
+: "${SLASHER:?Environment variable SLASHER is required}"
+: "${TAIKO_L1:?Environment variable TAIKO_L1 is required}"
+: "${TAIKO_TOKEN:?Environment variable TAIKO_TOKEN is required}"
+: "${BEACON_GENESIS_TIMESTAMP:?Environment variable BEACON_GENESIS_TIMESTAMP is required}"
+: "${BEACON_BLOCK_ROOT_CONTRACT:?Environment variable BEACON_BLOCK_ROOT_CONTRACT is required}"
+echo "BEACON_GENESIS_TIMESTAMP: $BEACON_GENESIS_TIMESTAMP"
+
 forge script scripts/deployment/DeployAVS.s.sol:DeployAVS \
   --fork-url $FORK_URL \
   --broadcast \
