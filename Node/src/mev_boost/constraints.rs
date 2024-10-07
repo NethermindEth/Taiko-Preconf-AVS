@@ -26,7 +26,7 @@ impl ConstraintsMessage {
             .iter()
             .map(|message| Constraint {
                 tx: message.clone(),
-                index: Some(0),
+                index: None,
             })
             .collect();
         Self {

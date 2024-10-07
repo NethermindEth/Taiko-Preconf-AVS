@@ -20,6 +20,7 @@ use operator::{Operator, Status as OperatorStatus};
 use preconfirmation_helper::PreconfirmationHelper;
 use preconfirmation_message::PreconfirmationMessage;
 use preconfirmation_proof::PreconfirmationProof;
+use tracing_subscriber::field::debug;
 use std::{
     collections::HashMap,
     sync::{
@@ -516,6 +517,7 @@ impl Node {
             )
             .await?;
 
+        debug!("Proposed new block, with hash {}", alloy::primitives::keccak256(&tx));
         // insert transaction
         self.preconfirmation_txs
             .lock()

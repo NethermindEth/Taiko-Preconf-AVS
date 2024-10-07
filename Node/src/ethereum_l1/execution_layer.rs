@@ -276,7 +276,7 @@ impl ExecutionLayer {
         if send_to_contract {
             let pending = self.provider_ws.send_raw_transaction(&buf).await?;
 
-            tracing::debug!("Proposed new block, with hash {}", pending.tx_hash());
+            tracing::debug!("Send raw transaction, with hash {}", pending.tx_hash());
         }
 
         Ok(buf)
