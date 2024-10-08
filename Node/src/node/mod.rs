@@ -516,6 +516,10 @@ impl Node {
             )
             .await?;
 
+        debug!(
+            "Proposed new block, with hash {}",
+            alloy::primitives::keccak256(&tx)
+        );
         // insert transaction
         self.preconfirmation_txs
             .lock()
