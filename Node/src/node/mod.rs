@@ -1,5 +1,6 @@
 pub mod block_proposed_receiver;
 mod commit;
+mod l2_block_id;
 pub mod lookahead_monitor;
 pub mod lookahead_updated_receiver;
 mod operator;
@@ -16,6 +17,7 @@ use crate::{
 };
 use anyhow::Error;
 use commit::L2TxListsCommit;
+use l2_block_id::L2BlockId;
 use operator::{Operator, Status as OperatorStatus};
 use preconfirmation_helper::PreconfirmationHelper;
 use preconfirmation_message::PreconfirmationMessage;
@@ -32,7 +34,7 @@ use tokio::sync::{
     Mutex,
 };
 use tokio::time::{sleep, Duration};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 const OLDEST_BLOCK_DISTANCE: u64 = 256;
 
@@ -54,6 +56,7 @@ pub struct Node {
     preconfirmation_helper: PreconfirmationHelper,
     bls_service: Arc<BLSService>,
     always_push_lookahead: bool,
+    l2_block_id: Arc<L2BlockId>,
 }
 
 impl Node {
@@ -86,6 +89,7 @@ impl Node {
             preconfirmation_helper: PreconfirmationHelper::new(),
             bls_service,
             always_push_lookahead,
+            l2_block_id: Arc::new(L2BlockId::new()),
         })
     }
 
@@ -104,6 +108,7 @@ impl Node {
         let taiko = self.taiko.clone();
         let is_preconfer_now = self.is_preconfer_now.clone();
         let preconfirmation_txs = self.preconfirmation_txs.clone();
+        let l2_block_id = self.l2_block_id.clone();
         if let (Some(node_rx), Some(p2p_to_node_rx)) = (
             self.node_block_proposed_rx.take(),
             self.p2p_to_node_rx.take(),
@@ -117,6 +122,7 @@ impl Node {
                     taiko,
                     is_preconfer_now,
                     preconfirmation_txs,
+                    l2_block_id,
                 )
                 .await;
             });
@@ -133,6 +139,7 @@ impl Node {
         taiko: Arc<Taiko>,
         is_preconfer_now: Arc<AtomicBool>,
         preconfirmation_txs: Arc<Mutex<HashMap<u64, Vec<u8>>>>,
+        l2_block_id: Arc<L2BlockId>,
     ) {
         loop {
             tokio::select! {
@@ -154,9 +161,10 @@ impl Node {
                     if !is_preconfer_now.load(Ordering::Acquire) {
                         debug!("Received Message from p2p!");
                         let msg: PreconfirmationMessage = p2p_message.into();
+                        l2_block_id.update(msg.block_height);
                         Self::advance_l2_head(msg, &preconfirmed_blocks, ethereum_l1.clone(), taiko.clone()).await;
                     } else {
-                        debug!("Node is Preconfer and received message from p2p: {:?}", p2p_message);
+                        warn!("Node is Preconfer and received message from p2p: {:?}", p2p_message);
                     }
                 }
             }
@@ -480,9 +488,7 @@ impl Node {
             pending_tx_lists.tx_list_bytes[0].clone() // TODO: handle multiple tx lists
         };
 
-        let new_block_height = self
-            .preconfirmation_helper
-            .get_new_block_id(pending_tx_lists.parent_block_id);
+        let new_block_height = self.l2_block_id.next(pending_tx_lists.parent_block_id);
         debug!("Preconfirming block with the height: {}", new_block_height);
 
         let (commit_hash, signature) =
