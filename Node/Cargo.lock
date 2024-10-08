@@ -7185,7 +7185,7 @@ dependencies = [
 
 [[package]]
 name = "taiko_preconf_avs_node"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "alloy",
  "alloy-json-rpc",
