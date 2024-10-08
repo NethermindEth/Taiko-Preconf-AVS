@@ -34,7 +34,7 @@ use tokio::sync::{
     Mutex,
 };
 use tokio::time::{sleep, Duration};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 const OLDEST_BLOCK_DISTANCE: u64 = 256;
 
@@ -164,7 +164,7 @@ impl Node {
                         l2_block_id.update(msg.block_height);
                         Self::advance_l2_head(msg, &preconfirmed_blocks, ethereum_l1.clone(), taiko.clone()).await;
                     } else {
-                        warn!("Node is Preconfer and received message from p2p: {:?}", p2p_message);
+                        debug!("Node is Preconfer and received message from p2p: {:?}", p2p_message);
                     }
                 }
             }
