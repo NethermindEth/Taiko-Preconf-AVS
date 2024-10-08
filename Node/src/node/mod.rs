@@ -20,7 +20,6 @@ use operator::{Operator, Status as OperatorStatus};
 use preconfirmation_helper::PreconfirmationHelper;
 use preconfirmation_message::PreconfirmationMessage;
 use preconfirmation_proof::PreconfirmationProof;
-
 use std::{
     collections::HashMap,
     sync::{
