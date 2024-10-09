@@ -25,7 +25,7 @@ contract IncorrectPreconfirmations is BlocksFixtures {
             chainId: block.chainid,
             txListHash: keccak256("incorrect_tx_hash")
         });
-        bytes32 headerHash = keccak256(abi.encodePacked(header.blockId, header.chainId, header.txListHash));
+        bytes32 headerHash = keccak256(abi.encode("PRECONFIRMATION", header));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(1, headerHash); // Using private key of addr_1 i.e 1
         bytes memory signature = abi.encodePacked(r, s, v);
 
@@ -49,7 +49,7 @@ contract IncorrectPreconfirmations is BlocksFixtures {
             chainId: block.chainid,
             txListHash: keccak256("taiko_blobhash")
         });
-        bytes32 headerHash = keccak256(abi.encodePacked(header.blockId, header.chainId, header.txListHash));
+        bytes32 headerHash = keccak256(abi.encode("PRECONFIRMATION", header));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(2, headerHash); // Using private key of addr_2 i.e 2
         bytes memory signature = abi.encodePacked(r, s, v);
 
@@ -148,7 +148,7 @@ contract IncorrectPreconfirmations is BlocksFixtures {
             chainId: block.chainid,
             txListHash: keccak256("taiko_blobhash")
         });
-        bytes32 headerHash = keccak256(abi.encodePacked(header.blockId, header.chainId, header.txListHash));
+        bytes32 headerHash = keccak256(abi.encode("PRECONFIRMATION", header));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(1, headerHash); // Using private key of addr_1 i.e 1
         bytes memory signature = abi.encodePacked(r, s, v);
 
