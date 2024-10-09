@@ -96,7 +96,11 @@ impl Operator {
                 .await?;
             Ok(lookahead_preconfer_addresses_next_epoch[0])
         } else {
-            Ok(self.lookahead_preconfer_addresses[(slot_mod_slots_per_epoch + 1) as usize])
+            let next_slot = (slot_mod_slots_per_epoch + 1) as usize;
+            if self.lookahead_preconfer_addresses[next_slot] == PRECONFER_ADDRESS_ZERO {
+                self.update_preconfer_lookahead_for_epoch().await?;
+            }
+            Ok(self.lookahead_preconfer_addresses[next_slot])
         }
     }
 
