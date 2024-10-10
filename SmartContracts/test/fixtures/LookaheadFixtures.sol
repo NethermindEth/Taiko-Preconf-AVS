@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
 import {BaseTest} from "../BaseTest.sol";
@@ -39,5 +39,9 @@ contract LookaheadFixtures is BaseTest {
         for (uint256 i = 1; i <= count; i++) {
             preconfRegistry.registerPreconfer(vm.addr(i));
         }
+    }
+
+    function computeFallbackPreconfer(bytes32 randomness, uint256 nextPreconferIndex) internal view returns (address) {
+        return vm.addr(uint256(randomness) % (nextPreconferIndex - 1) + 1);
     }
 }

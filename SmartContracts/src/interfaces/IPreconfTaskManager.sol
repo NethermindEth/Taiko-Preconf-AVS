@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
 import {EIP4788} from "../libraries/EIP4788.sol";
@@ -67,6 +67,8 @@ interface IPreconfTaskManager {
     error SenderIsNotThePreconfer();
     /// @dev Preconfer is not present in the registry
     error PreconferNotRegistered();
+    /// @dev  Epoch timestamp is incorrect
+    error InvalidEpochTimestamp();
     /// @dev The timestamp in the lookahead is not of a valid future slot in the present epoch
     error InvalidSlotTimestamp();
     /// @dev The chain id on which the preconfirmation was signed is different from the current chain's id
@@ -83,6 +85,8 @@ interface IPreconfTaskManager {
     error LookaheadEntryIsCorrect();
     /// @dev Cannot force push a lookahead since it is not lagging behind
     error LookaheadIsNotRequired();
+    /// @dev The registry does not have a single registered preconfer
+    error NoRegisteredPreconfer();
 
     /// @dev Accepts block proposal by an operator and forwards it to TaikoL1 contract
     function newBlockProposal(

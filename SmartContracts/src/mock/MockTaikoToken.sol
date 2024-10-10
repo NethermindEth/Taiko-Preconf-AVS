@@ -1,8 +1,7 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
 contract MockTaikoToken {
-
     address public lastAddr;
     uint256 public lastAmount;
 
