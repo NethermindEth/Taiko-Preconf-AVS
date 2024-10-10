@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
 import {IPreconfServiceManager} from "../interfaces/IPreconfServiceManager.sol";
@@ -20,7 +20,7 @@ contract PreconfServiceManager is IPreconfServiceManager, ReentrancyGuard {
     /// @dev This is currently just a flag and not actually being used to lock the stake.
     mapping(address operator => uint256 timestamp) public stakeLockedUntil;
 
-    uint256[199] private __gap; // 200 - 1
+    uint256[49] private __gap; // 50 - 1
 
     constructor(address _preconfRegistry, address _preconfTaskManager, IAVSDirectory _avsDirectory, ISlasher _slasher) {
         preconfRegistry = _preconfRegistry;

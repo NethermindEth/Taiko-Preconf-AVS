@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
 import {LookaheadFixtures} from "../fixtures/LookaheadFixtures.sol";
@@ -34,7 +34,7 @@ contract LookaheadPosting is LookaheadFixtures {
         uint256 lookaheadTail = preconfTaskManager.getLookaheadTail();
         vm.assertEq(lookaheadTail, 1);
 
-        IPreconfTaskManager.LookaheadBufferEntry[64] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
+        IPreconfTaskManager.LookaheadBufferEntry[128] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
         vm.assertEq(lookaheadBuffer[1].preconfer, addr_1);
         vm.assertEq(lookaheadBuffer[1].timestamp, nextEpochStart);
         vm.assertEq(lookaheadBuffer[1].prevTimestamp, 0);
@@ -69,7 +69,7 @@ contract LookaheadPosting is LookaheadFixtures {
         uint256 lookaheadTail = preconfTaskManager.getLookaheadTail();
         vm.assertEq(lookaheadTail, 2);
 
-        IPreconfTaskManager.LookaheadBufferEntry[64] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
+        IPreconfTaskManager.LookaheadBufferEntry[128] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
         vm.assertEq(lookaheadBuffer[1].preconfer, addr_1);
         vm.assertEq(lookaheadBuffer[1].timestamp, nextEpochStart);
         vm.assertEq(lookaheadBuffer[1].prevTimestamp, 0);
@@ -112,7 +112,7 @@ contract LookaheadPosting is LookaheadFixtures {
         uint256 lookaheadTail = preconfTaskManager.getLookaheadTail();
         vm.assertEq(lookaheadTail, 3);
 
-        IPreconfTaskManager.LookaheadBufferEntry[64] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
+        IPreconfTaskManager.LookaheadBufferEntry[128] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
         vm.assertEq(lookaheadBuffer[1].preconfer, addr_1);
         vm.assertEq(lookaheadBuffer[1].timestamp, nextEpochStart);
         vm.assertEq(lookaheadBuffer[1].prevTimestamp, 0);
@@ -146,10 +146,12 @@ contract LookaheadPosting is LookaheadFixtures {
         IPreconfTaskManager.LookaheadSetParam[] memory emptyLookaheadSetParams =
             new IPreconfTaskManager.LookaheadSetParam[](0);
 
+        bytes32 randomness = bytes32(uint256(4));
+
         // Push a required root to the mock beacon block root contract
         // This root as a source of randomness selects the preconfer with index 4
         beaconBlockRootContract.set(
-            PreconfConstants.MAINNET_BEACON_GENESIS + PreconfConstants.SECONDS_IN_SLOT, bytes32(uint256(4))
+            PreconfConstants.MAINNET_BEACON_GENESIS + PreconfConstants.SECONDS_IN_SLOT, randomness
         );
 
         // Address 2 pushes the empty lookahead
@@ -160,9 +162,11 @@ contract LookaheadPosting is LookaheadFixtures {
         uint256 lookaheadTail = preconfTaskManager.getLookaheadTail();
         vm.assertEq(lookaheadTail, 1);
 
-        // Verify that addr_4 is inserted as fallback preconfer in lookahead buffer
-        IPreconfTaskManager.LookaheadBufferEntry[64] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
-        vm.assertEq(lookaheadBuffer[1].preconfer, addr_4);
+        // Verify that correct preconfer is inserted as fallback in lookahead buffer
+        IPreconfTaskManager.LookaheadBufferEntry[128] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
+        vm.assertEq(
+            lookaheadBuffer[1].preconfer, computeFallbackPreconfer(randomness, preconfRegistry.getNextPreconferIndex())
+        );
         vm.assertEq(lookaheadBuffer[1].timestamp, lastSlotTimestampInNextEpoch);
         vm.assertEq(lookaheadBuffer[1].prevTimestamp, 0);
         vm.assertEq(lookaheadBuffer[1].isFallback, true);
@@ -186,10 +190,12 @@ contract LookaheadPosting is LookaheadFixtures {
         IPreconfTaskManager.LookaheadSetParam[] memory emptyLookaheadSetParams =
             new IPreconfTaskManager.LookaheadSetParam[](0);
 
+        bytes32 randomness = bytes32(uint256(4));
+
         // Unlike Case 1, we push the root at a later timestamp to simulate "skipped blocks" and see
         // if the contract iterates forward and finds the required root
         beaconBlockRootContract.set(
-            PreconfConstants.MAINNET_BEACON_GENESIS + 3 * PreconfConstants.SECONDS_IN_SLOT, bytes32(uint256(4))
+            PreconfConstants.MAINNET_BEACON_GENESIS + 3 * PreconfConstants.SECONDS_IN_SLOT, randomness
         );
 
         // Address 2 pushes the empty lookahead
@@ -200,9 +206,11 @@ contract LookaheadPosting is LookaheadFixtures {
         uint256 lookaheadTail = preconfTaskManager.getLookaheadTail();
         vm.assertEq(lookaheadTail, 1);
 
-        // Verify that addr_4 is inserted as fallback preconfer in lookahead buffer
-        IPreconfTaskManager.LookaheadBufferEntry[64] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
-        vm.assertEq(lookaheadBuffer[1].preconfer, addr_4);
+        // Verify that correct preconfer is inserted as fallback in lookahead buffer
+        IPreconfTaskManager.LookaheadBufferEntry[128] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
+        vm.assertEq(
+            lookaheadBuffer[1].preconfer, computeFallbackPreconfer(randomness, preconfRegistry.getNextPreconferIndex())
+        );
         vm.assertEq(lookaheadBuffer[1].timestamp, lastSlotTimestampInNextEpoch);
         vm.assertEq(lookaheadBuffer[1].prevTimestamp, 0);
         vm.assertEq(lookaheadBuffer[1].isFallback, true);

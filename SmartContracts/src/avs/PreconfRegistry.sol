@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
 import {BLS12381} from "../libraries/BLS12381.sol";
@@ -28,7 +28,7 @@ contract PreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializable
     // Maps a validator's BLS pub key hash to the validator's details
     mapping(bytes32 publicKeyHash => Validator) internal validators;
 
-    uint256[196] private __gap; // = 200 - 4
+    uint256[46] private __gap; // = 50 - 4
 
     constructor(IPreconfServiceManager _preconfServiceManager) {
         preconfServiceManager = _preconfServiceManager;
