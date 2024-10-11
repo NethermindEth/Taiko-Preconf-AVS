@@ -52,18 +52,15 @@ impl AVSContractError for Error {
                 if let Ok(error_code) = u32::from_str_radix(&data[3..data.len() - 1], 16) {
                     return convert_error_code_to_message(error_code);
                 }
-            } else {
-                if e.message.starts_with("Reverted ") {
-                    if e.message.len() == 13 {
-                        let code = &e.message[9..13];
-                        let error_code = code.as_bytes();
-                        let error_code =
-                            u32::from_be_bytes(error_code.try_into().unwrap_or([0; 4]));
+            } else if e.message.starts_with("Reverted ") {
+                if e.message.len() == 13 {
+                    let code = &e.message[9..13];
+                    let error_code = code.as_bytes();
+                    let error_code = u32::from_be_bytes(error_code.try_into().unwrap_or([0; 4]));
+                    return convert_error_code_to_message(error_code);
+                } else if e.message.len() == 19 {
+                    if let Ok(error_code) = u32::from_str_radix(&e.message[11..], 16) {
                         return convert_error_code_to_message(error_code);
-                    } else if e.message.len() == 19 {
-                        if let Ok(error_code) = u32::from_str_radix(&e.message[11..], 16) {
-                            return convert_error_code_to_message(error_code);
-                        }
                     }
                 }
             }

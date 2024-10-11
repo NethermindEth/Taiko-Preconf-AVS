@@ -450,7 +450,7 @@ impl ExecutionLayer {
             .proveIncorrectPreconfirmation(meta.clone(), header.clone(), signature.clone())
             .call()
             .await;
-        if let Ok(_) = result {
+        if result.is_ok() {
             tracing::debug!("Proved incorrect preconfirmation using eth_call, sending tx");
             let tx = contract.proveIncorrectPreconfirmation(meta, header, signature);
             match tx.send().await {
@@ -472,12 +472,13 @@ impl ExecutionLayer {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn prove_incorrect_lookahead(
         &self,
         lookahead_pointer: u64,
         slot_timestamp: u64,
         validator_bls_pub_key: BLSCompressedPublicKey,
-        validator: &Vec<u8>,
+        validator: &[u8],
         validator_index: usize,
         validator_proof: Vec<[u8; 32]>,
         validators_root: [u8; 32],
@@ -531,7 +532,7 @@ impl ExecutionLayer {
     }
 
     fn convert_proof_to_fixed_bytes(proof: Vec<[u8; 32]>) -> Vec<FixedBytes<32>> {
-        proof.iter().map(|p| FixedBytes::from(p)).collect()
+        proof.iter().map(FixedBytes::from).collect()
     }
 
     pub async fn subscribe_to_registered_event(

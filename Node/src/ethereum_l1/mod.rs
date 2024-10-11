@@ -28,6 +28,7 @@ pub struct EthereumL1 {
 }
 
 impl EthereumL1 {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         execution_ws_rpc_url: &str,
         avs_node_ecdsa_private_key: &str,
