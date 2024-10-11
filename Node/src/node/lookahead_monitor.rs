@@ -4,7 +4,7 @@ use crate::ethereum_l1::EthereumL1;
 use anyhow::Error;
 use std::sync::Arc;
 use tokio::time::Duration;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 pub struct LookaheadMonitor {
     ethereum_l1: Arc<EthereumL1>,
@@ -19,15 +19,12 @@ impl LookaheadMonitor {
         }
     }
 
-    pub async fn start(self) {
+    pub async fn start(self) -> Result<(), Error> {
         // start lookahead monitor loop
         let mut interval = tokio::time::interval(Duration::from_secs(self.l1_slot_duration_sec));
         loop {
             interval.tick().await;
-
-            if let Err(err) = self.lookahead_monitor_step().await {
-                error!("Failed to execute lookahead monitor step: {}", err);
-            }
+            self.lookahead_monitor_step().await?;
         }
     }
 

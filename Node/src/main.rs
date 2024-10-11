@@ -35,7 +35,20 @@ async fn main() -> Result<(), Error> {
     init_logging();
 
     tracing::info!("🚀 Starting AVS Node v{}", env!("CARGO_PKG_VERSION"));
+    loop {
+        match start().await {
+            Ok(_) => break, // If `start` succeeds, exit the loop.
+            Err(e) => {
+                tracing::error!("Main loop failed with error: {}", e);
+                tracing::info!("Attempting to restart...");
+            }
+        }
+    }
 
+    Ok(())
+}
+
+ async fn start() -> Result<(), Error> {
     let args = Cli::parse();
     let config = utils::config::Config::read_env_variables();
 
@@ -120,7 +133,7 @@ async fn main() -> Result<(), Error> {
             ethereum_l1.clone(),
             config.l1_slot_duration_sec,
         );
-        lookahead_monitor.start().await;
+        lookahead_monitor.start().await?;
     }
 
     Ok(())
