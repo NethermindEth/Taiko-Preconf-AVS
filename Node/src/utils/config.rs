@@ -17,7 +17,6 @@ pub struct Config {
     pub contract_addresses: ContractAddresses,
     pub p2p_network_config: P2PNetworkConfig,
     pub taiko_chain_id: u64,
-    pub l1_chain_id: u64,
     pub validator_index: u64,
     pub enable_p2p: bool,
     pub enable_preconfirmation: bool,
@@ -223,17 +222,6 @@ impl Config {
             })
             .expect("TAIKO_CHAIN_ID must be a number");
 
-        let l1_chain_id = std::env::var("L1_CHAIN_ID")
-            .unwrap_or("1".to_string())
-            .parse::<u64>()
-            .map(|val| {
-                if val == 0 {
-                    panic!("L1_CHAIN_ID must be a positive number");
-                }
-                val
-            })
-            .expect("L1_CHAIN_ID must be a number");
-
         let validator_index = std::env::var("VALIDATOR_INDEX")
             .expect("VALIDATOR_INDEX env variable must be set")
             .parse::<u64>()
@@ -274,7 +262,6 @@ impl Config {
             contract_addresses,
             p2p_network_config,
             taiko_chain_id,
-            l1_chain_id,
             validator_index,
             enable_p2p,
             enable_preconfirmation,
@@ -296,7 +283,6 @@ Preconf registry expiry seconds: {}
 Contract addresses: {:#?}
 p2p_network_config: {}
 taiko chain id: {}
-l1 chain id: {}
 validator index: {}
 enable p2p: {}
 enable preconfirmation: {}
@@ -313,7 +299,6 @@ enable preconfirmation: {}
             config.contract_addresses,
             config.p2p_network_config,
             config.taiko_chain_id,
-            config.l1_chain_id,
             config.validator_index,
             config.enable_p2p,
             config.enable_preconfirmation,

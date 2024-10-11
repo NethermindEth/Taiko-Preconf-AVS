@@ -145,7 +145,6 @@ impl ExecutionLayer {
         slot_clock: Arc<SlotClock>,
         msg_expiry_sec: u64,
         bls_service: Arc<BLSService>,
-        l1_chain_id: u64,
     ) -> Result<Self, Error> {
         tracing::debug!("Creating ExecutionLayer with WS URL: {}", ws_rpc_url);
 
@@ -166,6 +165,8 @@ impl ExecutionLayer {
             .on_ws(ws.clone())
             .await
             .unwrap();
+
+        let l1_chain_id = provider_ws.get_chain_id().await?;
 
         Ok(Self {
             provider_ws,
