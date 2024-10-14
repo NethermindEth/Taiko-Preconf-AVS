@@ -28,6 +28,7 @@ pub struct EthereumL1 {
 }
 
 impl EthereumL1 {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         execution_ws_rpc_url: &str,
         avs_node_ecdsa_private_key: &str,
@@ -37,7 +38,6 @@ impl EthereumL1 {
         slots_per_epoch: u64,
         msg_expiry_sec: u64,
         bls_service: Arc<BLSService>,
-        l1_chain_id: u64,
         l2_slot_duration_sec: u64,
     ) -> Result<Self, Error> {
         let consensus_layer = ConsensusLayer::new(consensus_rpc_url)?;
@@ -57,7 +57,6 @@ impl EthereumL1 {
             slot_clock.clone(),
             msg_expiry_sec,
             bls_service,
-            l1_chain_id,
         )
         .await?;
 

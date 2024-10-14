@@ -60,6 +60,7 @@ pub struct Node {
 }
 
 impl Node {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         node_rx: Receiver<BlockProposed>,
         node_to_p2p_tx: Sender<Vec<u8>>,
@@ -131,6 +132,7 @@ impl Node {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn handle_incoming_messages(
         mut node_rx: Receiver<BlockProposed>,
         mut p2p_to_node_rx: Receiver<Vec<u8>>,

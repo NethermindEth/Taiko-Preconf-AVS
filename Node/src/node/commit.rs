@@ -46,7 +46,7 @@ impl L2TxListsCommit {
     pub fn hash(&self) -> Result<[u8; 32], Error> {
         let mut buffer = Vec::<u8>::new();
         self.encode(&mut buffer);
-        Ok(hash_bytes_with_keccak(&buffer.as_slice()))
+        Ok(hash_bytes_with_keccak(buffer.as_slice()))
     }
 
     #[allow(dead_code)]
