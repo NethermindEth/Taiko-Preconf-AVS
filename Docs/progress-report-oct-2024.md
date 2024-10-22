@@ -120,6 +120,44 @@ However, for mainnet release, we should test out integration with actual restaki
 
 - Test out multiple restaking solutions such as EigenLayer, [Karak](https://docs.karak.network/), or custom staking contracts if any, and let validators choose whatever solution they prefer.
 
+### Improve lookahead security
+
+**Problem:**
+
+In the PoC, the first preconfirmer in the lookahead is tasked with submitting the lookahead for the next epoch and is slashed if they submit an invalid one ([doc](https://github.com/NethermindEth/Taiko-Preconf-AVS/blob/master/Docs/design-doc.md#lookahead-visibility)). However, if the profit from proposing Taiko blocks becomes higher than the slashing risk, this preconfirmer might submit an invalid lookahead to unfairly elect themselves as the preconfirmer for the entire next epoch.
+
+**Solution:**
+
+Subsequent preconfirmers can either:
+
+- Attest to the initial lookahead, accepting the risk of slashing if the lookahead is invalid.
+- Submit an alternative lookahead by staking additional funds (`C*X`, where `C` is the previous submitter stake and X is a multiplier) upon detecting an invalid submission by the first preconfirmer.
+
+By the end of the epoch, the lookahead will have either:
+
+- Attestations from all preconfirmers (say there are `N`) of the previous epoch, or
+- `C*X^N` worth of stake from the final submitter.
+
+Or some combination of the two.
+
+```
+S1 ---------------------------S2--------------..............------------S32---|
+^                             ^                                          ^
+|                             |                                          |
+proposer                   Either propose                             The lookahead
+submits                    an alternative                             of next epoch
+invalid                    lookahead with                             has EITHER
+lookahead                  C*X stake                                  C*X^N stake
+for next epoch             OR                                         backing it
+with C stake               "Attest" to the                            where N is num
+                           previously submitted                       of preconfer in 
+                           lookahead and be exposed to                current epoch
+                           slashing of C stake.                       OR
+                                                                      N preconfers
+                                                                      attestations.
+```
+
+
 ### Other Features
 
 There are several other issues we would want to consider for the mainnet release, including but not limited to:
