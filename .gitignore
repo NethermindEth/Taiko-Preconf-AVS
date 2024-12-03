@@ -1,6 +1,6 @@
 /Node/target
 .vscode
 .env
-tools/tx_spammer/venv
+venv
 .DS_Store
 .sum
