@@ -94,7 +94,7 @@ def send_transaction(nonce : int):
         'nonce': nonce,
         'to': recipient,
         'value': amount,
-        'gas': 21000,
+        'gas': 40000,
         'gasPrice': w3.to_wei('10', 'gwei'),
         'chainId': w3.eth.chain_id
     }
