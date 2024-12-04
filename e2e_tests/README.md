@@ -10,7 +10,15 @@ from the main branch of https://github.com/NethermindEth/preconfirm-devnet-packa
 
 It also requires a `.env` file to be present in the root directory. You can copy `.env.example` file into `.env` and fill in the required values.
 
+Create venv:
+```
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
 To run all tests:
+
 ```
 pytest
 ```
