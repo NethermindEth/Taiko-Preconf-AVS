@@ -3,7 +3,7 @@ name: "[Nethermind] Taiko Preconf AVS Protocol- Docker build and push"
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [master]
     tags:
       - "taiko-preconf-avs-protocol-v*"
     paths:
