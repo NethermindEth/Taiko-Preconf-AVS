@@ -93,7 +93,8 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         //
         if (block.timestamp <= lookaheadEntry.prevTimestamp || block.timestamp > lookaheadEntry.timestamp) {
             revert InvalidLookaheadPointer();
-        } else if (msg.sender != lookaheadEntry.preconfer) {
+        }
+        if (msg.sender != lookaheadEntry.preconfer) {
             revert SenderIsNotThePreconfer();
         }
 
@@ -140,10 +141,13 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
         if (block.timestamp - taikoBlock.proposedAt >= PreconfConstants.DISPUTE_PERIOD) {
             // Revert if the dispute window has been missed
             revert MissedDisputeWindow();
-        } else if (header.chainId != block.chainid) {
+        }
+        if (header.chainId != block.chainid) {
             // Revert if the preconfirmation was provided on another chain
             revert PreconfirmationChainIdMismatch();
-        } else if (keccak256(abi.encode(taikoBlockMetadata)) != taikoBlock.metaHash) {
+        }
+
+        if (keccak256(abi.encode(taikoBlockMetadata)) != taikoBlock.metaHash) {
             // Revert if the metadata of the block does not match the one stored in Taiko
             revert MetadataMismatch();
         }
@@ -153,13 +157,12 @@ contract PreconfTaskManager is IPreconfTaskManager, Initializable {
 
         // Slash if the preconfirmation was given offchain, but block proposal was missed OR
         // the preconfirmed set of transactions is different from the transactions in the proposed block.
-        if (preconfSigner != proposer || header.txListHash != taikoBlockMetadata.blobHash) {
-            preconfServiceManager.slashOperator(preconfSigner);
-        } else {
+        if (preconfSigner == proposer && header.txListHash == taikoBlockMetadata.blobHash) {
             revert PreconfirmationIsCorrect();
         }
 
         emit ProvedIncorrectPreconfirmation(proposer, blockId, msg.sender);
+        preconfServiceManager.slashOperator(preconfSigner);
     }
 
     /**
