@@ -56,8 +56,6 @@ impl BLSService {
         [res1, res2]
     }
 
-    #[cfg(test)]
-    #[cfg(not(feature = "use_mock"))]
     pub fn get_public_key_compressed(&self) -> PublicKey {
         self.pk.clone()
     }
