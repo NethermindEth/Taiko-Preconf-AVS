@@ -33,7 +33,7 @@ mod tests {
                 .unwrap(),
         );
         // Create mev-boost
-        let mev_boost = MevBoost::new(" http://localhost:8080", 123);
+        let mev_boost = MevBoost::new(" http://localhost:8080");
         // Some random constraints
         let constraint1 = generate_random_vec_with_random_size(50, 200);
         let constraint2 = generate_random_vec_with_random_size(50, 200);

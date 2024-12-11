@@ -90,7 +90,7 @@ async fn main() -> Result<(), Error> {
         config.taiko_chain_id,
     ));
 
-    let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url, config.validator_index);
+    let mev_boost = mev_boost::MevBoost::new(&config.mev_boost_url);
     let ethereum_l1 = Arc::new(ethereum_l1);
 
     let block_proposed_event_checker =
