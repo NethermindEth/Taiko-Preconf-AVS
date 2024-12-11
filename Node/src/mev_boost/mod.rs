@@ -11,14 +11,12 @@ mod tests;
 
 pub struct MevBoost {
     url: String,
-    validator_index: u64,
 }
 
 impl MevBoost {
-    pub fn new(url: &str, validator_index: u64) -> Self {
+    pub fn new(url: &str) -> Self {
         Self {
             url: url.to_string(),
-            validator_index,
         }
     }
 
@@ -26,7 +24,7 @@ impl MevBoost {
         let client = Client::new();
         // Send the POST request to the MEV Boost
         let response = client
-            .post(self.url.clone() + "/eth/v1/builder/constraints")
+            .post(self.url.clone() + "/constraints/v1/builder/constraints")
             .json(&params)
             .send()
             .await
@@ -56,8 +54,11 @@ impl MevBoost {
         bls_service: Arc<BLSService>,
     ) -> Result<(), Error> {
         // Prepare the message
-
-        let message = ConstraintsMessage::new(self.validator_index, slot_id, constraints);
+        let pubkey: [u8; 48] = bls_service
+            .get_public_key_compressed()
+            .try_into()
+            .map_err(|e| anyhow::anyhow!("BLS service failed to get public key: {:?}", e))?;
+        let message = ConstraintsMessage::new(pubkey, slot_id, constraints);
 
         let signed = SignedConstraints::new(message, bls_service);
 
