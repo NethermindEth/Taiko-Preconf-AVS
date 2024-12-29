@@ -2,6 +2,8 @@ use alloy::primitives::U256;
 use anyhow::Error;
 use bls::types::{G1AffinePoint, G2AffinePoint, PublicKey, SecretKey, Signature};
 use bls_on_arkworks as bls;
+use ethereum_consensus::crypto::{PublicKey as EthereumPublicKey, SecretKey as EthereumSecretKey};
+use ethereum_consensus::primitives::BlsSignature;
 use num_bigint::BigUint;
 #[cfg(test)]
 #[cfg(not(feature = "use_mock"))]
@@ -10,6 +12,8 @@ use rand_core::{OsRng, RngCore};
 pub struct BLSService {
     pk: PublicKey,
     sk: SecretKey,
+    eth_secret_key: EthereumSecretKey,
+    eth_public_key: EthereumPublicKey,
 }
 
 impl BLSService {
@@ -19,12 +23,21 @@ impl BLSService {
         let sk = bls::os2ip(&pk_bytes);
         let public_key = bls::sk_to_pk(sk);
 
+        let eth_secret_key = EthereumSecretKey::try_from(private_key.to_string())
+            .map_err(|e| anyhow::anyhow!("Invalid secret key: {:?}", e))?;
+        let eth_public_key = eth_secret_key.public_key();
+
         tracing::info!(
             "BLSService: public key: {}",
             hex::encode(public_key.clone())
         );
 
-        Ok(Self { pk: public_key, sk })
+        Ok(Self {
+            pk: public_key,
+            sk,
+            eth_public_key,
+            eth_secret_key,
+        })
     }
 
     #[cfg(test)]
@@ -36,7 +49,15 @@ impl BLSService {
         let sk = bls::keygen(&ikm.to_vec());
         let pk = bls::sk_to_pk(sk);
 
-        Self { pk, sk }
+        let eth_secret_key = EthereumSecretKey::random(&mut OsRng).unwrap();
+        let eth_public_key = eth_secret_key.public_key();
+
+        Self {
+            pk,
+            sk,
+            eth_public_key,
+            eth_secret_key,
+        }
     }
 
     pub fn sign(&self, message: &Vec<u8>, dst: &Vec<u8>) -> Signature {
@@ -56,11 +77,16 @@ impl BLSService {
         [res1, res2]
     }
 
-    pub fn get_public_key_compressed(&self) -> PublicKey {
-        self.pk.clone()
-    }
-
     pub fn get_public_key(&self) -> G1AffinePoint {
         bls::pubkey_to_point(&self.pk).unwrap()
+    }
+
+    pub fn get_ethereum_public_key(&self) -> EthereumPublicKey {
+        self.eth_public_key.clone()
+    }
+
+    pub fn sign_with_ethereum_secret_key(&self, message: &[u8]) -> Result<BlsSignature, Error> {
+        let signature = self.eth_secret_key.sign(message);
+        Ok(signature)
     }
 }

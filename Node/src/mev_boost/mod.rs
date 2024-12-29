@@ -7,8 +7,6 @@ use std::sync::Arc;
 pub mod constraints;
 use constraints::{ConstraintsMessage, SignedConstraints};
 
-mod tests;
-
 pub struct MevBoost {
     url: String,
 }
@@ -20,7 +18,7 @@ impl MevBoost {
         }
     }
 
-    async fn post_constraints(&self, params: Value) -> Result<Value, Error> {
+    async fn post_constraints(&self, params: Value) -> Result<u16, Error> {
         let client = Client::new();
         // Send the POST request to the MEV Boost
         let response = client
@@ -38,13 +36,7 @@ impl MevBoost {
             ));
         }
 
-        // Attempt to parse the response as JSON
-        let json: Value = response
-            .json()
-            .await
-            .map_err(|e| anyhow::anyhow!("MEV Boost failed to parse JSON: {}", e))?;
-
-        Ok(json)
+        Ok(response.status().as_u16())
     }
 
     pub async fn force_inclusion(
@@ -54,10 +46,7 @@ impl MevBoost {
         bls_service: Arc<BLSService>,
     ) -> Result<(), Error> {
         // Prepare the message
-        let pubkey: [u8; 48] = bls_service
-            .get_public_key_compressed()
-            .try_into()
-            .map_err(|e| anyhow::anyhow!("BLS service failed to get public key: {:?}", e))?;
+        let pubkey = bls_service.get_ethereum_public_key();
         let message = ConstraintsMessage::new(pubkey, slot_id, constraints);
 
         let signed = SignedConstraints::new(message, bls_service);
@@ -65,7 +54,7 @@ impl MevBoost {
         let json_data = serde_json::to_value([&signed])?;
 
         let res = self.post_constraints(json_data).await?;
-        tracing::debug!("MEV Boost response: {:?}", res);
+        tracing::debug!("MEV Boost response status: {}", res);
 
         Ok(())
     }
