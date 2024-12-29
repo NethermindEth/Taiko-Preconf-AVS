@@ -39,6 +39,11 @@ ethereum_ssz_derive = "0.7"
 bls_on_arkworks = "0.3.0"
 num-bigint = "0.4.6"
 rand = "0.8"
+#helix-utils = { git = "https://github.com/chainbound/helix.git" , branch = "bolt" }
+tree_hash = "0.6.0"
+tree_hash_derive = "0.6.0"
+reth-primitives = { git = "https://github.com/paradigmxyz/reth", rev = "5dd5555c5c7d8e43420e273e7005b8af63a847a5" }
+#zstd-sys = "=2.0.9"
 
 [dev-dependencies]
 mockall_double = "0.3"
@@ -52,3 +57,7 @@ use_mock = []
 # TODO: remove when the bug is fixed (https://github.com/ralexstokes/ssz-rs/issues/163)
 [patch."https://github.com/ralexstokes/ssz-rs"]
 ssz_rs = { git = "https://github.com/noahfigueras/ssz-rs", branch = "partial_merkle_tree" }
+
+[patch.crates-io]
+#zstd-sys = { version = "=2.0.9+zstd.1.5.5" }
+zstd-sys = { git = "https://github.com/gyscos/zstd-rs", tag = "zstd-sys-2.0.9" }
