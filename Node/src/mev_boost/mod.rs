@@ -9,12 +9,14 @@ use constraints::{ConstraintsMessage, SignedConstraints};
 
 pub struct MevBoost {
     url: String,
+    genesis_fork_version: [u8; 4],
 }
 
 impl MevBoost {
-    pub fn new(url: &str) -> Self {
+    pub fn new(url: &str, genesis_fork_version: [u8; 4]) -> Self {
         Self {
             url: url.to_string(),
+            genesis_fork_version,
         }
     }
 
@@ -49,7 +51,7 @@ impl MevBoost {
         let pubkey = bls_service.get_ethereum_public_key();
         let message = ConstraintsMessage::new(pubkey, slot_id, constraints);
 
-        let signed = SignedConstraints::new(message, bls_service);
+        let signed = SignedConstraints::new(message, bls_service, self.genesis_fork_version)?;
 
         let json_data = serde_json::to_value([&signed])?;
 
