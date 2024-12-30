@@ -1,6 +1,12 @@
 FROM docker.io/library/rust:1.83 AS builder
 
-WORKDIR /app/taiko_preconf_avs_node
+# Install libclang
+RUN apt-get update && apt-get install -y \
+    libclang-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set the working directory inside the container
+WORKDIR /usr/src/taiko_preconf_avs_node
 
 COPY ../Node /app/taiko_preconf_avs_node
 COPY ../p2pNode/p2pNetwork /app/p2pNode/p2pNetwork
