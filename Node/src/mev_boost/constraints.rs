@@ -1,5 +1,6 @@
 use crate::bls::BLSService;
 use alloy::signers::k256::sha2::{Digest, Sha256};
+use anyhow::Error;
 use ethereum_consensus::crypto::PublicKey;
 use ethereum_consensus::primitives::BlsSignature;
 use ethereum_consensus::state_transition::Context;
@@ -30,7 +31,7 @@ impl ConstraintsMessage {
         }
     }
 
-    fn digest(&self) -> [u8; 32] {
+    fn digest(&self) -> Result<[u8; 32], Error> {
         let mut hasher = Sha256::new();
         hasher.update(self.pubkey.to_vec());
         hasher.update(self.slot.to_le_bytes());
@@ -38,12 +39,11 @@ impl ConstraintsMessage {
         for tx in self.transactions.iter() {
             // Convert the opaque bytes to a EIP-2718 envelope and obtain the tx hash.
             // this is needed to handle type 3 transactions.
-            // FIXME: don't unwrap here and handle the error properly
-            let tx = PooledTransactionsElement::decode_enveloped(tx.to_vec().into()).unwrap();
+            let tx = PooledTransactionsElement::decode_enveloped(tx.to_vec().into())?;
             hasher.update(tx.hash().as_slice());
         }
 
-        hasher.finalize().into()
+        Ok(hasher.finalize().into())
     }
 }
 
@@ -93,12 +93,16 @@ impl SignedConstraints {
         signing_data.tree_hash_root().0
     }
 
-    pub fn new(message: ConstraintsMessage, bls: Arc<BLSService>) -> Self {
-        let genesis_fork_version = [16, 0, 0, 56]; // TODO get frpm eth/v1/beacon/genesis. Replace with the correct value for your chain
+    pub fn new(
+        message: ConstraintsMessage,
+        bls: Arc<BLSService>,
+        genesis_fork_version: [u8; 4],
+    ) -> Result<Self, Error> {
+        // Prepare data
         let mut context = Context::for_minimal();
         context.genesis_fork_version = genesis_fork_version;
 
-        let digest = message.digest();
+        let digest = message.digest()?;
 
         let domain = Self::compute_domain_custom(&context, COMMIT_BOOST_DOMAIN);
         let signing_root = Self::compute_signing_root_custom(digest.tree_hash_root().0, domain);
@@ -106,8 +110,8 @@ impl SignedConstraints {
         // Sign message
         let signature = bls
             .sign_with_ethereum_secret_key(&signing_root)
-            .expect("sign_with_domain error");
+            .map_err(|e| anyhow::anyhow!("Sign_with_domain error: {}", e))?;
 
-        Self { message, signature }
+        Ok(Self { message, signature })
     }
 }
