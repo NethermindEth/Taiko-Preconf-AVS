@@ -10,8 +10,16 @@ set -e
 : "${BEACON_BLOCK_ROOT_CONTRACT:?Environment variable BEACON_BLOCK_ROOT_CONTRACT is required}"
 echo "BEACON_GENESIS_TIMESTAMP: $BEACON_GENESIS_TIMESTAMP"
 
+# Check if EVM_VERSION is set and not empty
+if [ -n "$EVM_VERSION" ]; then
+    EVM_VERSION_FLAG="--evm-version $EVM_VERSION"
+else
+    EVM_VERSION_FLAG=""
+fi
+
 forge script scripts/deployment/DeployAVS.s.sol:DeployAVS \
   --fork-url $FORK_URL \
   --broadcast \
   --skip-simulation \
-  --private-key $PRIVATE_KEY
+  --private-key $PRIVATE_KEY \
+  $EVM_VERSION_FLAG

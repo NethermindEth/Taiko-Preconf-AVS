@@ -90,15 +90,15 @@ interface IPreconfTaskManager {
 
     /// @dev Accepts block proposal by an operator and forwards it to TaikoL1 contract
     function newBlockProposal(
-        bytes calldata blockParams,
-        bytes calldata txList,
+        bytes[] calldata blockParams,
+        bytes[] calldata txLists,
         uint256 lookaheadPointer,
         LookaheadSetParam[] calldata lookaheadSetParams
     ) external payable;
 
     /// @dev Slashes a preconfer if the txn and ordering in a signed preconf does not match the actual block
     function proveIncorrectPreconfirmation(
-        ITaikoL1.BlockMetadata calldata taikoBlockMetadata,
+        ITaikoL1.BlockMetadataV2 calldata taikoBlockMetadata,
         PreconfirmationHeader calldata header,
         bytes calldata signature
     ) external;
