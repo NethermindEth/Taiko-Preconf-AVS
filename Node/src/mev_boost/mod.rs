@@ -7,26 +7,24 @@ use std::sync::Arc;
 pub mod constraints;
 use constraints::{ConstraintsMessage, SignedConstraints};
 
-mod tests;
-
 pub struct MevBoost {
     url: String,
-    validator_index: u64,
+    genesis_fork_version: [u8; 4],
 }
 
 impl MevBoost {
-    pub fn new(url: &str, validator_index: u64) -> Self {
+    pub fn new(url: &str, genesis_fork_version: [u8; 4]) -> Self {
         Self {
             url: url.to_string(),
-            validator_index,
+            genesis_fork_version,
         }
     }
 
-    async fn post_constraints(&self, params: Value) -> Result<Value, Error> {
+    async fn post_constraints(&self, params: Value) -> Result<u16, Error> {
         let client = Client::new();
         // Send the POST request to the MEV Boost
         let response = client
-            .post(self.url.clone() + "/eth/v1/builder/constraints")
+            .post(self.url.clone() + "/constraints/v1/builder/constraints")
             .json(&params)
             .send()
             .await
@@ -40,13 +38,7 @@ impl MevBoost {
             ));
         }
 
-        // Attempt to parse the response as JSON
-        let json: Value = response
-            .json()
-            .await
-            .map_err(|e| anyhow::anyhow!("MEV Boost failed to parse JSON: {}", e))?;
-
-        Ok(json)
+        Ok(response.status().as_u16())
     }
 
     pub async fn force_inclusion(
@@ -56,15 +48,15 @@ impl MevBoost {
         bls_service: Arc<BLSService>,
     ) -> Result<(), Error> {
         // Prepare the message
+        let pubkey = bls_service.get_ethereum_public_key();
+        let message = ConstraintsMessage::new(pubkey, slot_id, constraints);
 
-        let message = ConstraintsMessage::new(self.validator_index, slot_id, constraints);
-
-        let signed = SignedConstraints::new(message, bls_service);
+        let signed = SignedConstraints::new(message, bls_service, self.genesis_fork_version)?;
 
         let json_data = serde_json::to_value([&signed])?;
 
         let res = self.post_constraints(json_data).await?;
-        tracing::debug!("MEV Boost response: {:?}", res);
+        tracing::debug!("MEV Boost response status: {}", res);
 
         Ok(())
     }

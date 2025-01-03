@@ -1,78 +1,117 @@
 use crate::bls::BLSService;
-use alloy::hex::encode;
-use serde::ser::Serializer;
+use alloy::signers::k256::sha2::{Digest, Sha256};
+use anyhow::Error;
+use ethereum_consensus::crypto::PublicKey;
+use ethereum_consensus::primitives::BlsSignature;
+use ethereum_consensus::state_transition::Context;
+use reth_primitives::PooledTransactionsElement;
 use serde::Serialize;
-use ssz::Encode;
-use ssz_derive::{Decode, Encode};
 use std::sync::Arc;
+use tree_hash::TreeHash;
+use tree_hash_derive::TreeHash;
 
-#[derive(PartialEq, Debug, Encode, Decode, Serialize)]
-pub struct Constraint {
-    #[serde(serialize_with = "serialize_vec_as_hex")]
-    tx: Vec<u8>,
-    index: Option<u64>,
-}
+pub const GENESIS_VALIDATORS_ROOT: [u8; 32] = [0; 32];
+pub const COMMIT_BOOST_DOMAIN: [u8; 4] = [109, 109, 111, 67];
 
-#[derive(PartialEq, Debug, Encode, Decode, Serialize)]
+#[derive(Debug, Clone, Serialize, Eq, PartialEq)]
 pub struct ConstraintsMessage {
-    validator_index: u64,
-    slot: u64,
-    constraints: Vec<Constraint>,
+    pub pubkey: PublicKey,
+    pub slot: u64,
+    pub top: bool,
+    pub transactions: Vec<Vec<u8>>,
 }
 
 impl ConstraintsMessage {
-    pub fn new(validator_index: u64, slot: u64, messages: Vec<Vec<u8>>) -> Self {
-        let constraints = messages
-            .iter()
-            .map(|message| Constraint {
-                tx: message.clone(),
-                index: None,
-            })
-            .collect();
-        Self {
-            validator_index,
+    pub fn new(pubkey: PublicKey, slot: u64, transactions: Vec<Vec<u8>>) -> Self {
+        ConstraintsMessage {
+            pubkey,
             slot,
-            constraints,
+            top: true,
+            transactions,
         }
+    }
+
+    fn digest(&self) -> Result<[u8; 32], Error> {
+        let mut hasher = Sha256::new();
+        hasher.update(self.pubkey.to_vec());
+        hasher.update(self.slot.to_le_bytes());
+        hasher.update((self.top as u8).to_le_bytes());
+        for tx in self.transactions.iter() {
+            // Convert the opaque bytes to a EIP-2718 envelope and obtain the tx hash.
+            // this is needed to handle type 3 transactions.
+            let tx = PooledTransactionsElement::decode_enveloped(tx.to_vec().into())?;
+            hasher.update(tx.hash().as_slice());
+        }
+
+        Ok(hasher.finalize().into())
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SignedConstraints {
-    message: ConstraintsMessage,
-    #[serde(serialize_with = "serialize_data_as_hex")]
-    signature: [u8; 96],
-}
-
-fn serialize_vec_as_hex<S>(data: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let hex_string = format!("0x{}", encode(data));
-    serializer.serialize_str(&hex_string)
-}
-
-fn serialize_data_as_hex<S>(data: &[u8; 96], serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let hex_string = format!("0x{}", encode(data));
-    serializer.serialize_str(&hex_string)
+    pub message: ConstraintsMessage,
+    pub signature: BlsSignature,
 }
 
 impl SignedConstraints {
-    pub fn new(message: ConstraintsMessage, bls: Arc<BLSService>) -> Self {
-        // Encode message;
-        let data = message.as_ssz_bytes();
-        // Use propper DST
-        let dst = "BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_"
-            .as_bytes()
-            .to_vec();
+    pub fn compute_domain_custom(chain: &Context, domain_mask: [u8; 4]) -> [u8; 32] {
+        #[derive(Debug, TreeHash)]
+        struct ForkData {
+            fork_version: [u8; 4],
+            genesis_validators_root: [u8; 32],
+        }
+
+        let mut domain = [0u8; 32];
+        domain[..4].copy_from_slice(&domain_mask);
+
+        let fork_version = chain.genesis_fork_version;
+        let fd = ForkData {
+            fork_version,
+            genesis_validators_root: GENESIS_VALIDATORS_ROOT,
+        };
+        let fork_data_root = fd.tree_hash_root().0;
+
+        domain[4..].copy_from_slice(&fork_data_root[..28]);
+
+        domain
+    }
+
+    pub fn compute_signing_root_custom(
+        object_root: [u8; 32],
+        signing_domain: [u8; 32],
+    ) -> [u8; 32] {
+        #[derive(Default, Debug, TreeHash)]
+        struct SigningData {
+            object_root: [u8; 32],
+            signing_domain: [u8; 32],
+        }
+
+        let signing_data = SigningData {
+            object_root,
+            signing_domain,
+        };
+        signing_data.tree_hash_root().0
+    }
+
+    pub fn new(
+        message: ConstraintsMessage,
+        bls: Arc<BLSService>,
+        genesis_fork_version: [u8; 4],
+    ) -> Result<Self, Error> {
+        // Prepare data
+        let mut context = Context::for_minimal();
+        context.genesis_fork_version = genesis_fork_version;
+
+        let digest = message.digest()?;
+
+        let domain = Self::compute_domain_custom(&context, COMMIT_BOOST_DOMAIN);
+        let signing_root = Self::compute_signing_root_custom(digest.tree_hash_root().0, domain);
+
         // Sign message
-        let signature: [u8; 96] = bls
-            .sign(&data, &dst)
-            .try_into()
-            .expect("Vec should have exactly 96 elements");
-        Self { message, signature }
+        let signature = bls
+            .sign_with_ethereum_secret_key(&signing_root)
+            .map_err(|e| anyhow::anyhow!("Sign_with_domain error: {}", e))?;
+
+        Ok(Self { message, signature })
     }
 }
