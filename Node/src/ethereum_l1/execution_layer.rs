@@ -884,7 +884,7 @@ impl ExecutionLayer {
 
     pub async fn get_lookahead_preconfer_buffer(
         &self,
-    ) -> Result<[PreconfTaskManager::LookaheadBufferEntry; 64], Error> {
+    ) -> Result<[PreconfTaskManager::LookaheadBufferEntry; 128], Error> {
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,
