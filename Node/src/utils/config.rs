@@ -13,14 +13,14 @@ pub struct Config {
     pub l1_slots_per_epoch: u64,
     pub l2_slot_duration_sec: u64,
     pub validator_bls_privkey: String,
-    pub preconf_registry_expiry_sec: u64,
+    pub msg_expiry_sec: u64,
     pub contract_addresses: ContractAddresses,
     pub p2p_network_config: P2PNetworkConfig,
     pub taiko_chain_id: u64,
-    pub l1_chain_id: u64,
     pub validator_index: u64,
     pub enable_p2p: bool,
     pub enable_preconfirmation: bool,
+    pub always_push_lookahead: bool,
 }
 
 #[derive(Debug)]
@@ -183,10 +183,10 @@ impl Config {
             "0x0".to_string()
         });
 
-        let preconf_registry_expiry_sec = std::env::var("PRECONF_REGISTRY_EXPIRY_SEC")
+        let msg_expiry_sec = std::env::var("MSG_EXPIRY_SEC")
             .unwrap_or("3600".to_string())
             .parse::<u64>()
-            .expect("PRECONF_REGISTRY_EXPIRY_SEC must be a number");
+            .expect("MSG_EXPIRY_SEC must be a number");
 
         // Load P2P config from env
         // Load Ipv4 address from env
@@ -222,17 +222,6 @@ impl Config {
             })
             .expect("TAIKO_CHAIN_ID must be a number");
 
-        let l1_chain_id = std::env::var("L1_CHAIN_ID")
-            .unwrap_or("1".to_string())
-            .parse::<u64>()
-            .map(|val| {
-                if val == 0 {
-                    panic!("L1_CHAIN_ID must be a positive number");
-                }
-                val
-            })
-            .expect("L1_CHAIN_ID must be a number");
-
         let validator_index = std::env::var("VALIDATOR_INDEX")
             .expect("VALIDATOR_INDEX env variable must be set")
             .parse::<u64>()
@@ -247,6 +236,11 @@ impl Config {
             .unwrap_or("true".to_string())
             .parse::<bool>()
             .expect("ENABLE_PRECONFIRMATION must be a boolean");
+
+        let always_push_lookahead = std::env::var("ALWAYS_PUSH_LOOKAHEAD")
+            .unwrap_or("false".to_string())
+            .parse::<bool>()
+            .expect("ALWAYS_PUSH_LOOKAHEAD must be a boolean");
 
         let config = Self {
             taiko_proposer_url: std::env::var("TAIKO_PROPOSER_URL")
@@ -264,14 +258,14 @@ impl Config {
             l1_slots_per_epoch,
             l2_slot_duration_sec,
             validator_bls_privkey,
-            preconf_registry_expiry_sec,
+            msg_expiry_sec,
             contract_addresses,
             p2p_network_config,
             taiko_chain_id,
-            l1_chain_id,
             validator_index,
             enable_p2p,
             enable_preconfirmation,
+            always_push_lookahead,
         };
 
         info!(
@@ -289,7 +283,6 @@ Preconf registry expiry seconds: {}
 Contract addresses: {:#?}
 p2p_network_config: {}
 taiko chain id: {}
-l1 chain id: {}
 validator index: {}
 enable p2p: {}
 enable preconfirmation: {}
@@ -302,11 +295,10 @@ enable preconfirmation: {}
             config.l1_slot_duration_sec,
             config.l1_slots_per_epoch,
             config.l2_slot_duration_sec,
-            config.preconf_registry_expiry_sec,
+            config.msg_expiry_sec,
             config.contract_addresses,
             config.p2p_network_config,
             config.taiko_chain_id,
-            config.l1_chain_id,
             config.validator_index,
             config.enable_p2p,
             config.enable_preconfirmation,

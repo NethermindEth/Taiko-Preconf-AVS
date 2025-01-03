@@ -24,14 +24,28 @@ impl MevBoost {
 
     async fn post_constraints(&self, params: Value) -> Result<Value, Error> {
         let client = Client::new();
+        // Send the POST request to the MEV Boost
         let response = client
-            .post(self.url.clone())
+            .post(self.url.clone() + "/eth/v1/builder/constraints")
             .json(&params)
             .send()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to send message: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("MEV Boost failed to send message: {}", e))?;
 
-        let json: Value = response.json().await.unwrap();
+        // Check the response status
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "MEV Boost received non-success status: {}",
+                response.status()
+            ));
+        }
+
+        // Attempt to parse the response as JSON
+        let json: Value = response
+            .json()
+            .await
+            .map_err(|e| anyhow::anyhow!("MEV Boost failed to parse JSON: {}", e))?;
+
         Ok(json)
     }
 
@@ -49,7 +63,8 @@ impl MevBoost {
 
         let json_data = serde_json::to_value([&signed])?;
 
-        self.post_constraints(json_data).await?;
+        let res = self.post_constraints(json_data).await?;
+        tracing::debug!("MEV Boost response: {:?}", res);
 
         Ok(())
     }

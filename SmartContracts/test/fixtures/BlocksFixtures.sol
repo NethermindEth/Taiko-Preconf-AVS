@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
 import {BaseTest} from "../BaseTest.sol";
@@ -53,7 +53,7 @@ contract BlocksFixtures is BaseTest {
             timestamp: nextEpochStart + PreconfConstants.SECONDS_IN_SLOT * (slot2 - 1)
         });
 
-        vm.warp(PreconfConstants.MAINNET_BEACON_GENESIS);
+        vm.warp(PreconfConstants.MAINNET_BEACON_GENESIS + PreconfConstants.SECONDS_IN_SLOT);
         vm.prank(addr_1);
         preconfTaskManager.forcePushLookahead(lookaheadSetParams);
     }

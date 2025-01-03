@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: UNLICENSED
-// Referenced from: https://ethresear.ch/t/slashing-proofoor-on-chain-slashed-validator-proofs/19421
+// SPDX-License-Identifier: MIT
+
 pragma solidity 0.8.25;
 
 library MerkleUtils {

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
 import {BlocksFixtures} from "../fixtures/BlocksFixtures.sol";
@@ -199,7 +199,7 @@ contract BlockProposing is BlocksFixtures {
         preconfTaskManager.newBlockProposal(blockParams, txnLists, 1, lookaheadSetParams);
 
         // Verify that the lookahead for the next epoch has been updated
-        IPreconfTaskManager.LookaheadBufferEntry[64] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
+        IPreconfTaskManager.LookaheadBufferEntry[128] memory lookaheadBuffer = preconfTaskManager.getLookaheadBuffer();
 
         // Check the first entry
         vm.assertEq(lookaheadBuffer[3].preconfer, addr_1);

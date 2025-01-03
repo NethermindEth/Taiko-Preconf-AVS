@@ -34,7 +34,7 @@ struct Cli {
 async fn main() -> Result<(), Error> {
     init_logging();
 
-    tracing::info!("Starting AVS Node");
+    tracing::info!("🚀 Starting AVS Node v{}", env!("CARGO_PKG_VERSION"));
 
     let args = Cli::parse();
     let config = utils::config::Config::read_env_variables();
@@ -48,9 +48,9 @@ async fn main() -> Result<(), Error> {
         &config.l1_beacon_url,
         config.l1_slot_duration_sec,
         config.l1_slots_per_epoch,
-        config.preconf_registry_expiry_sec,
+        config.msg_expiry_sec,
         bls_service.clone(),
-        config.l1_chain_id,
+        config.l2_slot_duration_sec,
     )
     .await?;
 
@@ -110,6 +110,7 @@ async fn main() -> Result<(), Error> {
             mev_boost,
             config.l2_slot_duration_sec,
             bls_service,
+            config.always_push_lookahead,
         )
         .await?;
         node.entrypoint().await?;
@@ -133,6 +134,10 @@ fn init_logging() {
             .add_directive("hyper=info".parse().unwrap())
             .add_directive("alloy_transport=info".parse().unwrap())
             .add_directive("alloy_rpc_client=info".parse().unwrap())
+            .add_directive("p2p_network=info".parse().unwrap())
+            .add_directive("libp2p_gossipsub=info".parse().unwrap())
+            .add_directive("discv5=info".parse().unwrap())
+            .add_directive("netlink_proto=info".parse().unwrap())
     });
 
     fmt().with_env_filter(filter).init();

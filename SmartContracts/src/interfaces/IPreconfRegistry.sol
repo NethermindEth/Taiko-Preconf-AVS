@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
 import {BLS12381} from "../libraries/BLS12381.sol";
@@ -87,4 +87,7 @@ interface IPreconfRegistry {
 
     /// @dev Returns a validator who is proposing for a registered preconfer
     function getValidator(bytes32 pubKeyHash) external view returns (Validator memory);
+
+    /// @dev Returns the address of the service manager contract
+    function getPreconfServiceManager() external view returns (address);
 }

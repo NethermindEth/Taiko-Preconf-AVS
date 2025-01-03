@@ -83,6 +83,11 @@ impl LookaheadUpdatedEventHandler {
         lookahead_params: Vec<PreconfTaskManager::LookaheadSetParam>,
     ) {
         tokio::spawn(async move {
+            if lookahead_params.is_empty() {
+                debug!("lookahead_params is empty, nothing to verify");
+                return;
+            }
+
             if let Err(e) = self.check_lookahead_correctness(lookahead_params).await {
                 error!("Error checking lookahead correctness: {:?}", e);
             }
@@ -93,6 +98,10 @@ impl LookaheadUpdatedEventHandler {
         &self,
         lookahead_updated_next_epoch: LookaheadUpdated,
     ) -> Result<(), Error> {
+        if lookahead_updated_next_epoch.is_empty() {
+            return Err(anyhow::anyhow!("lookahead_updated_next_epoch is empty"));
+        }
+
         let epoch = self
             .ethereum_l1
             .slot_clock
@@ -148,23 +157,30 @@ impl LookaheadUpdatedEventHandler {
             }
         }
 
-        if lookahead_params.len() > lookahead_updated_event_params.len() {
-            // the lookahead updated doesn't contain enough params
-            let first_proper_lookahead_params_missing_in_the_event =
-                &lookahead_params[lookahead_updated_event_params.len()];
-            return Ok(Some(
-                first_proper_lookahead_params_missing_in_the_event
-                    .timestamp
-                    .try_into()?,
-            ));
-        } else if lookahead_params.len() < lookahead_updated_event_params.len() {
-            // the lookahead updated contains additional, wrong params
-            let first_additional_wrong_param =
-                &lookahead_updated_event_params[lookahead_params.len()];
-            return Ok(Some(first_additional_wrong_param.timestamp.try_into()?));
+        match lookahead_params
+            .len()
+            .cmp(&lookahead_updated_event_params.len())
+        {
+            std::cmp::Ordering::Greater => {
+                // the lookahead updated doesn't contain enough params
+                let first_proper_lookahead_params_missing_in_the_event =
+                    &lookahead_params[lookahead_updated_event_params.len()];
+                Ok(Some(
+                    first_proper_lookahead_params_missing_in_the_event
+                        .timestamp
+                        .try_into()?,
+                ))
+            }
+            std::cmp::Ordering::Less => {
+                // the lookahead updated contains additional, wrong params
+                let first_additional_wrong_param =
+                    &lookahead_updated_event_params[lookahead_params.len()];
+                Ok(Some(first_additional_wrong_param.timestamp.try_into()?))
+            }
+            std::cmp::Ordering::Equal => {
+                Ok(None)
+            }
         }
-
-        return Ok(None);
     }
 
     async fn wait_for_the_slot_to_prove_incorrect_lookahead(
@@ -210,7 +226,7 @@ impl LookaheadUpdatedEventHandler {
 
         let (validator_proof, validators_root) =
             create_merkle_proof_for_validator_being_part_of_validator_list(
-                &validators,
+                validators,
                 validator_index,
             )?;
 

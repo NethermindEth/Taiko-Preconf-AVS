@@ -25,7 +25,7 @@ impl BlockProposedEventReceiver {
     }
 
     async fn check_for_events(self) {
-        let event_poller = match self
+        let event_subscription = match self
             .ethereum_l1
             .execution_layer
             .subscribe_to_block_proposed_event()
@@ -38,7 +38,7 @@ impl BlockProposedEventReceiver {
             }
         };
 
-        let mut stream = event_poller.0.into_stream();
+        let mut stream = event_subscription.0.into_stream();
         loop {
             match stream.next().await {
                 Some(log) => match log {

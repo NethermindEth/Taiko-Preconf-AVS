@@ -3,6 +3,9 @@ use ethereum_consensus::deneb::Validator;
 use ethereum_consensus::types::mainnet::{BeaconState, SignedBeaconBlock};
 use ssz_rs::prelude::*;
 
+type ValidatorMerkleProof = ([u8; 32], Vec<[u8; 32]>, [u8; 32], usize);
+type BeaconStateMerkleProof = (Vec<[u8; 32]>, Vec<[u8; 32]>);
+
 pub fn create_merkle_proof_for_validator_being_part_of_validator_list<const N: usize>(
     validators: &List<Validator, N>,
     validator_index: usize,
@@ -19,14 +22,14 @@ pub fn create_merkle_proof_for_validator_being_part_of_validator_list<const N: u
 fn create_merkle_proof_for_validator_being_part_of_validator_list_extended<const N: usize>(
     validators: &List<Validator, N>,
     validator_index: usize,
-) -> Result<([u8; 32], Vec<[u8; 32]>, [u8; 32], usize), Error> {
+) -> Result<ValidatorMerkleProof, Error> {
     let path = &[validator_index.into()];
     let (proof, witness) = validators
         .prove(path)
         .map_err(|e| anyhow::anyhow!("Failed to prove validator: {e}"))?;
 
     let leaf = proof.leaf.into();
-    let branch = proof.branch.iter().map(|b| b.0.into()).collect();
+    let branch = proof.branch.iter().map(|b| b.0).collect();
     let witness = witness.into();
     Ok((leaf, branch, witness, proof.index))
 }
@@ -42,14 +45,14 @@ pub fn create_merkle_proof_for_validator_list_being_part_of_beacon_state(
         _ => return Err(anyhow::anyhow!("BeaconState is not in Deneb")),
     };
 
-    let branch = proof.branch.iter().map(|b| b.0.into()).collect();
+    let branch = proof.branch.iter().map(|b| b.0).collect();
     let witness = witness.into();
     Ok((branch, witness))
 }
 
 pub fn create_merkle_proofs_for_beacon_block_containing_beacon_state_and_validator_index(
     beacon_block: &SignedBeaconBlock,
-) -> Result<(Vec<[u8; 32]>, Vec<[u8; 32]>), Error> {
+) -> Result<BeaconStateMerkleProof, Error> {
     let (state_root_prove, validator_index_prove) = match beacon_block {
         SignedBeaconBlock::Deneb(block) => {
             let path = &["state_root".into()];
@@ -67,12 +70,8 @@ pub fn create_merkle_proofs_for_beacon_block_containing_beacon_state_and_validat
         _ => return Err(anyhow::anyhow!("BeaconBlock is not in Deneb")),
     };
 
-    let state_root_branch = state_root_prove.branch.iter().map(|b| b.0.into()).collect();
-    let validator_index_branch = validator_index_prove
-        .branch
-        .iter()
-        .map(|b| b.0.into())
-        .collect();
+    let state_root_branch = state_root_prove.branch.iter().map(|b| b.0).collect();
+    let validator_index_branch = validator_index_prove.branch.iter().map(|b| b.0).collect();
 
     Ok((state_root_branch, validator_index_branch))
 }

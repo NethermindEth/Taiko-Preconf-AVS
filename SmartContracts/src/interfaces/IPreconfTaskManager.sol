@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
 import {EIP4788} from "../libraries/EIP4788.sol";
@@ -43,6 +43,20 @@ interface IPreconfTaskManager {
         address fallbackPreconfer;
     }
 
+    struct PosterInfo {
+        // Address of lookahead poster
+        address poster;
+        // Start timestamp of the epoch for which the lookahead was posted
+        uint64 epochTimestamp;
+    }
+
+    struct ProposerInfo {
+        // Address of the Taiko block proposer
+        address proposer;
+        // Height of the L2 block
+        uint64 blockId;
+    }
+
     event LookaheadUpdated(LookaheadSetParam[]);
     event ProvedIncorrectPreconfirmation(address indexed preconfer, uint256 indexed blockId, address indexed disputer);
     event ProvedIncorrectLookahead(address indexed poster, uint256 indexed timestamp, address indexed disputer);
@@ -53,6 +67,8 @@ interface IPreconfTaskManager {
     error SenderIsNotThePreconfer();
     /// @dev Preconfer is not present in the registry
     error PreconferNotRegistered();
+    /// @dev  Epoch timestamp is incorrect
+    error InvalidEpochTimestamp();
     /// @dev The timestamp in the lookahead is not of a valid future slot in the present epoch
     error InvalidSlotTimestamp();
     /// @dev The chain id on which the preconfirmation was signed is different from the current chain's id
@@ -69,6 +85,8 @@ interface IPreconfTaskManager {
     error LookaheadEntryIsCorrect();
     /// @dev Cannot force push a lookahead since it is not lagging behind
     error LookaheadIsNotRequired();
+    /// @dev The registry does not have a single registered preconfer
+    error NoRegisteredPreconfer();
 
     /// @dev Accepts block proposal by an operator and forwards it to TaikoL1 contract
     function newBlockProposal(
@@ -110,17 +128,32 @@ interface IPreconfTaskManager {
 
     /// @dev Returns true is a lookahead is not posted for an epoch
     /// @dev In the event that a lookahead was posted but later invalidated, this returns false
-    function isLookaheadRequired(uint256 epochTimestamp) external view returns (bool);
+    function isLookaheadRequired() external view returns (bool);
 
     /// @dev Returns the current lookahead tail
     function getLookaheadTail() external view returns (uint256);
 
     /// @dev Returns the entire lookahead buffer
-    function getLookaheadBuffer() external view returns (LookaheadBufferEntry[64] memory);
+    function getLookaheadBuffer() external view returns (LookaheadBufferEntry[128] memory);
 
     /// @dev Returns the lookahead poster for an epoch
     function getLookaheadPoster(uint256 epochTimestamp) external view returns (address);
 
     /// @dev Returns the block proposer for a block
     function getBlockProposer(uint256 blockId) external view returns (address);
+
+    /// @dev Returns the preconf service manager contract address
+    function getPreconfServiceManager() external view returns (address);
+
+    /// @dev Returns the preconf registry contract address
+    function getPreconfRegistry() external view returns (address);
+
+    /// @dev Returns the Taiko L1 contract address
+    function getTaikoL1() external view returns (address);
+
+    /// @dev Returns the beacon genesis timestamp
+    function getBeaconGenesis() external view returns (uint256);
+
+    /// @dev Returns the beacon block root contract address
+    function getBeaconBlockRootContract() external view returns (address);
 }

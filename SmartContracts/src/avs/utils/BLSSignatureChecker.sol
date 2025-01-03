@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
 import {BLS12381} from "../../libraries/BLS12381.sol";
@@ -8,8 +8,8 @@ contract BLSSignatureChecker {
 
     /// @dev The domain separation tag for the BLS signature
     function dst() internal pure returns (bytes memory) {
-        // Todo: This must be set based on the recommendations of RFC9380
-        return hex"";
+        // Set based on the recommendations of RFC9380
+        return bytes("Taiko Based Rollup Preconfirmation v0.1.0");
     }
 
     /**

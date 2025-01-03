@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 
 import {BLS12381} from "../libraries/BLS12381.sol";
@@ -199,6 +199,10 @@ contract MockPreconfRegistry is IPreconfRegistry, BLSSignatureChecker, Initializ
         returns (bytes memory)
     {
         return _createMessage(validatorOp, expiry, preconfer);
+    }
+
+    function getPreconfServiceManager() external view returns (address) {
+        return address(preconfServiceManager);
     }
 
     function getNextPreconferIndex() external view returns (uint256) {
