@@ -48,7 +48,7 @@ impl MevBoost {
         bls_service: Arc<BLSService>,
     ) -> Result<(), Error> {
         // Prepare the message
-        let pubkey = bls_service.get_ethereum_public_key();
+        let pubkey = bls_service.get_public_key();
         let message = ConstraintsMessage::new(pubkey, slot_id, constraints);
 
         let signed = SignedConstraints::new(message, bls_service, self.genesis_fork_version)?;

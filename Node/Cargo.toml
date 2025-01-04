@@ -42,6 +42,7 @@ rand = "0.8"
 tree_hash = "0.6.0"
 tree_hash_derive = "0.6.0"
 reth-primitives = { git = "https://github.com/paradigmxyz/reth", rev = "5dd5555c5c7d8e43420e273e7005b8af63a847a5" }
+blst = "0.3"
 
 [dev-dependencies]
 mockall_double = "0.3"
