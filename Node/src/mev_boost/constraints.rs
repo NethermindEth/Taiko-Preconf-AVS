@@ -1,10 +1,10 @@
 use crate::bls::BLSService;
 use alloy::signers::k256::sha2::{Digest, Sha256};
 use anyhow::Error;
-use ethereum_consensus::crypto::PublicKey;
-use ethereum_consensus::primitives::BlsSignature;
+use blst::min_pk::{PublicKey, Signature};
 use ethereum_consensus::state_transition::Context;
 use reth_primitives::PooledTransactionsElement;
+use serde::ser::Serializer;
 use serde::Serialize;
 use std::sync::Arc;
 use tree_hash::TreeHash;
@@ -12,13 +12,21 @@ use tree_hash_derive::TreeHash;
 
 pub const GENESIS_VALIDATORS_ROOT: [u8; 32] = [0; 32];
 pub const COMMIT_BOOST_DOMAIN: [u8; 4] = [109, 109, 111, 67];
+const BLS_DST: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
 
 #[derive(Debug, Clone, Serialize, Eq, PartialEq)]
 pub struct ConstraintsMessage {
+    #[serde(serialize_with = "serialize_publickey")]
     pub pubkey: PublicKey,
     pub slot: u64,
     pub top: bool,
     pub transactions: Vec<Vec<u8>>,
+}
+fn serialize_publickey<S>(data: &PublicKey, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_bytes(&data.serialize())
 }
 
 impl ConstraintsMessage {
@@ -33,7 +41,7 @@ impl ConstraintsMessage {
 
     fn digest(&self) -> Result<[u8; 32], Error> {
         let mut hasher = Sha256::new();
-        hasher.update(self.pubkey.to_vec());
+        hasher.update(self.pubkey.compress());
         hasher.update(self.slot.to_le_bytes());
         hasher.update((self.top as u8).to_le_bytes());
         for tx in self.transactions.iter() {
@@ -50,7 +58,15 @@ impl ConstraintsMessage {
 #[derive(Debug, Clone, Serialize)]
 pub struct SignedConstraints {
     pub message: ConstraintsMessage,
-    pub signature: BlsSignature,
+    #[serde(serialize_with = "serialize_signature")]
+    pub signature: Signature,
+}
+
+fn serialize_signature<S>(data: &Signature, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_bytes(&data.serialize())
 }
 
 impl SignedConstraints {
@@ -108,9 +124,7 @@ impl SignedConstraints {
         let signing_root = Self::compute_signing_root_custom(digest.tree_hash_root().0, domain);
 
         // Sign message
-        let signature = bls
-            .sign_with_ethereum_secret_key(&signing_root)
-            .map_err(|e| anyhow::anyhow!("Sign_with_domain error: {}", e))?;
+        let signature = bls.sign(&signing_root, BLS_DST);
 
         Ok(Self { message, signature })
     }

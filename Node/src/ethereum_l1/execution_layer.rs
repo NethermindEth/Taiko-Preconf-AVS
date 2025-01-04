@@ -28,7 +28,6 @@ use futures_util::StreamExt;
 use k256::Secp256k1;
 #[cfg(test)]
 use mockall::automock;
-use num_bigint::BigUint;
 use rand_core::{OsRng, RngCore};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -622,20 +621,21 @@ impl ExecutionLayer {
         let message = data.abi_encode_packed();
 
         // Convert bls public key to G1Point
-        let pk_point = self.bls_service.get_public_key();
+        let pk_point = self.bls_service.pubkey_to_g1_point();
         let pubkey = PreconfRegistry::G1Point {
-            x: BLSService::biguint_to_u256_array(BigUint::from(pk_point.x)),
-            y: BLSService::biguint_to_u256_array(BigUint::from(pk_point.y)),
+            x: pk_point[0],
+            y: pk_point[1],
         };
 
+        let signature = self.bls_service.sign(&message, &vec![]);
         // Sign message and convert to G2Point
-        let signature_point = self.bls_service.sign_as_point(&message, &vec![]);
+        let signature_point = self.bls_service.signature_to_g2_point(&signature);
 
         let signature = PreconfRegistry::G2Point {
-            x: BLSService::biguint_to_u256_array(BigUint::from(signature_point.x.c0)),
-            x_I: BLSService::biguint_to_u256_array(BigUint::from(signature_point.x.c1)),
-            y: BLSService::biguint_to_u256_array(BigUint::from(signature_point.y.c0)),
-            y_I: BLSService::biguint_to_u256_array(BigUint::from(signature_point.y.c1)),
+            x: signature_point[0],
+            x_I: signature_point[1],
+            y: signature_point[2],
+            y_I: signature_point[3],
         };
 
         // Call contract
@@ -680,20 +680,21 @@ impl ExecutionLayer {
         let message = data.abi_encode_packed();
 
         // Convert bls public key to G1Point
-        let pk_point = self.bls_service.get_public_key();
+        let pk_point = self.bls_service.pubkey_to_g1_point();
         let pubkey = PreconfRegistry::G1Point {
-            x: BLSService::biguint_to_u256_array(BigUint::from(pk_point.x)),
-            y: BLSService::biguint_to_u256_array(BigUint::from(pk_point.y)),
+            x: pk_point[0],
+            y: pk_point[1],
         };
 
+        let signature = self.bls_service.sign(&message, &vec![]);
         // Sign message and convert to G2Point
-        let signature_point = self.bls_service.sign_as_point(&message, &vec![]);
+        let signature_point = self.bls_service.signature_to_g2_point(&signature);
 
         let signature = PreconfRegistry::G2Point {
-            x: BLSService::biguint_to_u256_array(BigUint::from(signature_point.x.c0)),
-            x_I: BLSService::biguint_to_u256_array(BigUint::from(signature_point.x.c1)),
-            y: BLSService::biguint_to_u256_array(BigUint::from(signature_point.y.c0)),
-            y_I: BLSService::biguint_to_u256_array(BigUint::from(signature_point.y.c1)),
+            x: signature_point[0],
+            x_I: signature_point[1],
+            y: signature_point[2],
+            y_I: signature_point[3],
         };
 
         // Call contract

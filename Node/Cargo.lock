@@ -7755,6 +7755,7 @@ dependencies = [
  "beacon-api-client",
  "bincode",
  "bls_on_arkworks",
+ "blst",
  "chrono",
  "clap",
  "dotenv",
