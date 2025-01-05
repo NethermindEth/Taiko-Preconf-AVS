@@ -26,7 +26,8 @@ fn serialize_publickey<S>(data: &PublicKey, serializer: S) -> Result<S::Ok, S::E
 where
     S: Serializer,
 {
-    serializer.serialize_bytes(&data.serialize())
+    let hex_string = format!("0x{}", alloy::hex::encode(data.compress()));
+    serializer.serialize_str(&hex_string)
 }
 
 impl ConstraintsMessage {
@@ -66,7 +67,8 @@ fn serialize_signature<S>(data: &Signature, serializer: S) -> Result<S::Ok, S::E
 where
     S: Serializer,
 {
-    serializer.serialize_bytes(&data.serialize())
+    let hex_string = format!("0x{}", alloy::hex::encode(data.compress()));
+    serializer.serialize_str(&hex_string)
 }
 
 impl SignedConstraints {
