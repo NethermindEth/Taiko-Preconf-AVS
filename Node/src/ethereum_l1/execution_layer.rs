@@ -627,7 +627,7 @@ impl ExecutionLayer {
             y: pk_point[1],
         };
 
-        let signature = self.bls_service.sign(&message, &vec![]);
+        let signature = self.bls_service.sign(&message, &[]);
         // Sign message and convert to G2Point
         let signature_point = self.bls_service.signature_to_g2_point(&signature);
 
@@ -686,7 +686,7 @@ impl ExecutionLayer {
             y: pk_point[1],
         };
 
-        let signature = self.bls_service.sign(&message, &vec![]);
+        let signature = self.bls_service.sign(&message, &[]);
         // Sign message and convert to G2Point
         let signature_point = self.bls_service.signature_to_g2_point(&signature);
 
