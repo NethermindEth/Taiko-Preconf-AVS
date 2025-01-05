@@ -56,7 +56,7 @@ impl BLSService {
         let pk = self.get_public_key().serialize();
         let x = Self::to_contract_layout(pk[0..48].try_into().unwrap());
         let y = Self::to_contract_layout(pk[48..96].try_into().unwrap());
-        return [x, y];
+        [x, y]
     }
 
     pub fn signature_to_g2_point(&self, signature: &Signature) -> [[U256; 2]; 4] {
@@ -65,10 +65,10 @@ impl BLSService {
         let x_i = Self::to_contract_layout(signature[48..96].try_into().unwrap());
         let y = Self::to_contract_layout(signature[96..144].try_into().unwrap());
         let y_i = Self::to_contract_layout(signature[144..192].try_into().unwrap());
-        return [x, x_i, y, y_i];
+        [x, x_i, y, y_i]
     }
 
     pub fn get_public_key(&self) -> PublicKey {
-        self.pk.clone()
+        self.pk
     }
 }
