@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-alloy = { version = "0.2", features = ["full", "node-bindings", "rlp"] }
+alloy = { version = "0.2", features = ["full", "node-bindings", "rlp", "rpc-types-beacon"] }
 alloy-rlp = "0.3"
 tokio = { version = "1.38", features = ["full"] }
 tracing = "0.1.40"
@@ -34,11 +34,11 @@ bincode = "1.3"
 serde_bytes = "0.11"
 clap = "4.5"
 futures-util = "0.3"
-ethereum_ssz = "0.7"
-ethereum_ssz_derive = "0.7"
-bls_on_arkworks = "0.3.0"
-num-bigint = "0.4.6"
 rand = "0.8"
+tree_hash = "0.6.0"
+tree_hash_derive = "0.6.0"
+reth-primitives = { git = "https://github.com/paradigmxyz/reth", rev = "5dd5555c5c7d8e43420e273e7005b8af63a847a5" }
+blst = "0.3"
 
 [dev-dependencies]
 mockall_double = "0.3"
@@ -52,3 +52,6 @@ use_mock = []
 # TODO: remove when the bug is fixed (https://github.com/ralexstokes/ssz-rs/issues/163)
 [patch."https://github.com/ralexstokes/ssz-rs"]
 ssz_rs = { git = "https://github.com/noahfigueras/ssz-rs", branch = "partial_merkle_tree" }
+
+[patch.crates-io]
+zstd-sys = { git = "https://github.com/gyscos/zstd-rs", tag = "zstd-sys-2.0.9" }
