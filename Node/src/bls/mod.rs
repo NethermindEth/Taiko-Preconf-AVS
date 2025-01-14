@@ -1,8 +1,7 @@
 use alloy::primitives::U256;
 use anyhow::Error;
-use bls::types::{G1AffinePoint, G2AffinePoint, PublicKey, SecretKey, Signature};
-use bls_on_arkworks as bls;
-use num_bigint::BigUint;
+
+use blst::min_pk::{PublicKey, SecretKey, Signature};
 #[cfg(test)]
 #[cfg(not(feature = "use_mock"))]
 use rand_core::{OsRng, RngCore};
@@ -15,54 +14,61 @@ pub struct BLSService {
 impl BLSService {
     pub fn new(private_key: &str) -> Result<Self, Error> {
         let pk_bytes = alloy::hex::decode(private_key)
-            .map_err(|e| anyhow::anyhow!("BLSService: failed to decode private key: {}", e))?;
-        let sk = bls::os2ip(&pk_bytes);
-        let public_key = bls::sk_to_pk(sk);
+            .map_err(|e| anyhow::anyhow!("BLSService: failed to decode secret key: {}", e))?;
+        let sk = SecretKey::from_bytes(&pk_bytes).map_err(|e| {
+            anyhow::anyhow!(
+                "BLSService: failed to create secret key from bytes: {:?}",
+                e
+            )
+        })?;
+        let pk = sk.sk_to_pk();
 
-        tracing::info!(
-            "BLSService: public key: {}",
-            hex::encode(public_key.clone())
-        );
-
-        Ok(Self { pk: public_key, sk })
+        Ok(Self { pk, sk })
     }
 
     #[cfg(test)]
     #[cfg(not(feature = "use_mock"))]
-    pub fn generate_key() -> Self {
+    pub fn generate_key() -> Result<Self, Error> {
         let mut ikm = [0u8; 64];
         OsRng.fill_bytes(&mut ikm);
 
-        let sk = bls::keygen(&ikm.to_vec());
-        let pk = bls::sk_to_pk(sk);
+        let sk = SecretKey::key_gen(&ikm.to_vec(), &[])
+            .map_err(|e| anyhow::anyhow!("BLSService: failed to generate secret key: {:?}", e))?;
+        let pk = sk.sk_to_pk();
 
-        Self { pk, sk }
+        Ok(Self { pk, sk })
     }
 
-    pub fn sign(&self, message: &Vec<u8>, dst: &Vec<u8>) -> Signature {
-        bls::sign(self.sk, message, dst).unwrap()
+    pub fn sign(&self, message: &[u8], dst: &[u8]) -> Signature {
+        self.sk.sign(message, dst, &[])
     }
 
-    pub fn sign_as_point(&self, message: &Vec<u8>, dst: &Vec<u8>) -> G2AffinePoint {
-        let sign = self.sign(message, dst);
-        bls::signature_to_point(&sign).unwrap()
-    }
-
-    pub fn biguint_to_u256_array(biguint: BigUint) -> [U256; 2] {
-        let s = format!("{:0>96x}", biguint);
-        let res1 = U256::from_str_radix(&s[0..32], 16).unwrap();
-        let res2 = U256::from_str_radix(&s[32..96], 16).unwrap();
-
+    fn to_contract_layout(value: &[u8; 48]) -> [U256; 2] {
+        let mut buffer = [0u8; 32];
+        buffer[16..32].copy_from_slice(&value[0..16]);
+        let res1: alloy::primitives::Uint<256, 4> = U256::from_be_bytes::<32>(buffer);
+        let res2: alloy::primitives::Uint<256, 4> =
+            U256::from_be_bytes::<32>(value[16..48].try_into().unwrap());
         [res1, res2]
     }
 
-    #[cfg(test)]
-    #[cfg(not(feature = "use_mock"))]
-    pub fn get_public_key_compressed(&self) -> PublicKey {
-        self.pk.clone()
+    pub fn pubkey_to_g1_point(&self) -> [[U256; 2]; 2] {
+        let pk = self.get_public_key().serialize();
+        let x = Self::to_contract_layout(pk[0..48].try_into().unwrap());
+        let y = Self::to_contract_layout(pk[48..96].try_into().unwrap());
+        [x, y]
     }
 
-    pub fn get_public_key(&self) -> G1AffinePoint {
-        bls::pubkey_to_point(&self.pk).unwrap()
+    pub fn signature_to_g2_point(&self, signature: &Signature) -> [[U256; 2]; 4] {
+        let signature = signature.serialize();
+        let x = Self::to_contract_layout(signature[0..48].try_into().unwrap());
+        let x_i = Self::to_contract_layout(signature[48..96].try_into().unwrap());
+        let y = Self::to_contract_layout(signature[96..144].try_into().unwrap());
+        let y_i = Self::to_contract_layout(signature[144..192].try_into().unwrap());
+        [x, x_i, y, y_i]
+    }
+
+    pub fn get_public_key(&self) -> PublicKey {
+        self.pk
     }
 }
