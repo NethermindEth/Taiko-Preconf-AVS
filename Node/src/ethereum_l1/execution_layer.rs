@@ -246,7 +246,9 @@ impl ExecutionLayer {
         // Build transaction
         let tx = builder.as_ref().clone().build_typed_tx();
         let Ok(TypedTransaction::Eip1559(mut tx)) = tx else {
-            return Err(anyhow::anyhow!("Not EIP1559 transaction"));
+            return Err(anyhow::anyhow!(
+                "propose_new_block: Not EIP1559 transaction"
+            ));
         };
 
         // Sign transaction
@@ -342,7 +344,10 @@ impl ExecutionLayer {
                 tracing::info!("Preconfer registered: {:?}", tx_hash);
             }
             Err(err) => {
-                return Err(anyhow::anyhow!(err.to_avs_contract_error()));
+                return Err(anyhow::anyhow!(
+                    "register_preconfer: {}",
+                    err.to_avs_contract_error()
+                ));
             }
         }
 
@@ -430,8 +435,8 @@ impl ExecutionLayer {
                 adjustmentQuotient: proposed_meta.baseFeeConfig.adjustmentQuotient,
                 sharingPctg: proposed_meta.baseFeeConfig.sharingPctg,
                 gasIssuancePerSecond: proposed_meta.baseFeeConfig.gasIssuancePerSecond,
-                 minGasExcess: proposed_meta.baseFeeConfig.minGasExcess,
-                 maxGasIssuancePerBlock: proposed_meta.baseFeeConfig.maxGasIssuancePerBlock,
+                minGasExcess: proposed_meta.baseFeeConfig.minGasExcess,
+                maxGasIssuancePerBlock: proposed_meta.baseFeeConfig.maxGasIssuancePerBlock,
             },
             parentMetaHash: proposed_meta.parentMetaHash,
             blobUsed: proposed_meta.blobUsed,
@@ -442,7 +447,7 @@ impl ExecutionLayer {
             proposedAt: proposed_meta.proposedAt,
             proposedIn: proposed_meta.proposedIn,
             minTier: proposed_meta.minTier,
-            proposer: proposed_meta.proposer
+            proposer: proposed_meta.proposer,
         };
         let result = contract
             .proveIncorrectPreconfirmation(meta.clone(), header.clone(), signature.clone())
@@ -596,7 +601,10 @@ impl ExecutionLayer {
                 tracing::debug!("Force push lookahead sent: {}", receipt.tx_hash());
             }
             Err(err) => {
-                return Err(anyhow::anyhow!(err.to_avs_contract_error()));
+                return Err(anyhow::anyhow!(
+                    "force_push_lookahead: {}",
+                    err.to_avs_contract_error()
+                ));
             }
         }
 
@@ -655,7 +663,10 @@ impl ExecutionLayer {
                 tracing::info!("Add validator to preconfer successful: {:?}", tx_hash);
             }
             Err(err) => {
-                return Err(anyhow::anyhow!(err.to_avs_contract_error()));
+                return Err(anyhow::anyhow!(
+                    "add_validator: {}",
+                    err.to_avs_contract_error()
+                ));
             }
         }
 
@@ -714,7 +725,10 @@ impl ExecutionLayer {
                 tracing::info!("Validator removed successfully: {:?}", tx_hash);
             }
             Err(err) => {
-                return Err(anyhow::anyhow!(err.to_avs_contract_error()));
+                return Err(anyhow::anyhow!(
+                    "remove_validator: {}",
+                    err.to_avs_contract_error()
+                ));
             }
         }
 
@@ -803,8 +817,8 @@ impl ExecutionLayer {
 
         if cl_lookahead.len() != self.slot_clock.get_slots_per_epoch() as usize {
             return Err(anyhow::anyhow!(
-            "Operator::find_slots_to_preconfirm: unexpected number of proposer duties in the lookahead"
-        ));
+                "get_lookahead_params_for_epoch_using_cl_lookahead: unexpected number of proposer duties in the lookahead"
+            ));
         }
 
         let slots = self.slot_clock.get_slots_per_epoch() as usize;
@@ -835,21 +849,42 @@ impl ExecutionLayer {
             &self.provider_ws,
         );
 
-        let params = contract
+        let params = match contract
             .getLookaheadParamsForEpoch(
                 U256::from(epoch_begin_timestamp),
                 validator_bls_pub_keys.map(Bytes::from),
             )
             .call()
-            .await?
-            ._0;
+            .await
+        {
+            Ok(params) => params._0,
+            Err(err) => {
+                let raw_result = contract
+                    .getLookaheadParamsForEpoch(
+                        U256::from(epoch_begin_timestamp),
+                        validator_bls_pub_keys.map(Bytes::from),
+                    )
+                    .call_raw()
+                    .await;
+                self.check_raw_result(raw_result);
 
-        tracing::debug!(
-            "get_lookahead_params_for_epoch params len: {}",
-            params.len()
-        );
+                return Err(anyhow::anyhow!(
+                    "get_lookahead_params_for_epoch: {}",
+                    err.to_avs_contract_error()
+                ));
+            }
+        };
 
         Ok(params)
+    }
+
+    fn check_raw_result(&self, raw_result: Result<Bytes, alloy::contract::Error>) {
+        tracing::debug!("Raw result: {:?}", raw_result);
+        if let Ok(raw_result) = raw_result {
+            if raw_result.is_empty() {
+                tracing::error!("Raw result is empty, contract {} does not have any code, check the contract address and RPC URL", self.contract_addresses.avs.preconf_task_manager);
+            }
+        }
     }
 
     pub async fn get_lookahead_preconfer_addresses_for_epoch(
@@ -909,7 +944,15 @@ impl ExecutionLayer {
                 tracing::debug!("is_lookahead_required for next epoch: {}", is_required._0);
                 Ok(is_required._0)
             }
-            Err(err) => Err(anyhow::anyhow!(err.to_avs_contract_error())),
+            Err(err) => {
+                let raw_result = contract.isLookaheadRequired().call_raw().await;
+                self.check_raw_result(raw_result);
+
+                Err(anyhow::anyhow!(
+                    "is_lookahead_required: {}",
+                    err.to_avs_contract_error()
+                ))
+            }
         }
     }
 
@@ -1057,25 +1100,97 @@ mod tests {
         let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
         let ws_rpc_url = anvil.ws_endpoint();
         let private_key = anvil.keys()[0].clone();
-        let _el = ExecutionLayer::new_from_pk(ws_rpc_url, rpc_url, private_key)
+        let el = ExecutionLayer::new_from_pk(ws_rpc_url, rpc_url, private_key)
             .await
             .unwrap();
 
-        let _epoch_begin_timestamp = 0;
-        let _validator_bls_pub_keys: [BLSCompressedPublicKey; 32] = [[0u8; 48]; 32];
+        let epoch_begin_timestamp = 0;
+        let validator_bls_pub_keys: [BLSCompressedPublicKey; 32] = [[0u8; 48]; 32];
 
+        let contract = PreconfTaskManager::new(
+            el.contract_addresses.avs.preconf_task_manager,
+            &el.provider_ws,
+        );
         // TODO:
         // There is a bug in the Anvil (anvil 0.2.0) library:
         // `Result::unwrap()` on an `Err` value: buffer overrun while deserializing
         // check if it's fixed in next version
-        // let lookahead_params = el
-        //     .get_lookahead_params_for_epoch(epoch_begin_timestamp, &validator_bls_pub_keys)
-        //     .await
-        //     .unwrap();
+        let lookahead_params = el
+            .get_lookahead_params_for_epoch(epoch_begin_timestamp, &validator_bls_pub_keys)
+            .await
+            .unwrap();
         // assert!(
         //     !lookahead_params.is_empty(),
         //     "Lookahead params should not be empty"
         // );
+    }
+
+    use alloy::json_abi::JsonAbi;
+
+    #[tokio::test]
+    async fn test_decode_preconf_task_manager_abi() {
+        let abi = include_str!("abi/PreconfTaskManager.json");
+
+        // let path = std::env::current_dir()?.join("examples/advanced/examples/abi/SimpleLending.json");
+        // let contents = std::fs::read(path)?;
+        let abi: JsonAbi = serde_json::from_str(abi).unwrap();
+
+        // Print deserialized ABI components
+        println!("Deserialized ABI:");
+
+        // Constructor
+        if let Some(constructor) = &abi.constructor {
+            println!("\n>> Constructor:");
+            println!("  Inputs: {:?}", constructor.inputs);
+            println!("  State mutability: {:?}", constructor.state_mutability);
+        }
+
+        println!("\n=========\n");
+
+        // Functions
+        println!("Functions:");
+        for (name, functions) in &abi.functions {
+            println!("\n>> {}:", name);
+            for function in functions {
+                println!("    Inputs: {:?}", function.inputs);
+                println!("    Outputs: {:?}", function.outputs);
+                println!("    State mutability: {:?}", function.state_mutability);
+            }
+        }
+
+        println!("\n=========\n");
+
+        // Events
+        println!("Events:");
+        for (name, events) in &abi.events {
+            println!("\n>> {}:", name);
+            for event in events {
+                println!("    Inputs: {:?}", event.inputs);
+                println!("    Anonymous: {}", event.anonymous);
+            }
+        }
+
+        println!("\n=========\n");
+
+        // Errors
+        println!("Errors:");
+        for (name, errors) in &abi.errors {
+            println!(">> {}:", name);
+            for error in errors {
+                println!("    Inputs: {:?}", error.inputs);
+            }
+        }
+
+        println!("\n=========\n");
+
+        // Example of working with a specific function
+        if let Some(add_collateral) = abi.functions.get("addCollateral").and_then(|f| f.first()) {
+            println!("Example: addCollateral() function exists!");
+            println!("Inputs:");
+            for input in &add_collateral.inputs {
+                println!("  Name: {}, Type: {}", input.name, input.ty);
+            }
+        }
     }
 
     #[tokio::test]

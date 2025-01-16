@@ -10,7 +10,9 @@ mod preconfirmation_proof;
 
 use crate::{
     bls::BLSService,
-    ethereum_l1::{block_proposed::BlockProposedV2, execution_layer::PreconfTaskManager, EthereumL1},
+    ethereum_l1::{
+        block_proposed::BlockProposedV2, execution_layer::PreconfTaskManager, EthereumL1,
+    },
     mev_boost::MevBoost,
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::types::*,
