@@ -311,11 +311,11 @@ mod tests {
         Operator::new(ethereum_l1, epoch)
     }
 
-    fn create_lookahead_buffer() -> [PreconfTaskManager::LookaheadBufferEntry; 64] {
+    fn create_lookahead_buffer() -> [PreconfTaskManager::LookaheadBufferEntry; 128] {
         use alloy::primitives::Address;
 
         let mut buffer = vec![];
-        for _ in 0..64 {
+        for _ in 0..128 {
             buffer.push(PreconfTaskManager::LookaheadBufferEntry {
                 isFallback: false,
                 timestamp: 0,
