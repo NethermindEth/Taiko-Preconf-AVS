@@ -1,4 +1,4 @@
-use crate::ethereum_l1::{block_proposed::BlockProposed, EthereumL1};
+use crate::ethereum_l1::{block_proposed::BlockProposedV2, EthereumL1};
 use futures_util::StreamExt;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
@@ -6,11 +6,11 @@ use tracing::{error, info};
 
 pub struct BlockProposedEventReceiver {
     ethereum_l1: Arc<EthereumL1>,
-    node_tx: Sender<BlockProposed>,
+    node_tx: Sender<BlockProposedV2>,
 }
 
 impl BlockProposedEventReceiver {
-    pub fn new(ethereum_l1: Arc<EthereumL1>, node_tx: Sender<BlockProposed>) -> Self {
+    pub fn new(ethereum_l1: Arc<EthereumL1>, node_tx: Sender<BlockProposedV2>) -> Self {
         Self {
             ethereum_l1,
             node_tx,
@@ -48,7 +48,7 @@ impl BlockProposedEventReceiver {
                             "Received block proposed event for block: {}",
                             block_proposed.blockId
                         );
-                        match BlockProposed::new(block_proposed) {
+                        match BlockProposedV2::new(block_proposed) {
                             Ok(block_proposed) => {
                                 if let Err(e) = self.node_tx.send(block_proposed).await {
                                     error!(
