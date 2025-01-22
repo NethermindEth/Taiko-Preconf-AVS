@@ -19,5 +19,6 @@ FROM gcr.io/distroless/cc
 
 COPY --from=builder /app/taiko_preconf_avs_node/target/release/taiko_preconf_avs_node /usr/local/bin/taiko_preconf_avs_node
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /bin/sleep /bin/sleep
 
 ENTRYPOINT ["taiko_preconf_avs_node"]
