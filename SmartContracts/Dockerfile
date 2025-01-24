@@ -12,6 +12,8 @@ RUN git init && \
     foundryup && \
     forge install
 
+RUN chmod +x /app/scripts/deployment/*.sh
+
 ENV PATH="/root/.foundry/bin:$PATH"
 
 ENTRYPOINT ["sh", "-c"]
