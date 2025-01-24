@@ -177,9 +177,7 @@ impl LookaheadUpdatedEventHandler {
                     &lookahead_updated_event_params[lookahead_params.len()];
                 Ok(Some(first_additional_wrong_param.timestamp.try_into()?))
             }
-            std::cmp::Ordering::Equal => {
-                Ok(None)
-            }
+            std::cmp::Ordering::Equal => Ok(None),
         }
     }
 

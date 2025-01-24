@@ -156,7 +156,7 @@ mod tests {
         let preconf_task_manager = get_contract_address(&output, "Preconf Task Manager");
 
         // Create a new BLSService with a random private key
-        let bls_service = Arc::new(BLSService::generate_key());
+        let bls_service = Arc::new(BLSService::generate_key().unwrap());
 
         // Create AVS contract addresses
         let avs_contracts = AvsContractAddresses {
@@ -221,7 +221,7 @@ mod tests {
         }
 
         // Copy logic form smart contract to get public key hash
-        let pk_compressed = bls_service.get_public_key_compressed();
+        let pk_compressed = bls_service.get_public_key().compress();
         let mut res_arr: [u8; 32] = [0; 32];
         res_arr[16..32].copy_from_slice(&pk_compressed[0..16]);
         let res1 = U256::from_be_bytes(res_arr);

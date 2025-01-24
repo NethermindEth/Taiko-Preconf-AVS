@@ -1,6 +1,6 @@
 use super::{
     avs_contract_error::AVSContractError,
-    block_proposed::{BlockProposed, EventSubscriptionBlockProposed, TaikoEvents},
+    block_proposed::{BlockProposedV2, EventSubscriptionBlockProposedV2, TaikoEvents},
     slot_clock::SlotClock,
 };
 use crate::{
@@ -28,7 +28,6 @@ use futures_util::StreamExt;
 use k256::Secp256k1;
 #[cfg(test)]
 use mockall::automock;
-use num_bigint::BigUint;
 use rand_core::{OsRng, RngCore};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -72,25 +71,16 @@ sol!(
 );
 
 sol! {
-    /// @dev Hook and it's data (currently used only during proposeBlock)
-    struct HookCall {
-        address hook;
-        bytes data;
-    }
-
     /// @dev Represents proposeBlock's _data input parameter
-    struct BlockParams {
-        address assignedProver; // DEPRECATED, value ignored.
+    struct BlockParamsV2 {
+        address proposer;
         address coinbase;
-        bytes32 extraData;
         bytes32 parentMetaHash;
-        HookCall[] hookCalls; // DEPRECATED, value ignored.
-        bytes signature;
-        uint32 l1StateBlockNumber;
-        uint64 timestamp;
-        uint32 blobTxListOffset;
-        uint32 blobTxListLength;
-        uint8 blobIndex;
+        uint64 anchorBlockId; // NEW
+        uint64 timestamp; // NEW
+        uint32 blobTxListOffset; // NEW
+        uint32 blobTxListLength; // NEW
+        uint8 blobIndex; // NEW
     }
 }
 
@@ -222,31 +212,28 @@ impl ExecutionLayer {
             &self.provider_ws,
         );
 
-        let block_params = BlockParams {
-            assignedProver: Address::ZERO,
+        let block_params = BlockParamsV2 {
+            proposer: Address::ZERO,
             coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(
                 &self.wallet,
             ),
-            extraData: FixedBytes::from(&[0u8; 32]),
             parentMetaHash: FixedBytes::from(&[0u8; 32]),
-            hookCalls: vec![],
-            signature: Bytes::from(vec![0; 32]),
-            l1StateBlockNumber: 0,
+            anchorBlockId: 0,
             timestamp: 0,
             blobTxListOffset: 0,
             blobTxListLength: 0,
             blobIndex: 0,
         };
 
-        let encoded_block_params = Bytes::from(BlockParams::abi_encode_sequence(&block_params));
+        let encoded_block_params = Bytes::from(BlockParamsV2::abi_encode_sequence(&block_params));
 
         let tx_list = Bytes::from(tx_list);
 
         // TODO check gas parameters
         let builder = contract
             .newBlockProposal(
-                encoded_block_params,
-                tx_list,
+                vec![encoded_block_params],
+                vec![tx_list],
                 U256::from(lookahead_pointer),
                 lookahead_set_params,
             )
@@ -259,7 +246,9 @@ impl ExecutionLayer {
         // Build transaction
         let tx = builder.as_ref().clone().build_typed_tx();
         let Ok(TypedTransaction::Eip1559(mut tx)) = tx else {
-            return Err(anyhow::anyhow!("Not EIP1559 transaction"));
+            return Err(anyhow::anyhow!(
+                "propose_new_block: Not EIP1559 transaction"
+            ));
         };
 
         // Sign transaction
@@ -355,7 +344,10 @@ impl ExecutionLayer {
                 tracing::info!("Preconfer registered: {:?}", tx_hash);
             }
             Err(err) => {
-                return Err(anyhow::anyhow!(err.to_avs_contract_error()));
+                return Err(anyhow::anyhow!(
+                    "register_preconfer: {}",
+                    err.to_avs_contract_error()
+                ));
             }
         }
 
@@ -414,7 +406,7 @@ impl ExecutionLayer {
         chain_id: u64,
         preconf_tx_list_hash: [u8; 32],
         preconf_signature: [u8; 65],
-        block_proposed: &BlockProposed,
+        block_proposed: &BlockProposedV2,
     ) -> Result<(), Error> {
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
@@ -429,23 +421,33 @@ impl ExecutionLayer {
         let signature = Bytes::from(preconf_signature);
 
         let proposed_meta = &block_proposed.event_data().meta;
-        let meta = PreconfTaskManager::BlockMetadata {
-            l1Hash: proposed_meta.l1Hash,
+        let meta = PreconfTaskManager::BlockMetadataV2 {
+            anchorBlockHash: proposed_meta.anchorBlockHash,
             difficulty: proposed_meta.difficulty,
             blobHash: proposed_meta.blobHash,
             extraData: proposed_meta.extraData,
-            depositsHash: proposed_meta.depositsHash,
             coinbase: proposed_meta.coinbase,
             id: proposed_meta.id,
             gasLimit: proposed_meta.gasLimit,
             timestamp: proposed_meta.timestamp,
-            l1Height: proposed_meta.l1Height,
-            minTier: proposed_meta.minTier,
-            blobUsed: proposed_meta.blobUsed,
+            anchorBlockId: proposed_meta.anchorBlockId,
+            baseFeeConfig: PreconfTaskManager::BaseFeeConfig {
+                adjustmentQuotient: proposed_meta.baseFeeConfig.adjustmentQuotient,
+                sharingPctg: proposed_meta.baseFeeConfig.sharingPctg,
+                gasIssuancePerSecond: proposed_meta.baseFeeConfig.gasIssuancePerSecond,
+                minGasExcess: proposed_meta.baseFeeConfig.minGasExcess,
+                maxGasIssuancePerBlock: proposed_meta.baseFeeConfig.maxGasIssuancePerBlock,
+            },
             parentMetaHash: proposed_meta.parentMetaHash,
-            sender: proposed_meta.sender,
+            blobUsed: proposed_meta.blobUsed,
             blobTxListOffset: proposed_meta.blobTxListOffset,
             blobTxListLength: proposed_meta.blobTxListLength,
+            blobIndex: proposed_meta.blobIndex,
+            livenessBond: proposed_meta.livenessBond,
+            proposedAt: proposed_meta.proposedAt,
+            proposedIn: proposed_meta.proposedIn,
+            minTier: proposed_meta.minTier,
+            proposer: proposed_meta.proposer,
         };
         let result = contract
             .proveIncorrectPreconfirmation(meta.clone(), header.clone(), signature.clone())
@@ -599,7 +601,10 @@ impl ExecutionLayer {
                 tracing::debug!("Force push lookahead sent: {}", receipt.tx_hash());
             }
             Err(err) => {
-                return Err(anyhow::anyhow!(err.to_avs_contract_error()));
+                return Err(anyhow::anyhow!(
+                    "force_push_lookahead: {}",
+                    err.to_avs_contract_error()
+                ));
             }
         }
 
@@ -622,20 +627,21 @@ impl ExecutionLayer {
         let message = data.abi_encode_packed();
 
         // Convert bls public key to G1Point
-        let pk_point = self.bls_service.get_public_key();
+        let pk_point = self.bls_service.pubkey_to_g1_point();
         let pubkey = PreconfRegistry::G1Point {
-            x: BLSService::biguint_to_u256_array(BigUint::from(pk_point.x)),
-            y: BLSService::biguint_to_u256_array(BigUint::from(pk_point.y)),
+            x: pk_point[0],
+            y: pk_point[1],
         };
 
+        let signature = self.bls_service.sign(&message, &[]);
         // Sign message and convert to G2Point
-        let signature_point = self.bls_service.sign_as_point(&message, &vec![]);
+        let signature_point = self.bls_service.signature_to_g2_point(&signature);
 
         let signature = PreconfRegistry::G2Point {
-            x: BLSService::biguint_to_u256_array(BigUint::from(signature_point.x.c0)),
-            x_I: BLSService::biguint_to_u256_array(BigUint::from(signature_point.x.c1)),
-            y: BLSService::biguint_to_u256_array(BigUint::from(signature_point.y.c0)),
-            y_I: BLSService::biguint_to_u256_array(BigUint::from(signature_point.y.c1)),
+            x: signature_point[0],
+            x_I: signature_point[1],
+            y: signature_point[2],
+            y_I: signature_point[3],
         };
 
         // Call contract
@@ -657,7 +663,10 @@ impl ExecutionLayer {
                 tracing::info!("Add validator to preconfer successful: {:?}", tx_hash);
             }
             Err(err) => {
-                return Err(anyhow::anyhow!(err.to_avs_contract_error()));
+                return Err(anyhow::anyhow!(
+                    "add_validator: {}",
+                    err.to_avs_contract_error()
+                ));
             }
         }
 
@@ -680,20 +689,21 @@ impl ExecutionLayer {
         let message = data.abi_encode_packed();
 
         // Convert bls public key to G1Point
-        let pk_point = self.bls_service.get_public_key();
+        let pk_point = self.bls_service.pubkey_to_g1_point();
         let pubkey = PreconfRegistry::G1Point {
-            x: BLSService::biguint_to_u256_array(BigUint::from(pk_point.x)),
-            y: BLSService::biguint_to_u256_array(BigUint::from(pk_point.y)),
+            x: pk_point[0],
+            y: pk_point[1],
         };
 
+        let signature = self.bls_service.sign(&message, &[]);
         // Sign message and convert to G2Point
-        let signature_point = self.bls_service.sign_as_point(&message, &vec![]);
+        let signature_point = self.bls_service.signature_to_g2_point(&signature);
 
         let signature = PreconfRegistry::G2Point {
-            x: BLSService::biguint_to_u256_array(BigUint::from(signature_point.x.c0)),
-            x_I: BLSService::biguint_to_u256_array(BigUint::from(signature_point.x.c1)),
-            y: BLSService::biguint_to_u256_array(BigUint::from(signature_point.y.c0)),
-            y_I: BLSService::biguint_to_u256_array(BigUint::from(signature_point.y.c1)),
+            x: signature_point[0],
+            x_I: signature_point[1],
+            y: signature_point[2],
+            y_I: signature_point[3],
         };
 
         // Call contract
@@ -715,7 +725,10 @@ impl ExecutionLayer {
                 tracing::info!("Validator removed successfully: {:?}", tx_hash);
             }
             Err(err) => {
-                return Err(anyhow::anyhow!(err.to_avs_contract_error()));
+                return Err(anyhow::anyhow!(
+                    "remove_validator: {}",
+                    err.to_avs_contract_error()
+                ));
             }
         }
 
@@ -778,13 +791,13 @@ impl ExecutionLayer {
 
     pub async fn subscribe_to_block_proposed_event(
         &self,
-    ) -> Result<EventSubscriptionBlockProposed, Error> {
+    ) -> Result<EventSubscriptionBlockProposedV2, Error> {
         let taiko_events = TaikoEvents::new(self.contract_addresses.taiko_l1, &self.provider_ws);
 
-        let block_proposed_filter = taiko_events.BlockProposed_filter().subscribe().await?;
-        tracing::debug!("Subscribed to block proposed event");
+        let block_proposed_filter = taiko_events.BlockProposedV2_filter().subscribe().await?;
+        tracing::debug!("Subscribed to block proposed V2 event");
 
-        Ok(EventSubscriptionBlockProposed(block_proposed_filter))
+        Ok(EventSubscriptionBlockProposedV2(block_proposed_filter))
     }
 
     pub async fn get_lookahead_params_for_epoch_using_cl_lookahead(
@@ -804,8 +817,8 @@ impl ExecutionLayer {
 
         if cl_lookahead.len() != self.slot_clock.get_slots_per_epoch() as usize {
             return Err(anyhow::anyhow!(
-            "Operator::find_slots_to_preconfirm: unexpected number of proposer duties in the lookahead"
-        ));
+                "get_lookahead_params_for_epoch_using_cl_lookahead: unexpected number of proposer duties in the lookahead"
+            ));
         }
 
         let slots = self.slot_clock.get_slots_per_epoch() as usize;
@@ -836,21 +849,42 @@ impl ExecutionLayer {
             &self.provider_ws,
         );
 
-        let params = contract
+        let params = match contract
             .getLookaheadParamsForEpoch(
                 U256::from(epoch_begin_timestamp),
                 validator_bls_pub_keys.map(Bytes::from),
             )
             .call()
-            .await?
-            ._0;
+            .await
+        {
+            Ok(params) => params._0,
+            Err(err) => {
+                let raw_result = contract
+                    .getLookaheadParamsForEpoch(
+                        U256::from(epoch_begin_timestamp),
+                        validator_bls_pub_keys.map(Bytes::from),
+                    )
+                    .call_raw()
+                    .await;
+                self.check_raw_result(raw_result);
 
-        tracing::debug!(
-            "get_lookahead_params_for_epoch params len: {}",
-            params.len()
-        );
+                return Err(anyhow::anyhow!(
+                    "get_lookahead_params_for_epoch: {}",
+                    err.to_avs_contract_error()
+                ));
+            }
+        };
 
         Ok(params)
+    }
+
+    fn check_raw_result(&self, raw_result: Result<Bytes, alloy::contract::Error>) {
+        tracing::debug!("Raw result: {:?}", raw_result);
+        if let Ok(raw_result) = raw_result {
+            if raw_result.is_empty() {
+                tracing::error!("Raw result is empty, contract {} does not have any code, check the contract address and RPC URL", self.contract_addresses.avs.preconf_task_manager);
+            }
+        }
     }
 
     pub async fn get_lookahead_preconfer_addresses_for_epoch(
@@ -886,7 +920,7 @@ impl ExecutionLayer {
 
     pub async fn get_lookahead_preconfer_buffer(
         &self,
-    ) -> Result<[PreconfTaskManager::LookaheadBufferEntry; 64], Error> {
+    ) -> Result<[PreconfTaskManager::LookaheadBufferEntry; 128], Error> {
         let contract = PreconfTaskManager::new(
             self.contract_addresses.avs.preconf_task_manager,
             &self.provider_ws,
@@ -910,7 +944,15 @@ impl ExecutionLayer {
                 tracing::debug!("is_lookahead_required for next epoch: {}", is_required._0);
                 Ok(is_required._0)
             }
-            Err(err) => Err(anyhow::anyhow!(err.to_avs_contract_error())),
+            Err(err) => {
+                let raw_result = contract.isLookaheadRequired().call_raw().await;
+                self.check_raw_result(raw_result);
+
+                Err(anyhow::anyhow!(
+                    "is_lookahead_required: {}",
+                    err.to_avs_contract_error()
+                ))
+            }
         }
     }
 
