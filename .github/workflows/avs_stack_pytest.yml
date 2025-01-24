@@ -28,6 +28,7 @@ jobs:
             kurtosis enclave rm taiko-preconf-devnet --force
             kurtosis clean -a
             cd ~/preconfirm-devnet-package
+            git pull
             kurtosis run --enclave taiko-preconf-devnet . --args-file network_params.yaml
 
             cd ~/Taiko-Preconf-AVS/e2e_tests
