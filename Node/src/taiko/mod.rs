@@ -25,8 +25,10 @@ impl Taiko {
         let result = l2_tx_lists::decompose_pending_lists_json(
             self.rpc_proposer
                 .call_method("RPC.GetL2TxLists", vec![])
-                .await?,
-        )?;
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to get L2 tx lists: {}", e))?,
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to decompose L2 tx lists: {}", e))?;
 
         if !result.tx_list_bytes.is_empty() {
             Self::print_number_of_received_txs(&result);
@@ -65,6 +67,7 @@ impl Taiko {
         self.rpc_driver
             .call_method("RPC.AdvanceL2ChainHeadWithNewBlocks", vec![payload])
             .await
+            .map_err(|e| anyhow::anyhow!("Failed to advance L2 chain head with new blocks: {}", e))
     }
 }
 

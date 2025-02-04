@@ -345,7 +345,7 @@ impl ExecutionLayer {
             }
             Err(err) => {
                 return Err(anyhow::anyhow!(
-                    "register_preconfer: {}",
+                    "Preconfer registration failed: {}",
                     err.to_avs_contract_error()
                 ));
             }
