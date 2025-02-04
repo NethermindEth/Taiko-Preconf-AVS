@@ -22,11 +22,11 @@ jobs:
       - name: SSH into target machine
         run: |
           ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -o ServerAliveCountMax=30 root@${{ env.TARGET_MACHINE_IP }} << 'EOF'
-            docker pull nethswitchboard/taiko-protocol-dev:latest
-            docker pull nethswitchboard/taiko-client-dev:latest
-            docker pull nethswitchboard/taiko-preconf-avs-dev:latest
-            docker pull nethswitchboard/taiko-preconf-avs-protocol-dev:latest
-            docker pull nethswitchboard/taiko-preconf-avs-pytest-dev:latest
+            docker pull nethswitchboard/preconf-avs-node:latest
+            docker pull nethswitchboard/preconf-pytest:latest
+            docker pull nethswitchboard/preconf-avs-protocol:latest
+            docker pull nethswitchboard/preconf-taiko-client:latest
+            docker pull nethswitchboard/preconf-taiko-protocol:latest
 
             kurtosis enclave rm taiko-preconf-devnet --force
             kurtosis clean -a
