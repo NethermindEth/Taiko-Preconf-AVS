@@ -6,8 +6,3 @@ solc_version = "0.8.25"
 evm_version = "shanghai"
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
-
-[dependencies]
-forge-std = { git = "https://github.com/foundry-rs/forge-std", tag = "v1.5.0" }
-openzeppelin-contracts = { git = "https://github.com/OpenZeppelin/openzeppelin-contracts", tag = "v4.7.0" }
-openzeppelin-contracts-upgradeable = { git = "https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable", tag = "v4.7.0" }
