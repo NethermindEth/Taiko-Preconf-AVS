@@ -10,8 +10,7 @@ RUN git init && \
     curl -L https://foundry.paradigm.xyz | bash && \
     . ~/.bashrc && \
     foundryup && \
-    forge install && \
-    git submodule update --init --recursive
+    forge install
 
 ENV PATH="/root/.foundry/bin:$PATH"
 
