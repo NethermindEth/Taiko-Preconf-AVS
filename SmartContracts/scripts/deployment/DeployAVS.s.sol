@@ -65,24 +65,8 @@ contract DeployAVS is BaseScript {
         );
 
         console2.log("Proxy Admin: ", address(proxyAdmin));
-        vm.writeJson(
-            vm.serializeAddress("deployment", "proxy_admin", address(proxyAdmin)),
-            string.concat(vm.projectRoot(), "scripts/deployment/deploy_avs.json")
-        );
         console2.log("Preconf Registry: ", preconfRegistry);
-        vm.writeJson(
-            vm.serializeAddress("deployment", "preconf_registry", address(preconfRegistry)),
-            string.concat(vm.projectRoot(), "scripts/deployment/deploy_avs.json")
-        );
         console2.log("Preconf Service Manager: ", preconfServiceManager);
-        vm.writeJson(
-            vm.serializeAddress("deployment", "preconf_service_manager", address(preconfServiceManager)),
-            string.concat(vm.projectRoot(), "scripts/deployment/deploy_avs.json")
-        );
         console2.log("Preconf Task Manager: ", preconfTaskManager);
-        vm.writeJson(
-            vm.serializeAddress("deployment", "preconf_task_manager", address(preconfTaskManager)),
-            string.concat(vm.projectRoot(), "scripts/deployment/deploy_avs.json")
-        );
     }
 }
