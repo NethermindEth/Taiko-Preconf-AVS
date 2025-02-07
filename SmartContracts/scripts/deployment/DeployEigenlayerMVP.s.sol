@@ -39,24 +39,8 @@ contract DeployEigenlayerMVP is BaseScript {
         proxyAdmin.upgrade(ITransparentUpgradeableProxy(slasher), address(slasherImpl));
 
         console2.log("AVS Directory: ", avsDirectory);
-        vm.writeJson(
-            vm.serializeAddress("deployment", "avs_directory", address(avsDirectory)),
-            string.concat(vm.projectRoot(), "scripts/deployment/deploy_eigenlayer_mvp.json")
-        );
         console2.log("Delegation Manager: ", delegationManager);
-        vm.writeJson(
-            vm.serializeAddress("deployment", "delegation_manager", address(delegationManager)),
-            string.concat(vm.projectRoot(), "scripts/deployment/deploy_eigenlayer_mvp.json")
-        );
         console2.log("Strategy Manager: ", strategyManager);
-        vm.writeJson(
-            vm.serializeAddress("deployment", "strategy_manager", address(strategyManager)),
-            string.concat(vm.projectRoot(), "scripts/deployment/deploy_eigenlayer_mvp.json")
-        );
         console2.log("Slasher: ", slasher);
-        vm.writeJson(
-            vm.serializeAddress("deployment", "slasher", address(slasher)),
-            string.concat(vm.projectRoot(), "scripts/deployment/deploy_eigenlayer_mvp.json")
-        );
     }
 }

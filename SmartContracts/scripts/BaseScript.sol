@@ -16,6 +16,10 @@ contract BaseScript is Script {
 
     function deployProxy(address _impl, address _admin, bytes memory _data) internal returns (address) {
         TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(_impl, _admin, _data);
+        vm.writeJson(
+            vm.serializeAddress("deployment", "proxy", proxy),
+            string.concat(vm.projectRoot(), "/scripts/deployment/deploy_proxy.json")
+        );
         return address(proxy);
     }
 }
