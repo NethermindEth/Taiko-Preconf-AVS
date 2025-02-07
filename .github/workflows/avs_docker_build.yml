@@ -18,8 +18,15 @@ env:
 jobs:
   build:
     name: Build and push docker image
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     if: github.repository == 'NethermindEth/Taiko-Preconf-AVS'
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux/amd64
+          - os: ubuntu-24.04-arm
+            platform: linux/arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,7 +59,7 @@ jobs:
         id: build
         uses: docker/build-push-action@v5
         with:
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           context: .
           file: Dockerfile
           push: true
