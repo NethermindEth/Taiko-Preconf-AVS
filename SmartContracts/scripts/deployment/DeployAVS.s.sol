@@ -64,7 +64,7 @@ contract DeployAVS is BaseScript {
             abi.encodeCall(PreconfTaskManager.initialize, IERC20(taikoToken))
         );
 
-        console2.log("Proxy admin: ", address(proxyAdmin));
+        console2.log("Proxy Admin: ", address(proxyAdmin));
         console2.log("Preconf Registry: ", preconfRegistry);
         console2.log("Preconf Service Manager: ", preconfServiceManager);
         console2.log("Preconf Task Manager: ", preconfTaskManager);
