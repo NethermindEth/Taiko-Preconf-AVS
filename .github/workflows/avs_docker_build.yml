@@ -13,7 +13,7 @@ on:
 env:
   DOCKER_REGISTRY: docker.io
   DOCKER_USERNAME: nethswitchboard
-  DOCKER_REPOSITORY_DEV: preconf-avs-node
+  DOCKER_REPOSITORY: preconf-avs-node
 
 jobs:
   build:
@@ -47,7 +47,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_REPOSITORY_DEV }}
+          images: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_REPOSITORY }}
           tags: type=raw,value=temp-${{ matrix.os }}
 
       - name: Build and push by digest
@@ -79,7 +79,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY_DEV }}
+          images: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_REPOSITORY }}
           tags: |
             type=raw,value=latest
             type=ref,event=branch
@@ -90,8 +90,8 @@ jobs:
       - name: Create manifest list and push
         run: |
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY_DEV }}:temp-ubuntu-latest \
-            ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY_DEV }}:temp-ubuntu-24.04-arm
+            ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_REPOSITORY }}:temp-ubuntu-latest \
+            ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ env.DOCKER_REPOSITORY }}:temp-ubuntu-24.04-arm
       
       - name: Summary
         run: |
