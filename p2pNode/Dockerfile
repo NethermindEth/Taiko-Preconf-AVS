@@ -13,10 +13,10 @@ RUN cargo build -p p2p-boot-node --release
 FROM debian:bookworm-slim
 
 # Copy the build artifact from the builder stage
-COPY --from=builder /usr/src/p2p-node/target/release/p2p-node /usr/local/bin/p2p-node
+COPY --from=builder /usr/src/p2p-node/target/release/p2p-boot-node /usr/local/bin/p2p-boot-node
 
 # Expose the port that the server will run on
 EXPOSE 9000
 
 # Run the binary
-CMD ["p2p-node"]
+CMD ["p2p-boot-node"]
