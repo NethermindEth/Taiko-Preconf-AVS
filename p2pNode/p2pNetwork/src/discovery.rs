@@ -1,5 +1,6 @@
 use crate::enr::{build_enr, EnrAsPeerId};
 use crate::network::P2PNetworkConfig;
+use anyhow::{anyhow, Result};
 use discv5::enr::NodeId;
 use discv5::{enr::CombinedKey, ConfigBuilder, Discv5, Enr, Event, ListenConfig};
 use futures::stream::FuturesUnordered;
@@ -38,31 +39,24 @@ pub struct DiscoveredPeers {
 }
 
 impl Discovery {
-    pub async fn new(config: &P2PNetworkConfig, local_key: &Keypair) -> Self {
+    pub async fn new(config: &P2PNetworkConfig, local_key: &Keypair) -> Result<Self> {
         // Generate ENR
-        let enr_key: CombinedKey = key_from_libp2p(local_key.clone()).unwrap();
-
-        let local_enr = build_enr(config, &enr_key);
+        let enr_key = key_from_libp2p(local_key.clone())?;
+        let local_enr = build_enr(config, &enr_key).map_err(|_| anyhow!("Failed to build ENR"))?;
 
         info!("Node Id: {:?}", local_enr.node_id());
-        if local_enr.udp4_socket().is_some() {
+        if let Some(ip) = local_enr.ip4() {
             info!("Base64 ENR: {}", local_enr.to_base64());
-            info!(
-                "IP: {}, UDP_PORT:{}",
-                local_enr.ip4().unwrap(),
-                local_enr.udp4().unwrap()
-            );
+            info!("IP: {}, UDP_PORT:{}", ip, local_enr.udp4().unwrap_or(0));
         } else {
-            warn!("ENR is not printed as no IP:PORT was specified");
+            warn!("ENR missing IP:PORT");
         }
 
-        // listening address and port
         let listen_config = ListenConfig::Ipv4 {
-            ip: local_enr.ip4().unwrap(),
+            ip: local_enr.ip4().unwrap_or([0, 0, 0, 0].into()),
             port: 9000,
         };
 
-        // Setup default config
         let discv5_config = ConfigBuilder::new(listen_config)
             .enable_packet_filter()
             .request_timeout(Duration::from_secs(30))
@@ -77,37 +71,38 @@ impl Discovery {
             .ping_interval(Duration::from_secs(300))
             .build();
 
-        // Create discv5 instance
-        let mut discv5 = Discv5::new(local_enr.clone(), enr_key, discv5_config).unwrap();
+        let mut discv5 = Discv5::new(local_enr.clone(), enr_key, discv5_config)
+            .map_err(|_| anyhow!("Failed to create Discv5 instance"))?;
 
-        // Process bootnode
-        if let Some(vec) = config.boot_nodes.clone() {
-            for enr_str in vec {
-                if let Ok(bootnode_enr) = Enr::from_str(&enr_str) {
-                    info!("Add boot node ENR: {}", enr_str);
-                    discv5.add_enr(bootnode_enr).expect("Add bootnode error");
-                } else {
-                    warn!("Failed to parse bootnode ENR: {}", enr_str);
+        if let Some(bootnodes) = &config.boot_nodes {
+            for enr_str in bootnodes {
+                match Enr::from_str(enr_str) {
+                    Ok(bootnode) => {
+                        info!("Adding boot node ENR: {}", enr_str);
+                        discv5
+                            .add_enr(bootnode)
+                            .map_err(|_| anyhow!("Failed to add bootnode"))?;
+                    }
+                    Err(_) => warn!("Invalid bootnode ENR: {}", enr_str),
                 }
             }
-        } else {
-            info!("No bootnodes specified");
         }
 
-        // Start the discv5 service
-        discv5.start().await.unwrap();
+        discv5
+            .start()
+            .await
+            .map_err(|_| anyhow!("Failed to start Discv5"))?;
 
-        // Obtain an event stream
         let event_stream = EventStream::Awaiting(Box::pin(discv5.event_stream()));
 
-        Self {
+        Ok(Self {
             discv5,
             _enr: local_enr,
             event_stream,
             peers_future: FuturesUnordered::new(),
             started: false,
             peers_to_discover: 0,
-        }
+        })
     }
 
     pub fn set_peers_to_discover(&mut self, peers_to_discover: usize) {
@@ -116,11 +111,8 @@ impl Discovery {
 
     fn find_peers(&mut self, count: usize) {
         let predicate = Box::new(|enr: &Enr| enr.ip4().is_some());
-
         let target = NodeId::random();
-
         let peers_enr = self.discv5.find_node_predicate(target, predicate, count);
-
         self.peers_future.push(Box::pin(peers_enr));
     }
 
@@ -130,12 +122,12 @@ impl Discovery {
 
     fn get_peers(&mut self, cx: &mut Context) -> Option<DiscoveredPeers> {
         while let Poll::Ready(Some(res)) = self.peers_future.poll_next_unpin(cx) {
-            if res.is_ok() {
+            if let Ok(peers_list) = res {
                 self.peers_future = FuturesUnordered::new();
 
                 let mut peers: HashMap<PeerId, Option<Multiaddr>> = HashMap::new();
 
-                for peer_enr in res.unwrap() {
+                for peer_enr in peers_list {
                     match self.discv5.add_enr(peer_enr.clone()) {
                         Ok(_) => {
                             debug!("Added peer: {:?} to discv5", peer_enr.node_id());
@@ -144,7 +136,7 @@ impl Discovery {
                             warn!("Failed to add peer: {:?} to discv5", peer_enr.node_id());
                         }
                     };
-                    let peer_id = peer_enr.clone().as_peer_id();
+                    let peer_id = peer_enr.clone().as_peer_id().unwrap();
 
                     let mut multiaddr: Option<Multiaddr> = None;
                     if peer_enr.ip4().is_some() && peer_enr.tcp4().is_some() {
@@ -265,14 +257,16 @@ impl NetworkBehaviour for Discovery {
 }
 
 // Get CombinedKey from Secp256k1 libp2p Keypair
-pub fn key_from_libp2p(key: libp2p::identity::Keypair) -> Result<CombinedKey, &'static str> {
+pub fn key_from_libp2p(key: Keypair) -> Result<CombinedKey> {
     match key.key_type() {
         libp2p::identity::KeyType::Secp256k1 => {
-            let key = key.try_into_secp256k1().expect("right key type");
+            let key = key
+                .try_into_secp256k1()
+                .map_err(|_| anyhow!("Invalid Secp256k1 key"))?;
             let secret = discv5::enr::k256::ecdsa::SigningKey::from_slice(&key.secret().to_bytes())
-                .expect("libp2p key must be valid");
+                .map_err(|_| anyhow!("Invalid libp2p key"))?;
             Ok(CombinedKey::Secp256k1(secret))
         }
-        _ => Err("pair not supported"),
+        _ => Err(anyhow!("Key type not supported")),
     }
 }

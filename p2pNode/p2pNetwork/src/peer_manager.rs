@@ -12,6 +12,7 @@ use tracing::{debug, info};
 
 pub struct PeerManager {
     connected_peers: HashSet<PeerId>,
+    banned_peers: HashSet<PeerId>,
     dialling_peers: HashSet<PeerId>,
     new_peers: HashSet<PeerId>,
     peer_data: HashMap<PeerId, PeerData>,
@@ -47,6 +48,11 @@ impl PeerData {
     }
 }
 
+// Interval for which to check if we need to dial new peers
+const HEARTBEAT_INTERVAL: u64 = 30000;
+// Consider connection attempt timed out if it takes longer than this duration (in ms)
+const DIAL_TIMEOUT: u64 = 60000;
+// Minimum average connection duration (in ms)
 const MIN_AVERAGE_CONNECTION_DURATION: usize = 3000;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -70,11 +76,6 @@ pub enum ConnectionStatus {
     Failed,
     Timeout,
 }
-
-// Interval for which to check if we need to dial new peers
-const HEARTBEAT_INTERVAL: u64 = 30000;
-// Consider connection attempt timed out if it takes longer than this duration (in ms)
-const DIAL_TIMEOUT: u64 = 120000;
 
 impl NetworkBehaviour for PeerManager {
     type ConnectionHandler = ConnectionHandler;
@@ -146,6 +147,10 @@ impl NetworkBehaviour for PeerManager {
         remote_addr: &libp2p::Multiaddr,
     ) -> Result<libp2p::swarm::THandler<Self>, ConnectionDenied> {
         debug!("Inbound connection: {:?} -> {:?}", peer_id, remote_addr);
+        if self.is_peer_banned(&peer_id) {
+            debug!("Rejecting connection from banned peer: {:?}", peer_id);
+            return Err(ConnectionDenied::new("Peer is banned"));
+        }
         Ok(ConnectionHandler)
     }
 
@@ -158,6 +163,10 @@ impl NetworkBehaviour for PeerManager {
         _port_use: libp2p::core::transport::PortUse,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
         debug!("Outbound connection: {:?} -> {:?}", peer_id, addr);
+        if self.is_peer_banned(&peer_id) {
+            debug!("Rejecting connection from banned peer: {:?}", peer_id);
+            return Err(ConnectionDenied::new("Peer is banned"));
+        }
         Ok(ConnectionHandler)
     }
 }
@@ -168,6 +177,7 @@ impl PeerManager {
             tokio::time::interval(tokio::time::Duration::from_millis(HEARTBEAT_INTERVAL));
         Self {
             new_peers: HashSet::new(),
+            banned_peers: HashSet::new(),
             connected_peers: HashSet::new(),
             dialling_peers: HashSet::new(),
             peer_data: HashMap::new(),
@@ -392,6 +402,9 @@ impl PeerManager {
             .filter(|(_, peer_data)| {
                 peer_data.average_connection_duration.unwrap_or(0) > MIN_AVERAGE_CONNECTION_DURATION
             })
+            .filter(|(peer_id, _)| {
+                !self.banned_peers.contains(peer_id)
+            })
             .map(|(peer_id, peer_data)| (*peer_id, peer_data))
             .collect();
         peer_data.sort_by(|(_, a), (_, b)| {
@@ -410,10 +423,7 @@ impl PeerManager {
     }
 
     fn get_peer_score(peer_data: &PeerData) -> usize {
-        if let Some(score) = peer_data.average_connection_duration {
-            return score;
-        }
-        0
+        peer_data.average_connection_duration.unwrap_or(0)
     }
 
     pub fn add_peer_identity(&mut self, peer_id: PeerId, identity: Info) {
@@ -430,5 +440,14 @@ impl PeerManager {
         }
 
         peer_address
+    }
+
+    pub fn ban_peer(&mut self, peer_id: PeerId) {
+        self.banned_peers.insert(peer_id);
+        debug!("Banned peer {:?}", peer_id);
+    }
+
+    pub fn is_peer_banned(&self, peer_id: &PeerId) -> bool {
+        self.banned_peers.contains(peer_id)
     }
 }
