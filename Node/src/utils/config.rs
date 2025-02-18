@@ -25,6 +25,7 @@ pub struct Config {
 #[derive(Debug)]
 pub struct ContractAddresses {
     pub taiko_l1: String,
+    pub preconf_whitelist: String,
     pub avs: AvsContractAddresses,
 }
 
@@ -71,8 +72,18 @@ impl Config {
             default_empty_address.clone()
         });
 
+        const PRECONF_WHITELIST_ADDRESS: &str = "PRECONF_WHITELIST_ADDRESS";
+        let preconf_whitelist = std::env::var(PRECONF_WHITELIST_ADDRESS).unwrap_or_else(|_| {
+            warn!(
+                "No PreconfWhitelist contract address found in {} env var, using default",
+                PRECONF_WHITELIST_ADDRESS
+            );
+            default_empty_address.clone()
+        });
+
         let contract_addresses = ContractAddresses {
             taiko_l1,
+            preconf_whitelist,
             avs,
         };
 

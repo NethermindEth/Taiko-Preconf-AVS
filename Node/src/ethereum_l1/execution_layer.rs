@@ -40,6 +40,7 @@ pub struct ExecutionLayer {
 
 pub struct ContractAddresses {
     pub taiko_l1: Address,
+    pub preconf_whitelist: Address,
     pub avs: AvsContractAddresses,
 }
 
@@ -97,6 +98,13 @@ sol!(
     "src/ethereum_l1/abi/PreconfRegistry.json"
 );
 
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    PreconfWhitelist,
+    "src/ethereum_l1/abi/PreconfWhitelist.json"
+);
+
 sol! (
     struct MessageData {
         uint256 chainId;
@@ -148,6 +156,10 @@ impl ExecutionLayer {
         })
     }
 
+    pub fn get_preconfer_address(&self) -> PreconferAddress {
+        self.preconfer_address.into_array()
+    }
+
     fn parse_contract_addresses(
         contract_addresses: &config::ContractAddresses,
     ) -> Result<ContractAddresses, Error> {
@@ -156,12 +168,27 @@ impl ExecutionLayer {
         };
 
         let taiko_l1 = contract_addresses.taiko_l1.parse()?;
+        let preconf_whitelist = contract_addresses.preconf_whitelist.parse()?;
 
         Ok(ContractAddresses {
             taiko_l1,
+            preconf_whitelist,
             avs,
         })
     }
+
+    pub async fn get_operator_for_current_epoch(&self) -> Result<Address, Error> {
+        let contract = PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider_ws);
+        let operator = contract.getOperatorForCurrentEpoch().call().await?._0;
+        Ok(operator)
+    }
+
+    pub async fn get_operator_for_next_epoch(&self) -> Result<Address, Error> {
+        let contract = PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider_ws);
+        let operator = contract.getOperatorForNextEpoch().call().await?._0;
+        Ok(operator)
+    }
+
 
     pub async fn propose_new_block(
         &self,
@@ -380,7 +407,7 @@ impl ExecutionLayer {
             slot_clock: Arc::new(clock),
             contract_addresses: ContractAddresses {
                 taiko_l1: Address::ZERO,
-
+                preconf_whitelist: Address::ZERO,
                 avs: AvsContractAddresses {
                     preconf_task_manager: Address::ZERO,
                 },

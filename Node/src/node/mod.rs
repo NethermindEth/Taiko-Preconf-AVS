@@ -71,7 +71,7 @@ impl Node {
         bls_service: Arc<BLSService>,
     ) -> Result<Self, Error> {
         let init_epoch = 0;
-        let operator = Operator::new(ethereum_l1.clone(), init_epoch)?;
+        let operator = Operator::new(ethereum_l1.clone())?;
         Ok(Self {
             taiko,
             node_block_proposed_rx: Some(node_rx),
@@ -273,17 +273,9 @@ impl Node {
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
-        let current_epoch = self.ethereum_l1.slot_clock.get_current_epoch()?;
-        if current_epoch != self.epoch {
-            self.new_epoch_started(current_epoch).await?;
-        }
-
         let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
 
-        match self.operator.get_status(current_slot).await? {
-            OperatorStatus::PreconferAndProposer => {
-                self.preconfirm_last_slot().await?;
-            }
+        match self.operator.get_status().await? {
             OperatorStatus::Preconfer => {
                 self.preconfirm_block(true).await?;
             }
@@ -298,54 +290,7 @@ impl Node {
                         .get_l2_slot_number_within_l1_slot()?
                 );
             }
-        }
-
-        Ok(())
-    }
-
-    async fn new_epoch_started(&mut self, new_epoch: u64) -> Result<(), Error> {
-        info!(
-            "⏰ Current epoch changed from {} to {}",
-            self.epoch, new_epoch
-        );
-        self.epoch = new_epoch;
-
-        self.operator = Operator::new(self.ethereum_l1.clone(), new_epoch)?;
-
-        Ok(())
-    }
-
-    async fn preconfirm_last_slot(&mut self) -> Result<(), Error> {
-        debug!("Preconfirming last slot");
-        self.preconfirm_block(false).await?;
-        const FINAL_L2_SLOT_PERCONFIRMATION: u64 = 3;
-        if self
-            .ethereum_l1
-            .slot_clock
-            .get_l2_slot_number_within_l1_slot()?
-            == FINAL_L2_SLOT_PERCONFIRMATION
-        {
-            debug!("Last(4th) perconfirmation in the last L1 slot for the preconfer");
-            // Last(4th) perconfirmation when we are proposer and preconfer
-            self.is_preconfer_now.store(false, Ordering::Release);
-
-            let mut preconfirmation_txs = self.preconfirmation_txs.lock().await;
-            if !preconfirmation_txs.is_empty() {
-                debug!("Call MEV Boost for {} txs", preconfirmation_txs.len());
-                // Build constraints
-                let constraints: Vec<Vec<u8>> = preconfirmation_txs
-                    .iter()
-                    .map(|(_, value)| value.clone())
-                    .collect();
-                // Get slot_id
-                let slot_id = self.ethereum_l1.slot_clock.get_current_slot()?;
-
-                self.mev_boost
-                    .force_inclusion(constraints, slot_id, self.bls_service.clone())
-                    .await?;
-
-                preconfirmation_txs.clear();
-            }
+            _ => unreachable!()
         }
 
         Ok(())

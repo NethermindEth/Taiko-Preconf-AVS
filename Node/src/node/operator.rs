@@ -1,5 +1,5 @@
 use crate::{
-    ethereum_l1::{execution_layer::PreconfTaskManager, EthereumL1},
+    ethereum_l1::EthereumL1,
     utils::types::*,
 };
 use anyhow::Error;
@@ -8,10 +8,6 @@ use tracing::{debug, error};
 
 pub struct Operator {
     ethereum_l1: Arc<EthereumL1>,
-    epoch: u64,
-    lookahead_preconfer_addresses: Vec<PreconferAddress>,
-    lookahead_preconfer_buffer: Vec<PreconfTaskManager::LookaheadBufferEntry>,
-    l1_slots_per_epoch: u64,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -22,28 +18,22 @@ pub enum Status {
 }
 
 impl Operator {
-    pub fn new(ethereum_l1: Arc<EthereumL1>, epoch: Epoch) -> Result<Self, Error> {
-        debug!("Operator::new: epoch: {}", epoch);
-        let l1_slots_per_epoch = ethereum_l1.slot_clock.get_slots_per_epoch();
+    pub fn new(ethereum_l1: Arc<EthereumL1>) -> Result<Self, Error> {
         Ok(Self {
             ethereum_l1,
-            epoch,
-            lookahead_preconfer_addresses: vec![],
-            lookahead_preconfer_buffer: vec![],
-            l1_slots_per_epoch,
         })
     }
 
-    pub async fn get_status(&mut self, slot: Slot) -> Result<Status, Error> {
-        // TODO implement function
-        error!("Implement function get_status");
+    pub async fn get_status(&mut self) -> Result<Status, Error> {
+        let slot = self.ethereum_l1.slot_clock.get_current_slot_of_epoch()?;
+        let current_operator = match slot {
+            0 => self.ethereum_l1.execution_layer.get_operator_for_next_epoch().await?,
+            _ => self.ethereum_l1.execution_layer.get_operator_for_current_epoch().await?,
+        };
+        if current_operator == self.ethereum_l1.execution_layer.get_preconfer_address() {
+            return Ok(Status::Preconfer);
+        }
         Ok(Status::None)
-    }
-
-    fn is_the_final_slot_to_preconf(&self, next_preconfer_address: PreconferAddress) -> bool {
-        // TODO implement function
-        error!("Implement function is_the_final_slot_to_preconf");
-        false
     }
 }
 
