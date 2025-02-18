@@ -9,7 +9,6 @@ use crate::{
 };
 use alloy::{
     consensus::TypedTransaction,
-    contract::EventSubscription,
     network::{Ethereum, EthereumWallet, NetworkWallet},
     primitives::{Address, Bytes, FixedBytes, B256, U256},
     providers::{Provider, ProviderBuilder, WsConnect},
@@ -107,10 +106,6 @@ sol! (
     }
 );
 
-pub struct EventSubscriptionLookaheadUpdated(
-    pub EventSubscription<PreconfTaskManager::LookaheadUpdated>,
-);
-
 #[cfg_attr(test, allow(dead_code))]
 #[cfg_attr(test, automock)]
 impl ExecutionLayer {
@@ -151,10 +146,6 @@ impl ExecutionLayer {
             slot_clock,
             l1_chain_id,
         })
-    }
-
-    pub fn get_preconfer_address(&self) -> PreconferAddress {
-        self.preconfer_address.into_array()
     }
 
     fn parse_contract_addresses(
@@ -338,119 +329,6 @@ impl ExecutionLayer {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub async fn prove_incorrect_lookahead(
-        &self,
-        lookahead_pointer: u64,
-        slot_timestamp: u64,
-        validator_bls_pub_key: BLSCompressedPublicKey,
-        validator: &[u8],
-        validator_index: usize,
-        validator_proof: Vec<[u8; 32]>,
-        validators_root: [u8; 32],
-        beacon_state_proof: Vec<[u8; 32]>,
-        beacon_state_root: [u8; 32],
-        beacon_block_proof_for_state: Vec<[u8; 32]>,
-        beacon_block_proof_for_proposer_index: Vec<[u8; 32]>,
-    ) -> Result<(), Error> {
-        let contract = PreconfTaskManager::new(
-            self.contract_addresses.avs.preconf_task_manager,
-            &self.provider_ws,
-        );
-
-        let mut validator_chunks: [B256; 8] = Default::default();
-        for (i, chunk) in validator.chunks(32).enumerate() {
-            validator_chunks[i] = B256::from_slice(chunk);
-        }
-        let validator_index = U256::from(validator_index);
-
-        let validator_inclusion_proof = PreconfTaskManager::InclusionProof {
-            validator: validator_chunks,
-            validatorIndex: validator_index,
-            validatorProof: Self::convert_proof_to_fixed_bytes(validator_proof),
-            validatorsRoot: FixedBytes::from(validators_root),
-            beaconStateProof: Self::convert_proof_to_fixed_bytes(beacon_state_proof),
-            beaconStateRoot: FixedBytes::from(beacon_state_root),
-            beaconBlockProofForState: Self::convert_proof_to_fixed_bytes(
-                beacon_block_proof_for_state,
-            ),
-            beaconBlockProofForProposerIndex: Self::convert_proof_to_fixed_bytes(
-                beacon_block_proof_for_proposer_index,
-            ),
-        };
-        let tx = contract.proveIncorrectLookahead(
-            U256::from(lookahead_pointer),
-            U256::from(slot_timestamp),
-            Bytes::from(validator_bls_pub_key),
-            validator_inclusion_proof,
-        );
-        match tx.send().await {
-            Ok(pending_tx) => {
-                let tx_hash = pending_tx.tx_hash();
-                tracing::debug!("Proved incorrect lookahead: {tx_hash}");
-            }
-            Err(err) => {
-                tracing::error!("Failed to prove incorrect lookahead: {}", err);
-            }
-        }
-
-        Ok(())
-    }
-
-    fn convert_proof_to_fixed_bytes(proof: Vec<[u8; 32]>) -> Vec<FixedBytes<32>> {
-        proof.iter().map(FixedBytes::from).collect()
-    }
-
-    pub async fn force_push_lookahead(
-        &self,
-        lookahead_set_params: Vec<PreconfTaskManager::LookaheadSetParam>,
-    ) -> Result<(), Error> {
-        tracing::debug!(
-            "Force pushing lookahead, {} params",
-            lookahead_set_params.len()
-        );
-
-        let contract = PreconfTaskManager::new(
-            self.contract_addresses.avs.preconf_task_manager,
-            &self.provider_ws,
-        );
-
-        let tx = contract
-            .forcePushLookahead(lookahead_set_params)
-            .nonce(self.get_preconfer_nonce().await?)
-            .gas(10_000_000)
-            .max_fee_per_gas(20_000_000_000)
-            .max_priority_fee_per_gas(1_000_000_000);
-
-        match tx.send().await {
-            Ok(receipt) => {
-                tracing::debug!("Force push lookahead sent: {}", receipt.tx_hash());
-            }
-            Err(err) => {
-                return Err(anyhow::anyhow!(
-                    "force_push_lookahead: {}",
-                    err.to_avs_contract_error()
-                ));
-            }
-        }
-
-        Ok(())
-    }
-
-    pub async fn subscribe_to_lookahead_updated_event(
-        &self,
-    ) -> Result<EventSubscriptionLookaheadUpdated, Error> {
-        let task_manager = PreconfTaskManager::new(
-            self.contract_addresses.avs.preconf_task_manager,
-            &self.provider_ws,
-        );
-
-        let lookahead_updated_filter = task_manager.LookaheadUpdated_filter().subscribe().await?;
-        tracing::debug!("Subscribed to lookahead updated event");
-
-        Ok(EventSubscriptionLookaheadUpdated(lookahead_updated_filter))
-    }
-
     pub async fn subscribe_to_block_proposed_event(
         &self,
     ) -> Result<EventSubscriptionBlockProposedV2, Error> {
@@ -462,158 +340,11 @@ impl ExecutionLayer {
         Ok(EventSubscriptionBlockProposedV2(block_proposed_filter))
     }
 
-    pub async fn get_lookahead_params_for_epoch_using_cl_lookahead(
-        &self,
-        epoch: u64,
-        cl_lookahead: &[ProposerDuty],
-    ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
-        let epoch_begin_timestamp = self
-            .slot_clock
-            .get_real_epoch_begin_timestamp_for_contract(epoch)?;
-        tracing::debug!(
-            "Epoch {}, timestamp: {}, getting lookahead params for epoch using CL lookahead len: {}",
-            epoch,
-            epoch_begin_timestamp,
-            cl_lookahead.len()
-        );
-
-        if cl_lookahead.len() != self.slot_clock.get_slots_per_epoch() as usize {
-            return Err(anyhow::anyhow!(
-                "get_lookahead_params_for_epoch_using_cl_lookahead: unexpected number of proposer duties in the lookahead"
-            ));
-        }
-
-        let slots = self.slot_clock.get_slots_per_epoch() as usize;
-        let validator_bls_pub_keys: Vec<BLSCompressedPublicKey> = cl_lookahead
-            .iter()
-            .take(slots)
-            .map(|key| {
-                let mut array = [0u8; 48];
-                array.copy_from_slice(&key.public_key);
-                array
-            })
-            .collect();
-
-        self.get_lookahead_params_for_epoch(
-            epoch_begin_timestamp,
-            validator_bls_pub_keys.as_slice().try_into()?,
-        )
-        .await
-    }
-
-    async fn get_lookahead_params_for_epoch(
-        &self,
-        epoch_begin_timestamp: u64,
-        validator_bls_pub_keys: &[BLSCompressedPublicKey; 32],
-    ) -> Result<Vec<PreconfTaskManager::LookaheadSetParam>, Error> {
-        let contract = PreconfTaskManager::new(
-            self.contract_addresses.avs.preconf_task_manager,
-            &self.provider_ws,
-        );
-
-        let params = match contract
-            .getLookaheadParamsForEpoch(
-                U256::from(epoch_begin_timestamp),
-                validator_bls_pub_keys.map(Bytes::from),
-            )
-            .call()
-            .await
-        {
-            Ok(params) => params._0,
-            Err(err) => {
-                let raw_result = contract
-                    .getLookaheadParamsForEpoch(
-                        U256::from(epoch_begin_timestamp),
-                        validator_bls_pub_keys.map(Bytes::from),
-                    )
-                    .call_raw()
-                    .await;
-                self.check_raw_result(raw_result);
-
-                return Err(anyhow::anyhow!(
-                    "get_lookahead_params_for_epoch: {}",
-                    err.to_avs_contract_error()
-                ));
-            }
-        };
-
-        Ok(params)
-    }
-
     fn check_raw_result(&self, raw_result: Result<Bytes, alloy::contract::Error>) {
         tracing::debug!("Raw result: {:?}", raw_result);
         if let Ok(raw_result) = raw_result {
             if raw_result.is_empty() {
                 tracing::error!("Raw result is empty, contract {} does not have any code, check the contract address and RPC URL", self.contract_addresses.avs.preconf_task_manager);
-            }
-        }
-    }
-
-    pub async fn get_lookahead_preconfer_addresses_for_epoch(
-        &self,
-        epoch: u64,
-    ) -> Result<Vec<PreconferAddress>, Error> {
-        tracing::debug!("Getting lookahead preconfer addresses for epoch: {}", epoch);
-        let epoch_begin_timestamp = self
-            .slot_clock
-            .get_real_epoch_begin_timestamp_for_contract(epoch)?;
-
-        let contract = PreconfTaskManager::new(
-            self.contract_addresses.avs.preconf_task_manager,
-            &self.provider_ws,
-        );
-
-        let lookahead = contract
-            .getLookaheadForEpoch(U256::from(epoch_begin_timestamp))
-            .call()
-            .await?
-            ._0;
-
-        tracing::debug!(
-            "getLookaheadForEpoch({}) result: {:?}",
-            epoch_begin_timestamp,
-            lookahead
-        );
-        Ok(lookahead
-            .iter()
-            .map(|addr| addr.into_array())
-            .collect::<Vec<PreconferAddress>>())
-    }
-
-    pub async fn get_lookahead_preconfer_buffer(
-        &self,
-    ) -> Result<[PreconfTaskManager::LookaheadBufferEntry; 128], Error> {
-        let contract = PreconfTaskManager::new(
-            self.contract_addresses.avs.preconf_task_manager,
-            &self.provider_ws,
-        );
-
-        let lookahead = contract.getLookaheadBuffer().call().await?._0;
-
-        Ok(lookahead)
-    }
-
-    pub async fn is_lookahead_required(&self) -> Result<bool, Error> {
-        let contract = PreconfTaskManager::new(
-            self.contract_addresses.avs.preconf_task_manager,
-            &self.provider_ws,
-        );
-
-        let is_required = contract.isLookaheadRequired().call().await;
-
-        match is_required {
-            Ok(is_required) => {
-                tracing::debug!("is_lookahead_required for next epoch: {}", is_required._0);
-                Ok(is_required._0)
-            }
-            Err(err) => {
-                let raw_result = contract.isLookaheadRequired().call_raw().await;
-                self.check_raw_result(raw_result);
-
-                Err(anyhow::anyhow!(
-                    "is_lookahead_required: {}",
-                    err.to_avs_contract_error()
-                ))
             }
         }
     }

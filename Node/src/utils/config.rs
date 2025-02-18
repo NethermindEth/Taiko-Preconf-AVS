@@ -20,7 +20,6 @@ pub struct Config {
     pub validator_index: u64,
     pub enable_p2p: bool,
     pub enable_preconfirmation: bool,
-    pub always_push_lookahead: bool,
 }
 
 #[derive(Debug)]
@@ -173,11 +172,6 @@ impl Config {
             .parse::<bool>()
             .expect("ENABLE_PRECONFIRMATION must be a boolean");
 
-        let always_push_lookahead = std::env::var("ALWAYS_PUSH_LOOKAHEAD")
-            .unwrap_or("false".to_string())
-            .parse::<bool>()
-            .expect("ALWAYS_PUSH_LOOKAHEAD must be a boolean");
-
         let config = Self {
             taiko_proposer_url: std::env::var("TAIKO_PROPOSER_URL")
                 .unwrap_or("http://127.0.0.1:1234".to_string()),
@@ -201,7 +195,6 @@ impl Config {
             validator_index,
             enable_p2p,
             enable_preconfirmation,
-            always_push_lookahead,
         };
 
         info!(

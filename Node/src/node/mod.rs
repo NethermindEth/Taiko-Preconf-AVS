@@ -1,8 +1,6 @@
 pub mod block_proposed_receiver;
 mod commit;
 mod l2_block_id;
-pub mod lookahead_monitor;
-pub mod lookahead_updated_receiver;
 mod operator;
 mod preconfirmation_helper;
 mod preconfirmation_message;
@@ -11,7 +9,7 @@ mod preconfirmation_proof;
 use crate::{
     bls::BLSService,
     ethereum_l1::{
-        block_proposed::BlockProposedV2, execution_layer::PreconfTaskManager, EthereumL1,
+        block_proposed::BlockProposedV2, EthereumL1,
     },
     mev_boost::MevBoost,
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
@@ -57,7 +55,6 @@ pub struct Node {
     operator: Operator,
     preconfirmation_helper: PreconfirmationHelper,
     bls_service: Arc<BLSService>,
-    always_push_lookahead: bool,
     l2_block_id: Arc<L2BlockId>,
 }
 
@@ -72,7 +69,6 @@ impl Node {
         mev_boost: MevBoost,
         l2_slot_duration_sec: u64,
         bls_service: Arc<BLSService>,
-        always_push_lookahead: bool,
     ) -> Result<Self, Error> {
         let init_epoch = 0;
         let operator = Operator::new(ethereum_l1.clone(), init_epoch)?;
@@ -91,7 +87,6 @@ impl Node {
             operator,
             preconfirmation_helper: PreconfirmationHelper::new(),
             bls_service,
-            always_push_lookahead,
             l2_block_id: Arc::new(L2BlockId::new()),
         })
     }
@@ -175,32 +170,6 @@ impl Node {
         }
     }
 
-    async fn is_valid_preconfer(
-        ethereum_l1: Arc<EthereumL1>,
-        preconfer: PreconferAddress,
-    ) -> Result<(), Error> {
-        // get current lookahead
-        let epoch = ethereum_l1.slot_clock.get_current_epoch()?;
-
-        let current_lookahead = ethereum_l1
-            .execution_layer
-            .get_lookahead_preconfer_addresses_for_epoch(epoch)
-            .await?;
-
-        // get slot number in epoch
-        let slot_of_epoch = ethereum_l1.slot_clock.get_current_slot_of_epoch()?;
-        debug!("slot_of_epoch: {}", slot_of_epoch);
-
-        // get current preconfer
-        if current_lookahead[slot_of_epoch as usize] == preconfer {
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!(
-                "is_valid_preconfer: P2P message Preconfer is not equal to current preconfer"
-            ))
-        }
-    }
-
     async fn advance_l2_head(
         msg: PreconfirmationMessage,
         preconfirmed_blocks: &PreconfirmedBlocks,
@@ -222,15 +191,7 @@ impl Node {
                         .execution_layer
                         .recover_address_from_msg(&msg.proof.commit_hash, &msg.proof.signature)
                     {
-                        Ok(preconfer) => {
-                            // check valid preconfer address
-                            if let Err(e) =
-                                Self::is_valid_preconfer(ethereum_l1.clone(), preconfer.into())
-                                    .await
-                            {
-                                error!("Error: {} for block_id: {}", e, msg.block_height);
-                                return;
-                            }
+                        Ok(_) => {
                             // Add to preconfirmation map
                             debug!(
                                 "Adding to preconfirmation map block_height: {}",
@@ -300,11 +261,6 @@ impl Node {
         let duration_to_next_slot = self.ethereum_l1.slot_clock.duration_to_next_slot().unwrap();
         sleep(duration_to_next_slot).await;
 
-        // Setup protocol if needed
-        if let Err(e) = self.operator.check_empty_lookahead().await {
-            error!("Failed to initialize lookahead: {}", e);
-        }
-
         // start preconfirmation loop
         let mut interval = tokio::time::interval(Duration::from_secs(self.l2_slot_duration_sec));
         loop {
@@ -341,11 +297,6 @@ impl Node {
                         .slot_clock
                         .get_l2_slot_number_within_l1_slot()?
                 );
-
-                // Check if we need to push lookahead when we are not preconfer
-                if self.always_push_lookahead {
-                    self.operator.check_empty_lookahead().await?;
-                }
             }
         }
 
@@ -360,39 +311,8 @@ impl Node {
         self.epoch = new_epoch;
 
         self.operator = Operator::new(self.ethereum_l1.clone(), new_epoch)?;
-        // TODO it would be better to do it 1 epoch later
-        self.operator.update_preconfer_lookahead_for_epoch().await?;
-        // TODO
-        #[cfg(debug_assertions)]
-        self.operator
-            .print_preconfer_slots(self.ethereum_l1.slot_clock.get_current_slot()?)
-            .await;
 
         Ok(())
-    }
-
-    async fn get_lookahead_params(
-        &mut self,
-    ) -> Result<Option<Vec<PreconfTaskManager::LookaheadSetParam>>, Error> {
-        if self.operator.should_post_lookahead_for_next_epoch().await? {
-            debug!("Should post lookahead params, getting them");
-            let cl_lookahead = self
-                .ethereum_l1
-                .consensus_layer
-                .get_lookahead(self.epoch + 1)
-                .await?;
-
-            let lookahead_params = self
-                .ethereum_l1
-                .execution_layer
-                .get_lookahead_params_for_epoch_using_cl_lookahead(self.epoch + 1, &cl_lookahead)
-                .await?;
-
-            debug!("Got Lookahead params: {}", lookahead_params.len());
-
-            return Ok(Some(lookahead_params));
-        }
-        Ok(None)
     }
 
     async fn preconfirm_last_slot(&mut self) -> Result<(), Error> {
@@ -460,37 +380,14 @@ impl Node {
             self.start_propose().await?;
         }
 
-        let lookahead_params = self.get_lookahead_params().await?;
         let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;
-        let pending_tx_lists_bytes = if pending_tx_lists.tx_list_bytes.is_empty() {
-            if let Some(lookahead_params) = lookahead_params {
-                if self.ethereum_l1.slot_clock.get_current_slot_of_epoch()? % 4 == 1 {
-                    debug!("No pending transactions to preconfirm, force pushing lookahead");
-                    if let Err(err) = self
-                        .ethereum_l1
-                        .execution_layer
-                        .force_push_lookahead(lookahead_params)
-                        .await
-                    {
-                        if err.to_string().contains("AlreadyKnown") {
-                            debug!("Force push lookahead already known");
-                        } else {
-                            error!("Failed to force push lookahead: {}", err);
-                        }
-                    } else {
-                        self.preconfirmation_helper.increment_nonce();
-                    }
-                }
-            }
-            // No transactions skip preconfirmation step
-            return Ok(());
-        } else {
-            debug!(
-                "Pending {} transactions to preconfirm",
-                pending_tx_lists.tx_list_bytes.len()
-            );
-            pending_tx_lists.tx_list_bytes[0].clone() // TODO: handle multiple tx lists
-        };
+        if pending_tx_lists.tx_list_bytes.is_empty() { return Ok(());}
+
+        debug!(
+            "Pending {} transactions to preconfirm",
+            pending_tx_lists.tx_list_bytes.len()
+        );
+        let pending_tx_lists_bytes = pending_tx_lists.tx_list_bytes[0].clone(); // TODO: handle multiple tx lists
 
         let new_block_height = self.l2_block_id.next(pending_tx_lists.parent_block_id);
         debug!("Preconfirming block with the height: {}", new_block_height);
@@ -513,15 +410,14 @@ impl Node {
             .advance_head_to_new_l2_block(pending_tx_lists.tx_lists)
             .await?;
 
-        let lookahead_pointer = self.operator.get_lookahead_pointer(current_slot)?;
         let tx = self
             .ethereum_l1
             .execution_layer
             .propose_new_block(
                 self.preconfirmation_helper.get_next_nonce(),
                 pending_tx_lists_bytes,
-                lookahead_pointer,
-                lookahead_params.unwrap_or(vec![]),
+                0, //TODO replace with a correct function call
+                vec![],
                 send_to_contract,
             )
             .await?;

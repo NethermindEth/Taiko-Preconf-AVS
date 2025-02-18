@@ -7,10 +7,8 @@ mod taiko;
 mod utils;
 
 use anyhow::Error;
-use node::{
-    block_proposed_receiver::BlockProposedEventReceiver,
-    lookahead_updated_receiver::LookaheadUpdatedEventReceiver,
-};
+use node::
+    block_proposed_receiver::BlockProposedEventReceiver;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -64,30 +62,18 @@ async fn main() -> Result<(), Error> {
         BlockProposedEventReceiver::new(ethereum_l1.clone(), block_proposed_tx);
     BlockProposedEventReceiver::start(block_proposed_event_checker);
 
-    let lookahead_updated_event_checker = LookaheadUpdatedEventReceiver::new(ethereum_l1.clone());
-    lookahead_updated_event_checker.start();
-
-    if config.enable_preconfirmation {
-        let node = node::Node::new(
-            block_proposed_rx,
-            node_to_p2p_tx,
-            p2p_to_node_rx,
-            taiko.clone(),
-            ethereum_l1.clone(),
-            mev_boost,
-            config.l2_slot_duration_sec,
-            bls_service,
-            config.always_push_lookahead,
-        )
-        .await?;
-        node.entrypoint().await?;
-    } else {
-        let lookahead_monitor = node::lookahead_monitor::LookaheadMonitor::new(
-            ethereum_l1.clone(),
-            config.l1_slot_duration_sec,
-        );
-        lookahead_monitor.start().await;
-    }
+    let node = node::Node::new(
+        block_proposed_rx,
+        node_to_p2p_tx,
+        p2p_to_node_rx,
+        taiko.clone(),
+        ethereum_l1.clone(),
+        mev_boost,
+        config.l2_slot_duration_sec,
+        bls_service,
+    )
+    .await?;
+    node.entrypoint().await?;
 
     Ok(())
 }
