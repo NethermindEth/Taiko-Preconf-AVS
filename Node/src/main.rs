@@ -3,12 +3,10 @@ mod ethereum_l1;
 mod mev_boost;
 mod node;
 mod p2p_network;
-mod registration;
 mod taiko;
 mod utils;
 
 use anyhow::Error;
-use clap::Parser;
 use node::{
     block_proposed_receiver::BlockProposedEventReceiver,
     lookahead_updated_receiver::LookaheadUpdatedEventReceiver,
@@ -18,25 +16,12 @@ use tokio::sync::mpsc;
 
 const MESSAGE_QUEUE_SIZE: usize = 100;
 
-#[derive(Parser)]
-struct Cli {
-    #[clap(long, help = "Start registration as a preconfer")]
-    register: bool,
-    #[clap(long, help = "Add validator to preconfer")]
-    add_validator: bool,
-    #[clap(long, help = "Remove validator for preconfer")]
-    remove_validator: bool,
-    #[clap(long, help = "Force Push lookahead to the PreconfTaskManager contract")]
-    force_push_lookahead: bool,
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     init_logging();
 
-    tracing::info!("🚀 Starting AVS Node v{}", env!("CARGO_PKG_VERSION"));
+    tracing::info!("🚀 Starting Whitelist Node v{}", env!("CARGO_PKG_VERSION"));
 
-    let args = Cli::parse();
     let config = utils::config::Config::read_env_variables();
 
     let bls_service = Arc::new(bls::BLSService::new(&config.validator_bls_privkey)?);
@@ -48,34 +33,9 @@ async fn main() -> Result<(), Error> {
         &config.l1_beacon_url,
         config.l1_slot_duration_sec,
         config.l1_slots_per_epoch,
-        config.msg_expiry_sec,
-        bls_service.clone(),
         config.l2_slot_duration_sec,
     )
     .await?;
-
-    if args.register {
-        let registration = registration::Registration::new(ethereum_l1);
-        registration.register().await?;
-        return Ok(());
-    }
-
-    if args.add_validator {
-        let registration = registration::Registration::new(ethereum_l1);
-        registration.add_validator().await?;
-        return Ok(());
-    }
-
-    if args.remove_validator {
-        let registration = registration::Registration::new(ethereum_l1);
-        registration.remove_validator().await?;
-        return Ok(());
-    }
-
-    if args.force_push_lookahead {
-        ethereum_l1.force_push_lookahead().await?;
-        return Ok(());
-    }
 
     let (node_to_p2p_tx, node_to_p2p_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
     let (p2p_to_node_tx, p2p_to_node_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);

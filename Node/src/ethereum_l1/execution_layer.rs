@@ -4,7 +4,6 @@ use super::{
     slot_clock::SlotClock,
 };
 use crate::{
-    bls::BLSService,
     ethereum_l1::ws_provider::WsProvider,
     utils::{config, types::*},
 };
@@ -24,11 +23,9 @@ use alloy::{
 use anyhow::Error;
 use beacon_api_client::ProposerDuty;
 use ecdsa::SigningKey;
-use futures_util::StreamExt;
 use k256::Secp256k1;
 #[cfg(test)]
 use mockall::automock;
-use rand_core::{OsRng, RngCore};
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -39,27 +36,16 @@ pub struct ExecutionLayer {
     preconfer_address: Address,
     contract_addresses: ContractAddresses,
     slot_clock: Arc<SlotClock>,
-    msg_expiry_sec: u64,
     l1_chain_id: u64,
-    bls_service: Arc<BLSService>,
 }
 
 pub struct ContractAddresses {
     pub taiko_l1: Address,
-    pub eigen_layer: EigenLayerContractAddresses,
     pub avs: AvsContractAddresses,
-}
-
-pub struct EigenLayerContractAddresses {
-    pub strategy_manager: Address,
-    pub slasher: Address,
 }
 
 pub struct AvsContractAddresses {
     pub preconf_task_manager: Address,
-    pub directory: Address,
-    pub service_manager: Address,
-    pub preconf_registry: Address,
 }
 
 sol!(
@@ -133,8 +119,6 @@ impl ExecutionLayer {
         avs_node_ecdsa_private_key: &str,
         contract_addresses: &config::ContractAddresses,
         slot_clock: Arc<SlotClock>,
-        msg_expiry_sec: u64,
-        bls_service: Arc<BLSService>,
     ) -> Result<Self, Error> {
         tracing::debug!("Creating ExecutionLayer with WS URL: {}", ws_rpc_url);
 
@@ -165,9 +149,7 @@ impl ExecutionLayer {
             preconfer_address,
             contract_addresses,
             slot_clock,
-            msg_expiry_sec,
             l1_chain_id,
-            bls_service,
         })
     }
 
@@ -178,23 +160,14 @@ impl ExecutionLayer {
     fn parse_contract_addresses(
         contract_addresses: &config::ContractAddresses,
     ) -> Result<ContractAddresses, Error> {
-        let eigen_layer = EigenLayerContractAddresses {
-            strategy_manager: contract_addresses.eigen_layer.strategy_manager.parse()?,
-            slasher: contract_addresses.eigen_layer.slasher.parse()?,
-        };
-
         let avs = AvsContractAddresses {
             preconf_task_manager: contract_addresses.avs.preconf_task_manager.parse()?,
-            directory: contract_addresses.avs.directory.parse()?,
-            service_manager: contract_addresses.avs.service_manager.parse()?,
-            preconf_registry: contract_addresses.avs.preconf_registry.parse()?,
         };
 
         let taiko_l1 = contract_addresses.taiko_l1.parse()?;
 
         Ok(ContractAddresses {
             taiko_l1,
-            eigen_layer,
             avs,
         })
     }
@@ -270,116 +243,6 @@ impl ExecutionLayer {
         }
 
         Ok(buf)
-    }
-
-    pub async fn register_preconfer(&self) -> Result<(), Error> {
-        tracing::debug!("Registering preconfer");
-        let strategy_manager = StrategyManager::new(
-            self.contract_addresses.eigen_layer.strategy_manager,
-            &self.provider_ws,
-        );
-        let one_eth = U256::from(1000000000000000000u64);
-        match strategy_manager
-            .depositIntoStrategy(Address::ZERO, Address::ZERO, one_eth)
-            .value(one_eth)
-            .send()
-            .await
-        {
-            Ok(receipt) => {
-                let tx_hash = receipt.watch().await?;
-                tracing::info!("Deposited into strategy: {tx_hash}");
-            }
-            Err(err) => {
-                tracing::error!("Depositing into strategy failed: {}", err);
-            }
-        }
-
-        let slasher = Slasher::new(
-            self.contract_addresses.eigen_layer.slasher,
-            &self.provider_ws,
-        );
-        match slasher
-            .optIntoSlashing(self.contract_addresses.avs.service_manager)
-            .send()
-            .await
-        {
-            Ok(receipt) => {
-                let tx_hash = receipt.watch().await?;
-                tracing::info!("Opted into slashing: {tx_hash}");
-            }
-            Err(err) => {
-                tracing::error!("Opting into slashing failed: {}", err);
-            }
-        }
-
-        let salt = Self::create_random_salt();
-        let expiration_timestamp =
-            U256::from(chrono::Utc::now().timestamp() as u64 + self.msg_expiry_sec);
-
-        #[cfg(not(test))]
-        let digest_hash_bytes = self
-            .calculate_digest_hash(expiration_timestamp, salt)
-            .await?;
-        #[cfg(test)]
-        let digest_hash_bytes = vec![0u8; 32]; // Dummy value for tests
-
-        // sign the digest hash with private key
-        let signature = self.signer.sign_message_sync(&digest_hash_bytes)?;
-
-        let signature_with_salt_and_expiry = PreconfRegistry::SignatureWithSaltAndExpiry {
-            signature: Bytes::from(signature.as_bytes()),
-            salt,
-            expiry: expiration_timestamp,
-        };
-
-        let preconf_registry = PreconfRegistry::new(
-            self.contract_addresses.avs.preconf_registry,
-            &self.provider_ws,
-        );
-        let tx = preconf_registry.registerPreconfer(signature_with_salt_and_expiry);
-
-        match tx.send().await {
-            Ok(pending_tx) => {
-                let tx_hash = pending_tx.tx_hash();
-                tracing::info!("Preconfer registered: {:?}", tx_hash);
-            }
-            Err(err) => {
-                return Err(anyhow::anyhow!(
-                    "Preconfer registration failed: {}",
-                    err.to_avs_contract_error()
-                ));
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn calculate_digest_hash(
-        &self,
-        expiration_timestamp: U256,
-        salt: FixedBytes<32>,
-    ) -> Result<Vec<u8>, Error> {
-        let avs_directory =
-            AVSDirectory::new(self.contract_addresses.avs.directory, &self.provider_ws);
-
-        let digest_hash = avs_directory
-            .calculateOperatorAVSRegistrationDigestHash(
-                self.preconfer_address,
-                self.contract_addresses.avs.service_manager,
-                salt,
-                expiration_timestamp,
-            )
-            .call()
-            .await?;
-
-        Ok(digest_hash._0.to_vec())
-    }
-
-    fn create_random_salt() -> FixedBytes<32> {
-        let mut salt: [u8; 32] = [0u8; 32];
-        let mut os_rng = OsRng {};
-        os_rng.fill_bytes(&mut salt);
-        FixedBytes::from(&salt)
     }
 
     pub fn sign_message_with_private_ecdsa_key(&self, msg: &[u8]) -> Result<[u8; 65], Error> {
@@ -538,43 +401,6 @@ impl ExecutionLayer {
         proof.iter().map(FixedBytes::from).collect()
     }
 
-    pub async fn subscribe_to_registered_event(
-        &self,
-    ) -> Result<EventSubscription<PreconfRegistry::PreconferRegistered>, Error> {
-        let registry = PreconfRegistry::new(
-            self.contract_addresses.avs.preconf_registry,
-            &self.provider_ws,
-        );
-
-        let registered_filter = registry.PreconferRegistered_filter().subscribe().await?;
-        tracing::debug!("Subscribed to registered event");
-
-        Ok(registered_filter)
-    }
-
-    pub async fn wait_for_the_registered_event(
-        &self,
-        registered_filter: EventSubscription<PreconfRegistry::PreconferRegistered>,
-    ) -> Result<(), Error> {
-        let mut stream = registered_filter.into_stream();
-        while let Some(log) = stream.next().await {
-            match log {
-                Ok(log) => {
-                    tracing::info!("Received PreconferRegistered for: {}", log.0.preconfer);
-                    if log.0.preconfer == self.preconfer_address {
-                        tracing::info!("Preconfer registered!");
-                        break;
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("Error receiving log: {:?}", e);
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     pub async fn force_push_lookahead(
         &self,
         lookahead_set_params: Vec<PreconfTaskManager::LookaheadSetParam>,
@@ -608,170 +434,6 @@ impl ExecutionLayer {
             }
         }
 
-        Ok(())
-    }
-
-    pub async fn add_validator(&self) -> Result<(), Error> {
-        // Build add message
-        // Operation.ADD
-        let operation = 1;
-        // Message expired after 60 seconds
-        let expiry = U256::from(chrono::Utc::now().timestamp() as u64 + self.msg_expiry_sec);
-
-        let data = MessageData::from((
-            U256::from(self.l1_chain_id),
-            operation,
-            expiry,
-            self.preconfer_address,
-        ));
-        let message = data.abi_encode_packed();
-
-        // Convert bls public key to G1Point
-        let pk_point = self.bls_service.pubkey_to_g1_point();
-        let pubkey = PreconfRegistry::G1Point {
-            x: pk_point[0],
-            y: pk_point[1],
-        };
-
-        let signature = self.bls_service.sign(&message, &[]);
-        // Sign message and convert to G2Point
-        let signature_point = self.bls_service.signature_to_g2_point(&signature);
-
-        let signature = PreconfRegistry::G2Point {
-            x: signature_point[0],
-            x_I: signature_point[1],
-            y: signature_point[2],
-            y_I: signature_point[3],
-        };
-
-        // Call contract
-        let params = vec![PreconfRegistry::AddValidatorParam {
-            pubkey,
-            signature,
-            signatureExpiry: expiry,
-        }];
-
-        let preconf_registry = PreconfRegistry::new(
-            self.contract_addresses.avs.preconf_registry,
-            &self.provider_ws,
-        );
-        let tx = preconf_registry.addValidators(params);
-
-        match tx.send().await {
-            Ok(pending_tx) => {
-                let tx_hash = pending_tx.tx_hash();
-                tracing::info!("Add validator to preconfer successful: {:?}", tx_hash);
-            }
-            Err(err) => {
-                return Err(anyhow::anyhow!(
-                    "add_validator: {}",
-                    err.to_avs_contract_error()
-                ));
-            }
-        }
-
-        Ok(())
-    }
-
-    pub async fn remove_validator(&self) -> Result<(), Error> {
-        // Build remove message
-        // Operation.REMOVE
-        let operation = 2;
-        // Message expired after 60 seconds
-        let expiry = U256::from(chrono::Utc::now().timestamp() as u64 + self.msg_expiry_sec);
-
-        let data = MessageData::from((
-            U256::from(self.l1_chain_id),
-            operation,
-            expiry,
-            self.preconfer_address,
-        ));
-        let message = data.abi_encode_packed();
-
-        // Convert bls public key to G1Point
-        let pk_point = self.bls_service.pubkey_to_g1_point();
-        let pubkey = PreconfRegistry::G1Point {
-            x: pk_point[0],
-            y: pk_point[1],
-        };
-
-        let signature = self.bls_service.sign(&message, &[]);
-        // Sign message and convert to G2Point
-        let signature_point = self.bls_service.signature_to_g2_point(&signature);
-
-        let signature = PreconfRegistry::G2Point {
-            x: signature_point[0],
-            x_I: signature_point[1],
-            y: signature_point[2],
-            y_I: signature_point[3],
-        };
-
-        // Call contract
-        let params = vec![PreconfRegistry::RemoveValidatorParam {
-            pubkey,
-            signature,
-            signatureExpiry: expiry,
-        }];
-
-        let preconf_registry = PreconfRegistry::new(
-            self.contract_addresses.avs.preconf_registry,
-            &self.provider_ws,
-        );
-        let tx = preconf_registry.removeValidators(params);
-
-        match tx.send().await {
-            Ok(pending_tx) => {
-                let tx_hash = pending_tx.tx_hash();
-                tracing::info!("Validator removed successfully: {:?}", tx_hash);
-            }
-            Err(err) => {
-                return Err(anyhow::anyhow!(
-                    "remove_validator: {}",
-                    err.to_avs_contract_error()
-                ));
-            }
-        }
-
-        Ok(())
-    }
-
-    pub async fn subscribe_to_validator_added_event(
-        &self,
-    ) -> Result<EventSubscription<PreconfRegistry::ValidatorAdded>, Error> {
-        let registry = PreconfRegistry::new(
-            self.contract_addresses.avs.preconf_registry,
-            &self.provider_ws,
-        );
-
-        let validator_added_filter = registry.ValidatorAdded_filter().subscribe().await?;
-        tracing::debug!("Subscribed to ValidatorAdded event");
-
-        Ok(validator_added_filter)
-    }
-
-    pub async fn wait_for_the_validator_added_event(
-        &self,
-        validator_added_filter: EventSubscription<PreconfRegistry::ValidatorAdded>,
-    ) -> Result<(), Error> {
-        let mut stream = validator_added_filter.into_stream();
-        while let Some(log) = stream.next().await {
-            match log {
-                Ok(log) => {
-                    tracing::info!(
-                        "Received ValidatorAdded for:\npubkey hash: {}\npreconfer: {}",
-                        log.0.pubKeyHash,
-                        log.0.preconfer
-                    );
-                    if log.0.preconfer == self.preconfer_address {
-                        tracing::info!("Validator added!");
-                        break;
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("Error receiving log: {}", e);
-                }
-            }
-        }
         Ok(())
     }
 
@@ -969,13 +631,6 @@ impl ExecutionLayer {
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
         let l1_chain_id = provider.get_chain_id().await?;
 
-        let bls_service = Arc::new(
-            crate::bls::BLSService::new(
-                "0x14d50ac943d01069c206543a0bed3836f6062b35270607ebf1d1f238ceda26f1",
-            )
-            .unwrap(),
-        );
-
         let ws = WsConnect::new(ws_rpc_url.to_string());
 
         let provider_ws: WsProvider = ProviderBuilder::new()
@@ -994,19 +649,11 @@ impl ExecutionLayer {
             slot_clock: Arc::new(clock),
             contract_addresses: ContractAddresses {
                 taiko_l1: Address::ZERO,
-                eigen_layer: EigenLayerContractAddresses {
-                    strategy_manager: Address::ZERO,
-                    slasher: Address::ZERO,
-                },
+
                 avs: AvsContractAddresses {
                     preconf_task_manager: Address::ZERO,
-                    directory: Address::ZERO,
-                    service_manager: Address::ZERO,
-                    preconf_registry: Address::ZERO,
                 },
             },
-            msg_expiry_sec: 120,
-            bls_service,
             l1_chain_id,
         })
     }
@@ -1079,89 +726,5 @@ mod tests {
         el.propose_new_block(0, vec![0; 32], 0, vec![], true)
             .await
             .unwrap();
-    }
-    #[tokio::test]
-    async fn test_register() {
-        let anvil = Anvil::new().try_spawn().unwrap();
-        let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
-        let ws_rpc_url = anvil.ws_endpoint();
-        let private_key = anvil.keys()[0].clone();
-        let el = ExecutionLayer::new_from_pk(ws_rpc_url, rpc_url, private_key)
-            .await
-            .unwrap();
-
-        let result = el.register_preconfer().await;
-        assert!(result.is_ok(), "Register method failed: {:?}", result.err());
-    }
-
-    #[tokio::test]
-    async fn test_get_lookahead_params_for_epoch() {
-        let anvil = Anvil::new().try_spawn().unwrap();
-        let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
-        let ws_rpc_url = anvil.ws_endpoint();
-        let private_key = anvil.keys()[0].clone();
-        let _el = ExecutionLayer::new_from_pk(ws_rpc_url, rpc_url, private_key)
-            .await
-            .unwrap();
-
-        let _epoch_begin_timestamp = 0;
-        let _validator_bls_pub_keys: [BLSCompressedPublicKey; 32] = [[0u8; 48]; 32];
-
-        // TODO:
-        // There is a bug in the Anvil (anvil 0.2.0) library:
-        // `Result::unwrap()` on an `Err` value: buffer overrun while deserializing
-        // check if it's fixed in next version
-        // let lookahead_params = el
-        //     .get_lookahead_params_for_epoch(epoch_begin_timestamp, &validator_bls_pub_keys)
-        //     .await
-        //     .unwrap();
-        // assert!(
-        //     !lookahead_params.is_empty(),
-        //     "Lookahead params should not be empty"
-        // );
-    }
-
-    #[tokio::test]
-    async fn test_prove_incorrect_lookahead() {
-        let anvil = Anvil::new().try_spawn().unwrap();
-        let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
-        let ws_rpc_url = anvil.ws_endpoint();
-        let private_key = anvil.keys()[0].clone();
-        let el = ExecutionLayer::new_from_pk(ws_rpc_url, rpc_url, private_key)
-            .await
-            .unwrap();
-
-        // Test parameters
-        let lookahead_pointer = 100;
-        let slot_timestamp = 1000;
-        let validator_bls_pub_key = [1u8; 48];
-        let validator = vec![2u8; 256];
-        let validator_index = 0;
-        let validator_proof = vec![[3u8; 32]; 5];
-        let validators_root = [4u8; 32];
-        let beacon_state_proof = vec![[5u8; 32]; 5];
-        let beacon_state_root = [6u8; 32];
-        let beacon_block_proof_for_state = vec![[7u8; 32]; 5];
-        let beacon_block_proof_for_proposer_index = vec![[8u8; 32]; 5];
-
-        // Call the method
-        let result = el
-            .prove_incorrect_lookahead(
-                lookahead_pointer,
-                slot_timestamp,
-                validator_bls_pub_key,
-                &validator,
-                validator_index,
-                validator_proof,
-                validators_root,
-                beacon_state_proof,
-                beacon_state_root,
-                beacon_block_proof_for_state,
-                beacon_block_proof_for_proposer_index,
-            )
-            .await;
-
-        // Assert the result
-        assert!(result.is_ok(), "prove_incorrect_lookahead should succeed");
     }
 }

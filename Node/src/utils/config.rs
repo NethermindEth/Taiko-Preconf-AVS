@@ -26,22 +26,12 @@ pub struct Config {
 #[derive(Debug)]
 pub struct ContractAddresses {
     pub taiko_l1: String,
-    pub eigen_layer: EigenLayerContractAddresses,
     pub avs: AvsContractAddresses,
-}
-
-#[derive(Debug)]
-pub struct EigenLayerContractAddresses {
-    pub strategy_manager: String,
-    pub slasher: String,
 }
 
 #[derive(Debug)]
 pub struct AvsContractAddresses {
     pub preconf_task_manager: String,
-    pub directory: String,
-    pub service_manager: String,
-    pub preconf_registry: String,
 }
 
 impl Config {
@@ -69,61 +59,8 @@ impl Config {
                 default_empty_address.clone()
             });
 
-        const AVS_DIRECTORY_CONTRACT_ADDRESS: &str = "AVS_DIRECTORY_CONTRACT_ADDRESS";
-        let directory = std::env::var(AVS_DIRECTORY_CONTRACT_ADDRESS).unwrap_or_else(|_| {
-            warn!(
-                "No AVS directory contract address found in {} env var, using default",
-                AVS_DIRECTORY_CONTRACT_ADDRESS
-            );
-            default_empty_address.clone()
-        });
-
-        const AVS_SERVICE_MANAGER_CONTRACT_ADDRESS: &str = "AVS_SERVICE_MANAGER_CONTRACT_ADDRESS";
-        let service_manager =
-            std::env::var(AVS_SERVICE_MANAGER_CONTRACT_ADDRESS).unwrap_or_else(|_| {
-                warn!(
-                    "No AVS service manager contract address found in {} env var, using default",
-                    AVS_SERVICE_MANAGER_CONTRACT_ADDRESS
-                );
-                default_empty_address.clone()
-            });
-
-        const AVS_PRECONF_REGISTRY_CONTRACT_ADDRESS: &str = "AVS_PRECONF_REGISTRY_CONTRACT_ADDRESS";
-        let preconf_registry =
-            std::env::var(AVS_PRECONF_REGISTRY_CONTRACT_ADDRESS).unwrap_or_else(|_| {
-                warn!(
-                    "No AVS preconf registry contract address found in {} env var, using default",
-                    AVS_PRECONF_REGISTRY_CONTRACT_ADDRESS
-                );
-                default_empty_address.clone()
-            });
-
         let avs = AvsContractAddresses {
             preconf_task_manager,
-            directory,
-            service_manager,
-            preconf_registry,
-        };
-
-        const EIGEN_LAYER_STRATEGY_MANAGER_CONTRACT_ADDRESS: &str =
-            "EIGEN_LAYER_STRATEGY_MANAGER_CONTRACT_ADDRESS";
-        let strategy_manager = std::env::var(EIGEN_LAYER_STRATEGY_MANAGER_CONTRACT_ADDRESS).unwrap_or_else(|_| {
-            warn!("No Eigen Layer strategy manager contract address found in {} env var, using default", EIGEN_LAYER_STRATEGY_MANAGER_CONTRACT_ADDRESS);
-            default_empty_address.clone()
-        });
-
-        const EIGEN_LAYER_SLASHER_CONTRACT_ADDRESS: &str = "EIGEN_LAYER_SLASHER_CONTRACT_ADDRESS";
-        let slasher = std::env::var(EIGEN_LAYER_SLASHER_CONTRACT_ADDRESS).unwrap_or_else(|_| {
-            warn!(
-                "No Eigen Layer slasher contract address found in {} env var, using default",
-                EIGEN_LAYER_SLASHER_CONTRACT_ADDRESS
-            );
-            default_empty_address.clone()
-        });
-
-        let eigen_layer = EigenLayerContractAddresses {
-            strategy_manager,
-            slasher,
         };
 
         const TAIKO_L1_ADDRESS: &str = "TAIKO_L1_ADDRESS";
@@ -137,7 +74,6 @@ impl Config {
 
         let contract_addresses = ContractAddresses {
             taiko_l1,
-            eigen_layer,
             avs,
         };
 
