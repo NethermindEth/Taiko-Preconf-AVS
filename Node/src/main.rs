@@ -1,6 +1,4 @@
-mod bls;
 mod ethereum_l1;
-mod mev_boost;
 mod node;
 mod p2p_network;
 mod taiko;
@@ -21,8 +19,6 @@ async fn main() -> Result<(), Error> {
     tracing::info!("🚀 Starting Whitelist Node v{}", env!("CARGO_PKG_VERSION"));
 
     let config = utils::config::Config::read_env_variables();
-
-    let bls_service = Arc::new(bls::BLSService::new(&config.validator_bls_privkey)?);
 
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
         &config.l1_ws_rpc_url,
@@ -49,14 +45,6 @@ async fn main() -> Result<(), Error> {
     ));
 
     let ethereum_l1 = Arc::new(ethereum_l1);
-    let mev_boost = mev_boost::MevBoost::new(
-        &config.mev_boost_url,
-        ethereum_l1
-            .consensus_layer
-            .get_genesis_details()
-            .await?
-            .genesis_fork_version,
-    );
 
     let block_proposed_event_checker =
         BlockProposedEventReceiver::new(ethereum_l1.clone(), block_proposed_tx);
@@ -68,9 +56,7 @@ async fn main() -> Result<(), Error> {
         p2p_to_node_rx,
         taiko.clone(),
         ethereum_l1.clone(),
-        mev_boost,
         config.l2_slot_duration_sec,
-        bls_service,
     )
     .await?;
     node.entrypoint().await?;

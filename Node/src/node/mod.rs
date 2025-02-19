@@ -7,11 +7,9 @@ mod preconfirmation_message;
 mod preconfirmation_proof;
 
 use crate::{
-    bls::BLSService,
     ethereum_l1::{
         block_proposed::BlockProposedV2, EthereumL1,
     },
-    mev_boost::MevBoost,
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::types::*,
 };
@@ -46,7 +44,6 @@ pub struct Node {
     node_to_p2p_tx: Sender<Vec<u8>>,
     p2p_to_node_rx: Option<Receiver<Vec<u8>>>,
     ethereum_l1: Arc<EthereumL1>,
-    mev_boost: MevBoost,
     epoch: Epoch,
     l2_slot_duration_sec: u64,
     preconfirmed_blocks: PreconfirmedBlocks,
@@ -54,7 +51,6 @@ pub struct Node {
     preconfirmation_txs: Arc<Mutex<HashMap<u64, Vec<u8>>>>, // block_id -> tx
     operator: Operator,
     preconfirmation_helper: PreconfirmationHelper,
-    bls_service: Arc<BLSService>,
     l2_block_id: Arc<L2BlockId>,
 }
 
@@ -66,9 +62,7 @@ impl Node {
         p2p_to_node_rx: Receiver<Vec<u8>>,
         taiko: Arc<Taiko>,
         ethereum_l1: Arc<EthereumL1>,
-        mev_boost: MevBoost,
         l2_slot_duration_sec: u64,
-        bls_service: Arc<BLSService>,
     ) -> Result<Self, Error> {
         let init_epoch = 0;
         let operator = Operator::new(ethereum_l1.clone())?;
@@ -78,7 +72,6 @@ impl Node {
             node_to_p2p_tx,
             p2p_to_node_rx: Some(p2p_to_node_rx),
             ethereum_l1,
-            mev_boost,
             epoch: init_epoch,
             l2_slot_duration_sec,
             preconfirmed_blocks: Arc::new(Mutex::new(HashMap::new())),
@@ -86,7 +79,6 @@ impl Node {
             preconfirmation_txs: Arc::new(Mutex::new(HashMap::new())),
             operator,
             preconfirmation_helper: PreconfirmationHelper::new(),
-            bls_service,
             l2_block_id: Arc::new(L2BlockId::new()),
         })
     }
