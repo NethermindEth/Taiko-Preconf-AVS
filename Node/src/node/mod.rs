@@ -355,15 +355,15 @@ impl Node {
             .advance_head_to_new_l2_block(pending_tx_lists.tx_lists)
             .await?;
 
+        // TODO get tx count
+        // let tx_count = pending_tx_lists.count();
         let tx = self
             .ethereum_l1
             .execution_layer
-            .propose_new_block(
+            .propose_batch(
                 self.preconfirmation_helper.get_next_nonce(),
                 pending_tx_lists_bytes,
-                0, //TODO replace with a correct function call
-                vec![],
-                send_to_contract,
+                1, //TODO replace with a correct tx count
             )
             .await?;
 

@@ -26,6 +26,7 @@ pub struct Config {
 pub struct ContractAddresses {
     pub taiko_l1: String,
     pub preconf_whitelist: String,
+    pub preconf_router: String,
     pub avs: AvsContractAddresses,
 }
 
@@ -81,9 +82,21 @@ impl Config {
             default_empty_address.clone()
         });
 
+        const PRECONF_ROUTER_ADDRESS: &str = "PRECONF_ROUTER_ADDRESS";
+        let preconf_router = std::env::var(PRECONF_ROUTER_ADDRESS).unwrap_or_else(|_| {
+            warn!(
+                "No PreconfRouter contract address found in {} env var, using default",
+                PRECONF_ROUTER_ADDRESS
+            );
+            default_empty_address.clone()
+        });
+
+
+
         let contract_addresses = ContractAddresses {
             taiko_l1,
             preconf_whitelist,
+            preconf_router,
             avs,
         };
 

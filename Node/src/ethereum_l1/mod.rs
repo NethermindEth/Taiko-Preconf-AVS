@@ -1,7 +1,6 @@
 mod avs_contract_error;
 pub mod block_proposed;
 pub mod consensus_layer;
-mod el_with_cl_tests;
 pub mod execution_layer;
 pub mod slot_clock;
 mod ws_provider;
