@@ -3,8 +3,6 @@ mod commit;
 mod l2_block_id;
 mod operator;
 mod preconfirmation_helper;
-mod preconfirmation_message;
-mod preconfirmation_proof;
 
 use crate::{
     ethereum_l1::{
@@ -18,8 +16,6 @@ use commit::L2TxListsCommit;
 use l2_block_id::L2BlockId;
 use operator::{Operator, Status as OperatorStatus};
 use preconfirmation_helper::PreconfirmationHelper;
-use preconfirmation_message::PreconfirmationMessage;
-use preconfirmation_proof::PreconfirmationProof;
 use std::{
     collections::HashMap,
     sync::{
@@ -36,17 +32,12 @@ use tracing::{debug, error, info};
 
 const OLDEST_BLOCK_DISTANCE: u64 = 256;
 
-type PreconfirmedBlocks = Arc<Mutex<HashMap<u64, PreconfirmationMessage>>>;
-
 pub struct Node {
     taiko: Arc<Taiko>,
     node_block_proposed_rx: Option<Receiver<BlockProposedV2>>,
-    node_to_p2p_tx: Sender<Vec<u8>>,
-    p2p_to_node_rx: Option<Receiver<Vec<u8>>>,
     ethereum_l1: Arc<EthereumL1>,
     epoch: Epoch,
     l2_slot_duration_sec: u64,
-    preconfirmed_blocks: PreconfirmedBlocks,
     is_preconfer_now: Arc<AtomicBool>,
     preconfirmation_txs: Arc<Mutex<HashMap<u64, Vec<u8>>>>, // block_id -> tx
     operator: Operator,
@@ -58,8 +49,6 @@ impl Node {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         node_rx: Receiver<BlockProposedV2>,
-        node_to_p2p_tx: Sender<Vec<u8>>,
-        p2p_to_node_rx: Receiver<Vec<u8>>,
         taiko: Arc<Taiko>,
         ethereum_l1: Arc<EthereumL1>,
         l2_slot_duration_sec: u64,
@@ -69,12 +58,9 @@ impl Node {
         Ok(Self {
             taiko,
             node_block_proposed_rx: Some(node_rx),
-            node_to_p2p_tx,
-            p2p_to_node_rx: Some(p2p_to_node_rx),
             ethereum_l1,
             epoch: init_epoch,
             l2_slot_duration_sec,
-            preconfirmed_blocks: Arc::new(Mutex::new(HashMap::new())),
             is_preconfer_now: Arc::new(AtomicBool::new(false)),
             preconfirmation_txs: Arc::new(Mutex::new(HashMap::new())),
             operator,
@@ -93,21 +79,16 @@ impl Node {
     }
 
     fn start_new_msg_receiver_thread(&mut self) {
-        let preconfirmed_blocks = self.preconfirmed_blocks.clone();
         let ethereum_l1 = self.ethereum_l1.clone();
         let taiko = self.taiko.clone();
         let is_preconfer_now = self.is_preconfer_now.clone();
         let preconfirmation_txs = self.preconfirmation_txs.clone();
         let l2_block_id = self.l2_block_id.clone();
-        if let (Some(node_rx), Some(p2p_to_node_rx)) = (
-            self.node_block_proposed_rx.take(),
-            self.p2p_to_node_rx.take(),
-        ) {
+        if let Some(node_rx)= self.node_block_proposed_rx.take()
+         {
             tokio::spawn(async move {
                 Self::handle_incoming_messages(
                     node_rx,
-                    p2p_to_node_rx,
-                    preconfirmed_blocks,
                     ethereum_l1,
                     taiko,
                     is_preconfer_now,
@@ -124,8 +105,6 @@ impl Node {
     #[allow(clippy::too_many_arguments)]
     async fn handle_incoming_messages(
         mut node_rx: Receiver<BlockProposedV2>,
-        mut p2p_to_node_rx: Receiver<Vec<u8>>,
-        preconfirmed_blocks: PreconfirmedBlocks,
         ethereum_l1: Arc<EthereumL1>,
         taiko: Arc<Taiko>,
         is_preconfer_now: Arc<AtomicBool>,
@@ -137,114 +116,20 @@ impl Node {
                 Some(block_proposed) = node_rx.recv() => {
                     if !is_preconfer_now.load(Ordering::Acquire) {
                         debug!("Node received block proposed event: {:?}", block_proposed.block_id());
-                        if let Err(e) = Self::check_preconfirmed_blocks_correctness(&preconfirmed_blocks, taiko.chain_id, &block_proposed, ethereum_l1.clone()).await {
-                            error!("Failed to check preconfirmed blocks correctness: {}", e);
-                        }
-                        if let Err(e) = Self::clean_old_blocks(&preconfirmed_blocks, block_proposed.block_id()).await {
-                            error!("Failed to clean old blocks: {}", e);
-                        }
                     } else {
                         debug!("Node is Preconfer and received block proposed event: {:?}", block_proposed.block_id());
                         preconfirmation_txs.lock().await.remove(&block_proposed.block_id());
                     }
                 },
-                Some(p2p_message) = p2p_to_node_rx.recv() => {
-                    if !is_preconfer_now.load(Ordering::Acquire) {
-                        debug!("Received Message from p2p!");
-                        let msg: PreconfirmationMessage = p2p_message.into();
-                        l2_block_id.update(msg.block_height);
-                        Self::advance_l2_head(msg, &preconfirmed_blocks, ethereum_l1.clone(), taiko.clone()).await;
-                    } else {
-                        debug!("Node is Preconfer and received message from p2p: {:?}", p2p_message);
-                    }
-                }
             }
         }
     }
 
     async fn advance_l2_head(
-        msg: PreconfirmationMessage,
-        preconfirmed_blocks: &PreconfirmedBlocks,
         ethereum_l1: Arc<EthereumL1>,
         taiko: Arc<Taiko>,
     ) {
-        // check hash
-        let tx_list_commit =
-            L2TxListsCommit::from_preconf(msg.block_height, msg.tx_list_hash, taiko.chain_id);
-        debug!(
-            "Match txListCommit, tx list hash: {}",
-            hex::encode(msg.tx_list_hash)
-        );
-        match tx_list_commit.hash() {
-            Ok(hash) => {
-                if hash == msg.proof.commit_hash {
-                    // check signature
-                    match ethereum_l1
-                        .execution_layer
-                        .recover_address_from_msg(&msg.proof.commit_hash, &msg.proof.signature)
-                    {
-                        Ok(_) => {
-                            // Add to preconfirmation map
-                            debug!(
-                                "Adding to preconfirmation map block_height: {}",
-                                msg.block_height
-                            );
-                            preconfirmed_blocks
-                                .lock()
-                                .await
-                                .insert(msg.block_height, msg.clone());
-                            // Advance head
-                            if let Err(e) = taiko.advance_head_to_new_l2_block(msg.tx_lists).await {
-                                error!(
-                                    "Failed to advance head: {} for block_id: {}",
-                                    e, msg.block_height
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            error!(
-                                "Failed to check signature: {} for block_id: {}",
-                                e, msg.block_height
-                            );
-                        }
-                    }
-                } else {
-                    tracing::warn!(
-                        "Preconfirmatoin hash is not correct for block_id: {}",
-                        msg.block_height
-                    );
-                }
-            }
-            Err(e) => {
-                tracing::warn!("Failed to calculate hash: {}", e);
-            }
-        }
-    }
-
-    async fn check_preconfirmed_blocks_correctness(
-        preconfirmed_blocks: &PreconfirmedBlocks,
-        chain_id: u64,
-        block_proposed: &BlockProposedV2,
-        ethereum_l1: Arc<EthereumL1>,
-    ) -> Result<(), Error> {
-        let preconfirmed_blocks = preconfirmed_blocks.lock().await;
-        if let Some(preconf_block) = preconfirmed_blocks.get(&block_proposed.block_id()) {
-            ethereum_l1
-                .execution_layer
-                .check_and_prove_incorrect_preconfirmation(
-                    chain_id,
-                    preconf_block.tx_list_hash,
-                    preconf_block.proof.signature,
-                    block_proposed,
-                )
-                .await?;
-        } else {
-            debug!(
-                "No preconfirmed block with block_id: {}",
-                block_proposed.block_id()
-            );
-        }
-        Ok(())
+        // TODO replace that call with taiko call
     }
 
     async fn preconfirmation_loop(&mut self) {
@@ -332,17 +217,7 @@ impl Node {
         let (commit_hash, signature) =
             self.generate_commit_hash_and_signature(&pending_tx_lists, new_block_height)?;
 
-        let proof = PreconfirmationProof {
-            commit_hash,
-            signature,
-        };
-        let preconf_message = PreconfirmationMessage::new(
-            new_block_height,
-            pending_tx_lists.tx_lists.clone(),
-            &pending_tx_lists_bytes,
-            proof.clone(),
-        );
-        self.send_preconfirmations_to_the_avs_p2p(preconf_message.clone());
+        //self.send_preconfirmations_to_the_avs_p2p(preconf_message.clone());
         self.taiko
             .advance_head_to_new_l2_block(pending_tx_lists.tx_lists)
             .await?;
@@ -395,17 +270,6 @@ impl Node {
         let mut preconfirmed_blocks = preconfirmed_blocks.lock().await;
         preconfirmed_blocks.retain(|block_height, _| block_height >= &oldest_block_to_keep);
         Ok(())
-    }
-
-    fn send_preconfirmations_to_the_avs_p2p(&self, message: PreconfirmationMessage) {
-        debug!(
-            "Send message to p2p, tx list hash: {}",
-            hex::encode(message.tx_list_hash)
-        );
-
-        if let Err(err) = self.node_to_p2p_tx.try_send(message.into()) {
-            error!("Failed to send message to node_to_p2p_tx: {}", err);
-        }
     }
 }
 
