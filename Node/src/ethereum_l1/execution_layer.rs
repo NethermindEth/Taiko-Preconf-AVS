@@ -1,8 +1,4 @@
-use super::{
-    avs_contract_error::AVSContractError,
-    block_proposed::{BlockProposedV2, EventSubscriptionBlockProposedV2, TaikoEvents},
-    slot_clock::SlotClock,
-};
+use super::block_proposed::{BlockProposedV2, EventSubscriptionBlockProposedV2, TaikoEvents};
 use crate::{
     ethereum_l1::ws_provider::WsProvider,
     utils::{config, types::*},
@@ -10,7 +6,7 @@ use crate::{
 use alloy::{
     consensus::TypedTransaction,
     network::{Ethereum, EthereumWallet, NetworkWallet},
-    primitives::{Address, Bytes, FixedBytes, B256, U16, U256},
+    primitives::{Address, Bytes, FixedBytes, B256, U256},
     providers::{Provider, ProviderBuilder, WsConnect},
     signers::{
         local::{LocalSigner, PrivateKeySigner},
@@ -20,13 +16,11 @@ use alloy::{
     sol_types::SolValue,
 };
 use anyhow::Error;
-use beacon_api_client::ProposerDuty;
 use ecdsa::SigningKey;
 use k256::Secp256k1;
 #[cfg(test)]
 use mockall::automock;
 use std::str::FromStr;
-use std::sync::Arc;
 
 pub struct ExecutionLayer {
     provider_ws: WsProvider,
@@ -34,7 +28,6 @@ pub struct ExecutionLayer {
     wallet: EthereumWallet,
     preconfer_address: Address,
     contract_addresses: ContractAddresses,
-    slot_clock: Arc<SlotClock>,
     l1_chain_id: u64,
 }
 
@@ -178,7 +171,6 @@ impl ExecutionLayer {
         ws_rpc_url: &str,
         avs_node_ecdsa_private_key: &str,
         contract_addresses: &config::ContractAddresses,
-        slot_clock: Arc<SlotClock>,
     ) -> Result<Self, Error> {
         tracing::debug!("Creating ExecutionLayer with WS URL: {}", ws_rpc_url);
 
@@ -208,7 +200,6 @@ impl ExecutionLayer {
             wallet,
             preconfer_address,
             contract_addresses,
-            slot_clock,
             l1_chain_id,
         })
     }
@@ -439,15 +430,6 @@ impl ExecutionLayer {
         Ok(EventSubscriptionBlockProposedV2(block_proposed_filter))
     }
 
-    fn check_raw_result(&self, raw_result: Result<Bytes, alloy::contract::Error>) {
-        tracing::debug!("Raw result: {:?}", raw_result);
-        if let Ok(raw_result) = raw_result {
-            if raw_result.is_empty() {
-                tracing::error!("Raw result is empty, contract {} does not have any code, check the contract address and RPC URL", self.contract_addresses.avs.preconf_task_manager);
-            }
-        }
-    }
-
     #[cfg(test)]
     pub async fn new_from_pk(
         ws_rpc_url: String,
@@ -456,7 +438,6 @@ impl ExecutionLayer {
     ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_signing_key(private_key.into());
         let wallet = EthereumWallet::from(signer.clone());
-        let clock = SlotClock::new(0u64, 12u64, 12u64, 32u64, 3u64);
 
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
         let l1_chain_id = provider.get_chain_id().await?;
@@ -476,7 +457,6 @@ impl ExecutionLayer {
             wallet,
             preconfer_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
                 .parse()?,
-            slot_clock: Arc::new(clock),
             contract_addresses: ContractAddresses {
                 taiko_l1: Address::ZERO,
                 preconf_whitelist: Address::ZERO,
