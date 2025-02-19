@@ -6,15 +6,15 @@ use tracing::debug;
 pub mod l2_tx_lists;
 
 pub struct Taiko {
-    rpc_proposer: RpcClient,
+    rpc_taiko_geth: RpcClient,
     rpc_driver: RpcClient,
     pub chain_id: u64,
 }
 
 impl Taiko {
-    pub fn new(proposer_url: &str, driver_url: &str, chain_id: u64) -> Self {
+    pub fn new(taiko_geth_url: &str, driver_url: &str, chain_id: u64) -> Self {
         Self {
-            rpc_proposer: RpcClient::new(proposer_url),
+            rpc_taiko_geth: RpcClient::new(taiko_geth_url),
             rpc_driver: RpcClient::new(driver_url),
             chain_id,
         }
@@ -23,7 +23,7 @@ impl Taiko {
     pub async fn get_pending_l2_tx_lists(&self) -> Result<l2_tx_lists::RPCReplyL2TxLists, Error> {
         tracing::debug!("Getting L2 tx lists");
         let result = l2_tx_lists::decompose_pending_lists_json(
-            self.rpc_proposer
+            self.rpc_taiko_geth
                 .call_method("RPC.GetL2TxLists", vec![])
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to get L2 tx lists: {}", e))?,
@@ -40,6 +40,12 @@ impl Taiko {
         }
 
         Ok(result)
+    }
+
+    pub async fn get_pending_l2_txs_from_taiko_geth(&self) -> Result<Vec<String>, Error> {
+        let result = self.rpc_taiko_geth.call_method("RPC.GetL2TxLists", vec![]).await.map_err(|e| anyhow::anyhow!("Failed to get L2 tx lists: {}", e))?;
+        let tx_lists = l2_tx_lists::decompose_pending_lists_json(result).map_err(|e| anyhow::anyhow!("Failed to decompose L2 tx lists: {}", e))?;
+        Ok(tx_lists.tx_list_bytes)
     }
 
     fn print_number_of_received_txs(result: &l2_tx_lists::RPCReplyL2TxLists) {

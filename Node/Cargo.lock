@@ -7688,6 +7688,7 @@ dependencies = [
  "futures-util",
  "hex",
  "jsonrpsee",
+ "jsonwebtoken",
  "k256 0.13.4",
  "lazy_static",
  "mockall",

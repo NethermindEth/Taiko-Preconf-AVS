@@ -85,7 +85,7 @@ async fn main() -> Result<(), Error> {
         p2p.start(config.p2p_network_config).await;
     }
     let taiko = Arc::new(taiko::Taiko::new(
-        &config.taiko_proposer_url,
+        &config.taiko_geth_url,
         &config.taiko_driver_url,
         config.taiko_chain_id,
     ));
