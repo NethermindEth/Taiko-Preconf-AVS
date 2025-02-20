@@ -84,11 +84,6 @@ async fn main() -> Result<(), Error> {
         let p2p = p2p_network::AVSp2p::new(p2p_to_node_tx.clone(), node_to_p2p_rx);
         p2p.start(config.p2p_network_config).await;
     }
-    let taiko = Arc::new(taiko::Taiko::new(
-        &config.taiko_geth_url,
-        &config.taiko_driver_url,
-        config.taiko_chain_id,
-    ));
 
     let ethereum_l1 = Arc::new(ethereum_l1);
     let mev_boost = mev_boost::MevBoost::new(
@@ -99,6 +94,16 @@ async fn main() -> Result<(), Error> {
             .await?
             .genesis_fork_version,
     );
+
+    let jwt_secret_bytes = utils::file_operations::read_jwt_secret(&config.jwt_secret_file_path)?;
+    let taiko = Arc::new(taiko::Taiko::new(
+        &config.taiko_geth_url,
+        &config.taiko_driver_url,
+        config.taiko_chain_id,
+        config.rpc_client_timeout,
+        &jwt_secret_bytes,
+        ethereum_l1.execution_layer.get_preconfer_address(),
+    )?);
 
     let block_proposed_event_checker =
         BlockProposedEventReceiver::new(ethereum_l1.clone(), block_proposed_tx);

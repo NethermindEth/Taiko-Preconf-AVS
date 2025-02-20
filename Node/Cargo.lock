@@ -7687,6 +7687,7 @@ dependencies = [
  "ethereum-consensus",
  "futures-util",
  "hex",
+ "http 1.2.0",
  "jsonrpsee",
  "jsonwebtoken",
  "k256 0.13.4",

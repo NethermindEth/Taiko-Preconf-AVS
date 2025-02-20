@@ -1,6 +1,9 @@
-use crate::utils::rpc_client::RpcClient;
+#![allow(unused)] // TODO: remove this once using new rpc functions
+
+use crate::utils::{rpc_client::RpcClient, types::*};
 use anyhow::Error;
 use serde_json::Value;
+use std::time::Duration;
 use tracing::debug;
 
 pub mod l2_tx_lists;
@@ -9,17 +12,31 @@ pub struct Taiko {
     rpc_taiko_geth: RpcClient,
     rpc_driver: RpcClient,
     pub chain_id: u64,
+    preconfer_address: PreconferAddress,
 }
 
 impl Taiko {
-    pub fn new(taiko_geth_url: &str, driver_url: &str, chain_id: u64) -> Self {
-        Self {
-            rpc_taiko_geth: RpcClient::new(taiko_geth_url),
+    pub fn new(
+        taiko_geth_url: &str,
+        driver_url: &str,
+        chain_id: u64,
+        rpc_client_timeout: Duration,
+        jwt_secret_bytes: &[u8],
+        preconfer_address: PreconferAddress,
+    ) -> Result<Self, Error> {
+        Ok(Self {
+            rpc_taiko_geth: RpcClient::new_with_timeout_and_jwt(
+                taiko_geth_url,
+                rpc_client_timeout,
+                jwt_secret_bytes,
+            )?,
             rpc_driver: RpcClient::new(driver_url),
             chain_id,
-        }
+            preconfer_address,
+        })
     }
 
+    // TODO: obsolete, remove this function
     pub async fn get_pending_l2_tx_lists(&self) -> Result<l2_tx_lists::RPCReplyL2TxLists, Error> {
         tracing::debug!("Getting L2 tx lists");
         let result = l2_tx_lists::decompose_pending_lists_json(
@@ -42,10 +59,28 @@ impl Taiko {
         Ok(result)
     }
 
-    pub async fn get_pending_l2_txs_from_taiko_geth(&self) -> Result<Vec<String>, Error> {
-        let result = self.rpc_taiko_geth.call_method("RPC.GetL2TxLists", vec![]).await.map_err(|e| anyhow::anyhow!("Failed to get L2 tx lists: {}", e))?;
-        let tx_lists = l2_tx_lists::decompose_pending_lists_json(result).map_err(|e| anyhow::anyhow!("Failed to decompose L2 tx lists: {}", e))?;
-        Ok(tx_lists.tx_list_bytes)
+    pub async fn get_pending_l2_txs_from_taiko_geth(
+        &self,
+    ) -> Result<l2_tx_lists::PendingTxLists, Error> {
+        let params = vec![
+            Value::String(format!("0x{}", hex::encode(self.preconfer_address))), // beneficiary address
+            Value::from(0x1dfd14000u64), // baseFee (8 gwei) - now as a number, not a string
+            Value::Number(30_000_000.into()), // blockMaxGasLimit
+            Value::Number(131_072.into()), // maxBytesPerTxList (128KB)
+            Value::Array(vec![]),        // locals (empty array)
+            Value::Number(1.into()),     // maxTransactionsLists
+            Value::Number(0.into()),     // minTip
+        ];
+
+        let result = self
+            .rpc_taiko_geth
+            .call_method("taikoAuth_txPoolContentWithMinTip", params)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to get L2 tx lists: {}", e))?;
+
+        let tx_lists = l2_tx_lists::decompose_pending_lists_json_from_geth(result)
+            .map_err(|e| anyhow::anyhow!("Failed to decompose L2 tx lists: {}", e))?;
+        Ok(tx_lists)
     }
 
     fn print_number_of_received_txs(result: &l2_tx_lists::RPCReplyL2TxLists) {
@@ -147,7 +182,15 @@ mod test {
             &format!("http://127.0.0.1:{}", port),
             &format!("http://127.0.0.1:{}", port),
             1,
-        );
+            Duration::from_secs(10),
+            &[
+                0xa6, 0xea, 0x92, 0x58, 0xca, 0x91, 0x2c, 0x59, 0x3b, 0x3e, 0x36, 0xee, 0x36, 0xc1,
+                0x7f, 0xe9, 0x74, 0x47, 0xf9, 0x20, 0xf5, 0xb3, 0x6a, 0x90, 0x74, 0x4d, 0x79, 0xd4,
+                0xf2, 0xd6, 0xae, 0x62,
+            ],
+            PRECONFER_ADDRESS_ZERO,
+        )
+        .unwrap();
         (rpc_server, taiko)
     }
 }

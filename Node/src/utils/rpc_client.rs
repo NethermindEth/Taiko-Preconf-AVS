@@ -1,9 +1,29 @@
+use alloy::primitives::B256;
 use anyhow::Error;
+use http::{HeaderMap, HeaderValue};
 use jsonrpsee::core::client::ClientT;
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
+use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
-use alloy_primitives::H256;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Claims {
+    iat: usize,
+}
+
+fn create_jwt_token(secret: &[u8]) -> Result<String, Box<dyn std::error::Error>> {
+    let claims = Claims {
+        iat: chrono::Utc::now().timestamp() as usize, // Current timestamp without adding duration
+    };
+
+    Ok(encode(
+        &Header::new(Algorithm::HS256),
+        &claims,
+        &EncodingKey::from_secret(secret),
+    )?)
+}
 
 pub struct RpcClient {
     client: HttpClient,
@@ -22,48 +42,43 @@ impl RpcClient {
         RpcClient { client }
     }
 
-    // pub fn new_with_timeout_and_jwt(
-    //     url: &str,
-    //     timeout: Duration,
-    //     jwt_secret: Option<String>,
-    // ) -> Self {
-    //     let mut builder = HttpClientBuilder::default().request_timeout(timeout);
-
-    //     if let Some(jwt) = jwt_secret {
-    //         builder = builder
-    //             .set_header("Authorization", format!("Bearer {}", jwt))
-    //             .unwrap();
-    //     }
-
-    //     let client = builder.build(url).unwrap();
-    //     RpcClient { client }
-    // }
-
-    /// Creates a new EngineClient with JWT authentication.
-    pub async fn new_jwt(url: &str, jwt_secret: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        // Convert JWT secret to bytes32
-        let jwt = H256::from_str(jwt_secret).map_err(|_| "Invalid JWT secret")?;
-
-        if jwt == H256::ZERO || url.is_empty() {  // Note: ZERO instead of zero()
-            return Err("URL is empty or JWT secret is illegal".into());
+    /// Creates a new RpcClient with JWT authentication.
+    pub fn new_with_timeout_and_jwt(
+        url: &str,
+        timeout: Duration,
+        jwt_secret: &[u8],
+    ) -> Result<Self, Error> {
+        if url.is_empty() {
+            return Err(anyhow::anyhow!("URL is empty"));
         }
 
-        // Create JWT token
-        let jwt_token = create_jwt_token(&jwt.0)?;
+        let jwt_secret_bytes: [u8; 32] = jwt_secret
+            .try_into()
+            .map_err(|e| anyhow::anyhow!("Invalid JWT secret: {e}"))?;
+        let jwt = B256::from_slice(&jwt_secret_bytes);
 
-        // Configure HTTP client with JWT authentication
+        if jwt == B256::ZERO {
+            return Err(anyhow::anyhow!("JWT secret is illegal"));
+        }
+
+        let jwt_token = create_jwt_token(&jwt.0)
+            .map_err(|e| anyhow::anyhow!("Failed to create JWT token: {e}"))?;
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "authorization",
+            HeaderValue::from_str(&format!("Bearer {}", jwt_token)).map_err(|e| {
+                anyhow::anyhow!("Failed to create header value from jwt token: {e}")
+            })?,
+        );
+
         let client = HttpClientBuilder::default()
-            .set_headers(
-                [(
-                    "Authorization",
-                    format!("Bearer {}", jwt_token).as_str(),
-                )]
-                .into_iter()
-                .collect(),
-            )
-            .build(url)?;
+            .request_timeout(timeout)
+            .set_headers(headers)
+            .build(url)
+            .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?;
 
-        Ok(EngineClient { client })
+        Ok(Self { client })
     }
 
     pub async fn call_method(&self, method: &str, params: Vec<Value>) -> Result<Value, Error> {
