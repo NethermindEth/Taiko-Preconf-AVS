@@ -245,8 +245,13 @@ impl Config {
             .parse::<bool>()
             .expect("ALWAYS_PUSH_LOOKAHEAD must be a boolean");
 
-        let jwt_secret_file_path = std::env::var("JWT_SECRET_FILE_PATH")
-            .expect("JWT_SECRET_FILE_PATH env variable must be set");
+        let jwt_secret_file_path = std::env::var("JWT_SECRET_FILE_PATH").unwrap_or({
+            warn!(
+                "No JWT secret file path found in {} env var, using default",
+                "JWT_SECRET_FILE_PATH"
+            );
+            "/tmp/jwtsecret".to_string()
+        });
 
         let rpc_client_timeout = std::env::var("RPC_CLIENT_TIMEOUT_SEC")
             .unwrap_or("10".to_string())
