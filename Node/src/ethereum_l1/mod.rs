@@ -1,7 +1,6 @@
 mod avs_contract_error;
 pub mod block_proposed;
 pub mod consensus_layer;
-mod el_with_cl_tests;
 pub mod execution_layer;
 pub mod slot_clock;
 mod ws_provider;
@@ -51,7 +50,6 @@ impl EthereumL1 {
             execution_ws_rpc_url,
             avs_node_ecdsa_private_key,
             contract_addresses,
-            slot_clock.clone(),
         )
         .await?;
 

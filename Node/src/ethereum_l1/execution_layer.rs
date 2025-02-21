@@ -1,8 +1,4 @@
-use super::{
-    avs_contract_error::AVSContractError,
-    block_proposed::{BlockProposedV2, EventSubscriptionBlockProposedV2, TaikoEvents},
-    slot_clock::SlotClock,
-};
+use super::block_proposed::{BlockProposedV2, EventSubscriptionBlockProposedV2, TaikoEvents};
 use crate::{
     ethereum_l1::ws_provider::WsProvider,
     utils::{config, types::*},
@@ -20,13 +16,11 @@ use alloy::{
     sol_types::SolValue,
 };
 use anyhow::Error;
-use beacon_api_client::ProposerDuty;
 use ecdsa::SigningKey;
 use k256::Secp256k1;
 #[cfg(test)]
 use mockall::automock;
 use std::str::FromStr;
-use std::sync::Arc;
 
 pub struct ExecutionLayer {
     provider_ws: WsProvider,
@@ -34,13 +28,13 @@ pub struct ExecutionLayer {
     wallet: EthereumWallet,
     preconfer_address: Address,
     contract_addresses: ContractAddresses,
-    slot_clock: Arc<SlotClock>,
     l1_chain_id: u64,
 }
 
 pub struct ContractAddresses {
     pub taiko_l1: Address,
     pub preconf_whitelist: Address,
+    pub preconf_router: Address,
     pub avs: AvsContractAddresses,
 }
 
@@ -69,6 +63,62 @@ sol! {
         uint8 blobIndex; // NEW
     }
 }
+
+sol! {
+    // https://github.com/NethermindEth/preconf-taiko-mono/blob/main/packages/protocol/contracts/layer1/based/ITaikoInbox.sol
+    struct BlockParams {
+        // the max number of transactions in this block. Note that if there are not enough
+        // transactions in calldata or blobs, the block will contains as many transactions as
+        // possible.
+        uint16 numTransactions;
+        // For the first block in a batch,  the block timestamp is the batch params' `timestamp`
+        // plus this time shift value;
+        // For all other blocks in the same batch, the block timestamp is its parent block's
+        // timestamp plus this time shift value.
+        uint8 timeShift;
+        // Signals sent on L1 and need to sync to this L2 block.
+        bytes32[] signalSlots;
+    }
+
+    struct BlobParams {
+        // The hashes of the blob. Note that if this array is not empty.  `firstBlobIndex` and
+        // `numBlobs` must be 0.
+        bytes32[] blobHashes;
+        // The index of the first blob in this batch.
+        uint8 firstBlobIndex;
+        // The number of blobs in this batch. Blobs are initially concatenated and subsequently
+        // decompressed via Zlib.
+        uint8 numBlobs;
+        // The byte offset of the blob in the batch.
+        uint32 byteOffset;
+        // The byte size of the blob.
+        uint32 byteSize;
+    }
+
+    struct BatchParams {
+        address proposer;
+        address coinbase;
+        bytes32 parentMetaHash;
+        uint64 anchorBlockId;
+        uint64 lastBlockTimestamp;
+        bool revertIfNotFirstProposal;
+        // Specifies the number of blocks to be generated from this batch.
+        BlobParams blobParams;
+        BlockParams[] blocks;
+    }
+
+    struct ProposeBatchWrapper {
+        bytes bytesX;
+        bytes bytesY;
+    }
+}
+
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    PreconfRouter,
+    "src/ethereum_l1/abi/PreconfRouter.json"
+);
 
 sol!(
     #[allow(missing_docs)]
@@ -121,7 +171,6 @@ impl ExecutionLayer {
         ws_rpc_url: &str,
         avs_node_ecdsa_private_key: &str,
         contract_addresses: &config::ContractAddresses,
-        slot_clock: Arc<SlotClock>,
     ) -> Result<Self, Error> {
         tracing::debug!("Creating ExecutionLayer with WS URL: {}", ws_rpc_url);
 
@@ -151,7 +200,6 @@ impl ExecutionLayer {
             wallet,
             preconfer_address,
             contract_addresses,
-            slot_clock,
             l1_chain_id,
         })
     }
@@ -169,10 +217,12 @@ impl ExecutionLayer {
 
         let taiko_l1 = contract_addresses.taiko_l1.parse()?;
         let preconf_whitelist = contract_addresses.preconf_whitelist.parse()?;
+        let preconf_router = contract_addresses.preconf_router.parse()?;
 
         Ok(ContractAddresses {
             taiko_l1,
             preconf_whitelist,
+            preconf_router,
             avs,
         })
     }
@@ -190,43 +240,59 @@ impl ExecutionLayer {
     }
 
 
-    pub async fn propose_new_block(
+    pub async fn propose_batch(
         &self,
         nonce: u64,
         tx_list: Vec<u8>,
-        lookahead_pointer: u64,
-        lookahead_set_params: Vec<PreconfTaskManager::LookaheadSetParam>,
-        send_to_contract: bool,
+        tx_count: u16,
     ) -> Result<Vec<u8>, Error> {
-        let contract = PreconfTaskManager::new(
-            self.contract_addresses.avs.preconf_task_manager,
+        let contract = PreconfRouter::new(
+            self.contract_addresses.preconf_router,
             &self.provider_ws,
         );
 
-        let block_params = BlockParamsV2 {
+        let tx_list = Bytes::from(tx_list);
+
+        let bytes_x = Bytes::new();
+
+        let block_params = BlockParams {
+            numTransactions: tx_count,
+            timeShift: 0,
+            signalSlots: vec![],
+        };
+
+        let batch_params = BatchParams {
             proposer: Address::ZERO,
             coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(
                 &self.wallet,
             ),
             parentMetaHash: FixedBytes::from(&[0u8; 32]),
             anchorBlockId: 0,
-            timestamp: 0,
-            blobTxListOffset: 0,
-            blobTxListLength: 0,
-            blobIndex: 0,
+            lastBlockTimestamp: 0,
+            revertIfNotFirstProposal: false,
+            blobParams: BlobParams {
+                blobHashes: vec![],
+                firstBlobIndex: 0,
+                numBlobs: 0,
+                byteOffset: 0,
+                byteSize: 0,
+            },
+            blocks: vec![block_params],
         };
 
-        let encoded_block_params = Bytes::from(BlockParamsV2::abi_encode_sequence(&block_params));
+        let encoded_batch_params = Bytes::from(BatchParams::abi_encode_sequence(&batch_params));
 
-        let tx_list = Bytes::from(tx_list);
+        let propose_batch_wrapper = ProposeBatchWrapper{
+            bytesX: bytes_x,
+            bytesY: encoded_batch_params
+        };
 
+        let encoded_propose_batch_wrapper = Bytes::from(ProposeBatchWrapper::abi_encode_sequence(&propose_batch_wrapper));
         // TODO check gas parameters
         let builder = contract
-            .newBlockProposal(
-                vec![encoded_block_params],
-                vec![tx_list],
-                U256::from(lookahead_pointer),
-                lookahead_set_params,
+            .proposeBatch(
+                encoded_propose_batch_wrapper,
+                tx_list,
             )
             .chain_id(self.l1_chain_id)
             .nonce(nonce)
@@ -254,11 +320,8 @@ impl ExecutionLayer {
         tx.encode_with_signature(&signature, &mut buf, false);
 
         // Send transaction
-        if send_to_contract {
-            let pending = self.provider_ws.send_raw_transaction(&buf).await?;
-
-            tracing::debug!("Sending raw transaction, with hash {}", pending.tx_hash());
-        }
+        let pending = self.provider_ws.send_raw_transaction(&buf).await?;
+        tracing::debug!("Sending raw transaction, with hash {}", pending.tx_hash());
 
         Ok(buf)
     }
@@ -367,15 +430,6 @@ impl ExecutionLayer {
         Ok(EventSubscriptionBlockProposedV2(block_proposed_filter))
     }
 
-    fn check_raw_result(&self, raw_result: Result<Bytes, alloy::contract::Error>) {
-        tracing::debug!("Raw result: {:?}", raw_result);
-        if let Ok(raw_result) = raw_result {
-            if raw_result.is_empty() {
-                tracing::error!("Raw result is empty, contract {} does not have any code, check the contract address and RPC URL", self.contract_addresses.avs.preconf_task_manager);
-            }
-        }
-    }
-
     #[cfg(test)]
     pub async fn new_from_pk(
         ws_rpc_url: String,
@@ -384,7 +438,6 @@ impl ExecutionLayer {
     ) -> Result<Self, Error> {
         let signer = PrivateKeySigner::from_signing_key(private_key.into());
         let wallet = EthereumWallet::from(signer.clone());
-        let clock = SlotClock::new(0u64, 12u64, 12u64, 32u64, 3u64);
 
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
         let l1_chain_id = provider.get_chain_id().await?;
@@ -404,10 +457,10 @@ impl ExecutionLayer {
             wallet,
             preconfer_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
                 .parse()?,
-            slot_clock: Arc::new(clock),
             contract_addresses: ContractAddresses {
                 taiko_l1: Address::ZERO,
                 preconf_whitelist: Address::ZERO,
+                preconf_router: Address::ZERO,
                 avs: AvsContractAddresses {
                     preconf_task_manager: Address::ZERO,
                 },
@@ -471,18 +524,4 @@ mod tests {
         el.call_test_contract().await.unwrap();
     }
 
-    #[tokio::test]
-    async fn test_propose_new_block() {
-        let anvil = Anvil::new().try_spawn().unwrap();
-        let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
-        let ws_rpc_url = anvil.ws_endpoint();
-        let private_key = anvil.keys()[0].clone();
-        let el = ExecutionLayer::new_from_pk(ws_rpc_url, rpc_url, private_key)
-            .await
-            .unwrap();
-
-        el.propose_new_block(0, vec![0; 32], 0, vec![], true)
-            .await
-            .unwrap();
-    }
 }

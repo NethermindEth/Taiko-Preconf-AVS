@@ -1,8 +1,5 @@
-mod bls;
 mod ethereum_l1;
-mod mev_boost;
 mod node;
-mod p2p_network;
 mod taiko;
 mod utils;
 
@@ -22,8 +19,6 @@ async fn main() -> Result<(), Error> {
 
     let config = utils::config::Config::read_env_variables();
 
-    let bls_service = Arc::new(bls::BLSService::new(&config.validator_bls_privkey)?);
-
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
         &config.l1_ws_rpc_url,
         &config.avs_node_ecdsa_private_key,
@@ -35,13 +30,7 @@ async fn main() -> Result<(), Error> {
     )
     .await?;
 
-    let (node_to_p2p_tx, node_to_p2p_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
-    let (p2p_to_node_tx, p2p_to_node_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
     let (block_proposed_tx, block_proposed_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
-    if config.enable_p2p {
-        let p2p = p2p_network::AVSp2p::new(p2p_to_node_tx.clone(), node_to_p2p_rx);
-        p2p.start(config.p2p_network_config).await;
-    }
     let taiko = Arc::new(taiko::Taiko::new(
         &config.taiko_proposer_url,
         &config.taiko_driver_url,
@@ -49,14 +38,6 @@ async fn main() -> Result<(), Error> {
     ));
 
     let ethereum_l1 = Arc::new(ethereum_l1);
-    let mev_boost = mev_boost::MevBoost::new(
-        &config.mev_boost_url,
-        ethereum_l1
-            .consensus_layer
-            .get_genesis_details()
-            .await?
-            .genesis_fork_version,
-    );
 
     let block_proposed_event_checker =
         BlockProposedEventReceiver::new(ethereum_l1.clone(), block_proposed_tx);
@@ -64,13 +45,9 @@ async fn main() -> Result<(), Error> {
 
     let node = node::Node::new(
         block_proposed_rx,
-        node_to_p2p_tx,
-        p2p_to_node_rx,
         taiko.clone(),
         ethereum_l1.clone(),
-        mev_boost,
         config.l2_slot_duration_sec,
-        bls_service,
     )
     .await?;
     node.entrypoint().await?;

@@ -1,5 +1,3 @@
-use p2p_network::generate_secp256k1;
-use p2p_network::network::P2PNetworkConfig;
 use tracing::{info, warn};
 
 pub struct Config {
@@ -15,10 +13,8 @@ pub struct Config {
     pub validator_bls_privkey: String,
     pub msg_expiry_sec: u64,
     pub contract_addresses: ContractAddresses,
-    pub p2p_network_config: P2PNetworkConfig,
     pub taiko_chain_id: u64,
     pub validator_index: u64,
-    pub enable_p2p: bool,
     pub enable_preconfirmation: bool,
 }
 
@@ -26,6 +22,7 @@ pub struct Config {
 pub struct ContractAddresses {
     pub taiko_l1: String,
     pub preconf_whitelist: String,
+    pub preconf_router: String,
     pub avs: AvsContractAddresses,
 }
 
@@ -81,9 +78,21 @@ impl Config {
             default_empty_address.clone()
         });
 
+        const PRECONF_ROUTER_ADDRESS: &str = "PRECONF_ROUTER_ADDRESS";
+        let preconf_router = std::env::var(PRECONF_ROUTER_ADDRESS).unwrap_or_else(|_| {
+            warn!(
+                "No PreconfRouter contract address found in {} env var, using default",
+                PRECONF_ROUTER_ADDRESS
+            );
+            default_empty_address.clone()
+        });
+
+
+
         let contract_addresses = ContractAddresses {
             taiko_l1,
             preconf_whitelist,
+            preconf_router,
             avs,
         };
 
@@ -134,29 +143,6 @@ impl Config {
             .parse::<u64>()
             .expect("MSG_EXPIRY_SEC must be a number");
 
-        // Load P2P config from env
-        // Load Ipv4 address from env
-        let address = std::env::var("P2P_ADDRESS").unwrap_or("0.0.0.0".to_string());
-        let ipv4 = address.parse().unwrap();
-
-        // Load boot node from env
-        let boot_nodes: Option<Vec<String>> =
-            if let Ok(bootnode_enr) = std::env::var("P2P_BOOTNODE_ENR") {
-                Some(vec![bootnode_enr])
-            } else {
-                None
-            };
-
-        // Create P2P network config
-        let p2p_network_config: P2PNetworkConfig = P2PNetworkConfig {
-            local_key: generate_secp256k1(),
-            listen_addr: "/ip4/0.0.0.0/tcp/9000".parse().unwrap(),
-            ipv4,
-            udpv4: 9000,
-            tcpv4: 9000,
-            boot_nodes,
-        };
-
         let taiko_chain_id = std::env::var("TAIKO_CHAIN_ID")
             .expect("TAIKO_CHAIN_ID env variable must be set")
             .parse::<u64>()
@@ -172,11 +158,6 @@ impl Config {
             .expect("VALIDATOR_INDEX env variable must be set")
             .parse::<u64>()
             .expect("VALIDATOR_INDEX must be a number");
-
-        let enable_p2p = std::env::var("ENABLE_P2P")
-            .unwrap_or("true".to_string())
-            .parse::<bool>()
-            .expect("ENABLE_P2P must be a boolean");
 
         let enable_preconfirmation = std::env::var("ENABLE_PRECONFIRMATION")
             .unwrap_or("true".to_string())
@@ -201,10 +182,8 @@ impl Config {
             validator_bls_privkey,
             msg_expiry_sec,
             contract_addresses,
-            p2p_network_config,
             taiko_chain_id,
             validator_index,
-            enable_p2p,
             enable_preconfirmation,
         };
 
@@ -221,10 +200,8 @@ L1 slots per epoch: {}
 L2 slot duration: {}
 Preconf registry expiry seconds: {}
 Contract addresses: {:#?}
-p2p_network_config: {}
 taiko chain id: {}
 validator index: {}
-enable p2p: {}
 enable preconfirmation: {}
 "#,
             config.taiko_proposer_url,
@@ -237,10 +214,8 @@ enable preconfirmation: {}
             config.l2_slot_duration_sec,
             config.msg_expiry_sec,
             config.contract_addresses,
-            config.p2p_network_config,
             config.taiko_chain_id,
             config.validator_index,
-            config.enable_p2p,
             config.enable_preconfirmation,
         );
 
