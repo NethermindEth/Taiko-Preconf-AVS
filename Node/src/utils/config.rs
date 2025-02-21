@@ -1,9 +1,10 @@
 use p2p_network::generate_secp256k1;
 use p2p_network::network::P2PNetworkConfig;
+use std::time::Duration;
 use tracing::{info, warn};
 
 pub struct Config {
-    pub taiko_proposer_url: String,
+    pub taiko_geth_url: String,
     pub taiko_driver_url: String,
     pub avs_node_ecdsa_private_key: String,
     pub mev_boost_url: String,
@@ -21,6 +22,8 @@ pub struct Config {
     pub enable_p2p: bool,
     pub enable_preconfirmation: bool,
     pub always_push_lookahead: bool,
+    pub jwt_secret_file_path: String,
+    pub rpc_client_timeout: Duration,
 }
 
 #[derive(Debug)]
@@ -242,8 +245,17 @@ impl Config {
             .parse::<bool>()
             .expect("ALWAYS_PUSH_LOOKAHEAD must be a boolean");
 
+        let jwt_secret_file_path = std::env::var("JWT_SECRET_FILE_PATH")
+            .expect("JWT_SECRET_FILE_PATH env variable must be set");
+
+        let rpc_client_timeout = std::env::var("RPC_CLIENT_TIMEOUT_SEC")
+            .unwrap_or("10".to_string())
+            .parse::<u64>()
+            .expect("RPC_CLIENT_TIMEOUT_SEC must be a number");
+        let rpc_client_timeout = Duration::from_secs(rpc_client_timeout);
+
         let config = Self {
-            taiko_proposer_url: std::env::var("TAIKO_PROPOSER_URL")
+            taiko_geth_url: std::env::var("TAIKO_GETH_URL")
                 .unwrap_or("http://127.0.0.1:1234".to_string()),
             taiko_driver_url: std::env::var("TAIKO_DRIVER_URL")
                 .unwrap_or("http://127.0.0.1:1235".to_string()),
@@ -266,6 +278,8 @@ impl Config {
             enable_p2p,
             enable_preconfirmation,
             always_push_lookahead,
+            jwt_secret_file_path,
+            rpc_client_timeout,
         };
 
         info!(
@@ -286,8 +300,10 @@ taiko chain id: {}
 validator index: {}
 enable p2p: {}
 enable preconfirmation: {}
+jwt secret file path: {}
+rpc client timeout: {}
 "#,
-            config.taiko_proposer_url,
+            config.taiko_geth_url,
             config.taiko_driver_url,
             config.mev_boost_url,
             config.l1_ws_rpc_url,
@@ -302,6 +318,8 @@ enable preconfirmation: {}
             config.validator_index,
             config.enable_p2p,
             config.enable_preconfirmation,
+            config.jwt_secret_file_path,
+            config.rpc_client_timeout.as_secs(),
         );
 
         config

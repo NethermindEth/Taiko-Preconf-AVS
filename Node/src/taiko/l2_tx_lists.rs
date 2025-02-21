@@ -49,6 +49,23 @@ pub fn decompose_pending_lists_json(json: Value) -> Result<RPCReplyL2TxLists, Er
     Ok(rpc_reply)
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "PascalCase")]
+struct PreBuiltTxList {
+    pub tx_list: Value,
+    estimated_gas_used: u64,
+    bytes_length: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "PascalCase")]
+pub struct PendingTxLists(Vec<PreBuiltTxList>);
+
+pub fn decompose_pending_lists_json_from_geth(json: Value) -> Result<PendingTxLists, Error> {
+    let rpc_reply: PendingTxLists = serde_json::from_value(json)?;
+    Ok(rpc_reply)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -72,5 +89,21 @@ mod tests {
         assert_eq!(result.tx_list_bytes[0].len(), 492);
         assert_eq!(result.parent_meta_hash.len(), 32);
         assert_eq!(result.parent_block_id, 1234);
+    }
+
+    #[test]
+    fn test_deserialize_pending_tx_lists() {
+        let json_data = serde_json::from_str(include_str!(
+            "../utils/tx_lists_test_response_from_geth.json"
+        ))
+        .unwrap();
+        let pending_tx_lists = PendingTxLists::from(json_data);
+
+        println!("{:?}", pending_tx_lists);
+
+        assert_eq!(pending_tx_lists.0.len(), 1);
+        assert_eq!(pending_tx_lists.0[0].tx_list.as_array().unwrap().len(), 2);
+        assert_eq!(pending_tx_lists.0[0].estimated_gas_used, 42000);
+        assert_eq!(pending_tx_lists.0[0].bytes_length, 203);
     }
 }
