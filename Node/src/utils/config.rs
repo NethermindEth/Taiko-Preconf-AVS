@@ -1,7 +1,8 @@
+use std::time::Duration;
 use tracing::{info, warn};
 
 pub struct Config {
-    pub taiko_proposer_url: String,
+    pub taiko_geth_url: String,
     pub taiko_driver_url: String,
     pub avs_node_ecdsa_private_key: String,
     pub mev_boost_url: String,
@@ -16,6 +17,8 @@ pub struct Config {
     pub taiko_chain_id: u64,
     pub validator_index: u64,
     pub enable_preconfirmation: bool,
+    pub jwt_secret_file_path: String,
+    pub rpc_client_timeout: Duration,
 }
 
 #[derive(Debug)]
@@ -164,8 +167,22 @@ impl Config {
             .parse::<bool>()
             .expect("ENABLE_PRECONFIRMATION must be a boolean");
 
+        let jwt_secret_file_path = std::env::var("JWT_SECRET_FILE_PATH").unwrap_or({
+            warn!(
+                "No JWT secret file path found in {} env var, using default",
+                "JWT_SECRET_FILE_PATH"
+            );
+            "/tmp/jwtsecret".to_string()
+        });
+
+        let rpc_client_timeout = std::env::var("RPC_CLIENT_TIMEOUT_SEC")
+            .unwrap_or("10".to_string())
+            .parse::<u64>()
+            .expect("RPC_CLIENT_TIMEOUT_SEC must be a number");
+        let rpc_client_timeout = Duration::from_secs(rpc_client_timeout);
+
         let config = Self {
-            taiko_proposer_url: std::env::var("TAIKO_PROPOSER_URL")
+            taiko_geth_url: std::env::var("TAIKO_GETH_URL")
                 .unwrap_or("http://127.0.0.1:1234".to_string()),
             taiko_driver_url: std::env::var("TAIKO_DRIVER_URL")
                 .unwrap_or("http://127.0.0.1:1235".to_string()),
@@ -185,6 +202,8 @@ impl Config {
             taiko_chain_id,
             validator_index,
             enable_preconfirmation,
+            jwt_secret_file_path,
+            rpc_client_timeout,
         };
 
         info!(
@@ -203,8 +222,10 @@ Contract addresses: {:#?}
 taiko chain id: {}
 validator index: {}
 enable preconfirmation: {}
+jwt secret file path: {}
+rpc client timeout: {}
 "#,
-            config.taiko_proposer_url,
+            config.taiko_geth_url,
             config.taiko_driver_url,
             config.mev_boost_url,
             config.l1_ws_rpc_url,
@@ -217,6 +238,8 @@ enable preconfirmation: {}
             config.taiko_chain_id,
             config.validator_index,
             config.enable_preconfirmation,
+            config.jwt_secret_file_path,
+            config.rpc_client_timeout.as_secs(),
         );
 
         config
