@@ -1,13 +1,11 @@
 mod avs_contract_error;
 pub mod block_proposed;
 pub mod consensus_layer;
-mod el_with_cl_tests;
 pub mod execution_layer;
-pub mod merkle_proofs;
 pub mod slot_clock;
 mod ws_provider;
 
-use crate::{bls::BLSService, utils::config::ContractAddresses};
+use crate::utils::config::ContractAddresses;
 use anyhow::Error;
 use consensus_layer::ConsensusLayer;
 #[cfg(not(test))]
@@ -36,8 +34,6 @@ impl EthereumL1 {
         consensus_rpc_url: &str,
         slot_duration_sec: u64,
         slots_per_epoch: u64,
-        msg_expiry_sec: u64,
-        bls_service: Arc<BLSService>,
         l2_slot_duration_sec: u64,
     ) -> Result<Self, Error> {
         let consensus_layer = ConsensusLayer::new(consensus_rpc_url)?;
@@ -54,9 +50,6 @@ impl EthereumL1 {
             execution_ws_rpc_url,
             avs_node_ecdsa_private_key,
             contract_addresses,
-            slot_clock.clone(),
-            msg_expiry_sec,
-            bls_service,
         )
         .await?;
 
@@ -67,22 +60,4 @@ impl EthereumL1 {
         })
     }
 
-    pub async fn force_push_lookahead(&self) -> Result<(), Error> {
-        // Get next epoch
-        let next_epoch = self.slot_clock.get_current_epoch()? + 1;
-        // Get CL lookahead for the next epoch
-        let cl_lookahead = self.consensus_layer.get_lookahead(next_epoch).await?;
-        // Get lookahead params for contract call
-        let lookahead_params = self
-            .execution_layer
-            .get_lookahead_params_for_epoch_using_cl_lookahead(next_epoch, &cl_lookahead)
-            .await?;
-        tracing::debug!("Got {} lookahead params.", lookahead_params.len());
-        // Force push lookahead to the contract
-        self.execution_layer
-            .force_push_lookahead(lookahead_params)
-            .await?;
-
-        Ok(())
-    }
 }
