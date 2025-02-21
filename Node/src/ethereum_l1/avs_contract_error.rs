@@ -121,7 +121,6 @@ mod tests {
         let wallet = EthereumWallet::from(signer);
 
         let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
             .wallet(wallet.clone())
             .on_http(rpc_url.clone());
 
@@ -175,7 +174,7 @@ mod tests {
     fn test_transport_error_registered() {
         let e = TransportError::ErrorResp(ErrorPayload {
             code: 429,
-            message: "Reverted þaM".to_string(),
+            message: "Reverted þaM".to_string().into(),
             data: None,
         });
 
@@ -189,7 +188,7 @@ mod tests {
     fn test_transport_error_registered_add_validator() {
         let e = TransportError::ErrorResp(ErrorPayload {
             code: 429,
-            message: "Reverted ;l_$".to_string(),
+            message: "Reverted ;l_$".to_string().into(),
             data: None,
         });
 
@@ -203,7 +202,7 @@ mod tests {
     fn test_transport_error_validator_active() {
         let e = TransportError::ErrorResp(ErrorPayload {
             code: 429,
-            message: "Reverted 0x43f8f5e9".to_string(),
+            message: "Reverted 0x43f8f5e9".to_string().into(),
             data: None,
         });
 

@@ -5,9 +5,7 @@ mod operator;
 mod preconfirmation_helper;
 
 use crate::{
-    ethereum_l1::{
-        block_proposed::BlockProposedV2, EthereumL1,
-    },
+    ethereum_l1::{block_proposed::BlockProposedV2, EthereumL1},
     taiko::{l2_tx_lists::RPCReplyL2TxLists, Taiko},
     utils::types::*,
 };
@@ -23,10 +21,7 @@ use std::{
         Arc,
     },
 };
-use tokio::sync::{
-    mpsc::{Receiver, Sender},
-    Mutex,
-};
+use tokio::sync::{mpsc::Receiver, Mutex};
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info};
 
@@ -84,8 +79,7 @@ impl Node {
         let is_preconfer_now = self.is_preconfer_now.clone();
         let preconfirmation_txs = self.preconfirmation_txs.clone();
         let l2_block_id = self.l2_block_id.clone();
-        if let Some(node_rx)= self.node_block_proposed_rx.take()
-         {
+        if let Some(node_rx) = self.node_block_proposed_rx.take() {
             tokio::spawn(async move {
                 Self::handle_incoming_messages(
                     node_rx,
@@ -125,10 +119,7 @@ impl Node {
         }
     }
 
-    async fn advance_l2_head(
-        ethereum_l1: Arc<EthereumL1>,
-        taiko: Arc<Taiko>,
-    ) {
+    async fn advance_l2_head(ethereum_l1: Arc<EthereumL1>, taiko: Arc<Taiko>) {
         // TODO replace that call with taiko call
     }
 
@@ -167,7 +158,7 @@ impl Node {
                         .get_l2_slot_number_within_l1_slot()?
                 );
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
 
         Ok(())
@@ -203,7 +194,9 @@ impl Node {
         }
 
         let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;
-        if pending_tx_lists.tx_list_bytes.is_empty() { return Ok(());}
+        if pending_tx_lists.tx_list_bytes.is_empty() {
+            return Ok(());
+        }
 
         debug!(
             "Pending {} transactions to preconfirm",

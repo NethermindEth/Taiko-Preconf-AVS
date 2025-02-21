@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use crate::utils::types::*;
 use anyhow::Error;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

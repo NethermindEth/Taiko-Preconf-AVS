@@ -90,8 +90,6 @@ impl Config {
             default_empty_address.clone()
         });
 
-
-
         let contract_addresses = ContractAddresses {
             taiko_l1,
             preconf_whitelist,
