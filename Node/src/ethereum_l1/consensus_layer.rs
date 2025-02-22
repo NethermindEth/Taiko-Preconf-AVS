@@ -1,9 +1,5 @@
-use crate::utils::types::*;
 use anyhow::Error;
-use beacon_api_client::{
-    mainnet::MainnetClientTypes, BlockId, Client, GenesisDetails, ProposerDuty, StateId,
-};
-use ethereum_consensus::types::mainnet::{BeaconState, SignedBeaconBlock};
+use beacon_api_client::{mainnet::MainnetClientTypes, Client, GenesisDetails};
 use reqwest;
 
 pub struct ConsensusLayer {
@@ -16,34 +12,8 @@ impl ConsensusLayer {
         Ok(Self { client })
     }
 
-    pub async fn get_lookahead(&self, epoch: u64) -> Result<Vec<ProposerDuty>, Error> {
-        let (_, duties) = self.client.get_proposer_duties(epoch).await?;
-        tracing::debug!("got duties len: {}", duties.len());
-        Ok(duties)
-    }
-
     pub async fn get_genesis_details(&self) -> Result<GenesisDetails, Error> {
         self.client.get_genesis_details().await.map_err(Error::new)
-    }
-
-    pub async fn get_beacon_state(&self, slot: Slot) -> Result<BeaconState, Error> {
-        let beacon_state = self
-            .client
-            .get_state(StateId::Slot(slot))
-            .await
-            .map_err(Error::new)?;
-
-        Ok(beacon_state)
-    }
-
-    pub async fn get_beacon_block(&self, slot: Slot) -> Result<SignedBeaconBlock, Error> {
-        let beacon_block = self
-            .client
-            .get_beacon_block(BlockId::Slot(slot))
-            .await
-            .map_err(Error::new)?;
-
-        Ok(beacon_block)
     }
 }
 
@@ -51,16 +21,6 @@ impl ConsensusLayer {
 pub mod tests {
     use super::*;
     use tokio;
-
-    #[tokio::test]
-    async fn test_get_lookahead() {
-        let server = setup_server().await;
-        let cl = ConsensusLayer::new(server.url().as_str()).unwrap();
-        let duties = cl.get_lookahead(1).await.unwrap();
-
-        assert_eq!(duties.len(), 32);
-        assert_eq!(duties[0].slot, 32);
-    }
 
     #[tokio::test]
     async fn test_get_genesis_data() {

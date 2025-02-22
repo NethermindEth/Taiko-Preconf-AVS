@@ -1,16 +1,16 @@
-use super::block_proposed::{BlockProposedV2, EventSubscriptionBlockProposedV2, TaikoEvents};
+use super::block_proposed::{EventSubscriptionBlockProposedV2, TaikoEvents};
 use crate::{
     ethereum_l1::ws_provider::WsProvider,
     utils::{config, types::*},
 };
 use alloy::{
-    consensus::TypedTransaction,
+    consensus::{transaction::SignableTransaction, TypedTransaction},
     network::{Ethereum, EthereumWallet, NetworkWallet},
-    primitives::{Address, Bytes, FixedBytes, B256, U256},
+    primitives::{Address, Bytes, FixedBytes},
     providers::{Provider, ProviderBuilder, WsConnect},
     signers::{
         local::{LocalSigner, PrivateKeySigner},
-        Signature, SignerSync,
+        SignerSync,
     },
     sol,
     sol_types::SolValue,
@@ -144,13 +144,6 @@ sol!(
 sol!(
     #[allow(missing_docs)]
     #[sol(rpc)]
-    PreconfRegistry,
-    "src/ethereum_l1/abi/PreconfRegistry.json"
-);
-
-sol!(
-    #[allow(missing_docs)]
-    #[sol(rpc)]
     PreconfWhitelist,
     "src/ethereum_l1/abi/PreconfWhitelist.json"
 );
@@ -186,7 +179,6 @@ impl ExecutionLayer {
         let ws = WsConnect::new(ws_rpc_url.to_string());
 
         let provider_ws: WsProvider = ProviderBuilder::new()
-            .with_recommended_fillers()
             .wallet(wallet.clone())
             .on_ws(ws.clone())
             .await
@@ -228,17 +220,18 @@ impl ExecutionLayer {
     }
 
     pub async fn get_operator_for_current_epoch(&self) -> Result<Address, Error> {
-        let contract = PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider_ws);
+        let contract =
+            PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider_ws);
         let operator = contract.getOperatorForCurrentEpoch().call().await?._0;
         Ok(operator)
     }
 
     pub async fn get_operator_for_next_epoch(&self) -> Result<Address, Error> {
-        let contract = PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider_ws);
+        let contract =
+            PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider_ws);
         let operator = contract.getOperatorForNextEpoch().call().await?._0;
         Ok(operator)
     }
-
 
     pub async fn propose_batch(
         &self,
@@ -246,10 +239,8 @@ impl ExecutionLayer {
         tx_list: Vec<u8>,
         tx_count: u16,
     ) -> Result<Vec<u8>, Error> {
-        let contract = PreconfRouter::new(
-            self.contract_addresses.preconf_router,
-            &self.provider_ws,
-        );
+        let contract =
+            PreconfRouter::new(self.contract_addresses.preconf_router, &self.provider_ws);
 
         let tx_list = Bytes::from(tx_list);
 
@@ -282,18 +273,17 @@ impl ExecutionLayer {
 
         let encoded_batch_params = Bytes::from(BatchParams::abi_encode_sequence(&batch_params));
 
-        let propose_batch_wrapper = ProposeBatchWrapper{
+        let propose_batch_wrapper = ProposeBatchWrapper {
             bytesX: bytes_x,
-            bytesY: encoded_batch_params
+            bytesY: encoded_batch_params,
         };
 
-        let encoded_propose_batch_wrapper = Bytes::from(ProposeBatchWrapper::abi_encode_sequence(&propose_batch_wrapper));
+        let encoded_propose_batch_wrapper = Bytes::from(ProposeBatchWrapper::abi_encode_sequence(
+            &propose_batch_wrapper,
+        ));
         // TODO check gas parameters
         let builder = contract
-            .proposeBatch(
-                encoded_propose_batch_wrapper,
-                tx_list,
-            )
+            .proposeBatch(encoded_propose_batch_wrapper, tx_list)
             .chain_id(self.l1_chain_id)
             .nonce(nonce)
             .gas(1_000_000)
@@ -315,26 +305,19 @@ impl ExecutionLayer {
             .sign_transaction(&mut tx)
             .await?;
 
-        // Encode transaction
-        let mut buf = vec![];
-        tx.encode_with_signature(&signature, &mut buf, false);
+        let mut encoded = Vec::new();
+        tx.into_signed(signature).rlp_encode(&mut encoded);
 
         // Send transaction
-        let pending = self.provider_ws.send_raw_transaction(&buf).await?;
+        let pending = self.provider_ws.send_raw_transaction(&encoded).await?;
         tracing::debug!("Sending raw transaction, with hash {}", pending.tx_hash());
 
-        Ok(buf)
+        Ok(encoded)
     }
 
     pub fn sign_message_with_private_ecdsa_key(&self, msg: &[u8]) -> Result<[u8; 65], Error> {
         let signature = self.signer.sign_message_sync(msg)?;
         Ok(signature.as_bytes())
-    }
-
-    pub fn recover_address_from_msg(&self, msg: &[u8], signature: &[u8]) -> Result<Address, Error> {
-        let signature = Signature::try_from(signature)?;
-        let address = signature.recover_address_from_msg(msg)?;
-        Ok(address)
     }
 
     pub async fn get_preconfer_nonce(&self) -> Result<u64, Error> {
@@ -343,80 +326,6 @@ impl ExecutionLayer {
             .get_transaction_count(self.preconfer_address)
             .await?;
         Ok(nonce)
-    }
-
-    pub async fn check_and_prove_incorrect_preconfirmation(
-        &self,
-        chain_id: u64,
-        preconf_tx_list_hash: [u8; 32],
-        preconf_signature: [u8; 65],
-        block_proposed: &BlockProposedV2,
-    ) -> Result<(), Error> {
-        let contract = PreconfTaskManager::new(
-            self.contract_addresses.avs.preconf_task_manager,
-            &self.provider_ws,
-        );
-
-        let header = PreconfTaskManager::PreconfirmationHeader {
-            blockId: block_proposed.event_data().blockId,
-            chainId: U256::from(chain_id),
-            txListHash: B256::from(preconf_tx_list_hash),
-        };
-        let signature = Bytes::from(preconf_signature);
-
-        let proposed_meta = &block_proposed.event_data().meta;
-        let meta = PreconfTaskManager::BlockMetadataV2 {
-            anchorBlockHash: proposed_meta.anchorBlockHash,
-            difficulty: proposed_meta.difficulty,
-            blobHash: proposed_meta.blobHash,
-            extraData: proposed_meta.extraData,
-            coinbase: proposed_meta.coinbase,
-            id: proposed_meta.id,
-            gasLimit: proposed_meta.gasLimit,
-            timestamp: proposed_meta.timestamp,
-            anchorBlockId: proposed_meta.anchorBlockId,
-            baseFeeConfig: PreconfTaskManager::BaseFeeConfig {
-                adjustmentQuotient: proposed_meta.baseFeeConfig.adjustmentQuotient,
-                sharingPctg: proposed_meta.baseFeeConfig.sharingPctg,
-                gasIssuancePerSecond: proposed_meta.baseFeeConfig.gasIssuancePerSecond,
-                minGasExcess: proposed_meta.baseFeeConfig.minGasExcess,
-                maxGasIssuancePerBlock: proposed_meta.baseFeeConfig.maxGasIssuancePerBlock,
-            },
-            parentMetaHash: proposed_meta.parentMetaHash,
-            blobUsed: proposed_meta.blobUsed,
-            blobTxListOffset: proposed_meta.blobTxListOffset,
-            blobTxListLength: proposed_meta.blobTxListLength,
-            blobIndex: proposed_meta.blobIndex,
-            livenessBond: proposed_meta.livenessBond,
-            proposedAt: proposed_meta.proposedAt,
-            proposedIn: proposed_meta.proposedIn,
-            minTier: proposed_meta.minTier,
-            proposer: proposed_meta.proposer,
-        };
-        let result = contract
-            .proveIncorrectPreconfirmation(meta.clone(), header.clone(), signature.clone())
-            .call()
-            .await;
-        if result.is_ok() {
-            tracing::debug!("Proved incorrect preconfirmation using eth_call, sending tx");
-            let tx = contract.proveIncorrectPreconfirmation(meta, header, signature);
-            match tx.send().await {
-                Ok(pending_tx) => {
-                    let tx_hash = pending_tx.tx_hash();
-                    tracing::debug!("Proved incorrect preconfirmation, tx sent: {tx_hash}");
-                }
-                Err(err) => {
-                    tracing::error!("Failed to prove incorrect preconfirmation: {}", err);
-                }
-            }
-        } else {
-            tracing::debug!(
-                "Preconfirmation correct for the block {}",
-                block_proposed.block_id()
-            );
-        }
-
-        Ok(())
     }
 
     pub async fn subscribe_to_block_proposed_event(
@@ -445,7 +354,6 @@ impl ExecutionLayer {
         let ws = WsConnect::new(ws_rpc_url.to_string());
 
         let provider_ws: WsProvider = ProviderBuilder::new()
-            .with_recommended_fillers()
             .wallet(wallet.clone())
             .on_ws(ws.clone())
             .await
@@ -489,7 +397,7 @@ impl ExecutionLayer {
 
         let contract = Counter::deploy(&self.provider_ws).await?;
 
-        let builder = contract.setNumber(U256::from(42));
+        let builder = contract.setNumber(alloy::primitives::U256::from(42));
         let tx_hash = builder.send().await?.watch().await?;
         println!("Set number to 42: {tx_hash}");
 
@@ -523,5 +431,4 @@ mod tests {
             .unwrap();
         el.call_test_contract().await.unwrap();
     }
-
 }

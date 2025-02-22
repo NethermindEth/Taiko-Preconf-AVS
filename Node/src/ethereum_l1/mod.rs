@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 pub struct EthereumL1 {
     pub slot_clock: Arc<SlotClock>,
-    pub consensus_layer: ConsensusLayer,
+    pub _consensus_layer: ConsensusLayer,
     pub execution_layer: ExecutionLayer,
 }
 
@@ -55,9 +55,8 @@ impl EthereumL1 {
 
         Ok(Self {
             slot_clock,
-            consensus_layer,
+            _consensus_layer: consensus_layer,
             execution_layer,
         })
     }
-
 }

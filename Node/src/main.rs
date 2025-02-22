@@ -4,8 +4,7 @@ mod taiko;
 mod utils;
 
 use anyhow::Error;
-use node::
-    block_proposed_receiver::BlockProposedEventReceiver;
+use node::block_proposed_receiver::BlockProposedEventReceiver;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
