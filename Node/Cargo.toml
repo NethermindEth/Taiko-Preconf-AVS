@@ -36,9 +36,9 @@ ssz_rs = { git = "https://github.com/ralexstokes/ssz-rs", rev = "84ef2b71aa004f6
 dotenv = "0.15"
 rand_core = "0.6"
 chrono = "0.4"
-
 futures-util = "0.3"
 http = "1.2"
+flate2 = "1.1"
 
 [dev-dependencies]
 mockall_double = "0.3"

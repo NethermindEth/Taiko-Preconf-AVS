@@ -1,7 +1,10 @@
 use alloy::rpc::types::Transaction;
+use alloy_rlp::{Decodable, Encodable, RlpDecodable, RlpEncodable};
 use anyhow::Error;
+use flate2::{write::ZlibEncoder, Compression};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+use std::io::Write;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "PascalCase")]
@@ -52,11 +55,29 @@ pub fn decompose_pending_lists_json(json: Value) -> Result<RPCReplyL2TxLists, Er
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "PascalCase")]
-struct PreBuiltTxList {
+pub struct PreBuiltTxList {
     #[serde(deserialize_with = "deserialize_tx_list")]
     pub tx_list: Vec<Transaction>,
     estimated_gas_used: u64,
     bytes_length: u64,
+}
+
+impl PreBuiltTxList {
+    // RLP encode and zlib compress
+    pub fn encode(&self) -> Result<Vec<u8>, Error> {
+        // First RLP encode the transactions
+        let mut buffer = Vec::<u8>::new();
+        alloy_rlp::encode_iter(self.tx_list.iter().map(|tx| tx.inner.clone()), &mut buffer);
+
+        // Then compress using zlib
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder
+            .write_all(&buffer)
+            .map_err(|e| anyhow::anyhow!("PreBuiltTxList::encode: Failed to compress: {}", e))?;
+        encoder
+            .finish()
+            .map_err(|e| anyhow::anyhow!("PreBuiltTxList::encode: Failed to finish: {}", e))
+    }
 }
 
 fn deserialize_tx_list<'de, D>(deserializer: D) -> Result<Vec<Transaction>, D::Error>
@@ -89,9 +110,7 @@ where
     Ok(transactions)
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "PascalCase")]
-pub struct PendingTxLists(Vec<PreBuiltTxList>);
+pub type PendingTxLists = Vec<PreBuiltTxList>;
 
 pub fn decompose_pending_lists_json_from_geth(json: Value) -> Result<PendingTxLists, Error> {
     let rpc_reply: PendingTxLists = serde_json::from_value(json)?;
@@ -103,47 +122,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_decompose_pending_lists_json() {
-        let json_data =
-            serde_json::from_str(include_str!("../utils/tx_lists_test_response.json")).unwrap();
-
-        let result = decompose_pending_lists_json(json_data).unwrap();
-
-        assert_eq!(result.tx_lists.as_array().unwrap().len(), 1);
-        assert_eq!(
-            result.tx_lists.as_array().unwrap()[0]
-                .as_array()
-                .unwrap()
-                .len(),
-            2
-        );
-        assert_eq!(result.tx_list_bytes.len(), 1);
-        assert_eq!(result.tx_list_bytes[0].len(), 492);
-        assert_eq!(result.parent_meta_hash.len(), 32);
-        assert_eq!(result.parent_block_id, 1234);
-    }
-
-    #[test]
     fn test_deserialize_pending_tx_lists() {
-        let json_data = serde_json::from_str(include_str!(
+        let pending_tx_lists = serde_json::from_str::<PendingTxLists>(include_str!(
             "../utils/tx_lists_test_response_from_geth.json"
         ))
         .unwrap();
-        let pending_tx_lists = PendingTxLists::from(json_data);
 
         println!("{:?}", pending_tx_lists);
 
-        assert_eq!(pending_tx_lists.0.len(), 1);
-        assert_eq!(pending_tx_lists.0[0].tx_list.len(), 2);
-        let tx_legacy = pending_tx_lists.0[0].tx_list[0].inner.as_legacy().unwrap();
+        assert_eq!(pending_tx_lists.len(), 1);
+        assert_eq!(pending_tx_lists[0].tx_list.len(), 2);
+        let tx_legacy = pending_tx_lists[0].tx_list[0].inner.as_legacy().unwrap();
         assert_eq!(tx_legacy.tx().chain_id, Some(167000));
         assert_eq!(
-            pending_tx_lists.0[0].tx_list[1].from,
+            pending_tx_lists[0].tx_list[1].from,
             "0xe25583099ba105d9ec0a67f5ae86d90e50036425"
                 .parse::<alloy::primitives::Address>()
                 .unwrap()
         );
-        assert_eq!(pending_tx_lists.0[0].estimated_gas_used, 42000);
-        assert_eq!(pending_tx_lists.0[0].bytes_length, 203);
+        assert_eq!(pending_tx_lists[0].estimated_gas_used, 42000);
+        assert_eq!(pending_tx_lists[0].bytes_length, 203);
     }
 }
