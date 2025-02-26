@@ -1,70 +1,84 @@
 #![allow(unused)] // TODO: remove this once using new rpc functions
 
-use crate::utils::{rpc_client::RpcClient, types::*};
+use crate::utils::{
+    rpc_client::{HttpRPCClient, JSONRPCClient},
+    types::*,
+};
+use alloy::{
+    consensus::BlockHeader,
+    eips::BlockNumberOrTag,
+    network::{Ethereum, EthereumWallet, NetworkWallet},
+    primitives::{BlockNumber, B256},
+    providers::{
+        fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
+        Identity, Provider, ProviderBuilder, RootProvider, WsConnect,
+    },
+    rpc::types::BlockTransactionsKind,
+};
 use anyhow::Error;
 use serde_json::Value;
 use std::time::Duration;
 use tracing::debug;
 
 pub mod l2_tx_lists;
+pub mod preconf_blocks;
+
+use l2_tx_lists::PendingTxLists;
+
+type WsProvider = FillProvider<
+    JoinFill<
+        Identity,
+        JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+    >,
+    RootProvider,
+>;
 
 pub struct Taiko {
-    rpc_taiko_geth: RpcClient,
-    rpc_driver: RpcClient,
+    rpc_taiko_geth_ws: WsProvider,
+    rpc_taiko_geth_auth: JSONRPCClient,
+    rpc_driver: HttpRPCClient,
     pub chain_id: u64,
     preconfer_address: PreconferAddress,
 }
 
 impl Taiko {
-    pub fn new(
-        taiko_geth_url: &str,
+    pub async fn new(
+        taiko_geth_ws_url: &str,
+        taiko_geth_auth_url: &str,
         driver_url: &str,
         chain_id: u64,
         rpc_client_timeout: Duration,
         jwt_secret_bytes: &[u8],
         preconfer_address: PreconferAddress,
     ) -> Result<Self, Error> {
+        let ws = WsConnect::new(taiko_geth_ws_url.to_string());
+        let provider_ws = ProviderBuilder::new()
+            .on_ws(ws.clone())
+            .await
+            .map_err(|e| anyhow::anyhow!("Taiko::new: Failed to create WebSocket provider: {e}"))?;
+
         Ok(Self {
-            rpc_taiko_geth: RpcClient::new_with_timeout_and_jwt(
-                taiko_geth_url,
+            rpc_taiko_geth_ws: provider_ws,
+            rpc_taiko_geth_auth: JSONRPCClient::new_with_timeout_and_jwt(
+                taiko_geth_auth_url,
                 rpc_client_timeout,
                 jwt_secret_bytes,
             )?,
-            rpc_driver: RpcClient::new(driver_url),
+            rpc_driver: HttpRPCClient::new_with_jwt(
+                driver_url,
+                rpc_client_timeout,
+                jwt_secret_bytes,
+            )?,
             chain_id,
             preconfer_address,
         })
     }
 
-    // TODO: obsolete, remove this function
-    pub async fn get_pending_l2_tx_lists(&self) -> Result<l2_tx_lists::RPCReplyL2TxLists, Error> {
-        tracing::debug!("Getting L2 tx lists");
-        let result = l2_tx_lists::decompose_pending_lists_json(
-            self.rpc_taiko_geth
-                .call_method("RPC.GetL2TxLists", vec![])
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to get L2 tx lists: {}", e))?,
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to decompose L2 tx lists: {}", e))?;
-
-        if !result.tx_list_bytes.is_empty() {
-            Self::print_number_of_received_txs(&result);
-            debug!(
-                "Parent meta hash: 0x{}",
-                hex::encode(result.parent_meta_hash)
-            );
-            debug!("Parent block id: {}", result.parent_block_id);
-        }
-
-        Ok(result)
-    }
-
-    pub async fn get_pending_l2_txs_from_taiko_geth(
-        &self,
-    ) -> Result<l2_tx_lists::PendingTxLists, Error> {
+    pub async fn get_pending_l2_tx_lists_from_taiko_geth(&self) -> Result<PendingTxLists, Error> {
+        // TODO: adjust following parameters
         let params = vec![
             Value::String(format!("0x{}", hex::encode(self.preconfer_address))), // beneficiary address
-            Value::from(0x1dfd14000u64), // baseFee (8 gwei) - now as a number, not a string
+            Value::from(0x1dfd14000u64), // baseFee TODO: get it from contract, for now it's 8 gwei
             Value::Number(30_000_000.into()), // blockMaxGasLimit
             Value::Number(131_072.into()), // maxBytesPerTxList (128KB)
             Value::Array(vec![]),        // locals (empty array)
@@ -73,7 +87,7 @@ impl Taiko {
         ];
 
         let result = self
-            .rpc_taiko_geth
+            .rpc_taiko_geth_auth
             .call_method("taikoAuth_txPoolContentWithMinTip", params)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get L2 tx lists: {}", e))?;
@@ -99,16 +113,80 @@ impl Taiko {
         }
     }
 
-    pub async fn advance_head_to_new_l2_block(&self, tx_lists: Value) -> Result<Value, Error> {
-        tracing::debug!("Submitting new L2 blocks to the Taiko driver");
-        let payload = serde_json::json!({
-            "TxLists": tx_lists,
-            "gasUsed": 0u64,    //TODO remove here and in the driver
-        });
-        self.rpc_driver
-            .call_method("RPC.AdvanceL2ChainHeadWithNewBlocks", vec![payload])
+    async fn get_latest_l2_block_id_and_hash(&self) -> Result<(u64, B256), Error> {
+        let block = self
+            .rpc_taiko_geth_ws
+            .get_block_by_number(BlockNumberOrTag::Latest, BlockTransactionsKind::Hashes)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to advance L2 chain head with new blocks: {}", e))
+            .map_err(|e| anyhow::anyhow!("Failed to get latest L2 block: {}", e))?
+            .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))?;
+        Ok((block.header.number(), block.header.hash))
+    }
+
+    async fn get_base_fee(&self, l2_head_number: u64) -> Result<u64, Error> {
+        // l2Head, err := c.L2.HeaderByNumber(ctx, nil)
+        // if err != nil {
+        //     return nil, err
+        // }
+
+        // baseFee, err := c.CalculateBaseFee(
+        //     ctx,
+        //     l2Head,
+        //     chainConfig.IsPacaya(new(big.Int).Add(l2Head.Number, common.Big1)),
+        //     baseFeeConfig,
+        //     uint64(
+
+
+
+        Ok(0)
+    }
+
+    pub async fn advance_head_to_new_l2_blocks(
+        &self,
+        tx_lists: PendingTxLists,
+    ) -> Result<(), Error> {
+        tracing::debug!("Submitting new L2 blocks to the Taiko driver");
+
+        for tx_list in tx_lists {
+            debug!("processing {} txs", tx_list.tx_list.len());
+            let tx_list_bytes = tx_list.encode()?;
+            let extra_data = vec![0u8];
+
+            let (parent_block_id, parent_hash) = self.get_latest_l2_block_id_and_hash().await?;
+            let executable_data = preconf_blocks::ExecutableData {
+                base_fee_per_gas: 8_000_000_000u64, // 8 gwei
+                block_number: parent_block_id,
+                extra_data: format!("0x{}", hex::encode(extra_data)),
+                fee_recipient: format!("0x{}", hex::encode(self.preconfer_address)),
+                gas_limit: 30_000_000u64,
+                parent_hash: format!("0x{}", hex::encode(parent_hash)),
+                timestamp: chrono::Utc::now().timestamp() as u64,
+                transactions: format!("0x{}", hex::encode(tx_list_bytes)),
+            };
+
+            let request_body = preconf_blocks::BuildPreconfBlockRequestBody {
+                executable_data,
+                signature: "".to_string(),
+            };
+
+            // Use the DirectHttpClient to send the request directly
+            const API_ENDPOINT: &str = "preconfBlocks";
+
+            let response = self
+                .rpc_driver
+                .post_json(API_ENDPOINT, &request_body)
+                .await
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to build preconf block for API '{}': {}",
+                        API_ENDPOINT,
+                        e
+                    )
+                })?;
+
+            debug!("preconfBlocks response: {:?}", response);
+        }
+        Ok(())
     }
 }
 
@@ -121,20 +199,13 @@ mod test {
     #[tokio::test]
     async fn test_get_pending_l2_tx_lists() {
         let (mut rpc_server, taiko) = setup_rpc_server_and_taiko(3030).await;
-        let json = taiko.get_pending_l2_tx_lists().await.unwrap().tx_lists;
+        let json = taiko
+            .get_pending_l2_tx_lists_from_taiko_geth()
+            .await
+            .unwrap();
 
-        assert_eq!(json.as_array().unwrap().len(), 1);
-        assert_eq!(json[0].as_array().unwrap().len(), 2);
-        assert_eq!(json[0][0]["type"], "0x0");
-        assert_eq!(
-            json[0][0]["hash"],
-            "0xc653e446eafe51eea1f46e6e351adbd1cc8a3271e6935f1441f613a58d441f6a"
-        );
-        assert_eq!(json[0][1]["type"], "0x2");
-        assert_eq!(
-            json[0][1]["hash"],
-            "0xffbcd2fab90f1bf314ca2da1bf83eeab3d17fd58a0393d29a697b2ff05d0e65c"
-        );
+        assert_eq!(json.len(), 1);
+        assert_eq!(json[0].tx_list.len(), 2);
         rpc_server.stop().await;
     }
 
@@ -164,7 +235,7 @@ mod test {
             ]
         });
 
-        let response = taiko.advance_head_to_new_l2_block(value).await.unwrap();
+        let response = taiko.advance_head_to_new_l2_blocks(value).await.unwrap();
         assert_eq!(
             response["result"],
             "Request received and processed successfully"
@@ -181,6 +252,7 @@ mod test {
         let taiko = Taiko::new(
             &format!("http://127.0.0.1:{}", port),
             &format!("http://127.0.0.1:{}", port),
+            &format!("http://127.0.0.1:{}", port), // driver_url
             1,
             Duration::from_secs(10),
             &[
