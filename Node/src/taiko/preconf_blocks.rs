@@ -21,5 +21,3 @@ pub struct ExecutableData {
     pub timestamp: u64,
     pub transactions: String,
 }
-
-

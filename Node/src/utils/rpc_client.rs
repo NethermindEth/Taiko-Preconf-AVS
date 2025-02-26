@@ -25,11 +25,11 @@ fn create_jwt_token(secret: &[u8]) -> Result<String, Box<dyn std::error::Error>>
     )?)
 }
 
-pub struct RpcClient {
+pub struct JSONRPCClient {
     client: HttpClient,
 }
 
-impl RpcClient {
+impl JSONRPCClient {
     pub fn new(url: &str) -> Result<Self, Error> {
         Self::new_with_timeout(url, Duration::from_secs(10))
     }
@@ -39,7 +39,7 @@ impl RpcClient {
             .request_timeout(timeout)
             .build(url)
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?;
-        Ok(RpcClient { client })
+        Ok(JSONRPCClient { client })
     }
 
     /// Creates a new RpcClient with JWT authentication.
@@ -90,12 +90,12 @@ impl RpcClient {
 }
 
 /// A direct HTTP client that doesn't use JSON-RPC
-pub struct DirectHttpClient {
+pub struct HttpRPCClient {
     client: reqwest::Client,
     base_url: String,
 }
 
-impl DirectHttpClient {
+impl HttpRPCClient {
     /// Creates a new DirectHttpClient with JWT authentication
     pub fn new_with_jwt(
         base_url: &str,
@@ -122,6 +122,7 @@ impl DirectHttpClient {
             .timeout(timeout)
             .default_headers({
                 let mut headers = HeaderMap::new();
+                // TODO: uncomment, use jwt token
                 // headers.insert(
                 //     "authorization",
                 //     HeaderValue::from_str(&format!("Bearer {}", jwt_token)).map_err(|e| {
