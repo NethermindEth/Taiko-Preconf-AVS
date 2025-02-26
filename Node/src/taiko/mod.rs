@@ -1,7 +1,7 @@
 #![allow(unused)] // TODO: remove this once using new rpc functions
 
 use crate::utils::{
-    rpc_client::{DirectHttpClient, RpcClient},
+    rpc_client::{HttpRPCClient, JSONRPCClient},
     types::*,
 };
 use alloy::{
@@ -35,8 +35,8 @@ type WsProvider = FillProvider<
 
 pub struct Taiko {
     rpc_taiko_geth_ws: WsProvider,
-    rpc_taiko_geth_auth: RpcClient,
-    rpc_driver: DirectHttpClient,
+    rpc_taiko_geth_auth: JSONRPCClient,
+    rpc_driver: HttpRPCClient,
     pub chain_id: u64,
     preconfer_address: PreconferAddress,
 }
@@ -59,12 +59,12 @@ impl Taiko {
 
         Ok(Self {
             rpc_taiko_geth_ws: provider_ws,
-            rpc_taiko_geth_auth: RpcClient::new_with_timeout_and_jwt(
+            rpc_taiko_geth_auth: JSONRPCClient::new_with_timeout_and_jwt(
                 taiko_geth_auth_url,
                 rpc_client_timeout,
                 jwt_secret_bytes,
             )?,
-            rpc_driver: DirectHttpClient::new_with_jwt(
+            rpc_driver: HttpRPCClient::new_with_jwt(
                 driver_url,
                 rpc_client_timeout,
                 jwt_secret_bytes,
@@ -73,29 +73,6 @@ impl Taiko {
             preconfer_address,
         })
     }
-
-    // TODO: obsolete, remove this function
-    // pub async fn get_pending_l2_tx_lists(&self) -> Result<l2_tx_lists::RPCReplyL2TxLists, Error> {
-    //     tracing::debug!("Getting L2 tx lists");
-    //     let result = l2_tx_lists::decompose_pending_lists_json(
-    //         self.rpc_taiko_geth_ws
-    //             .call_method("RPC.GetL2TxLists", vec![])
-    //             .await
-    //             .map_err(|e| anyhow::anyhow!("Failed to get L2 tx lists: {}", e))?,
-    //     )
-    //     .map_err(|e| anyhow::anyhow!("Failed to decompose L2 tx lists: {}", e))?;
-
-    //     if !result.tx_list_bytes.is_empty() {
-    //         Self::print_number_of_received_txs(&result);
-    //         debug!(
-    //             "Parent meta hash: 0x{}",
-    //             hex::encode(result.parent_meta_hash)
-    //         );
-    //         debug!("Parent block id: {}", result.parent_block_id);
-    //     }
-
-    //     Ok(result)
-    // }
 
     pub async fn get_pending_l2_tx_lists_from_taiko_geth(&self) -> Result<PendingTxLists, Error> {
         // TODO: adjust following parameters
@@ -146,6 +123,24 @@ impl Taiko {
         Ok((block.header.number(), block.header.hash))
     }
 
+    async fn get_base_fee(&self, l2_head_number: u64) -> Result<u64, Error> {
+        // l2Head, err := c.L2.HeaderByNumber(ctx, nil)
+        // if err != nil {
+        //     return nil, err
+        // }
+
+        // baseFee, err := c.CalculateBaseFee(
+        //     ctx,
+        //     l2Head,
+        //     chainConfig.IsPacaya(new(big.Int).Add(l2Head.Number, common.Big1)),
+        //     baseFeeConfig,
+        //     uint64(
+
+
+
+        Ok(0)
+    }
+
     pub async fn advance_head_to_new_l2_blocks(
         &self,
         tx_lists: PendingTxLists,
@@ -160,7 +155,7 @@ impl Taiko {
             let (parent_block_id, parent_hash) = self.get_latest_l2_block_id_and_hash().await?;
             let executable_data = preconf_blocks::ExecutableData {
                 base_fee_per_gas: 8_000_000_000u64, // 8 gwei
-                block_number: parent_block_id + 1,
+                block_number: parent_block_id,
                 extra_data: format!("0x{}", hex::encode(extra_data)),
                 fee_recipient: format!("0x{}", hex::encode(self.preconfer_address)),
                 gas_limit: 30_000_000u64,
