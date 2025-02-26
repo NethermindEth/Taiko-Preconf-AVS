@@ -56,7 +56,6 @@ pub fn decompose_pending_lists_json(json: Value) -> Result<RPCReplyL2TxLists, Er
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub struct PreBuiltTxList {
-    #[serde(deserialize_with = "deserialize_tx_list")]
     pub tx_list: Vec<Transaction>,
     estimated_gas_used: u64,
     bytes_length: u64,
@@ -78,36 +77,6 @@ impl PreBuiltTxList {
             .finish()
             .map_err(|e| anyhow::anyhow!("PreBuiltTxList::encode: Failed to finish: {}", e))
     }
-}
-
-fn deserialize_tx_list<'de, D>(deserializer: D) -> Result<Vec<Transaction>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Value::deserialize(deserializer)?;
-    let transactions = value
-        .as_array()
-        .ok_or_else(|| serde::de::Error::custom("Expected array"))?
-        .iter()
-        .map(|tx| {
-            let tx_envelope = serde_json::from_value::<alloy::consensus::TxEnvelope>(tx.clone())
-                .map_err(|e| {
-                    serde::de::Error::custom(format!("Failed to parse transaction: {}", e))
-                })?;
-            let signer = tx_envelope.recover_signer().map_err(|e| {
-                serde::de::Error::custom(format!("Failed to recover signer: {}", e))
-            })?;
-            Ok(Transaction {
-                inner: tx_envelope,
-                block_hash: None,
-                block_number: None,
-                transaction_index: None,
-                effective_gas_price: None,
-                from: signer,
-            })
-        })
-        .collect::<Result<Vec<Transaction>, D::Error>>()?;
-    Ok(transactions)
 }
 
 pub type PendingTxLists = Vec<PreBuiltTxList>;
@@ -133,10 +102,10 @@ mod tests {
         assert_eq!(pending_tx_lists.len(), 1);
         assert_eq!(pending_tx_lists[0].tx_list.len(), 2);
         let tx_legacy = pending_tx_lists[0].tx_list[0].inner.as_legacy().unwrap();
-        assert_eq!(tx_legacy.tx().chain_id, Some(167000));
+        assert_eq!(tx_legacy.tx().chain_id, Some(167001));
         assert_eq!(
             pending_tx_lists[0].tx_list[1].from,
-            "0xe25583099ba105d9ec0a67f5ae86d90e50036425"
+            "0x8943545177806ed17b9f23f0a21ee5948ecaa776"
                 .parse::<alloy::primitives::Address>()
                 .unwrap()
         );
