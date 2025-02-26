@@ -34,14 +34,18 @@ async fn main() -> Result<(), Error> {
     let ethereum_l1 = Arc::new(ethereum_l1);
 
     let jwt_secret_bytes = utils::file_operations::read_jwt_secret(&config.jwt_secret_file_path)?;
-    let taiko = Arc::new(taiko::Taiko::new(
-        &config.taiko_geth_url,
-        &config.taiko_driver_url,
-        config.taiko_chain_id,
-        config.rpc_client_timeout,
-        &jwt_secret_bytes,
-        ethereum_l1.execution_layer.get_preconfer_address(),
-    )?);
+    let taiko = Arc::new(
+        taiko::Taiko::new(
+            &config.taiko_geth_ws_rpc_url,
+            &config.taiko_geth_auth_rpc_url,
+            &config.taiko_driver_url,
+            config.taiko_chain_id,
+            config.rpc_client_timeout,
+            &jwt_secret_bytes,
+            ethereum_l1.execution_layer.get_preconfer_address(),
+        )
+        .await?,
+    );
 
     let block_proposed_event_checker =
         BlockProposedEventReceiver::new(ethereum_l1.clone(), block_proposed_tx);

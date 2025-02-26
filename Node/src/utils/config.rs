@@ -2,7 +2,8 @@ use std::time::Duration;
 use tracing::{info, warn};
 
 pub struct Config {
-    pub taiko_geth_url: String,
+    pub taiko_geth_ws_rpc_url: String,
+    pub taiko_geth_auth_rpc_url: String,
     pub taiko_driver_url: String,
     pub avs_node_ecdsa_private_key: String,
     pub mev_boost_url: String,
@@ -165,7 +166,7 @@ impl Config {
             .parse::<bool>()
             .expect("ENABLE_PRECONFIRMATION must be a boolean");
 
-        let jwt_secret_file_path = std::env::var("JWT_SECRET_FILE_PATH").unwrap_or({
+        let jwt_secret_file_path = std::env::var("JWT_SECRET_FILE_PATH").unwrap_or_else(|_| {
             warn!(
                 "No JWT secret file path found in {} env var, using default",
                 "JWT_SECRET_FILE_PATH"
@@ -180,10 +181,12 @@ impl Config {
         let rpc_client_timeout = Duration::from_secs(rpc_client_timeout);
 
         let config = Self {
-            taiko_geth_url: std::env::var("TAIKO_GETH_URL")
-                .unwrap_or("http://127.0.0.1:1234".to_string()),
-            taiko_driver_url: std::env::var("TAIKO_DRIVER_URL")
+            taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
+                .unwrap_or("ws://127.0.0.1:1234".to_string()),
+            taiko_geth_auth_rpc_url: std::env::var("TAIKO_GETH_AUTH_RPC_URL")
                 .unwrap_or("http://127.0.0.1:1235".to_string()),
+            taiko_driver_url: std::env::var("TAIKO_DRIVER_URL")
+                .unwrap_or("http://127.0.0.1:1236".to_string()),
 
             avs_node_ecdsa_private_key,
             mev_boost_url: std::env::var("MEV_BOOST_URL")
@@ -207,7 +210,8 @@ impl Config {
         info!(
             r#"
 Configuration:
-Taiko proposer URL: {},
+Taiko geth WS RPC URL: {},
+Taiko geth auth RPC URL: {},
 Taiko driver URL: {},
 MEV Boost URL: {},
 L1 WS URL: {},
@@ -223,7 +227,8 @@ enable preconfirmation: {}
 jwt secret file path: {}
 rpc client timeout: {}
 "#,
-            config.taiko_geth_url,
+            config.taiko_geth_ws_rpc_url,
+            config.taiko_geth_auth_rpc_url,
             config.taiko_driver_url,
             config.mev_boost_url,
             config.l1_ws_rpc_url,

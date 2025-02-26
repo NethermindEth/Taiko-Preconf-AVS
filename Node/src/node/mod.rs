@@ -193,49 +193,45 @@ impl Node {
             self.start_propose().await?;
         }
 
-        let pending_tx_lists = self.taiko.get_pending_l2_tx_lists().await?;
-        if pending_tx_lists.tx_list_bytes.is_empty() {
+        let pending_tx_lists = self.taiko.get_pending_l2_tx_lists_from_taiko_geth().await?;
+        if pending_tx_lists.is_empty() {
+            // TODO: verify if this is correct in case of empty tx lists
+            debug!("No pending txs, skipping preconfirmation");
             return Ok(());
         }
 
-        debug!(
-            "Pending {} transactions to preconfirm",
-            pending_tx_lists.tx_list_bytes.len()
-        );
-        let pending_tx_lists_bytes = pending_tx_lists.tx_list_bytes[0].clone(); // TODO: handle multiple tx lists
+        // let new_block_height = self.l2_block_id.next(pending_tx_lists.parent_block_id);
+        // debug!("Preconfirming block with the height: {}", new_block_height);
 
-        let new_block_height = self.l2_block_id.next(pending_tx_lists.parent_block_id);
-        debug!("Preconfirming block with the height: {}", new_block_height);
-
-        let (commit_hash, signature) =
-            self.generate_commit_hash_and_signature(&pending_tx_lists, new_block_height)?;
+        // let (commit_hash, signature) =
+        //     self.generate_commit_hash_and_signature(&pending_tx_lists, new_block_height)?;
 
         //self.send_preconfirmations_to_the_avs_p2p(preconf_message.clone());
         self.taiko
-            .advance_head_to_new_l2_block(pending_tx_lists.tx_lists)
+            .advance_head_to_new_l2_blocks(pending_tx_lists)
             .await?;
 
         // TODO get tx count
         // let tx_count = pending_tx_lists.count();
-        let tx = self
-            .ethereum_l1
-            .execution_layer
-            .propose_batch(
-                self.preconfirmation_helper.get_next_nonce(),
-                pending_tx_lists_bytes,
-                1, //TODO replace with a correct tx count
-            )
-            .await?;
+        // let tx = self
+        // .ethereum_l1
+        // .execution_layer
+        // .propose_batch(
+        //     self.preconfirmation_helper.get_next_nonce(),
+        //     pending_tx_lists_bytes,
+        //     1, //TODO replace with a correct tx count
+        // )
+        // .await?;
 
-        debug!(
-            "Proposed new block, with hash {}",
-            alloy::primitives::keccak256(&tx)
-        );
+        // debug!(
+        //     "Proposed new block, with hash {}",
+        //     alloy::primitives::keccak256(&tx)
+        // );
         // insert transaction
-        self.preconfirmation_txs
-            .lock()
-            .await
-            .insert(new_block_height, tx);
+        // self.preconfirmation_txs
+        //     .lock()
+        //     .await
+        //     .insert(new_block_height, tx);
 
         Ok(())
     }
