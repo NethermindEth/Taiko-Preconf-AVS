@@ -63,7 +63,7 @@ pub struct PreBuiltTxList {
 
 impl PreBuiltTxList {
     // RLP encode and zlib compress
-    pub fn encode(&self) -> Result<Vec<u8>, Error> {
+    pub fn encode_and_compress(&self) -> Result<Vec<u8>, Error> {
         // First RLP encode the transactions
         let mut buffer = Vec::<u8>::new();
         alloy_rlp::encode_iter(self.tx_list.iter().map(|tx| tx.inner.clone()), &mut buffer);

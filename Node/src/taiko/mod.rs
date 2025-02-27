@@ -147,7 +147,7 @@ impl Taiko {
 
         for tx_list in tx_lists {
             debug!("processing {} txs", tx_list.tx_list.len());
-            let tx_list_bytes = tx_list.encode()?;
+            let tx_list_bytes = tx_list.encode_and_compress()?;
             let extra_data = vec![0u8];
 
             let (parent_block_id, parent_hash) = self.get_latest_l2_block_id_and_hash().await?;
