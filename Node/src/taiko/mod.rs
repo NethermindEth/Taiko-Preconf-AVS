@@ -91,10 +91,13 @@ impl Taiko {
             .call_method("taikoAuth_txPoolContentWithMinTip", params)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get L2 tx lists: {}", e))?;
-
-        let tx_lists = l2_tx_lists::decompose_pending_lists_json_from_geth(result)
-            .map_err(|e| anyhow::anyhow!("Failed to decompose L2 tx lists: {}", e))?;
-        Ok(tx_lists)
+        if result != Value::Null {
+            let tx_lists = l2_tx_lists::decompose_pending_lists_json_from_geth(result)
+                .map_err(|e| anyhow::anyhow!("Failed to decompose L2 tx lists: {}", e))?;
+            Ok(tx_lists)
+        } else {
+            Ok(vec!())
+        }
     }
 
     fn print_number_of_received_txs(result: &l2_tx_lists::RPCReplyL2TxLists) {
