@@ -21,6 +21,7 @@ use k256::Secp256k1;
 #[cfg(test)]
 use mockall::automock;
 use std::str::FromStr;
+use tracing::debug;
 
 pub struct ExecutionLayer {
     provider_ws: WsProvider,
@@ -111,6 +112,17 @@ sol! {
         bytes bytesX;
         bytes bytesY;
     }
+}
+
+pub mod taiko_inbox {
+    use super::*;
+
+    sol!(
+        #[allow(missing_docs)]
+        #[sol(rpc)]
+        ITaikoInbox,
+        "src/ethereum_l1/abi/ITaikoInbox.json"
+    );
 }
 
 sol!(
@@ -337,6 +349,19 @@ impl ExecutionLayer {
         tracing::debug!("Subscribed to block proposed V2 event");
 
         Ok(EventSubscriptionBlockProposedV2(block_proposed_filter))
+    }
+
+    pub async fn get_pacaya_config(&self) -> Result<taiko_inbox::ITaikoInbox::Config, Error> {
+        debug!("taiko_l1: {}", self.contract_addresses.taiko_l1);
+        let contract =
+            taiko_inbox::ITaikoInbox::new(self.contract_addresses.taiko_l1, &self.provider_ws);
+        let config = contract.pacayaConfig().call().await?._0;
+
+        debug!(
+            "Pacaya config: chainid {}, maxUnverifiedBatches {}, batchRingBufferSize {}",
+            config.chainId, config.maxUnverifiedBatches, config.batchRingBufferSize
+        );
+        Ok(config)
     }
 
     #[cfg(test)]
