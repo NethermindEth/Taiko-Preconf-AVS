@@ -93,6 +93,8 @@ sol! {
         uint32 byteOffset;
         // The byte size of the blob.
         uint32 byteSize;
+        // The block number when the blob was created.
+        uint64 createdIn;
     }
 
     struct BatchParams {
@@ -242,6 +244,7 @@ impl ExecutionLayer {
         let contract =
             PreconfRouter::new(self.contract_addresses.preconf_router, &self.provider_ws);
 
+        let tx_list_len = tx_list.len() as u32;
         let tx_list = Bytes::from(tx_list);
 
         let bytes_x = Bytes::new();
@@ -249,11 +252,11 @@ impl ExecutionLayer {
         let block_params = BlockParams {
             numTransactions: tx_count,
             timeShift: 0,
-            signalSlots: vec![],
+            signalSlots: vec!(),
         };
 
         let batch_params = BatchParams {
-            proposer: Address::ZERO,
+            proposer: self.preconfer_address.clone(),
             coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(
                 &self.wallet,
             ),
@@ -266,12 +269,13 @@ impl ExecutionLayer {
                 firstBlobIndex: 0,
                 numBlobs: 0,
                 byteOffset: 0,
-                byteSize: 0,
+                byteSize: tx_list_len,
+                createdIn: 0,
             },
             blocks: vec![block_params],
         };
 
-        let encoded_batch_params = Bytes::from(BatchParams::abi_encode_sequence(&batch_params));
+        let encoded_batch_params = Bytes::from(BatchParams::abi_encode(&batch_params));
 
         let propose_batch_wrapper = ProposeBatchWrapper {
             bytesX: bytes_x,
@@ -307,6 +311,8 @@ impl ExecutionLayer {
 
         let mut encoded = Vec::new();
         tx.into_signed(signature).rlp_encode(&mut encoded);
+        // add EIP-1559 type
+        encoded.insert(0, 0x02);
 
         // Send transaction
         let pending = self.provider_ws.send_raw_transaction(&encoded).await?;
