@@ -14,16 +14,17 @@ pub struct Config {
     pub l2_slot_duration_sec: u64,
     pub validator_bls_privkey: String,
     pub msg_expiry_sec: u64,
-    pub contract_addresses: ContractAddresses,
+    pub contract_addresses: L1ContractAddresses,
     pub taiko_chain_id: u64,
     pub validator_index: u64,
     pub enable_preconfirmation: bool,
     pub jwt_secret_file_path: String,
     pub rpc_client_timeout: Duration,
+    pub taiko_l2_address: String,
 }
 
 #[derive(Debug)]
-pub struct ContractAddresses {
+pub struct L1ContractAddresses {
     pub taiko_l1: String,
     pub preconf_whitelist: String,
     pub preconf_router: String,
@@ -91,7 +92,7 @@ impl Config {
             default_empty_address.clone()
         });
 
-        let contract_addresses = ContractAddresses {
+        let contract_addresses = L1ContractAddresses {
             taiko_l1,
             preconf_whitelist,
             preconf_router,
@@ -180,6 +181,9 @@ impl Config {
             .expect("RPC_CLIENT_TIMEOUT_SEC must be a number");
         let rpc_client_timeout = Duration::from_secs(rpc_client_timeout);
 
+        let taiko_l2_address = std::env::var("TAIKO_L2_ADDRESS")
+            .unwrap_or("0x1670010000000000000000000000000000010001".to_string());
+
         let config = Self {
             taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
                 .unwrap_or("ws://127.0.0.1:1234".to_string()),
@@ -205,6 +209,7 @@ impl Config {
             enable_preconfirmation,
             jwt_secret_file_path,
             rpc_client_timeout,
+            taiko_l2_address,
         };
 
         info!(
@@ -226,6 +231,7 @@ validator index: {}
 enable preconfirmation: {}
 jwt secret file path: {}
 rpc client timeout: {}
+taiko l2 address: {}
 "#,
             config.taiko_geth_ws_rpc_url,
             config.taiko_geth_auth_rpc_url,
@@ -243,6 +249,7 @@ rpc client timeout: {}
             config.enable_preconfirmation,
             config.jwt_secret_file_path,
             config.rpc_client_timeout.as_secs(),
+            config.taiko_l2_address,
         );
 
         config
