@@ -344,28 +344,29 @@ mod test {
     //     rpc_server.stop().await;
     // }
 
-    async fn setup_rpc_server_and_taiko(port: u16) -> (RpcServer, Taiko) {
-        // Start the RPC server
-        let mut rpc_server = RpcServer::new();
-        let addr: SocketAddr = format!("127.0.0.1:{}", port).parse().unwrap();
-        rpc_server.start_test_responses(addr).await.unwrap();
+    // async fn setup_rpc_server_and_taiko(port: u16) -> (RpcServer, Taiko) {
+    //     // Start the RPC server
+    //     let mut rpc_server = RpcServer::new();
+    //     let addr: SocketAddr = format!("127.0.0.1:{}", port).parse().unwrap();
+    //     rpc_server.start_test_responses(addr).await.unwrap();
 
-        let taiko = Taiko::new(
-            &format!("ws://127.0.0.1:{}", port + 1),
-            &format!("http://127.0.0.1:{}", port),
-            &format!("http://127.0.0.1:{}", port + 2), // driver_url
-            1,
-            Duration::from_secs(10),
-            &[
-                0xa6, 0xea, 0x92, 0x58, 0xca, 0x91, 0x2c, 0x59, 0x3b, 0x3e, 0x36, 0xee, 0x36, 0xc1,
-                0x7f, 0xe9, 0x74, 0x47, 0xf9, 0x20, 0xf5, 0xb3, 0x6a, 0x90, 0x74, 0x4d, 0x79, 0xd4,
-                0xf2, 0xd6, 0xae, 0x62,
-            ],
-            PRECONFER_ADDRESS_ZERO,
-            "0x1670010000000000000000000000000000010001".to_string(),
-        )
-        .await
-        .unwrap();
-        (rpc_server, taiko)
-    }
+    //     let taiko = Taiko::new(
+    //         &format!("ws://127.0.0.1:{}", port + 1),
+    //         &format!("http://127.0.0.1:{}", port),
+    //         &format!("http://127.0.0.1:{}", port + 2), // driver_url
+    //         1,
+    //         Duration::from_secs(10),
+    //         &[
+    //             0xa6, 0xea, 0x92, 0x58, 0xca, 0x91, 0x2c, 0x59, 0x3b, 0x3e, 0x36, 0xee, 0x36, 0xc1,
+    //             0x7f, 0xe9, 0x74, 0x47, 0xf9, 0x20, 0xf5, 0xb3, 0x6a, 0x90, 0x74, 0x4d, 0x79, 0xd4,
+    //             0xf2, 0xd6, 0xae, 0x62,
+    //         ],
+    //         PRECONFER_ADDRESS_ZERO,
+
+    //         "0x1670010000000000000000000000000000010001".to_string(),
+    //     )
+    //     .await
+    //     .unwrap();
+    //     (rpc_server, taiko)
+    // }
 }
