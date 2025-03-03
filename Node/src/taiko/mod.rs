@@ -264,7 +264,7 @@ impl Taiko {
                 base_fee_config,
                 vec![],
             )
-            .gas(1_000_000) // Set appropriate gas limit
+            .gas(1_000_000) // value expected by Taiko geth
             .max_fee_per_gas(8_000_000_000u128) // 8 gwei
             .max_priority_fee_per_gas(8_000_000_000u128) // 8 gwei
             .nonce(
