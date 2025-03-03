@@ -295,7 +295,7 @@ impl ExecutionLayer {
             .max_priority_fee_per_gas(1_000_000_000);
 
         // Build transaction
-        let tx = builder.as_ref().clone().build_typed_tx();
+        let tx = builder.into_transaction_request().build_typed_tx();
         let Ok(TypedTransaction::Eip1559(mut tx)) = tx else {
             return Err(anyhow::anyhow!(
                 "propose_new_block: Not EIP1559 transaction"
