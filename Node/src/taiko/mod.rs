@@ -1,29 +1,44 @@
 #![allow(unused)] // TODO: remove this once using new rpc functions
 
-use crate::utils::{
-    rpc_client::{HttpRPCClient, JSONRPCClient},
-    types::*,
+use crate::{
+    ethereum_l1::EthereumL1,
+    utils::{
+        rpc_client::{HttpRPCClient, JSONRPCClient},
+        types::*,
+    },
 };
 use alloy::{
     consensus::BlockHeader,
     eips::BlockNumberOrTag,
-    network::{Ethereum, EthereumWallet, NetworkWallet},
-    primitives::{BlockNumber, B256},
+    network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder},
+    primitives::{Address, BlockNumber, B256},
     providers::{
         fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
         Identity, Provider, ProviderBuilder, RootProvider, WsConnect,
     },
-    rpc::types::BlockTransactionsKind,
+    rpc::types::{BlockTransactionsKind, Transaction},
+    signers::{
+        local::{LocalSigner, PrivateKeySigner},
+        SignerSync,
+    },
 };
 use anyhow::Error;
+use ecdsa::SigningKey;
+use k256::Secp256k1;
 use serde_json::Value;
-use std::time::Duration;
+use std::str::FromStr;
+use std::{sync::Arc, time::Duration};
 use tracing::debug;
 
+mod l2_contracts_bindings;
 pub mod l2_tx_lists;
 pub mod preconf_blocks;
 
+use l2_contracts_bindings::{LibSharedData, TaikoAnchor};
 use l2_tx_lists::PendingTxLists;
+
+const GOLDEN_TOUCH_PRIVATE_KEY: &str =
+    "92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38";
 
 type WsProvider = FillProvider<
     JoinFill<
@@ -34,11 +49,15 @@ type WsProvider = FillProvider<
 >;
 
 pub struct Taiko {
-    rpc_taiko_geth_ws: WsProvider,
-    rpc_taiko_geth_auth: JSONRPCClient,
-    rpc_driver: HttpRPCClient,
+    taiko_geth_provider_ws: WsProvider,
+    taiko_geth_auth_rpc: JSONRPCClient,
+    driver_rpc: HttpRPCClient,
     pub chain_id: u64,
     preconfer_address: PreconferAddress,
+    ethereum_l1: Arc<EthereumL1>,
+    golden_touch_signer: LocalSigner<SigningKey<Secp256k1>>,
+    golden_touch_wallet: EthereumWallet,
+    taiko_l2_address: Address,
 }
 
 impl Taiko {
@@ -50,6 +69,8 @@ impl Taiko {
         rpc_client_timeout: Duration,
         jwt_secret_bytes: &[u8],
         preconfer_address: PreconferAddress,
+        ethereum_l1: Arc<EthereumL1>,
+        taiko_l2_address: String,
     ) -> Result<Self, Error> {
         let ws = WsConnect::new(taiko_geth_ws_url.to_string());
         let provider_ws = ProviderBuilder::new()
@@ -57,20 +78,27 @@ impl Taiko {
             .await
             .map_err(|e| anyhow::anyhow!("Taiko::new: Failed to create WebSocket provider: {e}"))?;
 
+        let signer = PrivateKeySigner::from_str(GOLDEN_TOUCH_PRIVATE_KEY)?;
+        let golden_touch_wallet = EthereumWallet::from(signer.clone());
+
         Ok(Self {
-            rpc_taiko_geth_ws: provider_ws,
-            rpc_taiko_geth_auth: JSONRPCClient::new_with_timeout_and_jwt(
+            taiko_geth_provider_ws: provider_ws,
+            taiko_geth_auth_rpc: JSONRPCClient::new_with_timeout_and_jwt(
                 taiko_geth_auth_url,
                 rpc_client_timeout,
                 jwt_secret_bytes,
             )?,
-            rpc_driver: HttpRPCClient::new_with_jwt(
+            driver_rpc: HttpRPCClient::new_with_jwt(
                 driver_url,
                 rpc_client_timeout,
                 jwt_secret_bytes,
             )?,
             chain_id,
             preconfer_address,
+            ethereum_l1,
+            golden_touch_signer: signer,
+            golden_touch_wallet,
+            taiko_l2_address: Address::from_str(&taiko_l2_address)?,
         })
     }
 
@@ -87,7 +115,7 @@ impl Taiko {
         ];
 
         let result = self
-            .rpc_taiko_geth_auth
+            .taiko_geth_auth_rpc
             .call_method("taikoAuth_txPoolContentWithMinTip", params)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get L2 tx lists: {}", e))?;
@@ -96,7 +124,7 @@ impl Taiko {
                 .map_err(|e| anyhow::anyhow!("Failed to decompose L2 tx lists: {}", e))?;
             Ok(tx_lists)
         } else {
-            Ok(vec!())
+            Ok(vec![])
         }
     }
 
@@ -116,14 +144,18 @@ impl Taiko {
         }
     }
 
-    async fn get_latest_l2_block_id_and_hash(&self) -> Result<(u64, B256), Error> {
+    async fn get_latest_l2_block_id_hash_and_gas_used(&self) -> Result<(u64, B256, u64), Error> {
         let block = self
-            .rpc_taiko_geth_ws
+            .taiko_geth_provider_ws
             .get_block_by_number(BlockNumberOrTag::Latest, BlockTransactionsKind::Hashes)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get latest L2 block: {}", e))?
             .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))?;
-        Ok((block.header.number(), block.header.hash))
+        Ok((
+            block.header.number(),
+            block.header.hash,
+            block.header.gas_used(),
+        ))
     }
 
     async fn get_base_fee(&self, l2_head_number: u64) -> Result<u64, Error> {
@@ -150,10 +182,24 @@ impl Taiko {
 
         for tx_list in tx_lists {
             debug!("processing {} txs", tx_list.tx_list.len());
-            let tx_list_bytes = tx_list.encode_and_compress()?;
+            let (parent_block_id, parent_hash, parent_gas_used) =
+                self.get_latest_l2_block_id_hash_and_gas_used().await?;
+
+            // Safe conversion with overflow check
+            let parent_gas_used_u32 = u32::try_from(parent_gas_used).map_err(|_| {
+                anyhow::anyhow!("parent_gas_used {} exceeds u32 max value", parent_gas_used)
+            })?;
+
+            let anchor_tx = self
+                .construct_anchor_tx(parent_block_id, parent_hash, parent_gas_used_u32)
+                .await?;
+            let tx_list = std::iter::once(anchor_tx)
+                .chain(tx_list.tx_list.into_iter())
+                .collect::<Vec<_>>();
+
+            let tx_list_bytes = l2_tx_lists::encode_and_compress(&tx_list)?;
             let extra_data = vec![0u8];
 
-            let (parent_block_id, parent_hash) = self.get_latest_l2_block_id_and_hash().await?;
             let executable_data = preconf_blocks::ExecutableData {
                 base_fee_per_gas: 8_000_000_000u64, // 8 gwei
                 block_number: parent_block_id,
@@ -174,7 +220,7 @@ impl Taiko {
             const API_ENDPOINT: &str = "preconfBlocks";
 
             let response = self
-                .rpc_driver
+                .driver_rpc
                 .post_json(API_ENDPOINT, &request_body)
                 .await
                 .map_err(|e| {
@@ -188,6 +234,62 @@ impl Taiko {
             debug!("preconfBlocks response: {:?}", response);
         }
         Ok(())
+    }
+
+    pub async fn construct_anchor_tx(
+        &self,
+        anchor_block_id: u64,
+        anchor_state_root: B256,
+        parent_gas_used: u32,
+    ) -> Result<Transaction, Error> {
+        let config = self.ethereum_l1.execution_layer.get_pacaya_config();
+
+        let base_fee_config = LibSharedData::BaseFeeConfig {
+            adjustmentQuotient: config.baseFeeConfig.adjustmentQuotient,
+            sharingPctg: config.baseFeeConfig.sharingPctg,
+            gasIssuancePerSecond: config.baseFeeConfig.gasIssuancePerSecond,
+            minGasExcess: config.baseFeeConfig.minGasExcess,
+            maxGasIssuancePerBlock: config.baseFeeConfig.maxGasIssuancePerBlock,
+        };
+
+        // Create contract instance with the correct address
+        let contract = TaikoAnchor::new(self.taiko_l2_address, &self.taiko_geth_provider_ws);
+
+        // Create the contract call
+        let call_builder = contract
+            .anchorV3(
+                anchor_block_id,
+                anchor_state_root,
+                parent_gas_used,
+                base_fee_config,
+                vec![],
+            )
+            .gas(1_000_000) // Set appropriate gas limit
+            .max_fee_per_gas(8_000_000_000u128) // 8 gwei
+            .max_priority_fee_per_gas(8_000_000_000u128) // 8 gwei
+            .nonce(
+                self.taiko_geth_provider_ws
+                    .get_transaction_count(self.golden_touch_signer.address())
+                    .await?,
+            )
+            .chain_id(self.chain_id);
+
+        let tx_envelope = call_builder
+            .into_transaction_request()
+            .build(&self.golden_touch_wallet)
+            .await?;
+
+        debug!("transaction type: {:?}", tx_envelope.tx_type());
+
+        let tx = Transaction {
+            inner: tx_envelope,
+            from: self.golden_touch_signer.address(),
+            block_hash: None,
+            block_number: None,
+            transaction_index: None,
+            effective_gas_price: None,
+        };
+        Ok(tx)
     }
 }
 
@@ -260,6 +362,7 @@ mod test {
                 0xf2, 0xd6, 0xae, 0x62,
             ],
             PRECONFER_ADDRESS_ZERO,
+            "0x1670010000000000000000000000000000010001".to_string(),
         )
         .await
         .unwrap();
