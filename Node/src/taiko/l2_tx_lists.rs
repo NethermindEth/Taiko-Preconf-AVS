@@ -61,22 +61,20 @@ pub struct PreBuiltTxList {
     bytes_length: u64,
 }
 
-impl PreBuiltTxList {
-    // RLP encode and zlib compress
-    pub fn encode(&self) -> Result<Vec<u8>, Error> {
-        // First RLP encode the transactions
-        let mut buffer = Vec::<u8>::new();
-        alloy_rlp::encode_iter(self.tx_list.iter().map(|tx| tx.inner.clone()), &mut buffer);
+// RLP encode and zlib compress
+pub fn encode_and_compress(tx_list: &[Transaction]) -> Result<Vec<u8>, Error> {
+    // First RLP encode the transactions
+    let mut buffer = Vec::<u8>::new();
+    alloy_rlp::encode_iter(tx_list.iter().map(|tx| tx.inner.clone()), &mut buffer);
 
-        // Then compress using zlib
-        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-        encoder
-            .write_all(&buffer)
-            .map_err(|e| anyhow::anyhow!("PreBuiltTxList::encode: Failed to compress: {}", e))?;
-        encoder
-            .finish()
-            .map_err(|e| anyhow::anyhow!("PreBuiltTxList::encode: Failed to finish: {}", e))
-    }
+    // Then compress using zlib
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    encoder
+        .write_all(&buffer)
+        .map_err(|e| anyhow::anyhow!("PreBuiltTxList::encode: Failed to compress: {}", e))?;
+    encoder
+        .finish()
+        .map_err(|e| anyhow::anyhow!("PreBuiltTxList::encode: Failed to finish: {}", e))
 }
 
 pub type PendingTxLists = Vec<PreBuiltTxList>;

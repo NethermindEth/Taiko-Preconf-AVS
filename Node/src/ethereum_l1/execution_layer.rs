@@ -1,6 +1,6 @@
 use super::block_proposed::{EventSubscriptionBlockProposedV2, TaikoEvents};
 use crate::{
-    ethereum_l1::ws_provider::WsProvider,
+    ethereum_l1::{l1_contracts_bindings::*, ws_provider::WsProvider},
     utils::{config, types::*},
 };
 use alloy::{
@@ -12,7 +12,6 @@ use alloy::{
         local::{LocalSigner, PrivateKeySigner},
         SignerSync,
     },
-    sol,
     sol_types::SolValue,
 };
 use anyhow::Error;
@@ -21,6 +20,7 @@ use k256::Secp256k1;
 #[cfg(test)]
 use mockall::automock;
 use std::str::FromStr;
+use tracing::debug;
 
 pub struct ExecutionLayer {
     provider_ws: WsProvider,
@@ -29,6 +29,7 @@ pub struct ExecutionLayer {
     preconfer_address: Address,
     contract_addresses: ContractAddresses,
     l1_chain_id: u64,
+    pacaya_config: taiko_inbox::ITaikoInbox::Config,
 }
 
 pub struct ContractAddresses {
@@ -42,130 +43,13 @@ pub struct AvsContractAddresses {
     pub preconf_task_manager: Address,
 }
 
-sol!(
-    #[allow(clippy::too_many_arguments)]
-    #[allow(missing_docs)]
-    #[sol(rpc)]
-    PreconfTaskManager,
-    "src/ethereum_l1/abi/PreconfTaskManager.json"
-);
-
-sol! {
-    /// @dev Represents proposeBlock's _data input parameter
-    struct BlockParamsV2 {
-        address proposer;
-        address coinbase;
-        bytes32 parentMetaHash;
-        uint64 anchorBlockId; // NEW
-        uint64 timestamp; // NEW
-        uint32 blobTxListOffset; // NEW
-        uint32 blobTxListLength; // NEW
-        uint8 blobIndex; // NEW
-    }
-}
-
-sol! {
-    // https://github.com/NethermindEth/preconf-taiko-mono/blob/main/packages/protocol/contracts/layer1/based/ITaikoInbox.sol
-    struct BlockParams {
-        // the max number of transactions in this block. Note that if there are not enough
-        // transactions in calldata or blobs, the block will contains as many transactions as
-        // possible.
-        uint16 numTransactions;
-        // For the first block in a batch,  the block timestamp is the batch params' `timestamp`
-        // plus this time shift value;
-        // For all other blocks in the same batch, the block timestamp is its parent block's
-        // timestamp plus this time shift value.
-        uint8 timeShift;
-        // Signals sent on L1 and need to sync to this L2 block.
-        bytes32[] signalSlots;
-    }
-
-    struct BlobParams {
-        // The hashes of the blob. Note that if this array is not empty.  `firstBlobIndex` and
-        // `numBlobs` must be 0.
-        bytes32[] blobHashes;
-        // The index of the first blob in this batch.
-        uint8 firstBlobIndex;
-        // The number of blobs in this batch. Blobs are initially concatenated and subsequently
-        // decompressed via Zlib.
-        uint8 numBlobs;
-        // The byte offset of the blob in the batch.
-        uint32 byteOffset;
-        // The byte size of the blob.
-        uint32 byteSize;
-        // The block number when the blob was created.
-        uint64 createdIn;
-    }
-
-    struct BatchParams {
-        address proposer;
-        address coinbase;
-        bytes32 parentMetaHash;
-        uint64 anchorBlockId;
-        uint64 lastBlockTimestamp;
-        bool revertIfNotFirstProposal;
-        // Specifies the number of blocks to be generated from this batch.
-        BlobParams blobParams;
-        BlockParams[] blocks;
-    }
-
-    struct ProposeBatchWrapper {
-        bytes bytesX;
-        bytes bytesY;
-    }
-}
-
-sol!(
-    #[allow(missing_docs)]
-    #[sol(rpc)]
-    PreconfRouter,
-    "src/ethereum_l1/abi/PreconfRouter.json"
-);
-
-sol!(
-    #[allow(missing_docs)]
-    #[sol(rpc)]
-    StrategyManager,
-    "src/ethereum_l1/abi/StrategyManager.json"
-);
-
-sol!(
-    #[allow(missing_docs)]
-    #[sol(rpc)]
-    Slasher,
-    "src/ethereum_l1/abi/Slasher.json"
-);
-
-sol!(
-    #[allow(missing_docs)]
-    #[sol(rpc)]
-    AVSDirectory,
-    "src/ethereum_l1/abi/AVSDirectory.json"
-);
-
-sol!(
-    #[allow(missing_docs)]
-    #[sol(rpc)]
-    PreconfWhitelist,
-    "src/ethereum_l1/abi/PreconfWhitelist.json"
-);
-
-sol! (
-    struct MessageData {
-        uint256 chainId;
-        uint8 op;
-        uint256 expiry;
-        address prefer;
-    }
-);
-
 #[cfg_attr(test, allow(dead_code))]
 #[cfg_attr(test, automock)]
 impl ExecutionLayer {
     pub async fn new(
         ws_rpc_url: &str,
         avs_node_ecdsa_private_key: &str,
-        contract_addresses: &config::ContractAddresses,
+        contract_addresses: &config::L1ContractAddresses,
     ) -> Result<Self, Error> {
         tracing::debug!("Creating ExecutionLayer with WS URL: {}", ws_rpc_url);
 
@@ -188,6 +72,9 @@ impl ExecutionLayer {
 
         let l1_chain_id = provider_ws.get_chain_id().await?;
 
+        let pacaya_config =
+            Self::fetch_pacaya_config(&contract_addresses.taiko_l1, &provider_ws).await?;
+
         Ok(Self {
             provider_ws,
             signer,
@@ -195,6 +82,7 @@ impl ExecutionLayer {
             preconfer_address,
             contract_addresses,
             l1_chain_id,
+            pacaya_config,
         })
     }
 
@@ -203,7 +91,7 @@ impl ExecutionLayer {
     }
 
     fn parse_contract_addresses(
-        contract_addresses: &config::ContractAddresses,
+        contract_addresses: &config::L1ContractAddresses,
     ) -> Result<ContractAddresses, Error> {
         let avs = AvsContractAddresses {
             preconf_task_manager: contract_addresses.avs.preconf_task_manager.parse()?,
@@ -345,12 +233,35 @@ impl ExecutionLayer {
         Ok(EventSubscriptionBlockProposedV2(block_proposed_filter))
     }
 
+    async fn fetch_pacaya_config(
+        taiko_l1_address: &Address,
+        ws_provider: &WsProvider,
+    ) -> Result<taiko_inbox::ITaikoInbox::Config, Error> {
+        let contract = taiko_inbox::ITaikoInbox::new(*taiko_l1_address, ws_provider);
+        let pacaya_config = contract.pacayaConfig().call().await?._0;
+
+        debug!(
+            "Pacaya config: chainid {}, maxUnverifiedBatches {}, batchRingBufferSize {}",
+            pacaya_config.chainId,
+            pacaya_config.maxUnverifiedBatches,
+            pacaya_config.batchRingBufferSize
+        );
+
+        Ok(pacaya_config)
+    }
+
+    pub fn get_pacaya_config(&self) -> taiko_inbox::ITaikoInbox::Config {
+        self.pacaya_config.clone()
+    }
+
     #[cfg(test)]
     pub async fn new_from_pk(
         ws_rpc_url: String,
         rpc_url: reqwest::Url,
         private_key: elliptic_curve::SecretKey<k256::Secp256k1>,
     ) -> Result<Self, Error> {
+        use super::l1_contracts_bindings::taiko_inbox::ITaikoInbox::ForkHeights;
+
         let signer = PrivateKeySigner::from_signing_key(private_key.into());
         let wallet = EthereumWallet::from(signer.clone());
 
@@ -380,12 +291,40 @@ impl ExecutionLayer {
                 },
             },
             l1_chain_id,
+            pacaya_config: taiko_inbox::ITaikoInbox::Config {
+                chainId: 1,
+                maxUnverifiedBatches: 100,
+                batchRingBufferSize: 100,
+                maxBatchesToVerify: 100,
+                blockMaxGasLimit: 1000000000,
+                livenessBondBase: alloy::primitives::Uint::from_limbs([1000000000000000000, 0]),
+                livenessBondPerBlock: alloy::primitives::Uint::from_limbs([1000000000000000000, 0]),
+                stateRootSyncInternal: 100,
+                maxAnchorHeightOffset: 1000000000000000000,
+                baseFeeConfig: taiko_inbox::LibSharedData::BaseFeeConfig {
+                    adjustmentQuotient: 100,
+                    sharingPctg: 100,
+                    gasIssuancePerSecond: 1000000000,
+                    minGasExcess: 1000000000000000000,
+                    maxGasIssuancePerBlock: 1000000000,
+                },
+                provingWindow: 1000,
+                cooldownWindow: alloy::primitives::Uint::from_limbs([1000000]),
+                maxSignalsToReceive: 100,
+                maxBlocksPerBatch: 1000,
+                forkHeights: ForkHeights {
+                    ontake: 0,
+                    pacaya: 0,
+                    shasta: 0,
+                    unzen: 0,
+                },
+            },
         })
     }
 
     #[cfg(test)]
     async fn call_test_contract(&self) -> Result<(), Error> {
-        sol! {
+        alloy::sol! {
             #[allow(missing_docs)]
             #[sol(rpc, bytecode="6080806040523460135760df908160198239f35b600080fdfe6080806040526004361015601257600080fd5b60003560e01c9081633fb5c1cb1460925781638381f58a146079575063d09de08a14603c57600080fd5b3460745760003660031901126074576000546000198114605e57600101600055005b634e487b7160e01b600052601160045260246000fd5b600080fd5b3460745760003660031901126074576020906000548152f35b34607457602036600319011260745760043560005500fea2646970667358221220e978270883b7baed10810c4079c941512e93a7ba1cd1108c781d4bc738d9090564736f6c634300081a0033")]
             contract Counter {

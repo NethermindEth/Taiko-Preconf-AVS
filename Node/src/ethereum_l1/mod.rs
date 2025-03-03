@@ -2,10 +2,11 @@ mod avs_contract_error;
 pub mod block_proposed;
 pub mod consensus_layer;
 pub mod execution_layer;
+mod l1_contracts_bindings;
 pub mod slot_clock;
 mod ws_provider;
 
-use crate::utils::config::ContractAddresses;
+use crate::utils::config::L1ContractAddresses;
 use anyhow::Error;
 use consensus_layer::ConsensusLayer;
 #[cfg(not(test))]
@@ -30,7 +31,7 @@ impl EthereumL1 {
     pub async fn new(
         execution_ws_rpc_url: &str,
         avs_node_ecdsa_private_key: &str,
-        contract_addresses: &ContractAddresses,
+        contract_addresses: &L1ContractAddresses,
         consensus_rpc_url: &str,
         slot_duration_sec: u64,
         slots_per_epoch: u64,

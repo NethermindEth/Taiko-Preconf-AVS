@@ -43,6 +43,8 @@ async fn main() -> Result<(), Error> {
             config.rpc_client_timeout,
             &jwt_secret_bytes,
             ethereum_l1.execution_layer.get_preconfer_address(),
+            ethereum_l1.clone(),
+            config.taiko_l2_address,
         )
         .await?,
     );
