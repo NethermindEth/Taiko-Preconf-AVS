@@ -132,6 +132,7 @@ impl ExecutionLayer {
         let contract =
             PreconfRouter::new(self.contract_addresses.preconf_router, &self.provider_ws);
 
+        let tx_list_len = tx_list.len() as u32;
         let tx_list = Bytes::from(tx_list);
 
         let bytes_x = Bytes::new();
@@ -139,11 +140,11 @@ impl ExecutionLayer {
         let block_params = BlockParams {
             numTransactions: tx_count,
             timeShift: 0,
-            signalSlots: vec![],
+            signalSlots: vec!(),
         };
 
         let batch_params = BatchParams {
-            proposer: Address::ZERO,
+            proposer: self.preconfer_address.clone(),
             coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(
                 &self.wallet,
             ),
@@ -156,12 +157,13 @@ impl ExecutionLayer {
                 firstBlobIndex: 0,
                 numBlobs: 0,
                 byteOffset: 0,
-                byteSize: 0,
+                byteSize: tx_list_len,
+                createdIn: 0,
             },
             blocks: vec![block_params],
         };
 
-        let encoded_batch_params = Bytes::from(BatchParams::abi_encode_sequence(&batch_params));
+        let encoded_batch_params = Bytes::from(BatchParams::abi_encode(&batch_params));
 
         let propose_batch_wrapper = ProposeBatchWrapper {
             bytesX: bytes_x,
@@ -181,7 +183,7 @@ impl ExecutionLayer {
             .max_priority_fee_per_gas(1_000_000_000);
 
         // Build transaction
-        let tx = builder.as_ref().clone().build_typed_tx();
+        let tx = builder.into_transaction_request().build_typed_tx();
         let Ok(TypedTransaction::Eip1559(mut tx)) = tx else {
             return Err(anyhow::anyhow!(
                 "propose_new_block: Not EIP1559 transaction"
@@ -197,6 +199,8 @@ impl ExecutionLayer {
 
         let mut encoded = Vec::new();
         tx.into_signed(signature).rlp_encode(&mut encoded);
+        // add EIP-1559 type
+        encoded.insert(0, 0x02);
 
         // Send transaction
         let pending = self.provider_ws.send_raw_transaction(&encoded).await?;

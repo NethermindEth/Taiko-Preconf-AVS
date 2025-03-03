@@ -51,6 +51,8 @@ sol! {
         uint32 byteOffset;
         // The byte size of the blob.
         uint32 byteSize;
+        // The block number when the blob was created.
+        uint64 createdIn;
     }
 
     struct BatchParams {
