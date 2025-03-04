@@ -1,21 +1,29 @@
 use alloy::primitives::B256;
 use anyhow::Error;
 use http::{HeaderMap, HeaderValue};
-use jsonrpsee::core::client::ClientT;
-use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
+use jsonrpsee::{
+    core::client::{ClientT, Error as JsonRpcError},
+    http_client::{HttpClient, HttpClientBuilder},
+};
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::RwLock;
 use std::time::Duration;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {
     iat: usize,
+    exp: usize,
 }
 
+const JWT_TOKEN_EXPIRATION_TIME_SECONDS: usize = 3600;
+
 fn create_jwt_token(secret: &[u8]) -> Result<String, Box<dyn std::error::Error>> {
+    let now = chrono::Utc::now().timestamp() as usize;
     let claims = Claims {
-        iat: chrono::Utc::now().timestamp() as usize, // Current timestamp without adding duration
+        iat: now,
+        exp: now + JWT_TOKEN_EXPIRATION_TIME_SECONDS,
     };
 
     Ok(encode(
@@ -26,22 +34,13 @@ fn create_jwt_token(secret: &[u8]) -> Result<String, Box<dyn std::error::Error>>
 }
 
 pub struct JSONRPCClient {
-    client: HttpClient,
+    url: String,
+    timeout: Duration,
+    jwt_secret: [u8; 32],
+    client: RwLock<HttpClient>,
 }
 
 impl JSONRPCClient {
-    pub fn new(url: &str) -> Result<Self, Error> {
-        Self::new_with_timeout(url, Duration::from_secs(10))
-    }
-
-    pub fn new_with_timeout(url: &str, timeout: Duration) -> Result<Self, Error> {
-        let client = HttpClientBuilder::default()
-            .request_timeout(timeout)
-            .build(url)
-            .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?;
-        Ok(JSONRPCClient { client })
-    }
-
     /// Creates a new RpcClient with JWT authentication.
     pub fn new_with_timeout_and_jwt(
         url: &str,
@@ -52,14 +51,25 @@ impl JSONRPCClient {
             return Err(anyhow::anyhow!("URL is empty"));
         }
 
-        let jwt_secret_bytes: [u8; 32] = jwt_secret
+        let jwt_secret: [u8; 32] = jwt_secret
             .try_into()
             .map_err(|e| anyhow::anyhow!("Invalid JWT secret: {e}"))?;
-        let jwt = B256::from_slice(&jwt_secret_bytes);
+        let client = Self::create_client(url, timeout, &jwt_secret)?;
 
-        if jwt == B256::ZERO {
-            return Err(anyhow::anyhow!("JWT secret is illegal"));
-        }
+        Ok(Self {
+            url: url.to_string(),
+            timeout,
+            jwt_secret,
+            client: RwLock::new(client),
+        })
+    }
+
+    fn create_client(
+        url: &str,
+        timeout: Duration,
+        jwt_secret: &[u8; 32],
+    ) -> Result<HttpClient, Error> {
+        let jwt = B256::from_slice(jwt_secret);
 
         let jwt_token = create_jwt_token(&jwt.0)
             .map_err(|e| anyhow::anyhow!("Failed to create JWT token: {e}"))?;
@@ -78,14 +88,51 @@ impl JSONRPCClient {
             .build(url)
             .map_err(|e| anyhow::anyhow!("Failed to create authenticated HTTP client: {e}"))?;
 
-        Ok(Self { client })
+        Ok(client)
     }
 
     pub async fn call_method(&self, method: &str, params: Vec<Value>) -> Result<Value, Error> {
-        self.client
-            .request(method, params)
-            .await
-            .map_err(Error::from)
+        let result = {
+            let client_guard = self
+                .client
+                .read()
+                .map_err(|e| anyhow::anyhow!("Failed to acquire read lock for client: {e}"))?;
+
+            client_guard.request(method, params.clone()).await
+        };
+
+        match result {
+            Ok(result) => Ok(result),
+            Err(JsonRpcError::Transport(err)) => {
+                if err.to_string().contains("401") {
+                    tracing::debug!("401 error, JWT token expired, recreating client");
+                    self.recreate_client()?;
+                    return self
+                        .client
+                        .read()
+                        .map_err(|e| {
+                            anyhow::anyhow!("Failed to acquire read lock for client: {e}")
+                        })?
+                        .request(method, params)
+                        .await
+                        .map_err(Error::from);
+                }
+                Err(anyhow::anyhow!("Http transport error: {err}."))
+            }
+            Err(err) => Err(Error::from(err)),
+        }
+    }
+
+    fn recreate_client(&self) -> Result<(), Error> {
+        let new_client = Self::create_client(&self.url, self.timeout, &self.jwt_secret)
+            .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?;
+
+        tracing::debug!("Created new client");
+        *self
+            .client
+            .write()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire write lock: {e}"))? = new_client;
+        Ok(())
     }
 }
 
@@ -122,13 +169,12 @@ impl HttpRPCClient {
             .timeout(timeout)
             .default_headers({
                 let mut headers = HeaderMap::new();
-                // TODO: uncomment, use jwt token
-                // headers.insert(
-                //     "authorization",
-                //     HeaderValue::from_str(&format!("Bearer {}", jwt_token)).map_err(|e| {
-                //         anyhow::anyhow!("Failed to create header value from jwt token: {e}")
-                //     })?,
-                // );
+                headers.insert(
+                    "authorization",
+                    HeaderValue::from_str(&format!("Bearer {}", jwt_token)).map_err(|e| {
+                        anyhow::anyhow!("Failed to create header value from jwt token: {e}")
+                    })?,
+                );
                 headers.insert("content-type", HeaderValue::from_static("application/json"));
                 headers
             })
