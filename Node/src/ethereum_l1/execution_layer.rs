@@ -1,7 +1,6 @@
 use super::block_proposed::{EventSubscriptionBlockProposedV2, TaikoEvents};
 use crate::{
-    ethereum_l1::{l1_contracts_bindings::*, ws_provider::WsProvider},
-    utils::{config, types::*},
+    ethereum_l1::{l1_contracts_bindings::*, ws_provider::WsProvider}, taiko::l2_tx_lists::{encode_and_compress, PendingTxLists}, utils::{config, types::*}
 };
 use alloy::{
     consensus::{transaction::SignableTransaction, TypedTransaction},
@@ -123,11 +122,40 @@ impl ExecutionLayer {
         Ok(operator)
     }
 
-    pub async fn propose_batch(
+    pub async fn send_batch_to_l1(
+        &self,
+        tx_lists: PendingTxLists,
+        nonce: u64
+    ) -> Result<Vec<u8>, Error> {
+        let mut tx_vec = Vec::new();
+        let mut blocks = Vec::new();
+        for tx_list in tx_lists {
+            let count = tx_list.tx_list.len() as u16;
+            tx_vec.extend(tx_list.tx_list);
+
+            blocks.push(BlockParams {
+                numTransactions: count,
+                timeShift: 0,
+                signalSlots: vec!(),
+            });
+        }
+
+        let tx_lists_bytes = encode_and_compress(&tx_vec)?;
+        let tx = self
+         .propose_batch_calldata(
+            nonce,
+            tx_lists_bytes,
+            blocks,
+         )
+         .await?;
+        Ok(tx)
+    }
+
+    pub async fn propose_batch_calldata(
         &self,
         nonce: u64,
         tx_list: Vec<u8>,
-        tx_count: u16,
+        blocks: Vec<BlockParams>,
     ) -> Result<Vec<u8>, Error> {
         let contract =
             PreconfRouter::new(self.contract_addresses.preconf_router, &self.provider_ws);
@@ -136,12 +164,6 @@ impl ExecutionLayer {
         let tx_list = Bytes::from(tx_list);
 
         let bytes_x = Bytes::new();
-
-        let block_params = BlockParams {
-            numTransactions: tx_count,
-            timeShift: 0,
-            signalSlots: vec!(),
-        };
 
         let batch_params = BatchParams {
             proposer: self.preconfer_address.clone(),
@@ -160,7 +182,7 @@ impl ExecutionLayer {
                 byteSize: tx_list_len,
                 createdIn: 0,
             },
-            blocks: vec![block_params],
+            blocks,
         };
 
         let encoded_batch_params = Bytes::from(BatchParams::abi_encode(&batch_params));
