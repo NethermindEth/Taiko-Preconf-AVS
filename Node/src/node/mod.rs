@@ -215,7 +215,7 @@ impl Node {
         let tx = self
          .ethereum_l1
          .execution_layer
-         .send_to_l1(
+         .send_batch_to_l1(
              pending_tx_lists,
              self.preconfirmation_helper.get_next_nonce(),
          )

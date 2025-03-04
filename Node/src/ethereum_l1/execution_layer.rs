@@ -122,7 +122,7 @@ impl ExecutionLayer {
         Ok(operator)
     }
 
-    pub async fn send_to_l1(
+    pub async fn send_batch_to_l1(
         &self,
         tx_lists: PendingTxLists,
         nonce: u64
