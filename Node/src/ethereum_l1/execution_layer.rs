@@ -136,7 +136,7 @@ impl ExecutionLayer {
             blocks.push(BlockParams {
                 numTransactions: count,
                 timeShift: 0,
-                signalSlots: vec!(),
+                signalSlots: vec![],
             });
         }
 
