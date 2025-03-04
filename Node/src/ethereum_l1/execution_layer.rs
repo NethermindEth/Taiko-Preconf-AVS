@@ -140,7 +140,7 @@ impl ExecutionLayer {
         let block_params = BlockParams {
             numTransactions: tx_count,
             timeShift: 0,
-            signalSlots: vec!(),
+            signalSlots: vec![],
         };
 
         let batch_params = BatchParams {
