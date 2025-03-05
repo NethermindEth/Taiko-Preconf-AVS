@@ -1,6 +1,8 @@
 use super::block_proposed::{EventSubscriptionBlockProposedV2, TaikoEvents};
 use crate::{
-    ethereum_l1::{l1_contracts_bindings::*, ws_provider::WsProvider}, taiko::l2_tx_lists::{encode_and_compress, PendingTxLists}, utils::{config, types::*}
+    ethereum_l1::{l1_contracts_bindings::*, ws_provider::WsProvider},
+    taiko::l2_tx_lists::{encode_and_compress, PendingTxLists},
+    utils::{config, types::*},
 };
 use alloy::{
     consensus::{transaction::SignableTransaction, TypedTransaction},
@@ -125,7 +127,7 @@ impl ExecutionLayer {
     pub async fn send_batch_to_l1(
         &self,
         tx_lists: PendingTxLists,
-        nonce: u64
+        nonce: u64,
     ) -> Result<Vec<u8>, Error> {
         let mut tx_vec = Vec::new();
         let mut blocks = Vec::new();
@@ -142,12 +144,8 @@ impl ExecutionLayer {
 
         let tx_lists_bytes = encode_and_compress(&tx_vec)?;
         let tx = self
-         .propose_batch_calldata(
-            nonce,
-            tx_lists_bytes,
-            blocks,
-         )
-         .await?;
+            .propose_batch_calldata(nonce, tx_lists_bytes, blocks)
+            .await?;
         Ok(tx)
     }
 
