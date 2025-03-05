@@ -171,6 +171,8 @@ impl Taiko {
         //     baseFeeConfig,
         //     uint64(
 
+
+
         Ok(0)
     }
 
@@ -293,56 +295,58 @@ impl Taiko {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::utils::rpc_server::test::RpcServer;
-    use std::net::SocketAddr;
+// #[cfg(test)]
+// mod test {
+//     use super::*;
+//     use crate::utils::rpc_server::test::RpcServer;
+//     use std::net::SocketAddr;
 
-    // TODO: fix this test
-    // #[tokio::test]
-    // async fn test_get_pending_l2_tx_lists() {
-    //     let (mut rpc_server, taiko) = setup_rpc_server_and_taiko(3030).await;
-    //     let json = taiko
-    //         .get_pending_l2_tx_lists_from_taiko_geth()
-    //         .await
-    //         .unwrap();
+//     #[tokio::test]
+//     async fn test_get_pending_l2_tx_lists() {
+//         let (mut rpc_server, taiko) = setup_rpc_server_and_taiko(3030).await;
+//         let json = taiko
+//             .get_pending_l2_tx_lists_from_taiko_geth()
+//             .await
+//             .unwrap();
 
-    //     assert_eq!(json.len(), 1);
-    //     assert_eq!(json[0].tx_list.len(), 2);
-    //     rpc_server.stop().await;
-    // }
+//         assert_eq!(json.len(), 1);
+//         assert_eq!(json[0].tx_list.len(), 2);
+//         rpc_server.stop().await;
+//     }
 
-    // TODO: fix this test
-    // #[tokio::test]
-    // async fn test_advance_head_to_new_l2_block() {
-    //     let (mut rpc_server, taiko) = setup_rpc_server_and_taiko(3040).await;
-    //     let value = serde_json::json!({
-    //         "TxLists": [
-    //             [
-    //                 {
-    //                     "type": "0x0",
-    //                     "chainId": "0x28c61",
-    //                     "nonce": "0x1",
-    //                     "to": "0xbfadd5365bb2890ad832038837115e60b71f7cbb",
-    //                     "gas": "0x267ac",
-    //                     "gasPrice": "0x5e76e0800",
-    //                     "maxPriorityFeePerGas": null,
-    //                     "maxFeePerGas": null,
-    //                     "value": "0x0",
-    //                     "input": "0x40d097c30000000000000000000000004cea2c7d358e313f5d0287c475f9ae943fe1a913",
-    //                     "v": "0x518e6",
-    //                     "r": "0xb22da5cdc4c091ec85d2dda9054aa497088e55bd9f0335f39864ae1c598dd35",
-    //                     "s": "0x6eee1bcfe6a1855e89dd23d40942c90a036f273159b4c4fd217d58169493f055",
-    //                     "hash": "0x7c76b9906579e54df54fe77ad1706c47aca706b3eb5cfd8a30ccc3c5a19e8ecd"
-    //                 }
-    //             ]
-    //         ]
-    //     });
+//     #[tokio::test]
+//     async fn test_advance_head_to_new_l2_block() {
+//         let (mut rpc_server, taiko) = setup_rpc_server_and_taiko(3040).await;
+//         let value = serde_json::json!({
+//             "TxLists": [
+//                 [
+//                     {
+//                         "type": "0x0",
+//                         "chainId": "0x28c61",
+//                         "nonce": "0x1",
+//                         "to": "0xbfadd5365bb2890ad832038837115e60b71f7cbb",
+//                         "gas": "0x267ac",
+//                         "gasPrice": "0x5e76e0800",
+//                         "maxPriorityFeePerGas": null,
+//                         "maxFeePerGas": null,
+//                         "value": "0x0",
+//                         "input": "0x40d097c30000000000000000000000004cea2c7d358e313f5d0287c475f9ae943fe1a913",
+//                         "v": "0x518e6",
+//                         "r": "0xb22da5cdc4c091ec85d2dda9054aa497088e55bd9f0335f39864ae1c598dd35",
+//                         "s": "0x6eee1bcfe6a1855e89dd23d40942c90a036f273159b4c4fd217d58169493f055",
+//                         "hash": "0x7c76b9906579e54df54fe77ad1706c47aca706b3eb5cfd8a30ccc3c5a19e8ecd"
+//                     }
+//                 ]
+//             ]
+//         });
 
-    //     let response = taiko.advance_head_to_new_l2_blocks(value).await.unwrap();
-    //     rpc_server.stop().await;
-    // }
+//         let response = taiko.advance_head_to_new_l2_blocks(value).await.unwrap();
+//         assert_eq!(
+//             response["result"],
+//             "Request received and processed successfully"
+//         );
+//         rpc_server.stop().await;
+//     }
 
     // async fn setup_rpc_server_and_taiko(port: u16) -> (RpcServer, Taiko) {
     //     // Start the RPC server
@@ -369,4 +373,4 @@ mod test {
     //     .unwrap();
     //     (rpc_server, taiko)
     // }
-}
+// }
