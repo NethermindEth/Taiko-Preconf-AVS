@@ -191,7 +191,7 @@ impl Taiko {
             })?;
 
             let anchor_tx = self
-                .construct_anchor_tx(parent_block_id, parent_hash, parent_gas_used_u32)
+                .construct_anchor_tx(parent_block_id+1, parent_hash, parent_gas_used_u32)
                 .await?;
             let tx_list = std::iter::once(anchor_tx)
                 .chain(tx_list.tx_list.into_iter())
