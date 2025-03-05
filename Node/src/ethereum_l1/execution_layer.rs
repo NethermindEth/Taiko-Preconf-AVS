@@ -3,7 +3,7 @@ use crate::{
     ethereum_l1::{l1_contracts_bindings::*, ws_provider::WsProvider}, taiko::l2_tx_lists::{encode_and_compress, PendingTxLists}, utils::{config, types::*}
 };
 use alloy::{
-    consensus::{transaction::SignableTransaction, TypedTransaction},
+    consensus::{transaction::SignableTransaction, SidecarBuilder, SimpleCoder, TypedTransaction},
     network::{Ethereum, EthereumWallet, NetworkWallet},
     primitives::{Address, Bytes, FixedBytes},
     providers::{Provider, ProviderBuilder, WsConnect},
@@ -142,7 +142,7 @@ impl ExecutionLayer {
 
         let tx_lists_bytes = encode_and_compress(&tx_vec)?;
         let tx = self
-         .propose_batch_calldata(
+         .propose_batch_blob(
             nonce,
             tx_lists_bytes,
             blocks,
@@ -208,7 +208,7 @@ impl ExecutionLayer {
         let tx = builder.into_transaction_request().build_typed_tx();
         let Ok(TypedTransaction::Eip1559(mut tx)) = tx else {
             return Err(anyhow::anyhow!(
-                "propose_new_block: Not EIP1559 transaction"
+                "propose_batch_calldata: Not EIP1559 transaction"
             ));
         };
 
@@ -223,6 +223,95 @@ impl ExecutionLayer {
         tx.into_signed(signature).rlp_encode(&mut encoded);
         // add EIP-1559 type
         encoded.insert(0, 0x02);
+
+        // Send transaction
+        let pending = self.provider_ws.send_raw_transaction(&encoded).await?;
+        tracing::debug!("Sending raw transaction, with hash {}", pending.tx_hash());
+
+        Ok(encoded)
+    }
+
+    pub async fn propose_batch_blob(
+        &self,
+        nonce: u64,
+        tx_list: Vec<u8>,
+        blocks: Vec<BlockParams>,
+    ) -> Result<Vec<u8>, Error> {
+        let contract =
+            PreconfRouter::new(self.contract_addresses.preconf_router, &self.provider_ws);
+
+        let tx_list_len = tx_list.len() as u32;
+
+        let bytes_x = Bytes::new();
+
+        //TODO split blobs
+        let sidecar: SidecarBuilder<SimpleCoder> = SidecarBuilder::from_slice(&tx_list);
+        let sidecar = sidecar.build()?;
+        let num_blobs = sidecar.blobs.len() as u8;
+
+
+        let batch_params = BatchParams {
+            proposer: self.preconfer_address.clone(),
+            coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(
+                &self.wallet,
+            ),
+            parentMetaHash: FixedBytes::from(&[0u8; 32]),
+            anchorBlockId: 0,
+            lastBlockTimestamp: 0,
+            revertIfNotFirstProposal: false,
+            blobParams: BlobParams {
+                blobHashes: vec![],
+                firstBlobIndex: 0,
+                numBlobs: num_blobs,
+                byteOffset: 0,
+                byteSize: tx_list_len,
+                createdIn: 0,
+            },
+            blocks,
+        };
+
+        let encoded_batch_params = Bytes::from(BatchParams::abi_encode(&batch_params));
+
+        let propose_batch_wrapper = ProposeBatchWrapper {
+            bytesX: bytes_x,
+            bytesY: encoded_batch_params,
+        };
+
+        let encoded_propose_batch_wrapper = Bytes::from(ProposeBatchWrapper::abi_encode_sequence(
+            &propose_batch_wrapper,
+        ));
+        // TODO check gas parameters
+        let builder = contract
+            .proposeBatch(encoded_propose_batch_wrapper, Bytes::new())
+            .chain_id(self.l1_chain_id)
+            .nonce(nonce)
+            .gas(1_000_000)
+            .max_fee_per_gas(20_000_000_000)
+            .max_priority_fee_per_gas(1_000_000_000)
+            .max_fee_per_blob_gas(500_000_000)
+            .sidecar(sidecar);
+
+        // Build transaction
+        let mut tx = builder.into_transaction_request();
+        tx.populate_blob_hashes();
+        let tx = tx.build_typed_tx();
+        let Ok(TypedTransaction::Eip4844(mut tx)) = tx else {
+            return Err(anyhow::anyhow!(
+                "propose_batch_blob: Not Eip4844 transaction"
+            ));
+        };
+
+        // Sign transaction
+        let signature = self
+            .wallet
+            .default_signer()
+            .sign_transaction(&mut tx)
+            .await?;
+
+        let mut encoded = Vec::new();
+        tx.into_signed(signature).rlp_encode(&mut encoded);
+        // add EIP-1559 type
+        encoded.insert(0, 0x03);
 
         // Send transaction
         let pending = self.provider_ws.send_raw_transaction(&encoded).await?;
