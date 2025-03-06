@@ -6,7 +6,10 @@ mod preconfirmation_helper;
 
 use crate::{
     ethereum_l1::{block_proposed::BlockProposedV2, EthereumL1},
-    taiko::{l2_tx_lists::{encode_and_compress, PendingTxLists, RPCReplyL2TxLists}, Taiko},
+    taiko::{
+        l2_tx_lists::{encode_and_compress, PendingTxLists, RPCReplyL2TxLists},
+        Taiko,
+    },
     utils::types::*,
 };
 use anyhow::Error;
@@ -213,13 +216,13 @@ impl Node {
 
         // Send to L1
         let tx = self
-         .ethereum_l1
-         .execution_layer
-         .send_batch_to_l1(
-             pending_tx_lists,
-             self.preconfirmation_helper.get_next_nonce(),
-         )
-         .await?;
+            .ethereum_l1
+            .execution_layer
+            .send_batch_to_l1(
+                pending_tx_lists,
+                self.preconfirmation_helper.get_next_nonce(),
+            )
+            .await?;
 
         // debug!(
         //     "Proposed new block, with hash {}",
