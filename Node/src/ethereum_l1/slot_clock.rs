@@ -38,7 +38,7 @@ impl<T: Clock> SlotClock<T> {
         genesis_timestamp_sec: u64,
         slot_duration_sec: u64,
         slots_per_epoch: u64,
-        l2_slot_duration_sec: u64,
+        l2_slot_duration_ms: u64,
     ) -> Self {
         tracing::info!(
             "SlotClock: genesis_timestamp_sec: {}, genesis_slot: {}",
@@ -52,7 +52,7 @@ impl<T: Clock> SlotClock<T> {
             genesis_duration: Duration::from_secs(genesis_timestamp_sec),
             slot_duration,
             slots_per_epoch,
-            l2_slot_duration_ms: l2_slot_duration_sec,
+            l2_slot_duration_ms,
             clock: T::default(),
         }
     }
