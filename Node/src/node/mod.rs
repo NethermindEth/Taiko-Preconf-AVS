@@ -63,6 +63,7 @@ impl Node {
     /// one for handling incoming messages and one for the block preconfirmation
     pub async fn entrypoint(mut self) -> Result<(), Error> {
         info!("Starting node");
+        self.handle_nonce_issue().await?;
         self.start_new_msg_receiver_thread();
         self.preconfirmation_loop().await;
         Ok(())
@@ -114,14 +115,8 @@ impl Node {
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
         let current_status = self.operator.get_status().await?;
         if current_status != self.previous_status {
-            // temporary workaround to handle nonce issue
             self.previous_status = current_status.clone();
-            let nonce = self
-                .ethereum_l1
-                .execution_layer
-                .get_preconfer_nonce()
-                .await?;
-            self.preconfirmation_helper.init(nonce);
+            self.handle_nonce_issue().await?;
         }
 
         match current_status {
@@ -142,6 +137,17 @@ impl Node {
             }
         }
 
+        Ok(())
+    }
+
+    // temporary workaround to handle nonce issue
+    async fn handle_nonce_issue(&mut self) -> Result<(), Error> {
+        let nonce = self
+            .ethereum_l1
+            .execution_layer
+            .get_preconfer_nonce()
+            .await?;
+        self.preconfirmation_helper.init(nonce);
         Ok(())
     }
 
