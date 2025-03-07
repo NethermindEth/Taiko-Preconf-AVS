@@ -108,10 +108,22 @@ impl Taiko {
     }
 
     pub async fn get_pending_l2_tx_lists_from_taiko_geth(&self) -> Result<PendingTxLists, Error> {
+        let (_, _, parent_gas_used) =
+                self.get_latest_l2_block_id_hash_and_gas_used().await?;
+
+        // Safe conversion with overflow check
+        let parent_gas_used_u32 = u32::try_from(parent_gas_used).map_err(|_| {
+            anyhow::anyhow!("parent_gas_used {} exceeds u32 max value", parent_gas_used)
+        })?;
+
+        let base_fee = self
+                .get_base_fee(parent_gas_used_u32, self.get_base_fee_config())
+                .await?;
+
         // TODO: adjust following parameters
         let params = vec![
             Value::String(format!("0x{}", hex::encode(self.preconfer_address))), // beneficiary address
-            Value::from(0x1dfd14000u64), // baseFee TODO: get it from contract, for now it's 8 gwei
+            Value::from(base_fee), // baseFee
             Value::Number(30_000_000.into()), // blockMaxGasLimit
             Value::Number(131_072.into()), // maxBytesPerTxList (128KB)
             Value::Array(vec![]),        // locals (empty array)
@@ -201,7 +213,7 @@ impl Taiko {
 
             let executable_data = preconf_blocks::ExecutableData {
                 base_fee_per_gas: base_fee,
-                block_number: parent_block_id,
+                block_number: parent_block_id + 1,
                 extra_data: format!("0x{}", hex::encode(extra_data)),
                 fee_recipient: format!("0x{}", hex::encode(self.preconfer_address)),
                 gas_limit: 30_000_000u64,
