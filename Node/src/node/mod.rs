@@ -35,7 +35,7 @@ pub struct Node {
     node_block_proposed_rx: Option<Receiver<BlockProposedV2>>,
     ethereum_l1: Arc<EthereumL1>,
     epoch: Epoch,
-    l2_slot_duration_sec: u64,
+    preconf_heartbeat_ms: u64,
     is_preconfer_now: Arc<AtomicBool>,
     preconfirmation_txs: Arc<Mutex<HashMap<u64, Vec<u8>>>>, // block_id -> tx
     operator: Operator,
@@ -49,16 +49,22 @@ impl Node {
         node_rx: Receiver<BlockProposedV2>,
         taiko: Arc<Taiko>,
         ethereum_l1: Arc<EthereumL1>,
-        l2_slot_duration_sec: u64,
+        preconf_heartbeat_ms: u64,
+        handover_window_slots: u64,
+        handover_start_buffer_ms: u64,
     ) -> Result<Self, Error> {
         let init_epoch = 0;
-        let operator = Operator::new(ethereum_l1.clone())?;
+        let operator = Operator::new(
+            ethereum_l1.clone(),
+            handover_window_slots,
+            handover_start_buffer_ms,
+        )?;
         Ok(Self {
             taiko,
             node_block_proposed_rx: Some(node_rx),
             ethereum_l1,
             epoch: init_epoch,
-            l2_slot_duration_sec,
+            preconf_heartbeat_ms,
             is_preconfer_now: Arc::new(AtomicBool::new(false)),
             preconfirmation_txs: Arc::new(Mutex::new(HashMap::new())),
             operator,
@@ -122,10 +128,6 @@ impl Node {
         }
     }
 
-    async fn advance_l2_head(ethereum_l1: Arc<EthereumL1>, taiko: Arc<Taiko>) {
-        // TODO replace that call with taiko call
-    }
-
     async fn preconfirmation_loop(&mut self) {
         debug!("Main perconfirmation loop started");
         // Synchronize with L1 Slot Start Time
@@ -133,7 +135,7 @@ impl Node {
         sleep(duration_to_next_slot).await;
 
         // start preconfirmation loop
-        let mut interval = tokio::time::interval(Duration::from_secs(self.l2_slot_duration_sec));
+        let mut interval = tokio::time::interval(Duration::from_millis(self.preconf_heartbeat_ms));
         loop {
             interval.tick().await;
 
@@ -148,7 +150,7 @@ impl Node {
 
         match self.operator.get_status().await? {
             OperatorStatus::Preconfer => {
-                self.preconfirm_block(true).await?;
+                self.preconfirm_block().await?;
             }
             OperatorStatus::None => {
                 info!(
@@ -179,7 +181,7 @@ impl Node {
         Ok(())
     }
 
-    async fn preconfirm_block(&mut self, send_to_contract: bool) -> Result<(), Error> {
+    async fn preconfirm_block(&mut self) -> Result<(), Error> {
         let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
         info!(
             "Preconfirming for the epoch: {}, slot: {} ({}), L2 slot: {}",
@@ -198,7 +200,6 @@ impl Node {
 
         let pending_tx_lists = self.taiko.get_pending_l2_tx_lists_from_taiko_geth().await?;
         if pending_tx_lists.is_empty() {
-            // TODO: verify if this is correct in case of empty tx lists
             debug!("No pending txs, skipping preconfirmation");
             return Ok(());
         }
@@ -224,10 +225,6 @@ impl Node {
             )
             .await?;
 
-        // debug!(
-        //     "Proposed new block, with hash {}",
-        //     alloy::primitives::keccak256(&tx)
-        // );
         // insert transaction
         // self.preconfirmation_txs
         //     .lock()
