@@ -28,7 +28,7 @@ pub struct SlotClock<T: Clock = RealClock> {
     /// The length of each slot.
     slot_duration: Duration,
     slots_per_epoch: u64,
-    l2_slot_duration_sec: u64,
+    l2_slot_duration_ms: u64,
     clock: T,
 }
 
@@ -52,7 +52,7 @@ impl<T: Clock> SlotClock<T> {
             genesis_duration: Duration::from_secs(genesis_timestamp_sec),
             slot_duration,
             slots_per_epoch,
-            l2_slot_duration_sec,
+            l2_slot_duration_ms: l2_slot_duration_sec,
             clock: T::default(),
         }
     }
@@ -189,11 +189,11 @@ impl<T: Clock> SlotClock<T> {
     pub fn get_l2_slot_number_within_l1_slot(&self) -> Result<u64, Error> {
         let now = self.clock.now().duration_since(UNIX_EPOCH)?;
         let slot_begin = self.start_of(self.get_current_slot()?)?;
-        Ok(self.which_l2_slot_is_it((now - slot_begin).as_secs()))
+        Ok(self.which_l2_slot_is_it((now - slot_begin).as_millis() as u64))
     }
 
-    fn which_l2_slot_is_it(&self, secs_from_l1_slot_begin: u64) -> u64 {
-        secs_from_l1_slot_begin / self.l2_slot_duration_sec
+    fn which_l2_slot_is_it(&self, ms_from_l1_slot_begin: u64) -> u64 {
+        ms_from_l1_slot_begin / self.l2_slot_duration_ms
     }
 }
 

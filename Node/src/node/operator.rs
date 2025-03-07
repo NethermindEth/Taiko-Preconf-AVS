@@ -8,7 +8,7 @@ pub struct Operator {
     handover_start_buffer_ms: u64,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Status {
     None,                    // not an operator
     Preconfer,               // handover window before being an operator, can preconfirm only
@@ -61,22 +61,24 @@ impl Operator {
     pub fn is_handover_window(&self) -> Result<bool, Error> {
         let slot = self.ethereum_l1.slot_clock.get_current_slot_of_epoch()?;
 
-        let is_in_last_slots = self
+        if self
             .ethereum_l1
             .slot_clock
-            .is_slot_in_last_n_slots_of_epoch(slot, self.handover_window_slots)?;
+            .is_slot_in_last_n_slots_of_epoch(slot, self.handover_window_slots)?
+        {
+            let time_millis: u64 = self
+                .ethereum_l1
+                .slot_clock
+                .time_from_n_last_slots_of_epoch(self.handover_window_slots)
+                .unwrap()
+                .as_millis()
+                .try_into()
+                .map_err(|err| {
+                    anyhow::anyhow!("is_handover_window: Field to covert u128 to u64: {:?}", err)
+                })?;
+            return Ok(time_millis > self.handover_start_buffer_ms);
+        }
 
-        let time_millis: u64 = self
-            .ethereum_l1
-            .slot_clock
-            .time_from_n_last_slots_of_epoch(self.handover_window_slots)
-            .unwrap()
-            .as_millis()
-            .try_into()
-            .map_err(|err| {
-                anyhow::anyhow!("is_handover_window: Field to covert u128 to u64: {:?}", err)
-            })?;
-
-        Ok(is_in_last_slots && time_millis > self.handover_start_buffer_ms)
+        Ok(false)
     }
 }

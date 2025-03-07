@@ -29,7 +29,7 @@ async fn main() -> Result<(), Error> {
     )
     .await?;
 
-    let (block_proposed_tx, block_proposed_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
+    let (_block_proposed_tx, block_proposed_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
 
     let ethereum_l1 = Arc::new(ethereum_l1);
 

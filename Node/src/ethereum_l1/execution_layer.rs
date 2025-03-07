@@ -155,7 +155,8 @@ impl ExecutionLayer {
         let tx_lists_bytes = encode_and_compress(&tx_vec)?;
         let tx = self
             .propose_batch_calldata(nonce, tx_lists_bytes, blocks)
-            .await?;
+            .await
+            .map_err(|e| Error::msg(format!("Failed to propose batch calldata: {}", e)))?;
         Ok(tx)
     }
 
