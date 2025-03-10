@@ -215,7 +215,7 @@ impl Taiko {
                 block_number: parent_block_id + 1,
                 extra_data: format!("0x{}", hex::encode(extra_data)),
                 fee_recipient: format!("0x{}", hex::encode(self.preconfer_address)),
-                gas_limit: 30_000_000u64,
+                gas_limit: 241_000_000u64,
                 parent_hash: format!("0x{}", hex::encode(parent_hash)),
                 timestamp: chrono::Utc::now().timestamp() as u64,
                 transactions: format!("0x{}", hex::encode(tx_list_bytes)),

@@ -1,46 +1,34 @@
 pub mod block_proposed_receiver;
 mod commit;
-mod l2_block_id;
 mod operator;
 mod preconfirmation_helper;
 
 use crate::{
     ethereum_l1::{block_proposed::BlockProposedV2, EthereumL1},
     taiko::{
-        l2_tx_lists::{encode_and_compress, PendingTxLists, RPCReplyL2TxLists},
+        l2_tx_lists::{PendingTxLists, RPCReplyL2TxLists},
         Taiko,
     },
-    utils::types::*,
 };
 use anyhow::Error;
 use commit::L2TxListsCommit;
-use l2_block_id::L2BlockId;
 use operator::{Operator, Status as OperatorStatus};
 use preconfirmation_helper::PreconfirmationHelper;
-use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-};
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{mpsc::Receiver, Mutex};
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info};
-
-const OLDEST_BLOCK_DISTANCE: u64 = 256;
 
 pub struct Node {
     taiko: Arc<Taiko>,
     node_block_proposed_rx: Option<Receiver<BlockProposedV2>>,
     ethereum_l1: Arc<EthereumL1>,
-    epoch: Epoch,
-    l2_slot_duration_sec: u64,
-    is_preconfer_now: Arc<AtomicBool>,
+    preconf_heartbeat_ms: u64,
     preconfirmation_txs: Arc<Mutex<HashMap<u64, Vec<u8>>>>, // block_id -> tx
     operator: Operator,
     preconfirmation_helper: PreconfirmationHelper,
-    l2_block_id: Arc<L2BlockId>,
+    pending_tx_lists_buffer: PendingTxLists,
+    previous_status: OperatorStatus, // temporary to handle nonce issue
 }
 
 impl Node {
@@ -49,21 +37,25 @@ impl Node {
         node_rx: Receiver<BlockProposedV2>,
         taiko: Arc<Taiko>,
         ethereum_l1: Arc<EthereumL1>,
-        l2_slot_duration_sec: u64,
+        preconf_heartbeat_ms: u64,
+        handover_window_slots: u64,
+        handover_start_buffer_ms: u64,
     ) -> Result<Self, Error> {
-        let init_epoch = 0;
-        let operator = Operator::new(ethereum_l1.clone())?;
+        let operator = Operator::new(
+            ethereum_l1.clone(),
+            handover_window_slots,
+            handover_start_buffer_ms,
+        )?;
         Ok(Self {
             taiko,
             node_block_proposed_rx: Some(node_rx),
             ethereum_l1,
-            epoch: init_epoch,
-            l2_slot_duration_sec,
-            is_preconfer_now: Arc::new(AtomicBool::new(false)),
+            preconf_heartbeat_ms,
             preconfirmation_txs: Arc::new(Mutex::new(HashMap::new())),
             operator,
             preconfirmation_helper: PreconfirmationHelper::new(),
-            l2_block_id: Arc::new(L2BlockId::new()),
+            pending_tx_lists_buffer: PendingTxLists::new(),
+            previous_status: OperatorStatus::None,
         })
     }
 
@@ -71,28 +63,17 @@ impl Node {
     /// one for handling incoming messages and one for the block preconfirmation
     pub async fn entrypoint(mut self) -> Result<(), Error> {
         info!("Starting node");
+        self.handle_nonce_issue().await?;
         self.start_new_msg_receiver_thread();
         self.preconfirmation_loop().await;
         Ok(())
     }
 
     fn start_new_msg_receiver_thread(&mut self) {
-        let ethereum_l1 = self.ethereum_l1.clone();
-        let taiko = self.taiko.clone();
-        let is_preconfer_now = self.is_preconfer_now.clone();
         let preconfirmation_txs = self.preconfirmation_txs.clone();
-        let l2_block_id = self.l2_block_id.clone();
         if let Some(node_rx) = self.node_block_proposed_rx.take() {
             tokio::spawn(async move {
-                Self::handle_incoming_messages(
-                    node_rx,
-                    ethereum_l1,
-                    taiko,
-                    is_preconfer_now,
-                    preconfirmation_txs,
-                    l2_block_id,
-                )
-                .await;
+                Self::handle_incoming_messages(node_rx, preconfirmation_txs).await;
             });
         } else {
             error!("Some of the node_rx, p2p_to_node_rx, or lookahead_updated_rx has already been moved");
@@ -102,28 +83,16 @@ impl Node {
     #[allow(clippy::too_many_arguments)]
     async fn handle_incoming_messages(
         mut node_rx: Receiver<BlockProposedV2>,
-        ethereum_l1: Arc<EthereumL1>,
-        taiko: Arc<Taiko>,
-        is_preconfer_now: Arc<AtomicBool>,
         preconfirmation_txs: Arc<Mutex<HashMap<u64, Vec<u8>>>>,
-        l2_block_id: Arc<L2BlockId>,
     ) {
         loop {
             tokio::select! {
                 Some(block_proposed) = node_rx.recv() => {
-                    if !is_preconfer_now.load(Ordering::Acquire) {
-                        debug!("Node received block proposed event: {:?}", block_proposed.block_id());
-                    } else {
-                        debug!("Node is Preconfer and received block proposed event: {:?}", block_proposed.block_id());
+                        debug!("Received block proposed event: {:?}", block_proposed.block_id());
                         preconfirmation_txs.lock().await.remove(&block_proposed.block_id());
-                    }
                 },
             }
         }
-    }
-
-    async fn advance_l2_head(ethereum_l1: Arc<EthereumL1>, taiko: Arc<Taiko>) {
-        // TODO replace that call with taiko call
     }
 
     async fn preconfirmation_loop(&mut self) {
@@ -133,7 +102,7 @@ impl Node {
         sleep(duration_to_next_slot).await;
 
         // start preconfirmation loop
-        let mut interval = tokio::time::interval(Duration::from_secs(self.l2_slot_duration_sec));
+        let mut interval = tokio::time::interval(Duration::from_millis(self.preconf_heartbeat_ms));
         loop {
             interval.tick().await;
 
@@ -144,97 +113,129 @@ impl Node {
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
-        let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
+        let current_status = self.operator.get_status().await?;
+        if current_status != self.previous_status {
+            self.previous_status = current_status.clone();
+            self.handle_nonce_issue().await?;
+        }
 
-        match self.operator.get_status().await? {
+        match current_status {
+            OperatorStatus::PreconferAndL1Submitter => {
+                self.preconfirm_and_submit_block().await?;
+            }
             OperatorStatus::Preconfer => {
-                self.preconfirm_block(true).await?;
+                self.preconfirm_block().await?;
+            }
+            OperatorStatus::PreconferHandoverBuffer(buffer_ms) => {
+                tokio::time::sleep(Duration::from_millis(buffer_ms)).await;
+                self.preconfirm_block().await?;
             }
             OperatorStatus::None => {
                 info!(
-                    "Not my slot to preconfirm. Epoch {}, slot: {} ({}), L2 slot: {}",
-                    self.epoch,
-                    current_slot,
-                    self.ethereum_l1.slot_clock.slot_of_epoch(current_slot),
-                    self.ethereum_l1
-                        .slot_clock
-                        .get_l2_slot_number_within_l1_slot()?
+                    "Not my slot to preconfirm, {}",
+                    self.get_current_slots_info()?
                 );
             }
-            _ => unreachable!(),
+            OperatorStatus::L1Submitter => {
+                self.submit_left_txs().await?;
+            }
         }
 
         Ok(())
     }
 
-    async fn start_propose(&mut self) -> Result<(), Error> {
-        // get L1 preconfer wallet nonce
+    // temporary workaround to handle nonce issue
+    async fn handle_nonce_issue(&mut self) -> Result<(), Error> {
         let nonce = self
             .ethereum_l1
             .execution_layer
             .get_preconfer_nonce()
             .await?;
-
         self.preconfirmation_helper.init(nonce);
         Ok(())
     }
 
-    async fn preconfirm_block(&mut self, send_to_contract: bool) -> Result<(), Error> {
-        let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
+    async fn preconfirm_and_submit_block(&mut self) -> Result<(), Error> {
         info!(
-            "Preconfirming for the epoch: {}, slot: {} ({}), L2 slot: {}",
-            self.epoch,
+            "Preconfirming and submitting for {}",
+            self.get_current_slots_info()?
+        );
+
+        let pending_tx_lists = self.taiko.get_pending_l2_tx_lists_from_taiko_geth().await?;
+        if pending_tx_lists.is_empty() {
+            debug!("No pending txs, skipping preconfirmation");
+            return Ok(());
+        }
+
+        self.taiko
+            .advance_head_to_new_l2_blocks(pending_tx_lists.clone())
+            .await?;
+
+        if self.pending_tx_lists_buffer.is_empty() {
+            self.pending_tx_lists_buffer = pending_tx_lists;
+        } else {
+            self.pending_tx_lists_buffer.extend(pending_tx_lists);
+        }
+
+        let next_nonce = self.preconfirmation_helper.get_next_nonce();
+        self.ethereum_l1
+            .execution_layer
+            .send_batch_to_l1(
+                std::mem::take(&mut self.pending_tx_lists_buffer),
+                next_nonce,
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    async fn preconfirm_block(&mut self) -> Result<(), Error> {
+        info!("Preconfirming for the {}", self.get_current_slots_info()?);
+
+        let pending_tx_lists = self.taiko.get_pending_l2_tx_lists_from_taiko_geth().await?;
+        if pending_tx_lists.is_empty() {
+            debug!("No pending txs, skipping preconfirmation");
+            return Ok(());
+        }
+
+        self.taiko
+            .advance_head_to_new_l2_blocks(pending_tx_lists.clone())
+            .await?;
+        self.pending_tx_lists_buffer.extend(pending_tx_lists);
+
+        Ok(())
+    }
+
+    async fn submit_left_txs(&mut self) -> Result<(), Error> {
+        if self.pending_tx_lists_buffer.is_empty() {
+            debug!("No pending txs, skipping submission");
+            return Ok(());
+        }
+
+        info!("Submitting left {} txs", self.pending_tx_lists_buffer.len());
+
+        self.ethereum_l1
+            .execution_layer
+            .send_batch_to_l1(
+                std::mem::take(&mut self.pending_tx_lists_buffer),
+                self.preconfirmation_helper.get_next_nonce(),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    fn get_current_slots_info(&self) -> Result<String, Error> {
+        let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
+        Ok(format!(
+            "epoch: {}, slot: {} ({}), L2 slot: {}",
+            self.ethereum_l1.slot_clock.get_current_epoch()?,
             current_slot,
             self.ethereum_l1.slot_clock.slot_of_epoch(current_slot),
             self.ethereum_l1
                 .slot_clock
                 .get_l2_slot_number_within_l1_slot()?
-        );
-
-        if !self.is_preconfer_now.load(Ordering::Acquire) {
-            self.is_preconfer_now.store(true, Ordering::Release);
-            self.start_propose().await?;
-        }
-
-        let pending_tx_lists = self.taiko.get_pending_l2_tx_lists_from_taiko_geth().await?;
-        if pending_tx_lists.is_empty() {
-            // TODO: verify if this is correct in case of empty tx lists
-            debug!("No pending txs, skipping preconfirmation");
-            return Ok(());
-        }
-
-        // let new_block_height = self.l2_block_id.next(pending_tx_lists.parent_block_id);
-        // debug!("Preconfirming block with the height: {}", new_block_height);
-
-        // let (commit_hash, signature) =
-        //     self.generate_commit_hash_and_signature(&pending_tx_lists, new_block_height)?;
-
-        //self.send_preconfirmations_to_the_avs_p2p(preconf_message.clone());
-        self.taiko
-            .advance_head_to_new_l2_blocks(pending_tx_lists.clone())
-            .await?;
-
-        // Send to L1
-        let tx = self
-            .ethereum_l1
-            .execution_layer
-            .send_batch_to_l1(
-                pending_tx_lists,
-                self.preconfirmation_helper.get_next_nonce(),
-            )
-            .await?;
-
-        // debug!(
-        //     "Proposed new block, with hash {}",
-        //     alloy::primitives::keccak256(&tx)
-        // );
-        // insert transaction
-        // self.preconfirmation_txs
-        //     .lock()
-        //     .await
-        //     .insert(new_block_height, tx);
-
-        Ok(())
+        ))
     }
 
     // TODO: use web3signer to sign the message
@@ -250,54 +251,5 @@ impl Node {
             .execution_layer
             .sign_message_with_private_ecdsa_key(&hash[..])?;
         Ok((hash, signature))
-    }
-
-    async fn clean_old_blocks<PreconfMessageType>(
-        preconfirmed_blocks: &Arc<Mutex<HashMap<u64, PreconfMessageType>>>,
-        current_block_height: u64,
-    ) -> Result<(), Error> {
-        let oldest_block_to_keep = current_block_height.saturating_sub(OLDEST_BLOCK_DISTANCE);
-        let mut preconfirmed_blocks = preconfirmed_blocks.lock().await;
-        preconfirmed_blocks.retain(|block_height, _| block_height >= &oldest_block_to_keep);
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashMap;
-    use tokio::sync::Mutex;
-
-    #[tokio::test]
-    async fn test_clean_old_blocks() {
-        let preconfirmed_blocks = Arc::new(Mutex::new(HashMap::new()));
-        {
-            let mut blocks = preconfirmed_blocks.lock().await;
-            blocks.insert(1u64, "abc".to_string());
-            blocks.insert(2u64, "def".to_string());
-            blocks.insert(300u64, "ghi".to_string());
-            blocks.insert(301u64, "jkl".to_string());
-        }
-
-        {
-            Node::clean_old_blocks(&preconfirmed_blocks, 10)
-                .await
-                .unwrap();
-            let blocks = preconfirmed_blocks.lock().await;
-            assert_eq!(blocks.len(), 4);
-            assert!(blocks.contains_key(&1));
-            assert!(blocks.contains_key(&2));
-        }
-
-        {
-            Node::clean_old_blocks(&preconfirmed_blocks, 300)
-                .await
-                .unwrap();
-            let blocks = preconfirmed_blocks.lock().await;
-            assert_eq!(blocks.len(), 2);
-            assert!(blocks.contains_key(&300));
-            assert!(blocks.contains_key(&301));
-        }
     }
 }

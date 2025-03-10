@@ -35,7 +35,7 @@ impl EthereumL1 {
         consensus_rpc_url: &str,
         slot_duration_sec: u64,
         slots_per_epoch: u64,
-        l2_slot_duration_sec: u64,
+        preconf_heartbeat_ms: u64,
     ) -> Result<Self, Error> {
         let consensus_layer = ConsensusLayer::new(consensus_rpc_url)?;
         let genesis_details = consensus_layer.get_genesis_details().await?;
@@ -44,7 +44,7 @@ impl EthereumL1 {
             genesis_details.genesis_time,
             slot_duration_sec,
             slots_per_epoch,
-            l2_slot_duration_sec,
+            preconf_heartbeat_ms,
         ));
 
         let execution_layer = ExecutionLayer::new(
