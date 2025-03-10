@@ -1,5 +1,3 @@
-mod avs_contract_error;
-pub mod block_proposed;
 pub mod consensus_layer;
 pub mod execution_layer;
 mod l1_contracts_bindings;

@@ -12,7 +12,6 @@ pub struct Config {
     pub l1_slot_duration_sec: u64,
     pub l1_slots_per_epoch: u64,
     pub preconf_heartbeat_ms: u64,
-    pub validator_bls_privkey: String,
     pub msg_expiry_sec: u64,
     pub contract_addresses: L1ContractAddresses,
     pub taiko_chain_id: u64,
@@ -30,12 +29,6 @@ pub struct L1ContractAddresses {
     pub taiko_l1: String,
     pub preconf_whitelist: String,
     pub preconf_router: String,
-    pub avs: AvsContractAddresses,
-}
-
-#[derive(Debug)]
-pub struct AvsContractAddresses {
-    pub preconf_task_manager: String,
 }
 
 impl Config {
@@ -54,18 +47,6 @@ impl Config {
                 );
                 "0x4c0883a69102937d6231471b5dbb6204fe512961708279f2e3e8a5d4b8e3e3e8".to_string()
             });
-
-        const AVS_PRECONF_TASK_MANAGER_CONTRACT_ADDRESS: &str =
-            "AVS_PRECONF_TASK_MANAGER_CONTRACT_ADDRESS";
-        let preconf_task_manager = std::env::var(AVS_PRECONF_TASK_MANAGER_CONTRACT_ADDRESS)
-            .unwrap_or_else(|_| {
-                warn!("No AVS preconf task manager contract address found in {} env var, using default", AVS_PRECONF_TASK_MANAGER_CONTRACT_ADDRESS);
-                default_empty_address.clone()
-            });
-
-        let avs = AvsContractAddresses {
-            preconf_task_manager,
-        };
 
         const TAIKO_L1_ADDRESS: &str = "TAIKO_L1_ADDRESS";
         let taiko_l1 = std::env::var(TAIKO_L1_ADDRESS).unwrap_or_else(|_| {
@@ -98,7 +79,6 @@ impl Config {
             taiko_l1,
             preconf_whitelist,
             preconf_router,
-            avs,
         };
 
         let l1_slot_duration_sec = std::env::var("L1_SLOT_DURATION_SEC")
@@ -133,15 +113,6 @@ impl Config {
                 val
             })
             .expect("PRECONF_HEARTBEAT_MS must be a number");
-
-        const VALIDATOR_BLS_PRIVATEKEY: &str = "VALIDATOR_BLS_PRIVATEKEY";
-        let validator_bls_privkey = std::env::var(VALIDATOR_BLS_PRIVATEKEY).unwrap_or_else(|_| {
-            warn!(
-                "No validator private key found in {} env var, using default",
-                VALIDATOR_BLS_PRIVATEKEY
-            );
-            "0x0".to_string()
-        });
 
         let msg_expiry_sec = std::env::var("MSG_EXPIRY_SEC")
             .unwrap_or("3600".to_string())
@@ -213,7 +184,6 @@ impl Config {
             l1_slot_duration_sec,
             l1_slots_per_epoch,
             preconf_heartbeat_ms,
-            validator_bls_privkey,
             msg_expiry_sec,
             contract_addresses,
             taiko_chain_id,

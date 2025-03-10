@@ -4,11 +4,7 @@ mod taiko;
 mod utils;
 
 use anyhow::Error;
-use node::block_proposed_receiver::BlockProposedEventReceiver;
 use std::sync::Arc;
-use tokio::sync::mpsc;
-
-const MESSAGE_QUEUE_SIZE: usize = 100;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -29,8 +25,6 @@ async fn main() -> Result<(), Error> {
     )
     .await?;
 
-    let (_block_proposed_tx, block_proposed_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
-
     let ethereum_l1 = Arc::new(ethereum_l1);
 
     let jwt_secret_bytes = utils::file_operations::read_jwt_secret(&config.jwt_secret_file_path)?;
@@ -49,12 +43,7 @@ async fn main() -> Result<(), Error> {
         .await?,
     );
 
-    // let block_proposed_event_checker =
-    //     BlockProposedEventReceiver::new(ethereum_l1.clone(), block_proposed_tx);
-    // BlockProposedEventReceiver::start(block_proposed_event_checker);
-
     let node = node::Node::new(
-        block_proposed_rx,
         taiko.clone(),
         ethereum_l1.clone(),
         config.preconf_heartbeat_ms,
