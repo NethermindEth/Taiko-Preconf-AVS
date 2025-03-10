@@ -28,7 +28,7 @@ use k256::Secp256k1;
 use serde_json::Value;
 use std::str::FromStr;
 use std::{sync::Arc, time::Duration};
-use tracing::debug;
+use tracing::{debug, info};
 
 mod l2_contracts_bindings;
 pub mod l2_tx_lists;
@@ -57,16 +57,15 @@ pub struct Taiko {
     ethereum_l1: Arc<EthereumL1>,
     golden_touch_signer: LocalSigner<SigningKey<Secp256k1>>,
     golden_touch_wallet: EthereumWallet,
-    taiko_l2_address: Address,
     taiko_anchor: TaikoAnchor::TaikoAnchorInstance<(), WsProvider>,
 }
 
 impl Taiko {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         taiko_geth_ws_url: &str,
         taiko_geth_auth_url: &str,
         driver_url: &str,
-        chain_id: u64,
         rpc_client_timeout: Duration,
         jwt_secret_bytes: &[u8],
         preconfer_address: PreconferAddress,
@@ -79,11 +78,14 @@ impl Taiko {
             .await
             .map_err(|e| anyhow::anyhow!("Taiko::new: Failed to create WebSocket provider: {e}"))?;
 
+        let chain_id = provider_ws.get_chain_id().await?;
+        info!("L2 Chain ID: {}", chain_id);
+
         let signer = PrivateKeySigner::from_str(GOLDEN_TOUCH_PRIVATE_KEY)?;
         let golden_touch_wallet = EthereumWallet::from(signer.clone());
 
-        let taiko_l2_addr = Address::from_str(&taiko_l2_address)?;
-        let taiko_anchor = TaikoAnchor::new(taiko_l2_addr, provider_ws.clone());
+        let taiko_l2_address = Address::from_str(&taiko_l2_address)?;
+        let taiko_anchor = TaikoAnchor::new(taiko_l2_address, provider_ws.clone());
 
         Ok(Self {
             taiko_geth_provider_ws: provider_ws,
@@ -102,14 +104,12 @@ impl Taiko {
             ethereum_l1,
             golden_touch_signer: signer,
             golden_touch_wallet,
-            taiko_l2_address: taiko_l2_addr,
             taiko_anchor,
         })
     }
 
     pub async fn get_pending_l2_tx_lists_from_taiko_geth(&self) -> Result<PendingTxLists, Error> {
-        let (_, _, parent_gas_used) =
-                self.get_latest_l2_block_id_hash_and_gas_used().await?;
+        let (_, _, parent_gas_used) = self.get_latest_l2_block_id_hash_and_gas_used().await?;
 
         // Safe conversion with overflow check
         let parent_gas_used_u32 = u32::try_from(parent_gas_used).map_err(|_| {
@@ -117,18 +117,17 @@ impl Taiko {
         })?;
 
         let base_fee = self
-                .get_base_fee(parent_gas_used_u32, self.get_base_fee_config())
-                .await?;
+            .get_base_fee(parent_gas_used_u32, self.get_base_fee_config())
+            .await?;
 
-        // TODO: adjust following parameters
         let params = vec![
             Value::String(format!("0x{}", hex::encode(self.preconfer_address))), // beneficiary address
-            Value::from(base_fee), // baseFee
-            Value::Number(30_000_000.into()), // blockMaxGasLimit
+            Value::from(base_fee),                                               // baseFee
+            Value::Number(30_000_000.into()),                                    // blockMaxGasLimit
             Value::Number(131_072.into()), // maxBytesPerTxList (128KB)
-            Value::Array(vec![]),        // locals (empty array)
-            Value::Number(1.into()),     // maxTransactionsLists
-            Value::Number(0.into()),     // minTip
+            Value::Array(vec![]),          // locals (empty array)
+            Value::Number(1.into()),       // maxTransactionsLists
+            Value::Number(0.into()),       // minTip
         ];
 
         let result = self
@@ -182,6 +181,7 @@ impl Taiko {
         tracing::debug!("Submitting new L2 blocks to the Taiko driver");
 
         let base_fee_config = self.get_base_fee_config();
+        let sharing_pctg = base_fee_config.sharingPctg;
 
         for tx_list in tx_lists {
             debug!("processing {} txs", tx_list.tx_list.len());
@@ -209,7 +209,7 @@ impl Taiko {
                 .collect::<Vec<_>>();
 
             let tx_list_bytes = l2_tx_lists::encode_and_compress(&tx_list)?;
-            let extra_data = vec![0u8];
+            let extra_data = vec![sharing_pctg];
 
             let executable_data = preconf_blocks::ExecutableData {
                 base_fee_per_gas: base_fee,
@@ -321,9 +321,9 @@ impl Taiko {
             .basefee_;
 
         debug!("base fee: {}", base_fee);
-        Ok(base_fee
+        base_fee
             .try_into()
-            .map_err(|err| anyhow::anyhow!("Failed to convert base fee to u64: {}", err))?)
+            .map_err(|err| anyhow::anyhow!("Failed to convert base fee to u64: {}", err))
     }
 }
 

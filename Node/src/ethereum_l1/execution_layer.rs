@@ -1,4 +1,3 @@
-use super::block_proposed::{EventSubscriptionBlockProposedV2, TaikoEvents};
 use crate::{
     ethereum_l1::{l1_contracts_bindings::*, ws_provider::WsProvider},
     taiko::l2_tx_lists::{encode_and_compress, PendingTxLists},
@@ -9,15 +8,10 @@ use alloy::{
     network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder},
     primitives::{Address, Bytes, FixedBytes},
     providers::{Provider, ProviderBuilder, WsConnect},
-    signers::{
-        local::{LocalSigner, PrivateKeySigner},
-        SignerSync,
-    },
+    signers::local::PrivateKeySigner,
     sol_types::SolValue,
 };
 use anyhow::Error;
-use ecdsa::SigningKey;
-use k256::Secp256k1;
 #[cfg(test)]
 use mockall::automock;
 use std::str::FromStr;
@@ -25,7 +19,6 @@ use tracing::debug;
 
 pub struct ExecutionLayer {
     provider_ws: WsProvider,
-    signer: LocalSigner<SigningKey<Secp256k1>>,
     wallet: EthereumWallet,
     preconfer_address: Address,
     contract_addresses: ContractAddresses,
@@ -37,11 +30,6 @@ pub struct ContractAddresses {
     pub taiko_l1: Address,
     pub preconf_whitelist: Address,
     pub preconf_router: Address,
-    pub avs: AvsContractAddresses,
-}
-
-pub struct AvsContractAddresses {
-    pub preconf_task_manager: Address,
 }
 
 #[cfg_attr(test, allow(dead_code))]
@@ -78,7 +66,6 @@ impl ExecutionLayer {
 
         Ok(Self {
             provider_ws,
-            signer,
             wallet,
             preconfer_address,
             contract_addresses,
@@ -94,10 +81,6 @@ impl ExecutionLayer {
     fn parse_contract_addresses(
         contract_addresses: &config::L1ContractAddresses,
     ) -> Result<ContractAddresses, Error> {
-        let avs = AvsContractAddresses {
-            preconf_task_manager: contract_addresses.avs.preconf_task_manager.parse()?,
-        };
-
         let taiko_l1 = contract_addresses.taiko_l1.parse()?;
         let preconf_whitelist = contract_addresses.preconf_whitelist.parse()?;
         let preconf_router = contract_addresses.preconf_router.parse()?;
@@ -106,7 +89,6 @@ impl ExecutionLayer {
             taiko_l1,
             preconf_whitelist,
             preconf_router,
-            avs,
         })
     }
 
@@ -184,7 +166,7 @@ impl ExecutionLayer {
         let bytes_x = Bytes::new();
 
         let batch_params = BatchParams {
-            proposer: self.preconfer_address.clone(),
+            proposer: self.preconfer_address,
             coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(
                 &self.wallet,
             ),
@@ -241,7 +223,7 @@ impl ExecutionLayer {
         Ok(pending_tx.tx_hash().clone())
     }
 
-    pub async fn propose_batch_blob(
+    pub async fn _propose_batch_blob(
         &self,
         nonce: u64,
         tx_list: Vec<u8>,
@@ -260,7 +242,7 @@ impl ExecutionLayer {
         let num_blobs = sidecar.blobs.len() as u8;
 
         let batch_params = BatchParams {
-            proposer: self.preconfer_address.clone(),
+            proposer: self.preconfer_address,
             coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(
                 &self.wallet,
             ),
@@ -319,28 +301,12 @@ impl ExecutionLayer {
         Ok(pending_tx.tx_hash().clone())
     }
 
-    pub fn sign_message_with_private_ecdsa_key(&self, msg: &[u8]) -> Result<[u8; 65], Error> {
-        let signature = self.signer.sign_message_sync(msg)?;
-        Ok(signature.as_bytes())
-    }
-
     pub async fn get_preconfer_nonce(&self) -> Result<u64, Error> {
         let nonce = self
             .provider_ws
             .get_transaction_count(self.preconfer_address)
             .await?;
         Ok(nonce)
-    }
-
-    pub async fn subscribe_to_block_proposed_event(
-        &self,
-    ) -> Result<EventSubscriptionBlockProposedV2, Error> {
-        let taiko_events = TaikoEvents::new(self.contract_addresses.taiko_l1, &self.provider_ws);
-
-        let block_proposed_filter = taiko_events.BlockProposedV2_filter().subscribe().await?;
-        tracing::debug!("Subscribed to block proposed V2 event");
-
-        Ok(EventSubscriptionBlockProposedV2(block_proposed_filter))
     }
 
     async fn fetch_pacaya_config(
@@ -388,7 +354,6 @@ impl ExecutionLayer {
 
         Ok(Self {
             provider_ws,
-            signer,
             wallet,
             preconfer_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
                 .parse()?,
@@ -396,9 +361,6 @@ impl ExecutionLayer {
                 taiko_l1: Address::ZERO,
                 preconf_whitelist: Address::ZERO,
                 preconf_router: Address::ZERO,
-                avs: AvsContractAddresses {
-                    preconf_task_manager: Address::ZERO,
-                },
             },
             l1_chain_id,
             pacaya_config: taiko_inbox::ITaikoInbox::Config {

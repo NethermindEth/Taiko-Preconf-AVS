@@ -1,31 +1,22 @@
 mod batch_proposer;
-pub mod block_proposed_receiver;
-mod commit;
 mod operator;
 mod preconfirmation_helper;
 
 use crate::{
-    ethereum_l1::{block_proposed::BlockProposedV2, EthereumL1},
-    taiko::{
-        l2_tx_lists::{PendingTxLists, RPCReplyL2TxLists},
-        Taiko,
-    },
+    ethereum_l1::EthereumL1,
+    taiko::Taiko,
 };
 use anyhow::Error;
-use commit::L2TxListsCommit;
 use operator::{Operator, Status as OperatorStatus};
 use preconfirmation_helper::PreconfirmationHelper;
-use std::{collections::HashMap, sync::Arc};
-use tokio::sync::{mpsc::Receiver, Mutex};
+use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info};
 
 pub struct Node {
     taiko: Arc<Taiko>,
-    node_block_proposed_rx: Option<Receiver<BlockProposedV2>>,
     ethereum_l1: Arc<EthereumL1>,
     preconf_heartbeat_ms: u64,
-    preconfirmation_txs: Arc<Mutex<HashMap<u64, Vec<u8>>>>, // block_id -> tx
     operator: Operator,
     preconfirmation_helper: PreconfirmationHelper,
     previous_status: OperatorStatus, // temporary to handle nonce issue
@@ -35,7 +26,6 @@ pub struct Node {
 impl Node {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
-        node_rx: Receiver<BlockProposedV2>,
         taiko: Arc<Taiko>,
         ethereum_l1: Arc<EthereumL1>,
         preconf_heartbeat_ms: u64,
@@ -50,10 +40,8 @@ impl Node {
         Ok(Self {
             batch_proposer: batch_proposer::BatchProposer::new(ethereum_l1.clone()),
             taiko,
-            node_block_proposed_rx: Some(node_rx),
             ethereum_l1,
             preconf_heartbeat_ms,
-            preconfirmation_txs: Arc::new(Mutex::new(HashMap::new())),
             operator,
             preconfirmation_helper: PreconfirmationHelper::new(),
             previous_status: OperatorStatus::None,
@@ -65,35 +53,8 @@ impl Node {
     pub async fn entrypoint(mut self) -> Result<(), Error> {
         info!("Starting node");
         self.handle_nonce_issue().await?;
-        self.start_new_msg_receiver_thread();
         self.preconfirmation_loop().await;
         Ok(())
-    }
-
-    fn start_new_msg_receiver_thread(&mut self) {
-        let preconfirmation_txs = self.preconfirmation_txs.clone();
-        if let Some(node_rx) = self.node_block_proposed_rx.take() {
-            tokio::spawn(async move {
-                Self::handle_incoming_messages(node_rx, preconfirmation_txs).await;
-            });
-        } else {
-            error!("Some of the node_rx, p2p_to_node_rx, or lookahead_updated_rx has already been moved");
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    async fn handle_incoming_messages(
-        mut node_rx: Receiver<BlockProposedV2>,
-        preconfirmation_txs: Arc<Mutex<HashMap<u64, Vec<u8>>>>,
-    ) {
-        loop {
-            tokio::select! {
-                Some(block_proposed) = node_rx.recv() => {
-                        debug!("Received block proposed event: {:?}", block_proposed.block_id());
-                        preconfirmation_txs.lock().await.remove(&block_proposed.block_id());
-                },
-            }
-        }
     }
 
     async fn preconfirmation_loop(&mut self) {
@@ -189,20 +150,5 @@ impl Node {
                 .slot_clock
                 .get_l2_slot_number_within_l1_slot()?
         ))
-    }
-
-    // TODO: use web3signer to sign the message
-    fn generate_commit_hash_and_signature(
-        &self,
-        reply: &RPCReplyL2TxLists,
-        block_height: u64,
-    ) -> Result<([u8; 32], [u8; 65]), Error> {
-        let commit = L2TxListsCommit::new(reply, block_height, self.taiko.chain_id);
-        let hash = commit.hash()?;
-        let signature = self
-            .ethereum_l1
-            .execution_layer
-            .sign_message_with_private_ecdsa_key(&hash[..])?;
-        Ok((hash, signature))
     }
 }
