@@ -37,14 +37,18 @@ impl Operator {
             .await?;
 
         if self.is_handover_window()? {
-            if is_current_operator {
-                return Ok(Status::L1Submitter);
-            }
-            if self
+            let is_next_operator = self
                 .ethereum_l1
                 .execution_layer
                 .is_operator_for_next_epoch()
-                .await?
+                .await?;
+            if is_current_operator {
+                if is_next_operator {
+                    return Ok(Status::PreconferAndL1Submitter);
+                }
+                return Ok(Status::L1Submitter);
+            }
+            if is_next_operator {
             {
                 return Ok(Status::Preconfer);
             }
