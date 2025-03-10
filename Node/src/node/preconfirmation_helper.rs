@@ -16,8 +16,4 @@ impl PreconfirmationHelper {
         self.nonce += 1;
         nonce
     }
-
-    pub fn increment_nonce(&mut self) {
-        self.nonce += 1;
-    }
 }

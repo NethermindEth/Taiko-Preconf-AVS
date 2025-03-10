@@ -28,7 +28,7 @@ use k256::Secp256k1;
 use serde_json::Value;
 use std::str::FromStr;
 use std::{sync::Arc, time::Duration};
-use tracing::debug;
+use tracing::{debug, info};
 
 mod l2_contracts_bindings;
 pub mod l2_tx_lists;
@@ -57,16 +57,15 @@ pub struct Taiko {
     ethereum_l1: Arc<EthereumL1>,
     golden_touch_signer: LocalSigner<SigningKey<Secp256k1>>,
     golden_touch_wallet: EthereumWallet,
-    taiko_l2_address: Address,
     taiko_anchor: TaikoAnchor::TaikoAnchorInstance<(), WsProvider>,
 }
 
 impl Taiko {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         taiko_geth_ws_url: &str,
         taiko_geth_auth_url: &str,
         driver_url: &str,
-        chain_id: u64,
         rpc_client_timeout: Duration,
         jwt_secret_bytes: &[u8],
         preconfer_address: PreconferAddress,
@@ -79,11 +78,14 @@ impl Taiko {
             .await
             .map_err(|e| anyhow::anyhow!("Taiko::new: Failed to create WebSocket provider: {e}"))?;
 
+        let chain_id = provider_ws.get_chain_id().await?;
+        info!("L2 Chain ID: {}", chain_id);
+
         let signer = PrivateKeySigner::from_str(GOLDEN_TOUCH_PRIVATE_KEY)?;
         let golden_touch_wallet = EthereumWallet::from(signer.clone());
 
-        let taiko_l2_addr = Address::from_str(&taiko_l2_address)?;
-        let taiko_anchor = TaikoAnchor::new(taiko_l2_addr, provider_ws.clone());
+        let taiko_l2_address = Address::from_str(&taiko_l2_address)?;
+        let taiko_anchor = TaikoAnchor::new(taiko_l2_address, provider_ws.clone());
 
         Ok(Self {
             taiko_geth_provider_ws: provider_ws,
@@ -102,7 +104,6 @@ impl Taiko {
             ethereum_l1,
             golden_touch_signer: signer,
             golden_touch_wallet,
-            taiko_l2_address: taiko_l2_addr,
             taiko_anchor,
         })
     }
@@ -320,9 +321,9 @@ impl Taiko {
             .basefee_;
 
         debug!("base fee: {}", base_fee);
-        Ok(base_fee
+        base_fee
             .try_into()
-            .map_err(|err| anyhow::anyhow!("Failed to convert base fee to u64: {}", err))?)
+            .map_err(|err| anyhow::anyhow!("Failed to convert base fee to u64: {}", err))
     }
 }
 

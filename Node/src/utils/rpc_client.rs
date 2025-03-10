@@ -8,8 +8,8 @@ use jsonrpsee::{
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::sync::RwLock;
 use std::time::Duration;
+use tokio::sync::RwLock;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {
@@ -93,11 +93,7 @@ impl JSONRPCClient {
 
     pub async fn call_method(&self, method: &str, params: Vec<Value>) -> Result<Value, Error> {
         let result = {
-            let client_guard = self
-                .client
-                .read()
-                .map_err(|e| anyhow::anyhow!("Failed to acquire read lock for client: {e}"))?;
-
+            let client_guard = self.client.read().await;
             client_guard.request(method, params.clone()).await
         };
 
@@ -106,13 +102,11 @@ impl JSONRPCClient {
             Err(JsonRpcError::Transport(err)) => {
                 if err.to_string().contains("401") {
                     tracing::debug!("401 error, JWT token expired, recreating client");
-                    self.recreate_client()?;
+                    self.recreate_client().await?;
                     return self
                         .client
                         .read()
-                        .map_err(|e| {
-                            anyhow::anyhow!("Failed to acquire read lock for client: {e}")
-                        })?
+                        .await
                         .request(method, params)
                         .await
                         .map_err(Error::from);
@@ -123,15 +117,12 @@ impl JSONRPCClient {
         }
     }
 
-    fn recreate_client(&self) -> Result<(), Error> {
+    async fn recreate_client(&self) -> Result<(), Error> {
         let new_client = Self::create_client(&self.url, self.timeout, &self.jwt_secret)
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?;
 
         tracing::debug!("Created new client");
-        *self
-            .client
-            .write()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire write lock: {e}"))? = new_client;
+        *self.client.write().await = new_client;
         Ok(())
     }
 }
