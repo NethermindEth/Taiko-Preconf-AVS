@@ -1,6 +1,5 @@
 mod batch_proposer;
 mod operator;
-mod preconfirmation_helper;
 
 use crate::{
     ethereum_l1::EthereumL1,
@@ -8,7 +7,6 @@ use crate::{
 };
 use anyhow::Error;
 use operator::{Operator, Status as OperatorStatus};
-use preconfirmation_helper::PreconfirmationHelper;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info};
@@ -18,8 +16,6 @@ pub struct Node {
     ethereum_l1: Arc<EthereumL1>,
     preconf_heartbeat_ms: u64,
     operator: Operator,
-    preconfirmation_helper: PreconfirmationHelper,
-    previous_status: OperatorStatus, // temporary to handle nonce issue
     batch_proposer: batch_proposer::BatchProposer,
 }
 
@@ -43,8 +39,6 @@ impl Node {
             ethereum_l1,
             preconf_heartbeat_ms,
             operator,
-            preconfirmation_helper: PreconfirmationHelper::new(),
-            previous_status: OperatorStatus::None,
         })
     }
 
@@ -52,7 +46,6 @@ impl Node {
     /// one for handling incoming messages and one for the block preconfirmation
     pub async fn entrypoint(mut self) -> Result<(), Error> {
         info!("Starting node");
-        self.handle_nonce_issue().await?;
         self.preconfirmation_loop().await;
         Ok(())
     }
@@ -76,11 +69,6 @@ impl Node {
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
         let current_status = self.operator.get_status().await?;
-        if current_status != self.previous_status {
-            self.previous_status = current_status.clone();
-            self.handle_nonce_issue().await?;
-        }
-
         match current_status {
             OperatorStatus::PreconferHandoverBuffer(buffer_ms) => {
                 tokio::time::sleep(Duration::from_millis(buffer_ms)).await;
@@ -103,17 +91,6 @@ impl Node {
             }
         }
 
-        Ok(())
-    }
-
-    // temporary workaround to handle nonce issue
-    async fn handle_nonce_issue(&mut self) -> Result<(), Error> {
-        let nonce = self
-            .ethereum_l1
-            .execution_layer
-            .get_preconfer_nonce()
-            .await?;
-        self.preconfirmation_helper.init(nonce);
         Ok(())
     }
 
