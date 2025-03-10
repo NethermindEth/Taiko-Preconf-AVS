@@ -11,7 +11,7 @@ pub struct Config {
     pub l1_beacon_url: String,
     pub l1_slot_duration_sec: u64,
     pub l1_slots_per_epoch: u64,
-    pub l2_slot_duration_sec: u64,
+    pub preconf_heartbeat_ms: u64,
     pub validator_bls_privkey: String,
     pub msg_expiry_sec: u64,
     pub contract_addresses: L1ContractAddresses,
@@ -21,6 +21,8 @@ pub struct Config {
     pub jwt_secret_file_path: String,
     pub rpc_client_timeout: Duration,
     pub taiko_l2_address: String,
+    pub handover_window_slots: u64,
+    pub handover_start_buffer_ms: u64,
 }
 
 #[derive(Debug)]
@@ -121,16 +123,16 @@ impl Config {
             })
             .expect("L1_SLOTS_PER_EPOCH must be a number");
 
-        let l2_slot_duration_sec = std::env::var("L2_SLOT_DURATION_SEC")
-            .unwrap_or("3".to_string())
+        let preconf_heartbeat_ms = std::env::var("PRECONF_HEARTBEAT_MS")
+            .unwrap_or("1500".to_string())
             .parse::<u64>()
             .map(|val| {
                 if val == 0 {
-                    panic!("L2_SLOT_DURATION_SEC must be a positive number");
+                    panic!("PRECONF_HEARTBEAT_MS must be a positive number");
                 }
                 val
             })
-            .expect("L2_SLOT_DURATION_SEC must be a number");
+            .expect("PRECONF_HEARTBEAT_MS must be a number");
 
         const VALIDATOR_BLS_PRIVATEKEY: &str = "VALIDATOR_BLS_PRIVATEKEY";
         let validator_bls_privkey = std::env::var(VALIDATOR_BLS_PRIVATEKEY).unwrap_or_else(|_| {
@@ -184,6 +186,16 @@ impl Config {
         let taiko_l2_address = std::env::var("TAIKO_L2_ADDRESS")
             .unwrap_or("0x1670010000000000000000000000000000010001".to_string());
 
+        let handover_window_slots = std::env::var("HANDOVER_WINDOW_SLOTS")
+            .unwrap_or("3".to_string())
+            .parse::<u64>()
+            .expect("HANDOVER_WINDOW_SLOTS must be a number");
+
+        let handover_start_buffer_ms = std::env::var("HANDOVER_START_BUFFER_MS")
+            .unwrap_or("500".to_string())
+            .parse::<u64>()
+            .expect("HANDOVER_START_BUFFER_MS must be a number");
+
         let config = Self {
             taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
                 .unwrap_or("ws://127.0.0.1:1234".to_string()),
@@ -200,7 +212,7 @@ impl Config {
                 .unwrap_or("http://127.0.0.1:4000".to_string()),
             l1_slot_duration_sec,
             l1_slots_per_epoch,
-            l2_slot_duration_sec,
+            preconf_heartbeat_ms,
             validator_bls_privkey,
             msg_expiry_sec,
             contract_addresses,
@@ -210,6 +222,8 @@ impl Config {
             jwt_secret_file_path,
             rpc_client_timeout,
             taiko_l2_address,
+            handover_window_slots,
+            handover_start_buffer_ms,
         };
 
         info!(
@@ -232,6 +246,8 @@ enable preconfirmation: {}
 jwt secret file path: {}
 rpc client timeout: {}
 taiko l2 address: {}
+handover window slots: {}
+handover start buffer: {}ms
 "#,
             config.taiko_geth_ws_rpc_url,
             config.taiko_geth_auth_rpc_url,
@@ -241,7 +257,7 @@ taiko l2 address: {}
             config.l1_beacon_url,
             config.l1_slot_duration_sec,
             config.l1_slots_per_epoch,
-            config.l2_slot_duration_sec,
+            config.preconf_heartbeat_ms,
             config.msg_expiry_sec,
             config.contract_addresses,
             config.taiko_chain_id,
@@ -250,6 +266,8 @@ taiko l2 address: {}
             config.jwt_secret_file_path,
             config.rpc_client_timeout.as_secs(),
             config.taiko_l2_address,
+            config.handover_window_slots,
+            config.handover_start_buffer_ms,
         );
 
         config
