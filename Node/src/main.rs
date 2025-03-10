@@ -25,11 +25,11 @@ async fn main() -> Result<(), Error> {
         &config.l1_beacon_url,
         config.l1_slot_duration_sec,
         config.l1_slots_per_epoch,
-        config.l2_slot_duration_sec,
+        config.preconf_heartbeat_ms,
     )
     .await?;
 
-    let (block_proposed_tx, block_proposed_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
+    let (_block_proposed_tx, block_proposed_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
 
     let ethereum_l1 = Arc::new(ethereum_l1);
 
@@ -49,15 +49,17 @@ async fn main() -> Result<(), Error> {
         .await?,
     );
 
-    let block_proposed_event_checker =
-        BlockProposedEventReceiver::new(ethereum_l1.clone(), block_proposed_tx);
-    BlockProposedEventReceiver::start(block_proposed_event_checker);
+    // let block_proposed_event_checker =
+    //     BlockProposedEventReceiver::new(ethereum_l1.clone(), block_proposed_tx);
+    // BlockProposedEventReceiver::start(block_proposed_event_checker);
 
     let node = node::Node::new(
         block_proposed_rx,
         taiko.clone(),
         ethereum_l1.clone(),
-        config.l2_slot_duration_sec,
+        config.preconf_heartbeat_ms,
+        config.handover_window_slots,
+        config.handover_start_buffer_ms,
     )
     .await?;
     node.entrypoint().await?;

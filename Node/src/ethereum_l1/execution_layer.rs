@@ -117,11 +117,21 @@ impl ExecutionLayer {
         Ok(operator)
     }
 
+    pub async fn is_operator_for_current_epoch(&self) -> Result<bool, Error> {
+        let operator = self.get_operator_for_current_epoch().await?;
+        Ok(operator == self.preconfer_address)
+    }
+
     pub async fn get_operator_for_next_epoch(&self) -> Result<Address, Error> {
         let contract =
             PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider_ws);
         let operator = contract.getOperatorForNextEpoch().call().await?._0;
         Ok(operator)
+    }
+
+    pub async fn is_operator_for_next_epoch(&self) -> Result<bool, Error> {
+        let operator = self.get_operator_for_next_epoch().await?;
+        Ok(operator == self.preconfer_address)
     }
 
     pub async fn send_batch_to_l1(
@@ -145,7 +155,8 @@ impl ExecutionLayer {
         let tx_lists_bytes = encode_and_compress(&tx_vec)?;
         let tx = self
             .propose_batch_calldata(nonce, tx_lists_bytes, blocks)
-            .await?;
+            .await
+            .map_err(|e| Error::msg(format!("Failed to propose batch calldata: {}", e)))?;
         Ok(tx)
     }
 
@@ -246,7 +257,6 @@ impl ExecutionLayer {
         let sidecar: SidecarBuilder<SimpleCoder> = SidecarBuilder::from_slice(&tx_list);
         let sidecar = sidecar.build()?;
         let num_blobs = sidecar.blobs.len() as u8;
-
 
         let batch_params = BatchParams {
             proposer: self.preconfer_address.clone(),
