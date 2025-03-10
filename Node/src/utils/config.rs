@@ -14,7 +14,6 @@ pub struct Config {
     pub preconf_heartbeat_ms: u64,
     pub msg_expiry_sec: u64,
     pub contract_addresses: L1ContractAddresses,
-    pub taiko_chain_id: u64,
     pub validator_index: u64,
     pub enable_preconfirmation: bool,
     pub jwt_secret_file_path: String,
@@ -84,33 +83,30 @@ impl Config {
         let l1_slot_duration_sec = std::env::var("L1_SLOT_DURATION_SEC")
             .unwrap_or("12".to_string())
             .parse::<u64>()
-            .map(|val| {
+            .inspect(|&val| {
                 if val == 0 {
                     panic!("L1_SLOT_DURATION_SEC must be a positive number");
                 }
-                val
             })
             .expect("L1_SLOT_DURATION_SEC must be a number");
 
         let l1_slots_per_epoch = std::env::var("L1_SLOTS_PER_EPOCH")
             .unwrap_or("32".to_string())
             .parse::<u64>()
-            .map(|val| {
+            .inspect(|&val| {
                 if val == 0 {
                     panic!("L1_SLOTS_PER_EPOCH must be a positive number");
                 }
-                val
             })
             .expect("L1_SLOTS_PER_EPOCH must be a number");
 
         let preconf_heartbeat_ms = std::env::var("PRECONF_HEARTBEAT_MS")
             .unwrap_or("1500".to_string())
             .parse::<u64>()
-            .map(|val| {
+            .inspect(|&val| {
                 if val == 0 {
                     panic!("PRECONF_HEARTBEAT_MS must be a positive number");
                 }
-                val
             })
             .expect("PRECONF_HEARTBEAT_MS must be a number");
 
@@ -118,17 +114,6 @@ impl Config {
             .unwrap_or("3600".to_string())
             .parse::<u64>()
             .expect("MSG_EXPIRY_SEC must be a number");
-
-        let taiko_chain_id = std::env::var("TAIKO_CHAIN_ID")
-            .expect("TAIKO_CHAIN_ID env variable must be set")
-            .parse::<u64>()
-            .map(|val| {
-                if val == 0 {
-                    panic!("TAIKO_CHAIN_ID must be a positive number");
-                }
-                val
-            })
-            .expect("TAIKO_CHAIN_ID must be a number");
 
         let validator_index = std::env::var("VALIDATOR_INDEX")
             .expect("VALIDATOR_INDEX env variable must be set")
@@ -186,7 +171,6 @@ impl Config {
             preconf_heartbeat_ms,
             msg_expiry_sec,
             contract_addresses,
-            taiko_chain_id,
             validator_index,
             enable_preconfirmation,
             jwt_secret_file_path,
@@ -210,7 +194,6 @@ L1 slots per epoch: {}
 L2 slot duration: {}
 Preconf registry expiry seconds: {}
 Contract addresses: {:#?}
-taiko chain id: {}
 validator index: {}
 enable preconfirmation: {}
 jwt secret file path: {}
@@ -230,7 +213,6 @@ handover start buffer: {}ms
             config.preconf_heartbeat_ms,
             config.msg_expiry_sec,
             config.contract_addresses,
-            config.taiko_chain_id,
             config.validator_index,
             config.enable_preconfirmation,
             config.jwt_secret_file_path,

@@ -157,7 +157,7 @@ impl ExecutionLayer {
         let bytes_x = Bytes::new();
 
         let batch_params = BatchParams {
-            proposer: self.preconfer_address.clone(),
+            proposer: self.preconfer_address,
             coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(
                 &self.wallet,
             ),
@@ -241,7 +241,7 @@ impl ExecutionLayer {
         let num_blobs = sidecar.blobs.len() as u8;
 
         let batch_params = BatchParams {
-            proposer: self.preconfer_address.clone(),
+            proposer: self.preconfer_address,
             coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(
                 &self.wallet,
             ),
