@@ -6,7 +6,7 @@ use crate::{
 };
 use alloy::{
     consensus::{transaction::SignableTransaction, SidecarBuilder, SimpleCoder, TypedTransaction},
-    network::{Ethereum, EthereumWallet, NetworkWallet},
+    network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder},
     primitives::{Address, Bytes, FixedBytes},
     providers::{Provider, ProviderBuilder, WsConnect},
     signers::{
@@ -138,7 +138,7 @@ impl ExecutionLayer {
         &self,
         tx_lists: PendingTxLists,
         nonce: u64,
-    ) -> Result<Vec<u8>, Error> {
+    ) -> Result<FixedBytes<32>, Error> {
         let mut tx_vec = Vec::new();
         let mut blocks = Vec::new();
         for tx_list in tx_lists {
@@ -153,6 +153,15 @@ impl ExecutionLayer {
         }
 
         let tx_lists_bytes = encode_and_compress(&tx_vec)?;
+
+        tracing::debug!(
+            "Proposing batch with blocks: {} and length: {}",
+            blocks.len(),
+            tx_lists_bytes.len(),
+        );
+
+        // TODO estimate gas and select what to call blob or calldata
+
         let tx = self
             .propose_batch_calldata(nonce, tx_lists_bytes, blocks)
             .await
@@ -165,7 +174,7 @@ impl ExecutionLayer {
         nonce: u64,
         tx_list: Vec<u8>,
         blocks: Vec<BlockParams>,
-    ) -> Result<Vec<u8>, Error> {
+    ) -> Result<FixedBytes<32>, Error> {
         let contract =
             PreconfRouter::new(self.contract_addresses.preconf_router, &self.provider_ws);
 
@@ -208,36 +217,28 @@ impl ExecutionLayer {
         let builder = contract
             .proposeBatch(encoded_propose_batch_wrapper, tx_list)
             .chain_id(self.l1_chain_id)
-            .nonce(nonce)
-            .gas(1_000_000)
-            .max_fee_per_gas(20_000_000_000)
-            .max_priority_fee_per_gas(1_000_000_000);
+            .nonce(nonce);
+        //.gas(1_000_000)
+        //.max_fee_per_gas(20_000_000_000)
+        //.max_priority_fee_per_gas(1_000_000_000);
 
-        // Build transaction
-        let tx = builder.into_transaction_request().build_typed_tx();
-        let Ok(TypedTransaction::Eip1559(mut tx)) = tx else {
-            return Err(anyhow::anyhow!(
-                "propose_batch_calldata: Not EIP1559 transaction"
-            ));
-        };
+        let tx = builder.into_transaction_request();
+        //tx.populate_blob_hashes();
+        let tx_envelope = tx.build(&self.wallet).await?;
+        //let tx_envelope = builder..build(&self.provider_ws.wallet()).await.unwrap();
 
-        // Sign transaction
-        let signature = self
-            .wallet
-            .default_signer()
-            .sign_transaction(&mut tx)
+        let pending_tx = self
+            .provider_ws
+            .send_tx_envelope(tx_envelope)
+            .await?
+            .register()
             .await?;
 
-        let mut encoded = Vec::new();
-        tx.into_signed(signature).rlp_encode(&mut encoded);
-        // add EIP-1559 type
-        encoded.insert(0, 0x02);
-
-        // Send transaction
-        let pending = self.provider_ws.send_raw_transaction(&encoded).await?;
-        tracing::debug!("Sending raw transaction, with hash {}", pending.tx_hash());
-
-        Ok(encoded)
+        tracing::debug!(
+            "Call proposeBatch with calldata and hash {}",
+            pending_tx.tx_hash()
+        );
+        Ok(pending_tx.tx_hash().clone())
     }
 
     pub async fn propose_batch_blob(
@@ -245,7 +246,7 @@ impl ExecutionLayer {
         nonce: u64,
         tx_list: Vec<u8>,
         blocks: Vec<BlockParams>,
-    ) -> Result<Vec<u8>, Error> {
+    ) -> Result<FixedBytes<32>, Error> {
         let contract =
             PreconfRouter::new(self.contract_addresses.preconf_router, &self.provider_ws);
 
@@ -293,39 +294,29 @@ impl ExecutionLayer {
             .proposeBatch(encoded_propose_batch_wrapper, Bytes::new())
             .chain_id(self.l1_chain_id)
             .nonce(nonce)
-            .gas(1_000_000)
-            .max_fee_per_gas(20_000_000_000)
-            .max_priority_fee_per_gas(1_000_000_000)
-            .max_fee_per_blob_gas(500_000_000)
+            //.gas(1_000_000)
+            //.max_fee_per_gas(20_000_000_000)
+            //.max_priority_fee_per_gas(1_000_000_000)
+            //.max_fee_per_blob_gas(500_000_000)
             .sidecar(sidecar);
 
-        // Build transaction
-        let mut tx = builder.into_transaction_request();
-        tx.populate_blob_hashes();
-        let tx = tx.build_typed_tx();
-        let Ok(TypedTransaction::Eip4844(mut tx)) = tx else {
-            return Err(anyhow::anyhow!(
-                "propose_batch_blob: Not Eip4844 transaction"
-            ));
-        };
+        let tx = builder.into_transaction_request();
+        //tx.populate_blob_hashes();
+        let tx_envelope = tx.build(&self.wallet).await?;
+        //let tx_envelope = builder..build(&self.provider_ws.wallet()).await.unwrap();
 
-        // Sign transaction
-        let signature = self
-            .wallet
-            .default_signer()
-            .sign_transaction(&mut tx)
+        let pending_tx = self
+            .provider_ws
+            .send_tx_envelope(tx_envelope)
+            .await?
+            .register()
             .await?;
 
-        let mut encoded = Vec::new();
-        tx.into_signed(signature).rlp_encode(&mut encoded);
-        // add EIP-1559 type
-        encoded.insert(0, 0x03);
-
-        // Send transaction
-        let pending = self.provider_ws.send_raw_transaction(&encoded).await?;
-        tracing::debug!("Sending raw transaction, with hash {}", pending.tx_hash());
-
-        Ok(encoded)
+        tracing::debug!(
+            "Call proposeBatch with blob and hash {}",
+            pending_tx.tx_hash()
+        );
+        Ok(pending_tx.tx_hash().clone())
     }
 
     pub fn sign_message_with_private_ecdsa_key(&self, msg: &[u8]) -> Result<[u8; 65], Error> {

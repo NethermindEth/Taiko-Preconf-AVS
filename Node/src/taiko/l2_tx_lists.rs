@@ -59,7 +59,7 @@ pub struct PreBuiltTxList {
     #[serde(deserialize_with = "deserialize_tx_list")]
     pub tx_list: Vec<Transaction>,
     estimated_gas_used: u64,
-    bytes_length: u64,
+    pub bytes_length: u64,
 }
 
 // RLP encode and zlib compress
