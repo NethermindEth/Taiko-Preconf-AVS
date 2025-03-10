@@ -1,10 +1,7 @@
 mod batch_proposer;
 mod operator;
 
-use crate::{
-    ethereum_l1::EthereumL1,
-    taiko::Taiko,
-};
+use crate::{ethereum_l1::EthereumL1, taiko::Taiko};
 use anyhow::Error;
 use operator::{Operator, Status as OperatorStatus};
 use std::sync::Arc;

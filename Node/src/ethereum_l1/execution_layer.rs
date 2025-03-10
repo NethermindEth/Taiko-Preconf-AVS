@@ -4,8 +4,10 @@ use crate::{
     utils::{config, types::*},
 };
 use alloy::{
-    consensus::{transaction::SignableTransaction, SidecarBuilder, SimpleCoder, TypedTransaction},
-    network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder, TransactionBuilder4844},
+    consensus::{SidecarBuilder, SimpleCoder},
+    network::{
+        Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder, TransactionBuilder4844,
+    },
     primitives::{Address, Bytes, FixedBytes},
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::TransactionRequest,
@@ -152,7 +154,7 @@ impl ExecutionLayer {
         Ok(tx)
     }
 
-    pub async fn propose_batch_calldata(
+    pub async fn _propose_batch_calldata(
         &self,
         nonce: u64,
         tx_list: Vec<u8>,
