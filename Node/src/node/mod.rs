@@ -126,6 +126,10 @@ impl Node {
             OperatorStatus::Preconfer => {
                 self.preconfirm_block().await?;
             }
+            OperatorStatus::PreconferHandoverBuffer(buffer_ms) => {
+                tokio::time::sleep(Duration::from_millis(buffer_ms)).await;
+                self.preconfirm_block().await?;
+            }
             OperatorStatus::None => {
                 info!(
                     "Not my slot to preconfirm, {}",
@@ -174,16 +178,6 @@ impl Node {
         }
 
         let next_nonce = self.preconfirmation_helper.get_next_nonce();
-
-        debug!(
-            "NONCE: {} NEXT NONCE: {}",
-            self.ethereum_l1
-                .execution_layer
-                .get_preconfer_nonce()
-                .await?,
-            next_nonce
-        );
-
         self.ethereum_l1
             .execution_layer
             .send_batch_to_l1(

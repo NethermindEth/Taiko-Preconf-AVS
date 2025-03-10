@@ -10,8 +10,9 @@ pub struct Operator {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Status {
-    None,                    // not an operator
-    Preconfer,               // handover window before being an operator, can preconfirm only
+    None,                         // not an operator
+    Preconfer,                    // handover window before being an operator, can preconfirm only
+    PreconferHandoverBuffer(u64), // beginning of handover window, need to wait given milliseconds before preconfirming
     PreconferAndL1Submitter, // preconfing and submitting period before handover window for next preconfer
     L1Submitter,             // handover window for next operator, can submit only
 }
@@ -49,7 +50,12 @@ impl Operator {
                 return Ok(Status::L1Submitter);
             }
             if is_next_operator {
-            {
+                let time_elapsed_since_handover_start = self.get_ms_from_handover_window_start()?;
+                if self.handover_start_buffer_ms > time_elapsed_since_handover_start {
+                    return Ok(Status::PreconferHandoverBuffer(
+                        self.handover_start_buffer_ms - time_elapsed_since_handover_start,
+                    ));
+                }
                 return Ok(Status::Preconfer);
             }
             return Ok(Status::None);
@@ -62,27 +68,25 @@ impl Operator {
         Ok(Status::None)
     }
 
-    pub fn is_handover_window(&self) -> Result<bool, Error> {
+    fn is_handover_window(&self) -> Result<bool, Error> {
         let slot = self.ethereum_l1.slot_clock.get_current_slot_of_epoch()?;
 
-        if self
+        self.ethereum_l1
+            .slot_clock
+            .is_slot_in_last_n_slots_of_epoch(slot, self.handover_window_slots)
+    }
+
+    fn get_ms_from_handover_window_start(&self) -> Result<u64, Error> {
+        let result: u64 = self
             .ethereum_l1
             .slot_clock
-            .is_slot_in_last_n_slots_of_epoch(slot, self.handover_window_slots)?
-        {
-            let time_millis: u64 = self
-                .ethereum_l1
-                .slot_clock
-                .time_from_n_last_slots_of_epoch(self.handover_window_slots)
-                .unwrap()
-                .as_millis()
-                .try_into()
-                .map_err(|err| {
-                    anyhow::anyhow!("is_handover_window: Field to covert u128 to u64: {:?}", err)
-                })?;
-            return Ok(time_millis > self.handover_start_buffer_ms);
-        }
-
-        Ok(false)
+            .time_from_n_last_slots_of_epoch(self.handover_window_slots)
+            .unwrap()
+            .as_millis()
+            .try_into()
+            .map_err(|err| {
+                anyhow::anyhow!("is_handover_window: Field to covert u128 to u64: {:?}", err)
+            })?;
+        Ok(result)
     }
 }
