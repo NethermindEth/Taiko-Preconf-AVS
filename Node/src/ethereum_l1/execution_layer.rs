@@ -5,9 +5,10 @@ use crate::{
 };
 use alloy::{
     consensus::{transaction::SignableTransaction, SidecarBuilder, SimpleCoder, TypedTransaction},
-    network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder},
+    network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder, TransactionBuilder4844},
     primitives::{Address, Bytes, FixedBytes},
     providers::{Provider, ProviderBuilder, WsConnect},
+    rpc::types::TransactionRequest,
     signers::local::PrivateKeySigner,
     sol_types::SolValue,
 };
@@ -137,17 +138,17 @@ impl ExecutionLayer {
         let tx_lists_bytes = encode_and_compress(&tx_vec)?;
 
         tracing::debug!(
-            "Proposing batch with blocks: {} and length: {}",
+            "Proposing batch with {} bloks and {} bytes length",
             blocks.len(),
             tx_lists_bytes.len(),
         );
 
-        // TODO estimate gas and select what to call blob or calldata
+        // TODO estimate gas and select blob or calldata transaction
 
         let tx = self
-            .propose_batch_calldata(nonce, tx_lists_bytes, blocks)
+            .propose_batch_blob(nonce, tx_lists_bytes, blocks)
             .await
-            .map_err(|e| Error::msg(format!("Failed to propose batch calldata: {}", e)))?;
+            .map_err(|e| Error::msg(format!("Failed to propose batch blob: {}", e)))?;
         Ok(tx)
     }
 
@@ -157,9 +158,6 @@ impl ExecutionLayer {
         tx_list: Vec<u8>,
         blocks: Vec<BlockParams>,
     ) -> Result<FixedBytes<32>, Error> {
-        let contract =
-            PreconfRouter::new(self.contract_addresses.preconf_router, &self.provider_ws);
-
         let tx_list_len = tx_list.len() as u32;
         let tx_list = Bytes::from(tx_list);
 
@@ -195,23 +193,19 @@ impl ExecutionLayer {
         let encoded_propose_batch_wrapper = Bytes::from(ProposeBatchWrapper::abi_encode_sequence(
             &propose_batch_wrapper,
         ));
-        // TODO check gas parameters
-        let builder = contract
-            .proposeBatch(encoded_propose_batch_wrapper, tx_list)
-            .chain_id(self.l1_chain_id)
-            .nonce(nonce);
-        //.gas(1_000_000)
-        //.max_fee_per_gas(20_000_000_000)
-        //.max_priority_fee_per_gas(1_000_000_000);
 
-        let tx = builder.into_transaction_request();
-        //tx.populate_blob_hashes();
-        let tx_envelope = tx.build(&self.wallet).await?;
-        //let tx_envelope = builder..build(&self.provider_ws.wallet()).await.unwrap();
+        let tx = TransactionRequest::default()
+            .with_to(self.contract_addresses.preconf_router)
+            .with_chain_id(self.l1_chain_id)
+            .with_nonce(nonce)
+            .with_call(&PreconfRouter::proposeBatchCall {
+                _params: encoded_propose_batch_wrapper,
+                _txList: tx_list,
+            });
 
         let pending_tx = self
             .provider_ws
-            .send_tx_envelope(tx_envelope)
+            .send_transaction(tx)
             .await?
             .register()
             .await?;
@@ -223,15 +217,12 @@ impl ExecutionLayer {
         Ok(pending_tx.tx_hash().clone())
     }
 
-    pub async fn _propose_batch_blob(
+    pub async fn propose_batch_blob(
         &self,
         nonce: u64,
         tx_list: Vec<u8>,
         blocks: Vec<BlockParams>,
     ) -> Result<FixedBytes<32>, Error> {
-        let contract =
-            PreconfRouter::new(self.contract_addresses.preconf_router, &self.provider_ws);
-
         let tx_list_len = tx_list.len() as u32;
 
         let bytes_x = Bytes::new();
@@ -271,25 +262,20 @@ impl ExecutionLayer {
         let encoded_propose_batch_wrapper = Bytes::from(ProposeBatchWrapper::abi_encode_sequence(
             &propose_batch_wrapper,
         ));
-        // TODO check gas parameters
-        let builder = contract
-            .proposeBatch(encoded_propose_batch_wrapper, Bytes::new())
-            .chain_id(self.l1_chain_id)
-            .nonce(nonce)
-            //.gas(1_000_000)
-            //.max_fee_per_gas(20_000_000_000)
-            //.max_priority_fee_per_gas(1_000_000_000)
-            //.max_fee_per_blob_gas(500_000_000)
-            .sidecar(sidecar);
 
-        let tx = builder.into_transaction_request();
-        //tx.populate_blob_hashes();
-        let tx_envelope = tx.build(&self.wallet).await?;
-        //let tx_envelope = builder..build(&self.provider_ws.wallet()).await.unwrap();
+        let tx = TransactionRequest::default()
+            .with_to(self.contract_addresses.preconf_router)
+            .with_chain_id(self.l1_chain_id)
+            .with_nonce(nonce)
+            .with_blob_sidecar(sidecar)
+            .with_call(&PreconfRouter::proposeBatchCall {
+                _params: encoded_propose_batch_wrapper,
+                _txList: Bytes::new(),
+            });
 
         let pending_tx = self
             .provider_ws
-            .send_tx_envelope(tx_envelope)
+            .send_transaction(tx)
             .await?
             .register()
             .await?;
