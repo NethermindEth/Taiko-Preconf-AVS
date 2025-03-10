@@ -247,7 +247,6 @@ impl ExecutionLayer {
         let sidecar = sidecar.build()?;
         let num_blobs = sidecar.blobs.len() as u8;
 
-
         let batch_params = BatchParams {
             proposer: self.preconfer_address.clone(),
             coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(

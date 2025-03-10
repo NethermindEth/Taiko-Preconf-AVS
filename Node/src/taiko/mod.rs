@@ -108,8 +108,7 @@ impl Taiko {
     }
 
     pub async fn get_pending_l2_tx_lists_from_taiko_geth(&self) -> Result<PendingTxLists, Error> {
-        let (_, _, parent_gas_used) =
-                self.get_latest_l2_block_id_hash_and_gas_used().await?;
+        let (_, _, parent_gas_used) = self.get_latest_l2_block_id_hash_and_gas_used().await?;
 
         // Safe conversion with overflow check
         let parent_gas_used_u32 = u32::try_from(parent_gas_used).map_err(|_| {
@@ -117,18 +116,17 @@ impl Taiko {
         })?;
 
         let base_fee = self
-                .get_base_fee(parent_gas_used_u32, self.get_base_fee_config())
-                .await?;
+            .get_base_fee(parent_gas_used_u32, self.get_base_fee_config())
+            .await?;
 
-        // TODO: adjust following parameters
         let params = vec![
             Value::String(format!("0x{}", hex::encode(self.preconfer_address))), // beneficiary address
-            Value::from(base_fee), // baseFee
-            Value::Number(30_000_000.into()), // blockMaxGasLimit
+            Value::from(base_fee),                                               // baseFee
+            Value::Number(30_000_000.into()),                                    // blockMaxGasLimit
             Value::Number(131_072.into()), // maxBytesPerTxList (128KB)
-            Value::Array(vec![]),        // locals (empty array)
-            Value::Number(1.into()),     // maxTransactionsLists
-            Value::Number(0.into()),     // minTip
+            Value::Array(vec![]),          // locals (empty array)
+            Value::Number(1.into()),       // maxTransactionsLists
+            Value::Number(0.into()),       // minTip
         ];
 
         let result = self
@@ -182,6 +180,7 @@ impl Taiko {
         tracing::debug!("Submitting new L2 blocks to the Taiko driver");
 
         let base_fee_config = self.get_base_fee_config();
+        let sharing_pctg = base_fee_config.sharingPctg;
 
         for tx_list in tx_lists {
             debug!("processing {} txs", tx_list.tx_list.len());
@@ -209,7 +208,7 @@ impl Taiko {
                 .collect::<Vec<_>>();
 
             let tx_list_bytes = l2_tx_lists::encode_and_compress(&tx_list)?;
-            let extra_data = vec![0u8];
+            let extra_data = vec![sharing_pctg];
 
             let executable_data = preconf_blocks::ExecutableData {
                 base_fee_per_gas: base_fee,
