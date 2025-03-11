@@ -17,13 +17,14 @@ use alloy::{
 use anyhow::Error;
 #[cfg(test)]
 use mockall::automock;
-use std::str::FromStr;
+use std::{str::FromStr, sync::atomic::{AtomicU64, Ordering}};
 use tracing::debug;
 
 pub struct ExecutionLayer {
     provider_ws: WsProvider,
     wallet: EthereumWallet,
     preconfer_address: Address,
+    preconfer_nonce: AtomicU64,
     contract_addresses: ContractAddresses,
     l1_chain_id: u64,
     pacaya_config: taiko_inbox::ITaikoInbox::Config,
@@ -62,6 +63,10 @@ impl ExecutionLayer {
             .await
             .unwrap();
 
+        let nonce = provider_ws
+            .get_transaction_count(preconfer_address)
+            .await?;
+
         let l1_chain_id = provider_ws.get_chain_id().await?;
 
         let pacaya_config =
@@ -71,6 +76,7 @@ impl ExecutionLayer {
             provider_ws,
             wallet,
             preconfer_address,
+            preconfer_nonce: AtomicU64::new(nonce),
             contract_addresses,
             l1_chain_id,
             pacaya_config,
@@ -122,12 +128,13 @@ impl ExecutionLayer {
     pub async fn send_batch_to_l1(
         &self,
         tx_lists: Vec<PreBuiltTxList>,
-        nonce: u64,
         last_anchor_origin_height: u64,
         last_block_timestamp: u64,
     ) -> Result<FixedBytes<32>, Error> {
         let mut tx_vec = Vec::new();
         let mut blocks = Vec::new();
+        let nonce  = self.preconfer_nonce.fetch_add(1, Ordering::SeqCst);
+
         for tx_list in tx_lists {
             let count = tx_list.tx_list.len() as u16;
             tx_vec.extend(tx_list.tx_list);
@@ -300,14 +307,6 @@ impl ExecutionLayer {
         Ok(pending_tx.tx_hash().clone())
     }
 
-    pub async fn get_preconfer_nonce(&self) -> Result<u64, Error> {
-        let nonce = self
-            .provider_ws
-            .get_transaction_count(self.preconfer_address)
-            .await?;
-        Ok(nonce)
-    }
-
     async fn fetch_pacaya_config(
         taiko_l1_address: &Address,
         ws_provider: &WsProvider,
@@ -366,11 +365,17 @@ impl ExecutionLayer {
             .await
             .unwrap();
 
+        let preconfer_address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
+            .parse()?;
+        let nonce = provider_ws
+            .get_transaction_count(preconfer_address)
+            .await?;
+
         Ok(Self {
             provider_ws,
             wallet,
-            preconfer_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
-                .parse()?,
+            preconfer_address,
+            preconfer_nonce: AtomicU64::new(nonce),
             contract_addresses: ContractAddresses {
                 taiko_l1: Address::ZERO,
                 preconf_whitelist: Address::ZERO,
