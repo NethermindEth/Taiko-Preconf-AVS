@@ -78,21 +78,12 @@ impl BatchProposer {
             return Ok(()); // No l1_batches to send
         }
 
-        // Fetch nonce from L1
-        // TODO handle nonce correctly for few batches in one L1 slot
-        let mut nonce = self
-            .ethereum_l1
-            .execution_layer
-            .get_preconfer_nonce()
-            .await?;
-
         // Send each batch to L1
         for tx in std::mem::take(&mut self.l1_batches) {
             self.ethereum_l1
                 .execution_layer
-                .send_batch_to_l1(tx, nonce)
+                .send_batch_to_l1(tx)
                 .await?;
-            nonce += 1;
         }
 
         Ok(())
