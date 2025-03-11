@@ -17,7 +17,10 @@ use alloy::{
 use anyhow::Error;
 #[cfg(test)]
 use mockall::automock;
-use std::{str::FromStr, sync::atomic::{AtomicU64, Ordering}};
+use std::{
+    str::FromStr,
+    sync::atomic::{AtomicU64, Ordering},
+};
 use tracing::debug;
 
 pub struct ExecutionLayer {
@@ -63,9 +66,7 @@ impl ExecutionLayer {
             .await
             .unwrap();
 
-        let nonce = provider_ws
-            .get_transaction_count(preconfer_address)
-            .await?;
+        let nonce = provider_ws.get_transaction_count(preconfer_address).await?;
 
         let l1_chain_id = provider_ws.get_chain_id().await?;
 
@@ -133,7 +134,7 @@ impl ExecutionLayer {
     ) -> Result<FixedBytes<32>, Error> {
         let mut tx_vec = Vec::new();
         let mut blocks = Vec::new();
-        let nonce  = self.preconfer_nonce.fetch_add(1, Ordering::SeqCst);
+        let nonce = self.preconfer_nonce.fetch_add(1, Ordering::SeqCst);
 
         for tx_list in tx_lists {
             let count = tx_list.tx_list.len() as u16;
@@ -367,9 +368,7 @@ impl ExecutionLayer {
 
         let preconfer_address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
             .parse()?;
-        let nonce = provider_ws
-            .get_transaction_count(preconfer_address)
-            .await?;
+        let nonce = provider_ws.get_transaction_count(preconfer_address).await?;
 
         Ok(Self {
             provider_ws,

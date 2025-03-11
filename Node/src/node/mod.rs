@@ -89,7 +89,6 @@ impl Node {
                         .execution_layer
                         .send_batch_to_l1(
                             batch.l2_blocks,
-                            0,
                             batch.anchor_origin_height,
                             batch.timestamp_sec,
                         )
@@ -120,7 +119,6 @@ impl Node {
                     .execution_layer
                     .send_batch_to_l1(
                         batch.l2_blocks,
-                        0,
                         batch.anchor_origin_height,
                         batch.timestamp_sec,
                     )
@@ -175,7 +173,6 @@ impl Node {
                 .execution_layer
                 .send_batch_to_l1(
                     batch.l2_blocks,
-                    0,
                     batch.anchor_origin_height,
                     batch.timestamp_sec,
                 )
