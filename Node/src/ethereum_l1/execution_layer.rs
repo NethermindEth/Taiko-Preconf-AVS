@@ -154,7 +154,7 @@ impl ExecutionLayer {
         Ok(tx)
     }
 
-    pub async fn _propose_batch_calldata(
+    pub async fn propose_batch_calldata(
         &self,
         nonce: u64,
         tx_list: Vec<u8>,
@@ -273,7 +273,8 @@ impl ExecutionLayer {
             .with_call(&PreconfRouter::proposeBatchCall {
                 _params: encoded_propose_batch_wrapper,
                 _txList: Bytes::new(),
-            });
+            })
+            .with_gas_limit(1_000_000); // TODO fix gas calculation
 
         let pending_tx = self
             .provider_ws
