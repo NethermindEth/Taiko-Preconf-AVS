@@ -108,10 +108,8 @@ where
     Ok(transactions)
 }
 
-pub type PendingTxLists = Vec<PreBuiltTxList>;
-
-pub fn decompose_pending_lists_json_from_geth(json: Value) -> Result<PendingTxLists, Error> {
-    let rpc_reply: PendingTxLists = serde_json::from_value(json)?;
+pub fn decompose_pending_lists_json_from_geth(json: Value) -> Result<Vec<PreBuiltTxList>, Error> {
+    let rpc_reply: Vec<PreBuiltTxList> = serde_json::from_value(json)?;
     Ok(rpc_reply)
 }
 
@@ -121,7 +119,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_pending_tx_lists() {
-        let pending_tx_lists = serde_json::from_str::<PendingTxLists>(include_str!(
+        let pending_tx_lists = serde_json::from_str::<PendingTxList>(include_str!(
             "../utils/tx_lists_test_response_from_geth.json"
         ))
         .unwrap();

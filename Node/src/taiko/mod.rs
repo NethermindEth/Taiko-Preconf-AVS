@@ -35,7 +35,7 @@ pub mod l2_tx_lists;
 pub mod preconf_blocks;
 
 use l2_contracts_bindings::{LibSharedData, TaikoAnchor};
-use l2_tx_lists::PendingTxLists;
+use l2_tx_lists::PreBuiltTxList;
 
 const GOLDEN_TOUCH_PRIVATE_KEY: &str =
     "92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38";
@@ -108,7 +108,9 @@ impl Taiko {
         })
     }
 
-    pub async fn get_pending_l2_tx_lists_from_taiko_geth(&self) -> Result<PendingTxLists, Error> {
+    pub async fn get_pending_l2_tx_lists_from_taiko_geth(
+        &self,
+    ) -> Result<Option<PreBuiltTxList>, Error> {
         let (_, _, parent_gas_used) = self.get_latest_l2_block_id_hash_and_gas_used().await?;
 
         // Safe conversion with overflow check
@@ -136,11 +138,12 @@ impl Taiko {
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get L2 tx lists: {}", e))?;
         if result != Value::Null {
-            let tx_lists = l2_tx_lists::decompose_pending_lists_json_from_geth(result)
+            let mut tx_lists = l2_tx_lists::decompose_pending_lists_json_from_geth(result)
                 .map_err(|e| anyhow::anyhow!("Failed to decompose L2 tx lists: {}", e))?;
-            Ok(tx_lists)
+            // ignoring rest of tx lists, only one list per L2 block is processed
+            Ok(Some(tx_lists.remove(0)))
         } else {
-            Ok(vec![])
+            Ok(None)
         }
     }
 
@@ -174,76 +177,80 @@ impl Taiko {
         ))
     }
 
-    pub async fn advance_head_to_new_l2_blocks(
+    // -> Vec {timestamp, anchor id, proposed block (PendingTxList)}
+    pub async fn advance_head_to_new_l2_block(
         &self,
-        tx_lists: PendingTxLists,
+        tx_list: PreBuiltTxList,
+        last_anchor_origin_height: u64,
+        //  new_batch: bool,
     ) -> Result<(), Error> {
         tracing::debug!("Submitting new L2 blocks to the Taiko driver");
 
         let base_fee_config = self.get_base_fee_config();
         let sharing_pctg = base_fee_config.sharingPctg;
 
-        for tx_list in tx_lists {
-            debug!("processing {} txs", tx_list.tx_list.len());
-            let (parent_block_id, parent_hash, parent_gas_used) =
-                self.get_latest_l2_block_id_hash_and_gas_used().await?;
+        // fetch the latest block height from L1 - lag
+        // 10 - 5 = 5
 
-            // Safe conversion with overflow check
-            let parent_gas_used_u32 = u32::try_from(parent_gas_used).map_err(|_| {
-                anyhow::anyhow!("parent_gas_used {} exceeds u32 max value", parent_gas_used)
-            })?;
-            let base_fee = self
-                .get_base_fee(parent_gas_used_u32, base_fee_config.clone())
-                .await?;
-            let anchor_tx = self
-                .construct_anchor_tx(
-                    parent_block_id + 1,
-                    parent_hash,
-                    parent_gas_used_u32,
-                    base_fee_config.clone(),
-                    base_fee,
+        debug!("processing {} txs", tx_list.tx_list.len());
+        let (parent_block_id, parent_hash, parent_gas_used) =
+            self.get_latest_l2_block_id_hash_and_gas_used().await?;
+
+        // Safe conversion with overflow check
+        let parent_gas_used_u32 = u32::try_from(parent_gas_used).map_err(|_| {
+            anyhow::anyhow!("parent_gas_used {} exceeds u32 max value", parent_gas_used)
+        })?;
+        let base_fee = self
+            .get_base_fee(parent_gas_used_u32, base_fee_config.clone())
+            .await?;
+        let anchor_tx = self
+            .construct_anchor_tx(
+                parent_block_id + 1,
+                parent_hash,
+                parent_gas_used_u32,
+                base_fee_config.clone(),
+                base_fee,
+            )
+            .await?;
+        let tx_list = std::iter::once(anchor_tx)
+            .chain(tx_list.tx_list.into_iter())
+            .collect::<Vec<_>>();
+
+        let tx_list_bytes = l2_tx_lists::encode_and_compress(&tx_list)?;
+        let extra_data = vec![sharing_pctg];
+
+        let executable_data = preconf_blocks::ExecutableData {
+            base_fee_per_gas: base_fee,
+            block_number: parent_block_id + 1,
+            extra_data: format!("0x{}", hex::encode(extra_data)),
+            fee_recipient: format!("0x{}", hex::encode(self.preconfer_address)),
+            gas_limit: 241_000_000u64,
+            parent_hash: format!("0x{}", hex::encode(parent_hash)),
+            timestamp: chrono::Utc::now().timestamp() as u64, // L1 slot begin - he
+            transactions: format!("0x{}", hex::encode(tx_list_bytes)),
+        };
+
+        let request_body = preconf_blocks::BuildPreconfBlockRequestBody {
+            executable_data,
+            signature: "".to_string(),
+        };
+
+        // Use the DirectHttpClient to send the request directly
+        const API_ENDPOINT: &str = "preconfBlocks";
+
+        let response = self
+            .driver_rpc
+            .post_json(API_ENDPOINT, &request_body)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to build preconf block for API '{}': {}",
+                    API_ENDPOINT,
+                    e
                 )
-                .await?;
-            let tx_list = std::iter::once(anchor_tx)
-                .chain(tx_list.tx_list.into_iter())
-                .collect::<Vec<_>>();
+            })?;
 
-            let tx_list_bytes = l2_tx_lists::encode_and_compress(&tx_list)?;
-            let extra_data = vec![sharing_pctg];
-
-            let executable_data = preconf_blocks::ExecutableData {
-                base_fee_per_gas: base_fee,
-                block_number: parent_block_id + 1,
-                extra_data: format!("0x{}", hex::encode(extra_data)),
-                fee_recipient: format!("0x{}", hex::encode(self.preconfer_address)),
-                gas_limit: 241_000_000u64,
-                parent_hash: format!("0x{}", hex::encode(parent_hash)),
-                timestamp: chrono::Utc::now().timestamp() as u64,
-                transactions: format!("0x{}", hex::encode(tx_list_bytes)),
-            };
-
-            let request_body = preconf_blocks::BuildPreconfBlockRequestBody {
-                executable_data,
-                signature: "".to_string(),
-            };
-
-            // Use the DirectHttpClient to send the request directly
-            const API_ENDPOINT: &str = "preconfBlocks";
-
-            let response = self
-                .driver_rpc
-                .post_json(API_ENDPOINT, &request_body)
-                .await
-                .map_err(|e| {
-                    anyhow::anyhow!(
-                        "Failed to build preconf block for API '{}': {}",
-                        API_ENDPOINT,
-                        e
-                    )
-                })?;
-
-            debug!("preconfBlocks response: {:?}", response);
-        }
+        debug!("preconfBlocks response: {:?}", response);
         Ok(())
     }
 

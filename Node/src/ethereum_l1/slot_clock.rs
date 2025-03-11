@@ -57,6 +57,10 @@ impl<T: Clock> SlotClock<T> {
         }
     }
 
+    pub fn get_slot_duration(&self) -> Duration {
+        self.slot_duration
+    }
+
     pub fn get_slots_per_epoch(&self) -> u64 {
         self.slots_per_epoch
     }
@@ -137,14 +141,12 @@ impl<T: Clock> SlotClock<T> {
         Ok(slot / self.slots_per_epoch)
     }
 
-    // returns real timestamp, the shift is reduced
     pub fn get_epoch_begin_timestamp(&self, epoch: Epoch) -> Result<u64, Error> {
         let slot = epoch * self.slots_per_epoch;
         let start_of_slot = self.start_of(slot)?;
         Ok(start_of_slot.as_secs())
     }
 
-    // returns real timestamp, the shift is reduced
     pub fn get_slot_begin_timestamp(&self, slot: Slot) -> Result<u64, Error> {
         let start_of_slot = self.start_of(slot)?;
         Ok(start_of_slot.as_secs())

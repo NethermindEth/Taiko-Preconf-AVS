@@ -1,8 +1,9 @@
-mod batch_proposer;
+mod batch_builder;
 mod operator;
 
 use crate::{ethereum_l1::EthereumL1, taiko::Taiko};
 use anyhow::Error;
+use batch_builder::{Batch, BuilderState};
 use operator::{Operator, Status as OperatorStatus};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
@@ -13,7 +14,9 @@ pub struct Node {
     ethereum_l1: Arc<EthereumL1>,
     preconf_heartbeat_ms: u64,
     operator: Operator,
-    batch_proposer: batch_proposer::BatchProposer,
+    batch_builder: batch_builder::BatchBuilder,
+    l1_height_lag: u64,
+    batch_to_send: Option<Batch>,
 }
 
 impl Node {
@@ -24,6 +27,7 @@ impl Node {
         preconf_heartbeat_ms: u64,
         handover_window_slots: u64,
         handover_start_buffer_ms: u64,
+        l1_height_lag: u64,
     ) -> Result<Self, Error> {
         let operator = Operator::new(
             ethereum_l1.clone(),
@@ -31,11 +35,13 @@ impl Node {
             handover_start_buffer_ms,
         )?;
         Ok(Self {
-            batch_proposer: batch_proposer::BatchProposer::new(ethereum_l1.clone()),
+            batch_builder: batch_builder::BatchBuilder::new(ethereum_l1.clone()),
             taiko,
             ethereum_l1,
             preconf_heartbeat_ms,
             operator,
+            l1_height_lag,
+            batch_to_send: None,
         })
     }
 
@@ -78,7 +84,17 @@ impl Node {
                 self.preconfirm_block(true).await?;
             }
             OperatorStatus::L1Submitter => {
-                self.batch_proposer.submit_all().await?;
+                if let Some(batch) = self.batch_builder.get_batch() {
+                    self.ethereum_l1
+                        .execution_layer
+                        .send_batch_to_l1(
+                            batch.l2_blocks,
+                            0,
+                            batch.anchor_origin_height,
+                            batch.timestamp_sec,
+                        )
+                        .await?;
+                }
             }
             OperatorStatus::None => {
                 info!(
@@ -98,19 +114,99 @@ impl Node {
             self.get_current_slots_info()?
         );
 
-        let pending_tx_lists = self.taiko.get_pending_l2_tx_lists_from_taiko_geth().await?;
-        if pending_tx_lists.is_empty() {
-            debug!("No pending txs, skipping preconfirmation");
-            return Ok(());
+        if submit {
+            if let Some(batch) = self.batch_to_send.take() {
+                self.ethereum_l1
+                    .execution_layer
+                    .send_batch_to_l1(
+                        batch.l2_blocks,
+                        0,
+                        batch.anchor_origin_height,
+                        batch.timestamp_sec,
+                    )
+                    .await?;
+                self.batch_to_send = None;
+            }
+        } else {
+            if self.batch_to_send.is_some() {
+                return Ok(()); // batch ready, skip preconfirmation until submit
+            }
         }
 
-        self.taiko
-            .advance_head_to_new_l2_blocks(pending_tx_lists.clone())
-            .await?;
+        if let Some(pending_tx_list) = self.taiko.get_pending_l2_tx_lists_from_taiko_geth().await? {
+            let last_anchor_origin_height = self.get_last_anchor_origin_height().await?;
+            let preconfirmation_timestamp = self.get_preconfirmation_timestamp().await?;
+            let state = self
+                .batch_builder
+                .handle_l2_block(
+                    pending_tx_list.clone(),
+                    last_anchor_origin_height,
+                    preconfirmation_timestamp,
+                )
+                .await?;
 
-        self.batch_proposer
-            .handle_l2_blocks(pending_tx_lists, submit)
-            .await
+            match state {
+                BuilderState::InProgress => {
+                    self.taiko
+                        .advance_head_to_new_l2_block(pending_tx_list, last_anchor_origin_height)
+                        .await?;
+                }
+                BuilderState::BatchCapacityFull(batch) => {
+                    // cannot advance the head because new batch will be created with new anchor origin height after submitting the current batch
+                    self.submit_or_keep_batch(batch, submit).await?;
+                }
+                BuilderState::MaxBlocksPerBatch(batch) => {
+                    self.taiko
+                        .advance_head_to_new_l2_block(pending_tx_list, last_anchor_origin_height)
+                        .await?;
+                    self.submit_or_keep_batch(batch, submit).await?;
+                }
+            }
+        } else {
+            debug!("No pending txs, skipping preconfirmation");
+        }
+
+        Ok(())
+    }
+
+    async fn submit_or_keep_batch(&mut self, batch: Batch, submit: bool) -> Result<(), Error> {
+        if submit {
+            self.ethereum_l1
+                .execution_layer
+                .send_batch_to_l1(
+                    batch.l2_blocks,
+                    0,
+                    batch.anchor_origin_height,
+                    batch.timestamp_sec,
+                )
+                .await?;
+        } else {
+            self.batch_to_send = Some(batch);
+        }
+
+        Ok(())
+    }
+
+    async fn get_last_anchor_origin_height(&self) -> Result<u64, Error> {
+        let height_from_last_batch = self
+            .ethereum_l1
+            .execution_layer
+            .get_last_anchor_origin_height()
+            .await?;
+        let l1_height = self.ethereum_l1.execution_layer.get_l1_height().await?;
+        let l1_height_with_lag = l1_height - self.l1_height_lag;
+
+        Ok(std::cmp::max(height_from_last_batch, l1_height_with_lag))
+    }
+
+    async fn get_preconfirmation_timestamp(&self) -> Result<u64, Error> {
+        let slot_clock = &self.ethereum_l1.slot_clock;
+        let current_slot = slot_clock.get_current_slot()?;
+        let l1_slot_start_time = slot_clock.get_slot_begin_timestamp(current_slot)?;
+        let l2_slot_number_within_l1_slot = slot_clock.get_l2_slot_number_within_l1_slot()?;
+        Ok(l1_slot_start_time
+            - (slot_clock.get_slot_duration().as_secs()
+                - l2_slot_number_within_l1_slot * self.preconf_heartbeat_ms * 1000))
     }
 
     fn get_current_slots_info(&self) -> Result<String, Error> {
