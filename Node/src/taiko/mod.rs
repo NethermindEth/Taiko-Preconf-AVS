@@ -181,16 +181,13 @@ impl Taiko {
     pub async fn advance_head_to_new_l2_block(
         &self,
         tx_list: PreBuiltTxList,
-        last_anchor_origin_height: u64,
+        anchor_origin_height: u64,
         //  new_batch: bool,
     ) -> Result<(), Error> {
         tracing::debug!("Submitting new L2 blocks to the Taiko driver");
 
         let base_fee_config = self.get_base_fee_config();
         let sharing_pctg = base_fee_config.sharingPctg;
-
-        // fetch the latest block height from L1 - lag
-        // 10 - 5 = 5
 
         debug!("processing {} txs", tx_list.tx_list.len());
         let (parent_block_id, parent_hash, parent_gas_used) =
@@ -205,9 +202,9 @@ impl Taiko {
             .await?;
         let anchor_tx = self
             .construct_anchor_tx(
-                parent_block_id + 1,
-                parent_hash,
-                parent_gas_used_u32,
+                anchor_origin_height,
+                parent_hash,         //TODO
+                parent_gas_used_u32, //TODO
                 base_fee_config.clone(),
                 base_fee,
             )
@@ -226,7 +223,7 @@ impl Taiko {
             fee_recipient: format!("0x{}", hex::encode(self.preconfer_address)),
             gas_limit: 241_000_000u64,
             parent_hash: format!("0x{}", hex::encode(parent_hash)),
-            timestamp: chrono::Utc::now().timestamp() as u64, // L1 slot begin - he
+            timestamp: chrono::Utc::now().timestamp() as u64, // TODO: L1 slot begin - height
             transactions: format!("0x{}", hex::encode(tx_list_bytes)),
         };
 
