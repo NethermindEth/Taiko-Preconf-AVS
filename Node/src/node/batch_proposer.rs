@@ -43,12 +43,6 @@ impl BatchProposer {
         }
     }
 
-    /// Determines if a new batch should be built before adding the next block.
-    fn should_build_batch(&self, next_block_size: u64) -> bool {
-        self.l2_blocks.len() >= self.config.max_blocks_per_batch
-            || self.total_l2_blocks_size + next_block_size > self.config.max_size_of_batch
-    }
-
     /// Handles incoming L2 blocks and batches them before sending to L1.
     /// If `submit` is true, immediately sends all l1_batches.
     pub async fn handle_l2_blocks(
@@ -57,13 +51,18 @@ impl BatchProposer {
         submit: bool,
     ) -> Result<(), Error> {
         for l2_block in l2_blocks {
-            // Check if the batch is full before adding the new block
-            if self.should_build_batch(l2_block.bytes_length) {
+            // Check if the current batch size is full before adding the new block
+            if self.total_l2_blocks_size + l2_block.bytes_length > self.config.max_size_of_batch {
                 self.build_batch();
             }
 
             self.total_l2_blocks_size += l2_block.bytes_length;
             self.l2_blocks.push(l2_block);
+
+            // Check if we exceed the maximum number of blocks per batch
+            if self.l2_blocks.len() >= self.config.max_blocks_per_batch {
+                self.build_batch();
+            }
         }
 
         if submit {
@@ -80,6 +79,7 @@ impl BatchProposer {
         }
 
         // Fetch nonce from L1
+        // TODO handle nonce correctly for few batches in one L1 slot
         let mut nonce = self
             .ethereum_l1
             .execution_layer
