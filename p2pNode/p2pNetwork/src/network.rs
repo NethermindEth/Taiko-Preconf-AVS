@@ -62,7 +62,7 @@ impl P2PNetwork {
 
         info!("Local peer id: {local_peer_id}");
 
-        let discovery = Discovery::new(config, &config.local_key).await;
+        let discovery = Discovery::new(config, &config.local_key).await.unwrap();
 
         let target_num_peers = 16;
         let peer_manager = PeerManager::new(target_num_peers);
@@ -77,7 +77,7 @@ impl P2PNetwork {
             .max_transmit_size(10 * 1_048_576)
             .fanout_ttl(Duration::from_secs(60))
             .heartbeat_interval(Duration::from_millis(10_000))
-            .validation_mode(ValidationMode::Anonymous)
+            .validation_mode(ValidationMode::Strict)
             .fanout_ttl(Duration::from_secs(60))
             .history_length(12)
             .max_messages_per_rpc(Some(500))
@@ -85,9 +85,12 @@ impl P2PNetwork {
             .build()
             .expect("Valid config");
 
+        // build a message authenticity
+        let message_authenticity = MessageAuthenticity::Signed(config.local_key.clone());
+
         // build a gossipsub network behaviour
         let mut gossipsub =
-            gossipsub::Behaviour::new(MessageAuthenticity::Anonymous, gossipsub_config)
+            gossipsub::Behaviour::new(message_authenticity, gossipsub_config)
                 .expect("Correct configuration");
 
         // Create a Gossipsub topic
