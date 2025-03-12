@@ -1,7 +1,4 @@
-use anyhow::Error;
-use std::sync::Arc;
-
-use crate::{ethereum_l1::EthereumL1, taiko::l2_tx_lists::PreBuiltTxList};
+use crate::taiko::l2_tx_lists::PreBuiltTxList;
 
 /// Configuration for batching L2 transactions
 struct BatchProposerConfig {
@@ -23,7 +20,7 @@ impl BatchProposerConfig {
 #[derive(Default)]
 pub struct Batch {
     pub l2_blocks: Vec<PreBuiltTxList>,
-    pub anchor_origin_height: u64,
+    pub anchor_block_id: u64,
     pub timestamp_sec: u64,
 }
 
@@ -32,63 +29,51 @@ pub struct Batch {
 // PendingTxList is a L2 block that we preconfirm
 /// Proposes batched L2 transactions to L1
 pub struct BatchBuilder {
-    ethereum_l1: Arc<EthereumL1>,
     total_l2_blocks_size: u64,
     config: BatchProposerConfig,
     l1_batch: Batch,
 }
 
-pub enum BuilderState {
-    InProgress,
-    BatchCapacityFull(Batch),
-    MaxBlocksPerBatch(Batch),
-}
-
 impl BatchBuilder {
-    pub fn new(ethereum_l1: Arc<EthereumL1>) -> Self {
+    pub fn new() -> Self {
         let l1_batch = Batch {
             l2_blocks: Vec::new(),
-            anchor_origin_height: 0,
+            anchor_block_id: 0,
             timestamp_sec: 0,
         };
         Self {
-            ethereum_l1,
             total_l2_blocks_size: 0,
             config: BatchProposerConfig::new(),
             l1_batch,
         }
     }
 
-    /// Handles incoming L2 blocks and batches them before sending to L1.
-    /// If `submit` is true, immediately sends all l1_batches.
-    pub async fn handle_l2_block(
-        &mut self,
-        l2_block: PreBuiltTxList,
-        anchor_origin_height: u64,
-        timestamp_sec: u64,
-    ) -> Result<BuilderState, Error> {
-        let mut state = BuilderState::InProgress;
-        self.l1_batch.anchor_origin_height = anchor_origin_height;
-        self.l1_batch.timestamp_sec = timestamp_sec;
+    pub fn can_consume_l2_block(&self, l2_block: &PreBuiltTxList) -> bool {
+        self.total_l2_blocks_size + l2_block.bytes_length <= self.config.max_size_of_batch
+            && self.l1_batch.l2_blocks.len() < self.config.max_blocks_per_batch
+    }
 
-        // Check if the current batch size is full before adding the new block
-        if self.total_l2_blocks_size + l2_block.bytes_length > self.config.max_size_of_batch {
-            state = BuilderState::BatchCapacityFull(self.build_batch());
-        }
+    pub fn is_batch_full(&self) -> bool {
+        self.l1_batch.l2_blocks.len() >= self.config.max_blocks_per_batch
+    }
 
+    /// Returns true if the block was added to the batch, false otherwise.
+    pub fn add_l2_block(&mut self, l2_block: PreBuiltTxList) {
         self.total_l2_blocks_size += l2_block.bytes_length;
         self.l1_batch.l2_blocks.push(l2_block);
+    }
 
-        // Check if we exceed the maximum number of blocks per batch
-        if self.l1_batch.l2_blocks.len() >= self.config.max_blocks_per_batch {
-            state = BuilderState::MaxBlocksPerBatch(self.build_batch());
-        }
+    pub fn is_new_batch(&self) -> bool {
+        self.l1_batch.l2_blocks.len() == 0
+    }
 
-        // if submit {
-        //     self.send_batches().await?;
-        // }
+    pub fn set_anchor_id_and_timestamp(&mut self, anchor_block_id: u64, timestamp_sec: u64) {
+        self.l1_batch.anchor_block_id = anchor_block_id;
+        self.l1_batch.timestamp_sec = timestamp_sec;
+    }
 
-        Ok(state)
+    pub fn get_anchor_block_id(&self) -> u64 {
+        self.l1_batch.anchor_block_id
     }
 
     /// Creates a batch from `l2_blocks` and prepares it for sending.

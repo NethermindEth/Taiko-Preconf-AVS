@@ -131,7 +131,7 @@ impl ExecutionLayer {
         tx_lists: Vec<PreBuiltTxList>,
         last_anchor_origin_height: u64,
         last_block_timestamp: u64,
-    ) -> Result<FixedBytes<32>, Error> {
+    ) -> Result<(), Error> {
         let mut tx_vec = Vec::new();
         let mut blocks = Vec::new();
         let nonce = self.preconfer_nonce.fetch_add(1, Ordering::SeqCst);
@@ -142,7 +142,7 @@ impl ExecutionLayer {
 
             blocks.push(BlockParams {
                 numTransactions: count,
-                timeShift: 0,
+                timeShift: 0, // last_block_timestamp - l2 block timestamp
                 signalSlots: vec![],
             });
         }
@@ -157,7 +157,7 @@ impl ExecutionLayer {
 
         // TODO estimate gas and select blob or calldata transaction
 
-        let tx = self
+        let hash = self
             .propose_batch_blob(
                 nonce,
                 tx_lists_bytes,
@@ -167,7 +167,9 @@ impl ExecutionLayer {
             )
             .await
             .map_err(|e| Error::msg(format!("Failed to propose batch blob: {}", e)))?;
-        Ok(tx)
+
+        debug!("Proposed batch with hash {}", hash);
+        Ok(())
     }
 
     pub async fn propose_batch_calldata(

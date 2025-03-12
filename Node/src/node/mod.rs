@@ -3,7 +3,6 @@ mod operator;
 
 use crate::{ethereum_l1::EthereumL1, taiko::Taiko};
 use anyhow::Error;
-use batch_builder::{Batch, BuilderState};
 use operator::{Operator, Status as OperatorStatus};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
@@ -16,7 +15,6 @@ pub struct Node {
     operator: Operator,
     batch_builder: batch_builder::BatchBuilder,
     l1_height_lag: u64,
-    batch_to_send: Option<Batch>,
 }
 
 impl Node {
@@ -35,13 +33,12 @@ impl Node {
             handover_start_buffer_ms,
         )?;
         Ok(Self {
-            batch_builder: batch_builder::BatchBuilder::new(ethereum_l1.clone()),
+            batch_builder: batch_builder::BatchBuilder::new(),
             taiko,
             ethereum_l1,
             preconf_heartbeat_ms,
             operator,
             l1_height_lag,
-            batch_to_send: None,
         })
     }
 
@@ -89,7 +86,7 @@ impl Node {
                         .execution_layer
                         .send_batch_to_l1(
                             batch.l2_blocks,
-                            batch.anchor_origin_height,
+                            batch.anchor_block_id,
                             batch.timestamp_sec,
                         )
                         .await?;
@@ -113,52 +110,28 @@ impl Node {
             self.get_current_slots_info()?
         );
 
-        if submit {
-            if let Some(batch) = self.batch_to_send.take() {
-                self.ethereum_l1
-                    .execution_layer
-                    .send_batch_to_l1(
-                        batch.l2_blocks,
-                        batch.anchor_origin_height,
-                        batch.timestamp_sec,
+        if let Some(pending_tx_list) = self.taiko.get_pending_l2_tx_list_from_taiko_geth().await? {
+            let preconfirmation_timestamp = self.get_preconfirmation_timestamp().await?; // TODO: FORWARD IT TO THE ADVANCING THE HEAD
+
+            if self.batch_builder.can_consume_l2_block(&pending_tx_list) {
+                if self.batch_builder.is_new_batch() {
+                    self.batch_builder.set_anchor_id_and_timestamp(
+                        self.get_anchor_block_id().await?,
+                        preconfirmation_timestamp,
+                    );
+                }
+                self.taiko
+                    .advance_head_to_new_l2_block(
+                        pending_tx_list.clone(),
+                        self.batch_builder.get_anchor_block_id(),
                     )
                     .await?;
-                self.batch_to_send = None;
-            }
-        } else {
-            if self.batch_to_send.is_some() {
-                return Ok(()); // batch ready, skip preconfirmation until submit
-            }
-        }
-
-        if let Some(pending_tx_list) = self.taiko.get_pending_l2_tx_list_from_taiko_geth().await? {
-            let last_anchor_origin_height = self.get_anchor_block_id().await?;
-            let preconfirmation_timestamp = self.get_preconfirmation_timestamp().await?;
-            let state = self
-                .batch_builder
-                .handle_l2_block(
-                    pending_tx_list.clone(),
-                    last_anchor_origin_height,
-                    preconfirmation_timestamp,
-                )
-                .await?;
-
-            match state {
-                BuilderState::InProgress => {
-                    self.taiko
-                        .advance_head_to_new_l2_block(pending_tx_list, last_anchor_origin_height)
-                        .await?;
+                self.batch_builder.add_l2_block(pending_tx_list);
+                if submit && self.batch_builder.is_batch_full() {
+                    self.submit_batch().await?;
                 }
-                BuilderState::BatchCapacityFull(batch) => {
-                    // cannot advance the head because new batch will be created with new anchor origin height after submitting the current batch
-                    self.submit_or_keep_batch(batch, submit).await?;
-                }
-                BuilderState::MaxBlocksPerBatch(batch) => {
-                    self.taiko
-                        .advance_head_to_new_l2_block(pending_tx_list, last_anchor_origin_height)
-                        .await?;
-                    self.submit_or_keep_batch(batch, submit).await?;
-                }
+            } else if submit {
+                self.submit_batch().await?;
             }
         } else {
             debug!("No pending txs, skipping preconfirmation");
@@ -167,21 +140,15 @@ impl Node {
         Ok(())
     }
 
-    async fn submit_or_keep_batch(&mut self, batch: Batch, submit: bool) -> Result<(), Error> {
-        if submit {
+    async fn submit_batch(&mut self) -> Result<(), Error> {
+        if let Some(batch) = self.batch_builder.get_batch() {
             self.ethereum_l1
                 .execution_layer
-                .send_batch_to_l1(
-                    batch.l2_blocks,
-                    batch.anchor_origin_height,
-                    batch.timestamp_sec,
-                )
-                .await?;
+                .send_batch_to_l1(batch.l2_blocks, batch.anchor_block_id, batch.timestamp_sec)
+                .await
         } else {
-            self.batch_to_send = Some(batch);
+            Ok(())
         }
-
-        Ok(())
     }
 
     async fn get_anchor_block_id(&self) -> Result<u64, Error> {
