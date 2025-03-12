@@ -1,3 +1,4 @@
+use tracing::debug;
 use crate::shared::l2_block::L2Block;
 
 /// Configuration for batching L2 transactions
@@ -35,6 +36,12 @@ pub struct BatchBuilder<'a> {
     config: BatchBuilderConfig,
     l1_batches: Vec<&'a mut Batch<'a>>,
     current_l1_batch: Batch<'a>,
+}
+
+impl<'a> Drop for BatchBuilder<'a> {
+    fn drop(&mut self) {
+        debug!("BatchBuilder dropped!");
+    }
 }
 
 impl BatchBuilder {
@@ -76,7 +83,7 @@ impl BatchBuilder {
     pub fn add_l2_block(&mut self, l2_block: L2Block) {
         self.current_l1_batch.total_l2_blocks_size += l2_block.prebuilt_tx_list.bytes_length;
         self.current_l1_batch.l2_blocks.push(l2_block);
-        tracing::debug!("Added L2 block to batch: {}", self.current_l1_batch.l2_blocks.len());
+        debug!("Added L2 block to batch: {}", self.current_l1_batch.l2_blocks.len());
     }
 
     pub fn is_new_batch(&self) -> bool {
@@ -93,7 +100,7 @@ impl BatchBuilder {
 
     /// Creates a batch from `l2_blocks` and prepares it for sending.
     fn build_batch(&mut self) -> Batch {
-        tracing::debug!(
+        debug!(
             "Building batch: {} blocks, total size: {} bytes",
             self.current_l1_batch.l2_blocks.len(),
             self.current_l1_batch.total_l2_blocks_size

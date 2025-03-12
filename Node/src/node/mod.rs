@@ -133,7 +133,7 @@ impl Node {
     }
 
     async fn submit_batches(&mut self) -> Result<(), Error> {
-        debug!("Submitting batch");
+        debug!("Submitting batches");
         if let Some(mut batches) = self.batch_builder.get_batches() {
             let last_block_timestamp = batches.get_last_l2_block_timestamp();
             for &mut batch in batches.iter_mut() {
@@ -149,8 +149,12 @@ impl Node {
                     .await;
                 if result.is_ok() {
                     batch.submitted = true;
+                    debug!("Submitted batch successfully!");
+                } else {
+                    return result;
                 }
             }
+            info!("All batches submitted");
             // since all batches are submitted, we can clear the batch builder
             self.batch_builder = batch_builder::BatchBuilder::new();
             Ok(())
