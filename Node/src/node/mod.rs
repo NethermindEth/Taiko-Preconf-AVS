@@ -1,7 +1,7 @@
 mod batch_builder;
 mod operator;
 
-use crate::{ethereum_l1::EthereumL1, taiko::Taiko};
+use crate::{ethereum_l1::EthereumL1, shared::l2_block::L2Block, taiko::Taiko};
 use anyhow::Error;
 use operator::{Operator, Status as OperatorStatus};
 use std::sync::Arc;
@@ -111,9 +111,10 @@ impl Node {
         );
 
         if let Some(pending_tx_list) = self.taiko.get_pending_l2_tx_list_from_taiko_geth().await? {
-            let preconfirmation_timestamp = self.get_preconfirmation_timestamp().await?; // TODO: FORWARD IT TO THE ADVANCING THE HEAD
+            let preconfirmation_timestamp = self.get_preconfirmation_timestamp().await?;
+            let l2_block = L2Block::new_from(pending_tx_list, preconfirmation_timestamp);
 
-            if self.batch_builder.can_consume_l2_block(&pending_tx_list) {
+            if self.batch_builder.can_consume_l2_block(&l2_block) {
                 if self.batch_builder.is_new_batch() {
                     self.batch_builder.set_anchor_id_and_timestamp(
                         self.get_anchor_block_id().await?,
@@ -122,11 +123,11 @@ impl Node {
                 }
                 self.taiko
                     .advance_head_to_new_l2_block(
-                        pending_tx_list.clone(),
+                        l2_block.clone(),
                         self.batch_builder.get_anchor_block_id(),
                     )
                     .await?;
-                self.batch_builder.add_l2_block(pending_tx_list);
+                self.batch_builder.add_l2_block(l2_block);
                 if submit && self.batch_builder.is_batch_full() {
                     self.submit_batch().await?;
                 }

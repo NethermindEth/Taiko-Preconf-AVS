@@ -1,5 +1,6 @@
 mod ethereum_l1;
 mod node;
+mod shared;
 mod taiko;
 mod utils;
 

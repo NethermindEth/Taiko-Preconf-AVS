@@ -2,6 +2,7 @@
 
 use crate::{
     ethereum_l1::EthereumL1,
+    shared::{l2_block::L2Block, l2_tx_lists, l2_tx_lists::PreBuiltTxList},
     utils::{
         rpc_client::{HttpRPCClient, JSONRPCClient},
         types::*,
@@ -25,17 +26,14 @@ use alloy::{
 use anyhow::Error;
 use ecdsa::SigningKey;
 use k256::Secp256k1;
+use l2_contracts_bindings::{LibSharedData, TaikoAnchor};
 use serde_json::Value;
 use std::str::FromStr;
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, info};
 
 mod l2_contracts_bindings;
-pub mod l2_tx_lists;
 pub mod preconf_blocks;
-
-use l2_contracts_bindings::{LibSharedData, TaikoAnchor};
-use l2_tx_lists::PreBuiltTxList;
 
 const GOLDEN_TOUCH_PRIVATE_KEY: &str =
     "92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38";
@@ -177,19 +175,17 @@ impl Taiko {
         ))
     }
 
-    // -> Vec {timestamp, anchor id, proposed block (PendingTxList)}
     pub async fn advance_head_to_new_l2_block(
         &self,
-        tx_list: PreBuiltTxList,
+        l2_block: L2Block,
         anchor_origin_height: u64,
-        //  new_batch: bool,
     ) -> Result<(), Error> {
         tracing::debug!("Submitting new L2 blocks to the Taiko driver");
 
         let base_fee_config = self.get_base_fee_config();
         let sharing_pctg = base_fee_config.sharingPctg;
 
-        debug!("processing {} txs", tx_list.tx_list.len());
+        debug!("processing {} txs", l2_block.prebuilt_tx_list.tx_list.len());
         let (parent_block_id, parent_hash, parent_gas_used) =
             self.get_latest_l2_block_id_hash_and_gas_used().await?;
 
@@ -210,7 +206,7 @@ impl Taiko {
             )
             .await?;
         let tx_list = std::iter::once(anchor_tx)
-            .chain(tx_list.tx_list.into_iter())
+            .chain(l2_block.prebuilt_tx_list.tx_list.into_iter())
             .collect::<Vec<_>>();
 
         let tx_list_bytes = l2_tx_lists::encode_and_compress(&tx_list)?;

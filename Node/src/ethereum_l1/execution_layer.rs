@@ -1,6 +1,6 @@
 use crate::{
     ethereum_l1::{l1_contracts_bindings::*, ws_provider::WsProvider},
-    taiko::l2_tx_lists::{encode_and_compress, PreBuiltTxList},
+    shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress},
     utils::{config, types::*},
 };
 use alloy::{
@@ -128,7 +128,7 @@ impl ExecutionLayer {
 
     pub async fn send_batch_to_l1(
         &self,
-        tx_lists: Vec<PreBuiltTxList>,
+        l2_blocks: Vec<L2Block>,
         last_anchor_origin_height: u64,
         last_block_timestamp: u64,
     ) -> Result<(), Error> {
@@ -136,13 +136,21 @@ impl ExecutionLayer {
         let mut blocks = Vec::new();
         let nonce = self.preconfer_nonce.fetch_add(1, Ordering::SeqCst);
 
-        for tx_list in tx_lists {
-            let count = tx_list.tx_list.len() as u16;
-            tx_vec.extend(tx_list.tx_list);
+        for l2_block in l2_blocks {
+            let count = l2_block.prebuilt_tx_list.tx_list.len() as u16;
+            tx_vec.extend(l2_block.prebuilt_tx_list.tx_list);
 
+            if l2_block.timestamp_sec < last_block_timestamp {
+                return Err(anyhow::anyhow!(
+                    "L2 block timestamp is less than last block timestamp"
+                ));
+            }
+            let time_shift: u8 = (l2_block.timestamp_sec - last_block_timestamp)
+                .try_into()
+                .map_err(|e| Error::msg(format!("Failed to convert time shift to u8: {}", e)))?;
             blocks.push(BlockParams {
                 numTransactions: count,
-                timeShift: 0, // last_block_timestamp - l2 block timestamp
+                timeShift: time_shift,
                 signalSlots: vec![],
             });
         }

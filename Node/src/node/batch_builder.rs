@@ -1,4 +1,4 @@
-use crate::taiko::l2_tx_lists::PreBuiltTxList;
+use crate::shared::l2_block::L2Block;
 
 /// Configuration for batching L2 transactions
 struct BatchProposerConfig {
@@ -19,7 +19,7 @@ impl BatchProposerConfig {
 
 #[derive(Default)]
 pub struct Batch {
-    pub l2_blocks: Vec<PreBuiltTxList>,
+    pub l2_blocks: Vec<L2Block>,
     pub anchor_block_id: u64,
     pub timestamp_sec: u64,
 }
@@ -48,8 +48,9 @@ impl BatchBuilder {
         }
     }
 
-    pub fn can_consume_l2_block(&self, l2_block: &PreBuiltTxList) -> bool {
-        self.total_l2_blocks_size + l2_block.bytes_length <= self.config.max_size_of_batch
+    pub fn can_consume_l2_block(&self, l2_block: &L2Block) -> bool {
+        self.total_l2_blocks_size + l2_block.prebuilt_tx_list.bytes_length
+            <= self.config.max_size_of_batch
             && self.l1_batch.l2_blocks.len() < self.config.max_blocks_per_batch
     }
 
@@ -58,8 +59,8 @@ impl BatchBuilder {
     }
 
     /// Returns true if the block was added to the batch, false otherwise.
-    pub fn add_l2_block(&mut self, l2_block: PreBuiltTxList) {
-        self.total_l2_blocks_size += l2_block.bytes_length;
+    pub fn add_l2_block(&mut self, l2_block: L2Block) {
+        self.total_l2_blocks_size += l2_block.prebuilt_tx_list.bytes_length;
         self.l1_batch.l2_blocks.push(l2_block);
     }
 

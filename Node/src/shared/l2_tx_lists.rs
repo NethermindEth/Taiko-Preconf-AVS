@@ -1,5 +1,4 @@
 use alloy::rpc::types::Transaction;
-use alloy_rlp::{Decodable, Encodable, RlpDecodable, RlpEncodable};
 use anyhow::Error;
 use flate2::{write::ZlibEncoder, Compression};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -47,18 +46,12 @@ where
     Ok(array)
 }
 
-pub fn decompose_pending_lists_json(json: Value) -> Result<RPCReplyL2TxLists, Error> {
-    // Deserialize the JSON string into the struct
-    let rpc_reply: RPCReplyL2TxLists = serde_json::from_value(json)?;
-    Ok(rpc_reply)
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub struct PreBuiltTxList {
     #[serde(deserialize_with = "deserialize_tx_list")]
     pub tx_list: Vec<Transaction>,
-    estimated_gas_used: u64,
+    pub estimated_gas_used: u64,
     pub bytes_length: u64,
 }
 
@@ -119,7 +112,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_pending_tx_lists() {
-        let pending_tx_lists = serde_json::from_str::<PendingTxList>(include_str!(
+        let pending_tx_lists = serde_json::from_str::<Vec<PreBuiltTxList>>(include_str!(
             "../utils/tx_lists_test_response_from_geth.json"
         ))
         .unwrap();
