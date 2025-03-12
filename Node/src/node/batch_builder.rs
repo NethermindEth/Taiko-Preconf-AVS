@@ -33,21 +33,21 @@ impl Batch {
     }
 }
 
-pub struct BatchBuilder<'a> {
+pub struct BatchBuilder {
     config: BatchBuilderConfig,
-    l1_batches: Vec<&'a mut Batch>,
-    pub current_l1_batch: Batch,
+    l1_batches: Vec<Batch>,
+    pub current_l1_batch_index: usize,
 }
 
-impl<'a> Drop for BatchBuilder<'a> {
+impl Drop for BatchBuilder {
     fn drop(&mut self) {
         debug!("BatchBuilder dropped!");
     }
 }
 
-impl BatchBuilder {
+impl  BatchBuilder {
     pub fn new() -> Self {
-        let mut l1_batch = Batch {
+        let l1_batch = Batch {
             l2_blocks: Vec::new(),
             anchor_block_id: 0,
             submitted: false,
@@ -56,60 +56,64 @@ impl BatchBuilder {
         };
         Self {
             config: BatchBuilderConfig::new(),
-            l1_batches: vec![&mut l1_batch],
-            current_l1_batch: l1_batch,
+            l1_batches: vec![l1_batch],
+            current_l1_batch_index: 0,
         }
     }
 
-    fn can_consume_l2_block(&self, l2_block: &L2Block) -> bool {
-        self.current_l1_batch.total_l2_blocks_size + l2_block.prebuilt_tx_list.bytes_length
+    fn can_consume_l2_block(& self, l2_block: &L2Block) -> bool {
+        self.l1_batches[self.current_l1_batch_index].total_l2_blocks_size + l2_block.prebuilt_tx_list.bytes_length
             <= self.config.max_size_of_batch
-            && self.current_l1_batch.l2_blocks.len() < self.config.max_blocks_per_batch
+            && self.l1_batches[self.current_l1_batch_index].l2_blocks.len() < self.config.max_blocks_per_batch
     }
 
     pub fn create_new_batch_if_cant_consume(&mut self, l2_block: &L2Block) {
         if self.can_consume_l2_block(l2_block) {
-            self.current_l1_batch.is_full = true;
+            self.l1_batches[self.current_l1_batch_index].is_full = true;
             return;
         }
-        let mut l1_batch = Batch {
+        let l1_batch = Batch {
             l2_blocks: Vec::new(),
             anchor_block_id: 0,
             submitted: false,
             is_full: false,
             total_l2_blocks_size: 0,
         };
-        self.l1_batches.push(&mut l1_batch);
-        self.current_l1_batch = l1_batch;
+        self.l1_batches.push(l1_batch);
+        self.current_l1_batch_index += 1;
     }
 
     /// Returns true if the block was added to the batch, false otherwise.
     pub fn add_l2_block(&mut self, l2_block: L2Block) {
-        self.current_l1_batch.total_l2_blocks_size += l2_block.prebuilt_tx_list.bytes_length;
-        self.current_l1_batch.l2_blocks.push(l2_block);
-        debug!("Added L2 block to batch: {}", self.current_l1_batch.l2_blocks.len());
-        if self.current_l1_batch.l2_blocks.len() == self.config.max_blocks_per_batch {
-            self.current_l1_batch.is_full = true;
+        self.l1_batches[self.current_l1_batch_index].total_l2_blocks_size += l2_block.prebuilt_tx_list.bytes_length;
+        self.l1_batches[self.current_l1_batch_index].l2_blocks.push(l2_block);
+        debug!("Added L2 block to batch: {}", self.l1_batches[self.current_l1_batch_index].l2_blocks.len());
+        if self.l1_batches[self.current_l1_batch_index].l2_blocks.len() == self.config.max_blocks_per_batch {
+            self.l1_batches[self.current_l1_batch_index].is_full = true;
         }
     }
 
     pub fn is_new_batch(&self) -> bool {
-        self.current_l1_batch.l2_blocks.is_empty()
+        self.l1_batches[self.current_l1_batch_index].l2_blocks.is_empty()
     }
 
     pub fn set_anchor_id(&mut self, anchor_block_id: u64) {
-        self.current_l1_batch.anchor_block_id = anchor_block_id;
+        self.l1_batches[self.current_l1_batch_index].anchor_block_id = anchor_block_id;
     }
 
     pub fn get_anchor_block_id(&self) -> u64 {
-        self.current_l1_batch.anchor_block_id
+        self.l1_batches[self.current_l1_batch_index].anchor_block_id
     }
 
-    pub fn get_batches(&self) -> Option<Vec<&mut Batch>> {
-        if self.l1_batches.len() == 1 && self.current_l1_batch.l2_blocks.is_empty() {
+    pub fn is_current_l1_batch_empty(&self) -> bool {
+        self.l1_batches[self.current_l1_batch_index].l2_blocks.is_empty()
+    }
+
+    pub fn get_batches(&mut self) -> Option<&mut Vec<Batch>> {
+        if self.l1_batches.len() == 1 && self.l1_batches[self.current_l1_batch_index].l2_blocks.is_empty() {
             None
         } else {
-            Some(self.l1_batches.clone())
+            Some(&mut self.l1_batches)
         }
     }
 }

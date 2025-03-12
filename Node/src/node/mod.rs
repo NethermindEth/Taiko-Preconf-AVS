@@ -13,7 +13,7 @@ pub struct Node {
     ethereum_l1: Arc<EthereumL1>,
     preconf_heartbeat_ms: u64,
     operator: Operator,
-    batch_builder: batch_builder::BatchBuilder<'_>,
+    batch_builder: batch_builder::BatchBuilder,
     l1_height_lag: u64,
 }
 
@@ -88,7 +88,7 @@ impl Node {
                     "Not my slot to preconfirm, {}",
                     self.get_current_slots_info()?
                 );
-                if !self.batch_builder.current_l1_batch.l2_blocks.is_empty() {
+                if !self.batch_builder.is_current_l1_batch_empty() {
                     self.batch_builder = batch_builder::BatchBuilder::new();
                 }
             }
@@ -137,8 +137,8 @@ impl Node {
 
     async fn submit_batches(&mut self, submit_not_full: bool) -> Result<(), Error> {
         debug!("Submitting batches");
-        if let Some(mut batches) = self.batch_builder.get_batches() {
-            for &mut batch in batches.iter_mut() {
+        if let Some(batches) = self.batch_builder.get_batches() {
+            for batch in batches.iter_mut() {
                 let last_block_timestamp = batch.get_last_l2_block_timestamp();
                 if batch.submitted {
                     continue;
