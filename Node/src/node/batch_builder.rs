@@ -23,7 +23,8 @@ pub struct Batch<'a> {
     pub l2_blocks: Vec<L2Block>,
     pub anchor_block_id: u64,
     pub total_l2_blocks_size: u64,
-    pub submitted: &'a mut bool
+    pub submitted: bool,
+    pub is_full: bool
 }
 
 impl Batch {
@@ -49,7 +50,8 @@ impl BatchBuilder {
         let mut l1_batch = Batch {
             l2_blocks: Vec::new(),
             anchor_block_id: 0,
-            submitted: &mut false,
+            submitted: false,
+            is_full: false,
             total_l2_blocks_size: 0,
         };
         Self {
@@ -67,12 +69,14 @@ impl BatchBuilder {
 
     pub fn create_new_batch_if_cant_consume(&mut self, l2_block: &L2Block) {
         if self.can_consume_l2_block(l2_block) {
+            self.current_l1_batch.is_full = true;
             return;
         }
         let mut l1_batch = Batch {
             l2_blocks: Vec::new(),
             anchor_block_id: 0,
-            submitted: &mut false,
+            submitted: false,
+            is_full: false,
             total_l2_blocks_size: 0,
         };
         self.l1_batches.push(&mut l1_batch);

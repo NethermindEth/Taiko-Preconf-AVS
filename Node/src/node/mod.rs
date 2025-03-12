@@ -81,7 +81,7 @@ impl Node {
                 self.preconfirm_block(true).await?;
             }
             OperatorStatus::L1Submitter => {
-                self.submit_batches().await?;
+                self.submit_batches(true).await?;
             }
             OperatorStatus::None => {
                 info!(
@@ -123,7 +123,7 @@ impl Node {
                 .await?;
             self.batch_builder.add_l2_block(l2_block);
             if submit {
-                self.submit_batches().await?;
+                self.submit_batches(false).await?;
             }
         } else {
             debug!("No pending txs, skipping preconfirmation");
@@ -132,7 +132,7 @@ impl Node {
         Ok(())
     }
 
-    async fn submit_batches(&mut self) -> Result<(), Error> {
+    async fn submit_batches(&mut self, submit_not_full: bool) -> Result<(), Error> {
         debug!("Submitting batches");
         if let Some(mut batches) = self.batch_builder.get_batches() {
             let last_block_timestamp = batches.get_last_l2_block_timestamp();
@@ -140,7 +140,7 @@ impl Node {
                 if batch.submitted {
                     continue;
                 }
-                if (batch.l2_blocks.is_empty()) {
+                if batch.l2_blocks.is_empty() || (!submit_not_full && !batch.is_full) {
                     break;
                 }
                 let result = self.ethereum_l1
