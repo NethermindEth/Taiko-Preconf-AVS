@@ -334,7 +334,7 @@ impl ExecutionLayer {
             taiko_inbox::ITaikoInbox::new(self.contract_addresses.taiko_l1, &self.provider_ws);
         let num_batches = contract.getStats2().call().await?._0.numBatches;
         let batch = contract.getBatch(num_batches - 1).call().await?.batch_;
-        Ok(batch.lastBlockId)
+        Ok(batch.anchorBlockId)
     }
 
     pub async fn get_l1_height(&self) -> Result<u64, Error> {
