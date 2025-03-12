@@ -108,7 +108,7 @@ impl Taiko {
         })
     }
 
-    pub async fn get_pending_l2_tx_lists_from_taiko_geth(
+    pub async fn get_pending_l2_tx_list_from_taiko_geth(
         &self,
     ) -> Result<Option<PreBuiltTxList>, Error> {
         let (_, _, parent_gas_used) = self.get_latest_l2_block_id_hash_and_gas_used().await?;
