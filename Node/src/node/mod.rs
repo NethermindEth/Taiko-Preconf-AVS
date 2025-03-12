@@ -132,7 +132,7 @@ impl Node {
         }
 
         if let Some(pending_tx_list) = self.taiko.get_pending_l2_tx_lists_from_taiko_geth().await? {
-            let last_anchor_origin_height = self.get_last_anchor_origin_height().await?;
+            let last_anchor_origin_height = self.get_anchor_block_id().await?;
             let preconfirmation_timestamp = self.get_preconfirmation_timestamp().await?;
             let state = self
                 .batch_builder
@@ -188,7 +188,7 @@ impl Node {
         let height_from_last_batch = self
             .ethereum_l1
             .execution_layer
-            .get_last_anchor_origin_height()
+            .get_anchor_block_id()
             .await?;
         let l1_height = self.ethereum_l1.execution_layer.get_l1_height().await?;
         let l1_height_with_lag = l1_height - self.l1_height_lag;
