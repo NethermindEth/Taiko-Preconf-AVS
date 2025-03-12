@@ -129,8 +129,10 @@ impl JSONRPCClient {
 
 /// A direct HTTP client that doesn't use JSON-RPC
 pub struct HttpRPCClient {
-    client: reqwest::Client,
+    client: RwLock<reqwest::Client>,
     base_url: String,
+    timeout: Duration,
+    jwt_secret: [u8; 32],
 }
 
 impl HttpRPCClient {
@@ -147,7 +149,19 @@ impl HttpRPCClient {
         let jwt_secret_bytes: [u8; 32] = jwt_secret
             .try_into()
             .map_err(|e| anyhow::anyhow!("Invalid JWT secret: {e}"))?;
-        let jwt = B256::from_slice(&jwt_secret_bytes);
+
+        let client = Self::create_client(timeout, &jwt_secret_bytes)?;
+
+        Ok(Self {
+            client: RwLock::new(client),
+            base_url: base_url.to_string(),
+            timeout,
+            jwt_secret: jwt_secret_bytes,
+        })
+    }
+
+    fn create_client(timeout: Duration, jwt_secret: &[u8; 32]) -> Result<reqwest::Client, Error> {
+        let jwt = B256::from_slice(jwt_secret);
 
         if jwt == B256::ZERO {
             return Err(anyhow::anyhow!("JWT secret is illegal"));
@@ -172,10 +186,7 @@ impl HttpRPCClient {
             .build()
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?;
 
-        Ok(Self {
-            client,
-            base_url: base_url.to_string(),
-        })
+        Ok(client)
     }
 
     /// Send a POST request to the specified endpoint with the given payload
@@ -190,13 +201,29 @@ impl HttpRPCClient {
             format!("{}/{}", self.base_url, endpoint)
         };
 
-        let response = self
+        let mut response = self
             .client
+            .read()
+            .await
             .post(&url)
             .json(payload)
             .send()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to send HTTP request: {e}"))?;
+
+        if response.status() == http::StatusCode::UNAUTHORIZED {
+            tracing::debug!("HttpRPCClient 401 error, recreating client");
+            self.recreate_client().await?;
+            response = self
+                .client
+                .read()
+                .await
+                .post(&url)
+                .json(payload)
+                .send()
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to send HTTP request: {e}"))?;
+        }
 
         if !response.status().is_success() {
             return Err(anyhow::anyhow!(
@@ -210,5 +237,14 @@ impl HttpRPCClient {
             .json()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to parse response as JSON: {e}"))
+    }
+
+    async fn recreate_client(&self) -> Result<(), Error> {
+        let new_client = Self::create_client(self.timeout, &self.jwt_secret)
+            .map_err(|e| anyhow::anyhow!("Failed to create HttpRPCClient: {e}"))?;
+
+        tracing::debug!("Created new HttpRPCClient client");
+        *self.client.write().await = new_client;
+        Ok(())
     }
 }
