@@ -184,7 +184,7 @@ impl Node {
         Ok(())
     }
 
-    async fn get_last_anchor_origin_height(&self) -> Result<u64, Error> {
+    async fn get_anchor_block_id(&self) -> Result<u64, Error> {
         let height_from_last_batch = self
             .ethereum_l1
             .execution_layer
