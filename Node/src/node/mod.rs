@@ -81,17 +81,7 @@ impl Node {
                 self.preconfirm_block(true).await?;
             }
             OperatorStatus::L1Submitter => {
-                if let Some(batch) = self.batch_builder.get_batch() {
-                    let last_block_timestamp = batch.get_last_l2_block_timestamp();
-                    self.ethereum_l1
-                        .execution_layer
-                        .send_batch_to_l1(
-                            batch.l2_blocks,
-                            batch.anchor_block_id,
-                            last_block_timestamp,
-                        )
-                        .await?;
-                }
+                self.submit_batches().await?;
             }
             OperatorStatus::None => {
                 info!(
@@ -150,6 +140,9 @@ impl Node {
                 if batch.submitted {
                     continue;
                 }
+                if (batch.l2_blocks.is_empty()) {
+                    break;
+                }
                 let result = self.ethereum_l1
                     .execution_layer
                     .send_batch_to_l1(batch.l2_blocks.clone(), batch.anchor_block_id, last_block_timestamp)
@@ -159,7 +152,7 @@ impl Node {
                 }
             }
             // since all batches are submitted, we can clear the batch builder
-            self.batch_builder.clear();
+            self.batch_builder = batch_builder::BatchBuilder::new();
             Ok(())
         } else {
             Ok(())

@@ -52,18 +52,6 @@ impl BatchBuilder {
         }
     }
 
-    pub fn clear(&mut self) {
-        self.l1_batches.clear();
-        let mut l1_batch = Batch {
-            l2_blocks: Vec::new(),
-            anchor_block_id: 0,
-            submitted: &mut false,
-            total_l2_blocks_size: 0,
-        };
-        self.l1_batches.push(&mut l1_batch);
-        self.current_l1_batch = l1_batch;
-    }
-
     fn can_consume_l2_block(&self, l2_block: &L2Block) -> bool {
         self.current_l1_batch.total_l2_blocks_size + l2_block.prebuilt_tx_list.bytes_length
             <= self.config.max_size_of_batch
@@ -113,14 +101,6 @@ impl BatchBuilder {
 
         self.current_l1_batch.total_l2_blocks_size = 0;
         std::mem::take(&mut self.current_l1_batch)
-    }
-
-    pub fn get_batch(&mut self) -> Option<Batch> {
-        if self.current_l1_batch.l2_blocks.is_empty() {
-            None
-        } else {
-            Some(self.build_batch())
-        }
     }
 
     pub fn get_batches(&self) -> Option<Vec<&mut Batch>> {
