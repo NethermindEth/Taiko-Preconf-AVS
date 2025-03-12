@@ -138,8 +138,8 @@ impl Node {
     async fn submit_batches(&mut self, submit_not_full: bool) -> Result<(), Error> {
         debug!("Submitting batches");
         if let Some(mut batches) = self.batch_builder.get_batches() {
-            let last_block_timestamp = batches.get_last_l2_block_timestamp();
             for &mut batch in batches.iter_mut() {
+                let last_block_timestamp = batch.get_last_l2_block_timestamp();
                 if batch.submitted {
                     continue;
                 }

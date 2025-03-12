@@ -105,18 +105,6 @@ impl BatchBuilder {
         self.current_l1_batch.anchor_block_id
     }
 
-    /// Creates a batch from `l2_blocks` and prepares it for sending.
-    fn build_batch(&mut self) -> Batch {
-        debug!(
-            "Building batch: {} blocks, total size: {} bytes",
-            self.current_l1_batch.l2_blocks.len(),
-            self.current_l1_batch.total_l2_blocks_size
-        );
-
-        self.current_l1_batch.total_l2_blocks_size = 0;
-        std::mem::take(&mut self.current_l1_batch)
-    }
-
     pub fn get_batches(&self) -> Option<Vec<&mut Batch>> {
         if self.l1_batches.len() == 1 && self.current_l1_batch.l2_blocks.is_empty() {
             None
