@@ -13,7 +13,7 @@ pub struct Node {
     ethereum_l1: Arc<EthereumL1>,
     preconf_heartbeat_ms: u64,
     operator: Operator,
-    batch_builder: batch_builder::BatchBuilder,
+    batch_builder: batch_builder::BatchBuilder<'_>,
     l1_height_lag: u64,
 }
 
@@ -120,24 +120,20 @@ impl Node {
             let preconfirmation_timestamp =
                 self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
             let l2_block = L2Block::new_from(pending_tx_list, preconfirmation_timestamp);
-
-            if self.batch_builder.can_consume_l2_block(&l2_block) {
-                if self.batch_builder.is_new_batch() {
-                    self.batch_builder
-                        .set_anchor_id(self.get_anchor_block_id().await?);
-                }
-                self.taiko
-                    .advance_head_to_new_l2_block(
-                        l2_block.clone(),
-                        self.batch_builder.get_anchor_block_id(),
-                    )
-                    .await?;
-                self.batch_builder.add_l2_block(l2_block);
-                if submit && self.batch_builder.is_batch_full() {
-                    self.submit_batch().await?;
-                }
-            } else if submit {
-                self.submit_batch().await?;
+            self.batch_builder.create_new_batch_if_cant_consume(&l2_block);
+            if self.batch_builder.is_new_batch() {
+                self.batch_builder
+                    .set_anchor_id(self.get_anchor_block_id().await?);
+            }
+            self.taiko
+                .advance_head_to_new_l2_block(
+                    l2_block.clone(),
+                    self.batch_builder.get_anchor_block_id(),
+                )
+                .await?;
+            self.batch_builder.add_l2_block(l2_block);
+            if submit {
+                self.submit_batches().await?;
             }
         } else {
             debug!("No pending txs, skipping preconfirmation");
@@ -146,14 +142,25 @@ impl Node {
         Ok(())
     }
 
-    async fn submit_batch(&mut self) -> Result<(), Error> {
+    async fn submit_batches(&mut self) -> Result<(), Error> {
         debug!("Submitting batch");
-        if let Some(batch) = self.batch_builder.get_batch() {
-            let last_block_timestamp = batch.get_last_l2_block_timestamp();
-            self.ethereum_l1
-                .execution_layer
-                .send_batch_to_l1(batch.l2_blocks, batch.anchor_block_id, last_block_timestamp)
-                .await
+        if let Some(mut batches) = self.batch_builder.get_batches() {
+            let last_block_timestamp = batches.get_last_l2_block_timestamp();
+            for &mut batch in batches.iter_mut() {
+                if batch.submitted {
+                    continue;
+                }
+                let result = self.ethereum_l1
+                    .execution_layer
+                    .send_batch_to_l1(batch.l2_blocks.clone(), batch.anchor_block_id, last_block_timestamp)
+                    .await;
+                if result.is_ok() {
+                    batch.submitted = true;
+                }
+            }
+            // since all batches are submitted, we can clear the batch builder
+            self.batch_builder.clear();
+            Ok(())
         } else {
             Ok(())
         }
