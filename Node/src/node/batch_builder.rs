@@ -36,7 +36,7 @@ impl Batch {
 pub struct BatchBuilder<'a> {
     config: BatchBuilderConfig,
     l1_batches: Vec<&'a mut Batch<'a>>,
-    current_l1_batch: Batch<'a>,
+    pub current_l1_batch: Batch<'a>,
 }
 
 impl<'a> Drop for BatchBuilder<'a> {

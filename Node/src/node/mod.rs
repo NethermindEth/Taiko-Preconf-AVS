@@ -88,6 +88,9 @@ impl Node {
                     "Not my slot to preconfirm, {}",
                     self.get_current_slots_info()?
                 );
+                if !self.batch_builder.current_l1_batch.l2_blocks.is_empty() {
+                    self.batch_builder = batch_builder::BatchBuilder::new();
+                }
             }
         }
 
