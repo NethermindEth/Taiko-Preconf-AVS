@@ -111,6 +111,11 @@ impl Node {
         );
 
         if let Some(pending_tx_list) = self.taiko.get_pending_l2_tx_list_from_taiko_geth().await? {
+            debug!(
+                "Received pending tx list length: {}, bytes length: {}",
+                pending_tx_list.tx_list.len(),
+                pending_tx_list.bytes_length
+            );
             let preconfirmation_timestamp = self.get_preconfirmation_timestamp().await?;
             let l2_block = L2Block::new_from(pending_tx_list, preconfirmation_timestamp);
 
@@ -142,6 +147,7 @@ impl Node {
     }
 
     async fn submit_batch(&mut self) -> Result<(), Error> {
+        debug!("Submitting batch");
         if let Some(batch) = self.batch_builder.get_batch() {
             self.ethereum_l1
                 .execution_layer
@@ -171,7 +177,7 @@ impl Node {
         let l2_slot_number_within_l1_slot = slot_clock.get_l2_slot_number_within_l1_slot()?;
         Ok(l1_slot_start_time
             - (slot_clock.get_slot_duration().as_secs()
-                - l2_slot_number_within_l1_slot * self.preconf_heartbeat_ms * 1000))
+                - l2_slot_number_within_l1_slot * self.preconf_heartbeat_ms / 1000))
     }
 
     fn get_current_slots_info(&self) -> Result<String, Error> {

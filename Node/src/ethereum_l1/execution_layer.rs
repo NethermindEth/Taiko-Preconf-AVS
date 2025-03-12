@@ -5,12 +5,13 @@ use crate::{
 };
 use alloy::{
     consensus::{SidecarBuilder, SimpleCoder},
+    eips::BlockNumberOrTag,
     network::{
         Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder, TransactionBuilder4844,
     },
-    primitives::{Address, Bytes, FixedBytes},
+    primitives::{Address, Bytes, FixedBytes, B256},
     providers::{Provider, ProviderBuilder, WsConnect},
-    rpc::types::TransactionRequest,
+    rpc::types::{BlockTransactionsKind, TransactionRequest},
     signers::local::PrivateKeySigner,
     sol_types::SolValue,
 };
@@ -352,6 +353,19 @@ impl ExecutionLayer {
             .get_block_number()
             .await
             .map_err(|e| Error::msg(format!("Failed to get L1 height: {}", e)))
+    }
+
+    pub async fn get_block_hash_by_number(&self, number: u64) -> Result<B256, Error> {
+        let block = self
+            .provider_ws
+            .get_block_by_number(
+                BlockNumberOrTag::Number(number),
+                BlockTransactionsKind::Hashes,
+            )
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get block by number: {}", e)))?
+            .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))?;
+        Ok(block.header.hash)
     }
 
     #[cfg(test)]

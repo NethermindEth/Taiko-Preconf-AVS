@@ -182,6 +182,12 @@ impl Taiko {
     ) -> Result<(), Error> {
         tracing::debug!("Submitting new L2 blocks to the Taiko driver");
 
+        let anchor_block_hash = self
+            .ethereum_l1
+            .execution_layer
+            .get_block_hash_by_number(anchor_origin_height)
+            .await?;
+
         let base_fee_config = self.get_base_fee_config();
         let sharing_pctg = base_fee_config.sharingPctg;
 
@@ -199,8 +205,8 @@ impl Taiko {
         let anchor_tx = self
             .construct_anchor_tx(
                 anchor_origin_height,
-                parent_hash,         //TODO
-                parent_gas_used_u32, //TODO
+                anchor_block_hash,
+                parent_gas_used_u32,
                 base_fee_config.clone(),
                 base_fee,
             )
@@ -219,7 +225,7 @@ impl Taiko {
             fee_recipient: format!("0x{}", hex::encode(self.preconfer_address)),
             gas_limit: 241_000_000u64,
             parent_hash: format!("0x{}", hex::encode(parent_hash)),
-            timestamp: chrono::Utc::now().timestamp() as u64, // TODO: L1 slot begin - height
+            timestamp: l2_block.timestamp_sec,
             transactions: format!("0x{}", hex::encode(tx_list_bytes)),
         };
 

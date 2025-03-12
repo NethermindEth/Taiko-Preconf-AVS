@@ -1,18 +1,18 @@
 use crate::shared::l2_block::L2Block;
 
 /// Configuration for batching L2 transactions
-struct BatchProposerConfig {
+struct BatchBuilderConfig {
     /// Maximum size of the batch in bytes before sending
     max_size_of_batch: u64,
     /// Maximum number of blocks in a batch
     max_blocks_per_batch: usize,
 }
 
-impl BatchProposerConfig {
+impl BatchBuilderConfig {
     fn new() -> Self {
         Self {
-            max_size_of_batch: 100,    // TODO: Load from env
-            max_blocks_per_batch: 100, // TODO: Load from L1 config
+            max_size_of_batch: 1000000, // TODO: Load from env
+            max_blocks_per_batch: 4,    // TODO: Load from L1 config
         }
     }
 }
@@ -30,7 +30,7 @@ pub struct Batch {
 /// Proposes batched L2 transactions to L1
 pub struct BatchBuilder {
     total_l2_blocks_size: u64,
-    config: BatchProposerConfig,
+    config: BatchBuilderConfig,
     l1_batch: Batch,
 }
 
@@ -43,7 +43,7 @@ impl BatchBuilder {
         };
         Self {
             total_l2_blocks_size: 0,
-            config: BatchProposerConfig::new(),
+            config: BatchBuilderConfig::new(),
             l1_batch,
         }
     }
@@ -62,6 +62,7 @@ impl BatchBuilder {
     pub fn add_l2_block(&mut self, l2_block: L2Block) {
         self.total_l2_blocks_size += l2_block.prebuilt_tx_list.bytes_length;
         self.l1_batch.l2_blocks.push(l2_block);
+        tracing::debug!("Added L2 block to batch: {}", self.l1_batch.l2_blocks.len());
     }
 
     pub fn is_new_batch(&self) -> bool {
