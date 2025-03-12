@@ -19,7 +19,7 @@ impl BatchBuilderConfig {
 }
 
 #[derive(Default)]
-pub struct Batch<'a> {
+pub struct Batch {
     pub l2_blocks: Vec<L2Block>,
     pub anchor_block_id: u64,
     pub total_l2_blocks_size: u64,
@@ -35,8 +35,8 @@ impl Batch {
 
 pub struct BatchBuilder<'a> {
     config: BatchBuilderConfig,
-    l1_batches: Vec<&'a mut Batch<'a>>,
-    pub current_l1_batch: Batch<'a>,
+    l1_batches: Vec<&'a mut Batch>,
+    pub current_l1_batch: Batch,
 }
 
 impl<'a> Drop for BatchBuilder<'a> {
