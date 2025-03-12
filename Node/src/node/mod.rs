@@ -82,12 +82,13 @@ impl Node {
             }
             OperatorStatus::L1Submitter => {
                 if let Some(batch) = self.batch_builder.get_batch() {
+                    let last_block_timestamp = batch.get_last_l2_block_timestamp();
                     self.ethereum_l1
                         .execution_layer
                         .send_batch_to_l1(
                             batch.l2_blocks,
                             batch.anchor_block_id,
-                            batch.timestamp_sec,
+                            last_block_timestamp,
                         )
                         .await?;
                 }
@@ -122,10 +123,8 @@ impl Node {
 
             if self.batch_builder.can_consume_l2_block(&l2_block) {
                 if self.batch_builder.is_new_batch() {
-                    self.batch_builder.set_anchor_id_and_timestamp(
-                        self.get_anchor_block_id().await?,
-                        preconfirmation_timestamp,
-                    );
+                    self.batch_builder
+                        .set_anchor_id(self.get_anchor_block_id().await?);
                 }
                 self.taiko
                     .advance_head_to_new_l2_block(

@@ -21,7 +21,6 @@ impl BatchBuilderConfig {
 pub struct Batch {
     pub l2_blocks: Vec<L2Block>,
     pub anchor_block_id: u64,
-    pub timestamp_sec: u64,
 }
 
 impl Batch {
@@ -41,7 +40,6 @@ impl BatchBuilder {
         let l1_batch = Batch {
             l2_blocks: Vec::new(),
             anchor_block_id: 0,
-            timestamp_sec: 0,
         };
         Self {
             total_l2_blocks_size: 0,
@@ -71,9 +69,8 @@ impl BatchBuilder {
         self.l1_batch.l2_blocks.is_empty()
     }
 
-    pub fn set_anchor_id_and_timestamp(&mut self, anchor_block_id: u64, timestamp_sec: u64) {
+    pub fn set_anchor_id(&mut self, anchor_block_id: u64) {
         self.l1_batch.anchor_block_id = anchor_block_id;
-        self.l1_batch.timestamp_sec = timestamp_sec;
     }
 
     pub fn get_anchor_block_id(&self) -> u64 {
