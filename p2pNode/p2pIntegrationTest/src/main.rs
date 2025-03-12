@@ -1,10 +1,9 @@
+use jsonrpc_core::Params;
+use jsonrpc_core_client::transports::http;
+use jsonrpc_core_client::{RawClient, RpcError};
 use p2p_network::generate_secp256k1;
 use p2p_network::network::{P2PNetwork, P2PNetworkConfig};
 use rand::Rng;
-use std::fs::File;
-use std::io::Write;
-use std::io::{self, Read};
-use std::path::Path;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task;
@@ -18,22 +17,20 @@ fn generate_1mb_vec(count: u32) -> Vec<u8> {
     vec
 }
 
-const BOOT_NODE_PATH: &str = "/shared/enr.txt";
+async fn get_boot_node_enr(boot_node_ip: String) -> Result<String, RpcError> {
+    // Define the RPC endpoint
+    let boot_node = format!("http://{}:9001", boot_node_ip);
+    let client: RawClient = http::connect(&boot_node).await.unwrap();
 
-fn read_boot_node() -> Result<String, io::Error> {
-    info!("Reading boot node from {}", BOOT_NODE_PATH);
-    let mut file = File::open(BOOT_NODE_PATH)?;
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
-    info!("Boot node: {}", contents);
-    Ok(contents)
-}
+    // Call the `getBase64ENR` method
+    let response = client
+        .call_method("p2p_getENR", Params::None)
+        .await
+        .unwrap();
+    info!("Response: {}", response);
 
-fn write_boot_node(enr: &str) -> Result<(), io::Error> {
-    info!("Writing boot node to {} end {}", BOOT_NODE_PATH, enr);
-    let mut file = File::create(BOOT_NODE_PATH)?;
-    file.write_all(enr.as_bytes())?;
-    Ok(())
+    // Remove surrounding quotes
+    Ok(response.to_string().trim_matches('"').to_string())
 }
 
 #[tokio::main]
@@ -50,14 +47,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ipv4 = address.parse().unwrap();
     info!("ADDRESS: {address:?}");
 
-    // Load boot node from shared directory
-    let path = Path::new(BOOT_NODE_PATH);
-    let boot_nodes: Option<Vec<String>> = if path.exists() {
-        let bootnode = read_boot_node().unwrap();
-        Some(vec![bootnode])
-    } else {
-        None
-    };
+    // get boot node ip
+    let boot_node_ip = std::env::var("BOOT_NODE_IP").unwrap();
+
+    // Get boot node by JSON-RPC
+    let bootnode = get_boot_node_enr(boot_node_ip).await.unwrap();
+    info!("Boot node: {bootnode}");
+    let boot_nodes = Some(vec![bootnode]);
 
     let config = P2PNetworkConfig {
         local_key: generate_secp256k1(),
@@ -73,8 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Save boot node if it is not specified in shared directory
     if config.boot_nodes.is_none() {
-        warn!("Boot node not specified yet. Saving to {}", BOOT_NODE_PATH);
-        write_boot_node(&p2p.get_local_enr()).unwrap();
+        warn!("Boot node not specified!");
     }
 
     task::spawn(async move {
