@@ -1,7 +1,7 @@
-mod batch_proposer;
+mod batch_builder;
 mod operator;
 
-use crate::{ethereum_l1::EthereumL1, taiko::Taiko};
+use crate::{ethereum_l1::EthereumL1, shared::l2_block::L2Block, taiko::Taiko};
 use anyhow::Error;
 use operator::{Operator, Status as OperatorStatus};
 use std::sync::Arc;
@@ -13,7 +13,8 @@ pub struct Node {
     ethereum_l1: Arc<EthereumL1>,
     preconf_heartbeat_ms: u64,
     operator: Operator,
-    batch_proposer: batch_proposer::BatchProposer,
+    batch_builder: batch_builder::BatchBuilder,
+    l1_height_lag: u64,
 }
 
 impl Node {
@@ -24,6 +25,7 @@ impl Node {
         preconf_heartbeat_ms: u64,
         handover_window_slots: u64,
         handover_start_buffer_ms: u64,
+        l1_height_lag: u64,
     ) -> Result<Self, Error> {
         let operator = Operator::new(
             ethereum_l1.clone(),
@@ -31,11 +33,12 @@ impl Node {
             handover_start_buffer_ms,
         )?;
         Ok(Self {
-            batch_proposer: batch_proposer::BatchProposer::new(ethereum_l1.clone()),
+            batch_builder: batch_builder::BatchBuilder::new(),
             taiko,
             ethereum_l1,
             preconf_heartbeat_ms,
             operator,
+            l1_height_lag,
         })
     }
 
@@ -78,7 +81,17 @@ impl Node {
                 self.preconfirm_block(true).await?;
             }
             OperatorStatus::L1Submitter => {
-                self.batch_proposer.submit_all().await?;
+                if let Some(batch) = self.batch_builder.get_batch() {
+                    let last_block_timestamp = batch.get_last_l2_block_timestamp();
+                    self.ethereum_l1
+                        .execution_layer
+                        .send_batch_to_l1(
+                            batch.l2_blocks,
+                            batch.anchor_block_id,
+                            last_block_timestamp,
+                        )
+                        .await?;
+                }
             }
             OperatorStatus::None => {
                 info!(
@@ -98,19 +111,64 @@ impl Node {
             self.get_current_slots_info()?
         );
 
-        let pending_tx_lists = self.taiko.get_pending_l2_tx_lists_from_taiko_geth().await?;
-        if pending_tx_lists.is_empty() {
+        if let Some(pending_tx_list) = self.taiko.get_pending_l2_tx_list_from_taiko_geth().await? {
+            debug!(
+                "Received pending tx list length: {}, bytes length: {}",
+                pending_tx_list.tx_list.len(),
+                pending_tx_list.bytes_length
+            );
+            let preconfirmation_timestamp =
+                self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
+            let l2_block = L2Block::new_from(pending_tx_list, preconfirmation_timestamp);
+
+            if self.batch_builder.can_consume_l2_block(&l2_block) {
+                if self.batch_builder.is_new_batch() {
+                    self.batch_builder
+                        .set_anchor_id(self.get_anchor_block_id().await?);
+                }
+                self.taiko
+                    .advance_head_to_new_l2_block(
+                        l2_block.clone(),
+                        self.batch_builder.get_anchor_block_id(),
+                    )
+                    .await?;
+                self.batch_builder.add_l2_block(l2_block);
+                if submit && self.batch_builder.is_batch_full() {
+                    self.submit_batch().await?;
+                }
+            } else if submit {
+                self.submit_batch().await?;
+            }
+        } else {
             debug!("No pending txs, skipping preconfirmation");
-            return Ok(());
         }
 
-        self.taiko
-            .advance_head_to_new_l2_blocks(pending_tx_lists.clone())
-            .await?;
+        Ok(())
+    }
 
-        self.batch_proposer
-            .handle_l2_blocks(pending_tx_lists, submit)
-            .await
+    async fn submit_batch(&mut self) -> Result<(), Error> {
+        debug!("Submitting batch");
+        if let Some(batch) = self.batch_builder.get_batch() {
+            let last_block_timestamp = batch.get_last_l2_block_timestamp();
+            self.ethereum_l1
+                .execution_layer
+                .send_batch_to_l1(batch.l2_blocks, batch.anchor_block_id, last_block_timestamp)
+                .await
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn get_anchor_block_id(&self) -> Result<u64, Error> {
+        let height_from_last_batch = self
+            .ethereum_l1
+            .execution_layer
+            .get_anchor_block_id()
+            .await?;
+        let l1_height = self.ethereum_l1.execution_layer.get_l1_height().await?;
+        let l1_height_with_lag = l1_height - self.l1_height_lag;
+
+        Ok(std::cmp::max(height_from_last_batch, l1_height_with_lag))
     }
 
     fn get_current_slots_info(&self) -> Result<String, Error> {

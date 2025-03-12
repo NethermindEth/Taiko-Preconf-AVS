@@ -21,6 +21,7 @@ pub struct Config {
     pub taiko_l2_address: String,
     pub handover_window_slots: u64,
     pub handover_start_buffer_ms: u64,
+    pub l1_height_lag: u64,
 }
 
 #[derive(Debug)]
@@ -152,6 +153,11 @@ impl Config {
             .parse::<u64>()
             .expect("HANDOVER_START_BUFFER_MS must be a number");
 
+        let l1_height_lag = std::env::var("L1_HEIGHT_LAG")
+            .unwrap_or("5".to_string())
+            .parse::<u64>()
+            .expect("L1_HEIGHT_LAG must be a number");
+
         let config = Self {
             taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
                 .unwrap_or("ws://127.0.0.1:1234".to_string()),
@@ -178,6 +184,7 @@ impl Config {
             taiko_l2_address,
             handover_window_slots,
             handover_start_buffer_ms,
+            l1_height_lag,
         };
 
         info!(
@@ -201,6 +208,7 @@ rpc client timeout: {}
 taiko l2 address: {}
 handover window slots: {}
 handover start buffer: {}ms
+l1 height lag: {}
 "#,
             config.taiko_geth_ws_rpc_url,
             config.taiko_geth_auth_rpc_url,
@@ -220,6 +228,7 @@ handover start buffer: {}ms
             config.taiko_l2_address,
             config.handover_window_slots,
             config.handover_start_buffer_ms,
+            config.l1_height_lag,
         );
 
         config

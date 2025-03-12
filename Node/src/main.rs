@@ -1,5 +1,6 @@
 mod ethereum_l1;
 mod node;
+mod shared;
 mod taiko;
 mod utils;
 
@@ -48,6 +49,7 @@ async fn main() -> Result<(), Error> {
         config.preconf_heartbeat_ms,
         config.handover_window_slots,
         config.handover_start_buffer_ms,
+        config.l1_height_lag,
     )
     .await?;
     node.entrypoint().await?;

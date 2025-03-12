@@ -1,23 +1,27 @@
 use crate::{
     ethereum_l1::{l1_contracts_bindings::*, ws_provider::WsProvider},
-    taiko::l2_tx_lists::{encode_and_compress, PendingTxLists},
+    shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress},
     utils::{config, types::*},
 };
 use alloy::{
     consensus::{SidecarBuilder, SimpleCoder},
+    eips::BlockNumberOrTag,
     network::{
         Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder, TransactionBuilder4844,
     },
-    primitives::{Address, Bytes, FixedBytes},
+    primitives::{Address, Bytes, FixedBytes, B256},
     providers::{Provider, ProviderBuilder, WsConnect},
-    rpc::types::TransactionRequest,
+    rpc::types::{BlockTransactionsKind, TransactionRequest},
     signers::local::PrivateKeySigner,
     sol_types::SolValue,
 };
 use anyhow::Error;
 #[cfg(test)]
 use mockall::automock;
-use std::{str::FromStr, sync::atomic::{AtomicU64, Ordering}};
+use std::{
+    str::FromStr,
+    sync::atomic::{AtomicU64, Ordering},
+};
 use tracing::debug;
 
 pub struct ExecutionLayer {
@@ -63,9 +67,7 @@ impl ExecutionLayer {
             .await
             .unwrap();
 
-        let nonce = provider_ws
-            .get_transaction_count(preconfer_address)
-            .await?;
+        let nonce = provider_ws.get_transaction_count(preconfer_address).await?;
 
         let l1_chain_id = provider_ws.get_chain_id().await?;
 
@@ -127,19 +129,29 @@ impl ExecutionLayer {
 
     pub async fn send_batch_to_l1(
         &self,
-        tx_lists: PendingTxLists,
-    ) -> Result<FixedBytes<32>, Error> {
+        l2_blocks: Vec<L2Block>,
+        last_anchor_origin_height: u64,
+        last_block_timestamp: u64,
+    ) -> Result<(), Error> {
         let mut tx_vec = Vec::new();
         let mut blocks = Vec::new();
-        let nonce  = self.preconfer_nonce.fetch_add(1, Ordering::SeqCst);
+        let nonce = self.preconfer_nonce.fetch_add(1, Ordering::SeqCst);
 
-        for tx_list in tx_lists {
-            let count = tx_list.tx_list.len() as u16;
-            tx_vec.extend(tx_list.tx_list);
+        for l2_block in l2_blocks {
+            let count = l2_block.prebuilt_tx_list.tx_list.len() as u16;
+            tx_vec.extend(l2_block.prebuilt_tx_list.tx_list);
 
+            if last_block_timestamp < l2_block.timestamp_sec {
+                return Err(anyhow::anyhow!(
+                    "Last block timestamp is less than L2 block timestamp"
+                ));
+            }
+            let time_shift: u8 = (last_block_timestamp - l2_block.timestamp_sec)
+                .try_into()
+                .map_err(|e| Error::msg(format!("Failed to convert time shift to u8: {}", e)))?;
             blocks.push(BlockParams {
                 numTransactions: count,
-                timeShift: 0,
+                timeShift: time_shift,
                 signalSlots: vec![],
             });
         }
@@ -154,11 +166,19 @@ impl ExecutionLayer {
 
         // TODO estimate gas and select blob or calldata transaction
 
-        let tx = self
-            .propose_batch_blob(nonce, tx_lists_bytes, blocks)
+        let hash = self
+            .propose_batch_blob(
+                nonce,
+                tx_lists_bytes,
+                blocks,
+                last_anchor_origin_height,
+                last_block_timestamp,
+            )
             .await
             .map_err(|e| Error::msg(format!("Failed to propose batch blob: {}", e)))?;
-        Ok(tx)
+
+        debug!("Proposed batch with hash {}", hash);
+        Ok(())
     }
 
     pub async fn propose_batch_calldata(
@@ -223,7 +243,7 @@ impl ExecutionLayer {
             "Call proposeBatch with calldata and hash {}",
             pending_tx.tx_hash()
         );
-        Ok(pending_tx.tx_hash().clone())
+        Ok(*pending_tx.tx_hash())
     }
 
     pub async fn propose_batch_blob(
@@ -231,6 +251,8 @@ impl ExecutionLayer {
         nonce: u64,
         tx_list: Vec<u8>,
         blocks: Vec<BlockParams>,
+        last_anchor_origin_height: u64,
+        last_block_timestamp: u64,
     ) -> Result<FixedBytes<32>, Error> {
         let tx_list_len = tx_list.len() as u32;
 
@@ -247,8 +269,8 @@ impl ExecutionLayer {
                 &self.wallet,
             ),
             parentMetaHash: FixedBytes::from(&[0u8; 32]),
-            anchorBlockId: 0,
-            lastBlockTimestamp: 0,
+            anchorBlockId: last_anchor_origin_height,
+            lastBlockTimestamp: last_block_timestamp,
             revertIfNotFirstProposal: false,
             blobParams: BlobParams {
                 blobHashes: vec![],
@@ -294,7 +316,7 @@ impl ExecutionLayer {
             "Call proposeBatch with blob and hash {}",
             pending_tx.tx_hash()
         );
-        Ok(pending_tx.tx_hash().clone())
+        Ok(*pending_tx.tx_hash())
     }
 
     async fn fetch_pacaya_config(
@@ -316,6 +338,34 @@ impl ExecutionLayer {
 
     pub fn get_pacaya_config(&self) -> taiko_inbox::ITaikoInbox::Config {
         self.pacaya_config.clone()
+    }
+
+    pub async fn get_anchor_block_id(&self) -> Result<u64, Error> {
+        let contract =
+            taiko_inbox::ITaikoInbox::new(self.contract_addresses.taiko_l1, &self.provider_ws);
+        let num_batches = contract.getStats2().call().await?._0.numBatches;
+        let batch = contract.getBatch(num_batches - 1).call().await?.batch_;
+        Ok(batch.anchorBlockId)
+    }
+
+    pub async fn get_l1_height(&self) -> Result<u64, Error> {
+        self.provider_ws
+            .get_block_number()
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get L1 height: {}", e)))
+    }
+
+    pub async fn get_block_hash_by_number(&self, number: u64) -> Result<B256, Error> {
+        let block = self
+            .provider_ws
+            .get_block_by_number(
+                BlockNumberOrTag::Number(number),
+                BlockTransactionsKind::Hashes,
+            )
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get block by number: {}", e)))?
+            .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))?;
+        Ok(block.header.hash)
     }
 
     #[cfg(test)]
@@ -342,9 +392,7 @@ impl ExecutionLayer {
 
         let preconfer_address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
             .parse()?;
-        let nonce = provider_ws
-            .get_transaction_count(preconfer_address)
-            .await?;
+        let nonce = provider_ws.get_transaction_count(preconfer_address).await?;
 
         Ok(Self {
             provider_ws,
