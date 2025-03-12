@@ -88,6 +88,9 @@ impl BatchBuilder {
         self.current_l1_batch.total_l2_blocks_size += l2_block.prebuilt_tx_list.bytes_length;
         self.current_l1_batch.l2_blocks.push(l2_block);
         debug!("Added L2 block to batch: {}", self.current_l1_batch.l2_blocks.len());
+        if self.current_l1_batch.l2_blocks.len() == self.config.max_blocks_per_batch {
+            self.current_l1_batch.is_full = true;
+        }
     }
 
     pub fn is_new_batch(&self) -> bool {
