@@ -141,12 +141,12 @@ impl ExecutionLayer {
             let count = l2_block.prebuilt_tx_list.tx_list.len() as u16;
             tx_vec.extend(l2_block.prebuilt_tx_list.tx_list);
 
-            if l2_block.timestamp_sec < last_block_timestamp {
+            if last_block_timestamp < l2_block.timestamp_sec {
                 return Err(anyhow::anyhow!(
-                    "L2 block timestamp is less than last block timestamp"
+                    "Last block timestamp is less than L2 block timestamp"
                 ));
             }
-            let time_shift: u8 = (l2_block.timestamp_sec - last_block_timestamp)
+            let time_shift: u8 = (last_block_timestamp - l2_block.timestamp_sec)
                 .try_into()
                 .map_err(|e| Error::msg(format!("Failed to convert time shift to u8: {}", e)))?;
             blocks.push(BlockParams {
@@ -243,7 +243,7 @@ impl ExecutionLayer {
             "Call proposeBatch with calldata and hash {}",
             pending_tx.tx_hash()
         );
-        Ok(pending_tx.tx_hash().clone())
+        Ok(*pending_tx.tx_hash())
     }
 
     pub async fn propose_batch_blob(
@@ -316,7 +316,7 @@ impl ExecutionLayer {
             "Call proposeBatch with blob and hash {}",
             pending_tx.tx_hash()
         );
-        Ok(pending_tx.tx_hash().clone())
+        Ok(*pending_tx.tx_hash())
     }
 
     async fn fetch_pacaya_config(

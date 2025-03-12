@@ -116,7 +116,8 @@ impl Node {
                 pending_tx_list.tx_list.len(),
                 pending_tx_list.bytes_length
             );
-            let preconfirmation_timestamp = self.get_preconfirmation_timestamp().await?;
+            let preconfirmation_timestamp =
+                self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
             let l2_block = L2Block::new_from(pending_tx_list, preconfirmation_timestamp);
 
             if self.batch_builder.can_consume_l2_block(&l2_block) {
@@ -149,9 +150,10 @@ impl Node {
     async fn submit_batch(&mut self) -> Result<(), Error> {
         debug!("Submitting batch");
         if let Some(batch) = self.batch_builder.get_batch() {
+            let last_block_timestamp = batch.get_last_l2_block_timestamp();
             self.ethereum_l1
                 .execution_layer
-                .send_batch_to_l1(batch.l2_blocks, batch.anchor_block_id, batch.timestamp_sec)
+                .send_batch_to_l1(batch.l2_blocks, batch.anchor_block_id, last_block_timestamp)
                 .await
         } else {
             Ok(())
@@ -168,16 +170,6 @@ impl Node {
         let l1_height_with_lag = l1_height - self.l1_height_lag;
 
         Ok(std::cmp::max(height_from_last_batch, l1_height_with_lag))
-    }
-
-    async fn get_preconfirmation_timestamp(&self) -> Result<u64, Error> {
-        let slot_clock = &self.ethereum_l1.slot_clock;
-        let current_slot = slot_clock.get_current_slot()?;
-        let l1_slot_start_time = slot_clock.get_slot_begin_timestamp(current_slot)?;
-        let l2_slot_number_within_l1_slot = slot_clock.get_l2_slot_number_within_l1_slot()?;
-        Ok(l1_slot_start_time
-            - (slot_clock.get_slot_duration().as_secs()
-                - l2_slot_number_within_l1_slot * self.preconf_heartbeat_ms / 1000))
     }
 
     fn get_current_slots_info(&self) -> Result<String, Error> {

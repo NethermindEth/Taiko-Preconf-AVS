@@ -24,10 +24,12 @@ pub struct Batch {
     pub timestamp_sec: u64,
 }
 
-// TODO rename
-// PendingTxLists is a Vec<PendingTxList>
-// PendingTxList is a L2 block that we preconfirm
-/// Proposes batched L2 transactions to L1
+impl Batch {
+    pub fn get_last_l2_block_timestamp(&self) -> u64 {
+        self.l2_blocks.last().unwrap().timestamp_sec
+    }
+}
+
 pub struct BatchBuilder {
     total_l2_blocks_size: u64,
     config: BatchBuilderConfig,
@@ -66,7 +68,7 @@ impl BatchBuilder {
     }
 
     pub fn is_new_batch(&self) -> bool {
-        self.l1_batch.l2_blocks.len() == 0
+        self.l1_batch.l2_blocks.is_empty()
     }
 
     pub fn set_anchor_id_and_timestamp(&mut self, anchor_block_id: u64, timestamp_sec: u64) {

@@ -194,6 +194,16 @@ impl<T: Clock> SlotClock<T> {
         Ok(self.which_l2_slot_is_it((now - slot_begin).as_millis() as u64))
     }
 
+    pub fn get_l2_slot_begin_timestamp(&self) -> Result<u64, Error> {
+        let now = self.clock.now().duration_since(UNIX_EPOCH)?;
+        let preconf_heartbeat_ms: u128 = self.preconf_heartbeat_ms as u128;
+        let timestamp_sec: u64 =
+            (((now.as_millis() / preconf_heartbeat_ms) * preconf_heartbeat_ms) / 1000)
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("get_l2_slot_begin_timestamp: Conversion overflow"))?;
+        Ok(timestamp_sec)
+    }
+
     fn which_l2_slot_is_it(&self, ms_from_l1_slot_begin: u64) -> u64 {
         ms_from_l1_slot_begin / self.preconf_heartbeat_ms
     }
@@ -207,7 +217,7 @@ mod tests {
     use k256::pkcs8::der::Decode;
 
     const SLOT_DURATION: u64 = 12;
-    const PRECONF_HEART_BEAT_MS: u64 = 3;
+    const PRECONF_HEART_BEAT_MS: u64 = 3000;
 
     #[test]
     fn test_duration_to_next_slot() {
@@ -353,5 +363,51 @@ mod tests {
 
         let duration = slot_clock.time_from_n_last_slots_of_epoch(3).unwrap();
         assert_eq!(duration, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn test_get_l2_slot_number_within_l1_slot() {
+        #[derive(Default)]
+        pub struct MockClock;
+        impl Clock for MockClock {
+            fn now(&self) -> SystemTime {
+                SystemTime::from(DateTime::from_timestamp(36, 0).unwrap())
+            }
+        }
+        let slot_clock: SlotClock<MockClock> =
+            SlotClock::<MockClock>::new(0u64, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
+
+        let l2_slot_number_within_l1_slot = slot_clock.get_l2_slot_number_within_l1_slot().unwrap();
+        assert_eq!(l2_slot_number_within_l1_slot, 0);
+
+        #[derive(Default)]
+        pub struct MockClock2;
+        impl Clock for MockClock2 {
+            fn now(&self) -> SystemTime {
+                SystemTime::from(DateTime::from_timestamp(44, 0).unwrap())
+            }
+        }
+        let slot_clock: SlotClock<MockClock2> =
+            SlotClock::<MockClock2>::new(0u64, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
+
+        let l2_slot_number_within_l1_slot = slot_clock.get_l2_slot_number_within_l1_slot().unwrap();
+        assert_eq!(l2_slot_number_within_l1_slot, 2);
+    }
+
+    #[test]
+    fn test_get_l2_slot_begin_timestamp() {
+        #[derive(Default)]
+        pub struct MockClock;
+        impl Clock for MockClock {
+            fn now(&self) -> SystemTime {
+                SystemTime::from(DateTime::from_timestamp(44, 0).unwrap())
+            }
+        }
+
+        let slot_clock: SlotClock<MockClock> =
+            SlotClock::<MockClock>::new(0u64, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
+
+        let l2_slot_begin_timestamp = slot_clock.get_l2_slot_begin_timestamp().unwrap();
+        assert_eq!(l2_slot_begin_timestamp, 42);
     }
 }
