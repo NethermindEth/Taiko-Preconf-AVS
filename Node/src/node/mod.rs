@@ -114,18 +114,21 @@ impl Node {
             let preconfirmation_timestamp =
                 self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
             let l2_block = L2Block::new_from(pending_tx_list, preconfirmation_timestamp);
-            self.batch_builder.create_new_batch_if_cant_consume(&l2_block);
-            if self.batch_builder.is_new_batch() {
-                self.batch_builder
-                    .set_anchor_block_id(self.get_anchor_block_id().await?);
+            let l2_block_for_advancing_head = l2_block.clone();
+            let anchor_block_id: u64;
+            if !self.batch_builder.can_consume_l2_block(&l2_block) {
+                anchor_block_id = self.get_anchor_block_id().await?;
+                self.batch_builder.create_new_batch_and_add_l2_block(anchor_block_id, l2_block);
+            }
+            else {
+                anchor_block_id = self.batch_builder.add_l2_block_and_get_current_anchor_block_id(l2_block);
             }
             self.taiko
                 .advance_head_to_new_l2_block(
-                    l2_block.clone(),
-                    self.batch_builder.get_anchor_block_id(),
+                    l2_block_for_advancing_head,
+                    anchor_block_id,
                 )
                 .await?;
-            self.batch_builder.add_l2_block(l2_block);
             if submit {
                 self.submit_batches(true).await?;
             }
