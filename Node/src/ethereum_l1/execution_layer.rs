@@ -167,7 +167,7 @@ impl ExecutionLayer {
         // TODO estimate gas and select blob or calldata transaction
 
         let last_block_timestamp = l2_blocks
-            .first()
+            .last()
             .ok_or(anyhow::anyhow!("No L2 blocks provided"))?
             .timestamp_sec;
         let hash = self
@@ -205,7 +205,7 @@ impl ExecutionLayer {
             ),
             parentMetaHash: FixedBytes::from(&[0u8; 32]),
             anchorBlockId: last_anchor_origin_height,
-            lastBlockTimestamp: last_block_timestamp,
+            lastBlockTimestamp: 0, // TODO: it set in contract to block.timestamp when it's 0, fix it with proper value
             revertIfNotFirstProposal: false,
             blobParams: BlobParams {
                 blobHashes: vec![],
