@@ -143,18 +143,15 @@ impl Node {
                     continue;
                 }
                 if batch.l2_blocks.is_empty() || (!submit_not_full && !batch.is_full) {
-                    break;
+                    return Ok(());
                 }
-                let result = self.ethereum_l1
+                self.ethereum_l1
                     .execution_layer
                     .send_batch_to_l1(batch.l2_blocks.clone(), batch.anchor_block_id)
-                    .await;
-                if result.is_ok() {
-                    batch.submitted = true;
-                    debug!("Submitted batch successfully!");
-                } else {
-                    return result;
-                }
+                    .await?;
+                    
+                batch.submitted = true;
+                debug!("Submitted batch successfully!");
             }
             info!("All batches submitted");
             // since all batches are submitted, we can clear the batch builder
