@@ -55,7 +55,11 @@ impl BatchBuilder {
         }
     }
 
-    fn get_current_batch(&mut self) -> &mut Batch {
+    fn get_current_batch(& self) -> &Batch {
+        &self.l1_batches[self.current_l1_batch_index]
+    }
+    
+    fn get_current_batch_mut(&mut self) -> &mut Batch {
         &mut self.l1_batches[self.current_l1_batch_index]
     }
 
@@ -67,7 +71,6 @@ impl BatchBuilder {
 
     pub fn create_new_batch_if_cant_consume(&mut self, l2_block: &L2Block) {
         if self.can_consume_l2_block(l2_block) {
-            self.get_current_batch().is_full = true;
             return;
         }
         let l1_batch = Batch {
@@ -83,27 +86,29 @@ impl BatchBuilder {
 
     /// Returns true if the block was added to the batch, false otherwise.
     pub fn add_l2_block(&mut self, l2_block: L2Block) {
-        self.get_current_batch().total_l2_blocks_size += l2_block.prebuilt_tx_list.bytes_length;
-        self.get_current_batch().l2_blocks.push(l2_block);
-        debug!("Added L2 block to batch: {}", self.get_current_batch().l2_blocks.len());
-        if self.get_current_batch().l2_blocks.len() == self.config.max_blocks_per_batch {
-            self.get_current_batch().is_full = true;
+        let max_blocks_per_batch = self.config.max_blocks_per_batch;
+        let current_batch = self.get_current_batch_mut();
+        current_batch.total_l2_blocks_size += l2_block.prebuilt_tx_list.bytes_length;
+        current_batch.l2_blocks.push(l2_block);
+        debug!("Added L2 block to batch: {}", current_batch.l2_blocks.len());
+        if current_batch.l2_blocks.len() == max_blocks_per_batch {
+            current_batch.is_full = true;
         }
     }
 
-    pub fn is_new_batch(&mut self) -> bool {
+    pub fn is_new_batch(&self) -> bool {
         self.get_current_batch().l2_blocks.is_empty()
     }
 
     pub fn set_anchor_id(&mut self, anchor_block_id: u64) {
-        self.get_current_batch().anchor_block_id = anchor_block_id;
+        self.get_current_batch_mut().anchor_block_id = anchor_block_id;
     }
 
     pub fn get_anchor_block_id(&mut self) -> u64 {
         self.get_current_batch().anchor_block_id
     }
 
-    pub fn is_current_l1_batch_empty(&mut self) -> bool {
+    pub fn is_current_l1_batch_empty(&self) -> bool {
         self.get_current_batch().l2_blocks.is_empty()
     }
 
