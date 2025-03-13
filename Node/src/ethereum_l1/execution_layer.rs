@@ -167,11 +167,11 @@ impl ExecutionLayer {
         // TODO estimate gas and select blob or calldata transaction
 
         let last_block_timestamp = l2_blocks
-            .last()
+            .first()
             .ok_or(anyhow::anyhow!("No L2 blocks provided"))?
             .timestamp_sec;
         let hash = self
-            .propose_batch_blob(
+            .propose_batch_calldata(
                 nonce,
                 tx_lists_bytes,
                 blocks,
@@ -179,9 +179,9 @@ impl ExecutionLayer {
                 last_block_timestamp,
             )
             .await
-            .map_err(|e| Error::msg(format!("Failed to propose batch blob: {}", e)))?;
+            .map_err(|e| Error::msg(format!("Failed to propose batch: {}", e)))?;
 
-        debug!("Proposed batch with hash {}", hash);
+        debug!("Proposed batch with hash {hash} and nonce {nonce}");
         Ok(())
     }
 
@@ -190,6 +190,8 @@ impl ExecutionLayer {
         nonce: u64,
         tx_list: Vec<u8>,
         blocks: Vec<BlockParams>,
+        last_anchor_origin_height: u64,
+        last_block_timestamp: u64,
     ) -> Result<FixedBytes<32>, Error> {
         let tx_list_len = tx_list.len() as u32;
         let tx_list = Bytes::from(tx_list);
@@ -202,8 +204,8 @@ impl ExecutionLayer {
                 &self.wallet,
             ),
             parentMetaHash: FixedBytes::from(&[0u8; 32]),
-            anchorBlockId: 0,
-            lastBlockTimestamp: 0,
+            anchorBlockId: last_anchor_origin_height,
+            lastBlockTimestamp: last_block_timestamp,
             revertIfNotFirstProposal: false,
             blobParams: BlobParams {
                 blobHashes: vec![],
