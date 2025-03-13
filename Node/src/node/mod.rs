@@ -6,7 +6,7 @@ use anyhow::Error;
 use operator::{Operator, Status as OperatorStatus};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
-use tracing::{debug, error, info};
+use tracing::{debug, warn, error, info};
 
 pub struct Node {
     taiko: Arc<Taiko>,
@@ -81,18 +81,17 @@ impl Node {
                 self.preconfirm_block(true).await?;
             }
             OperatorStatus::L1Submitter => {
-                if let Some(batch) = self.batch_builder.get_batch() {
-                    self.ethereum_l1
-                        .execution_layer
-                        .send_batch_to_l1(batch.l2_blocks, batch.anchor_block_id)
-                        .await?;
-                }
+                self.submit_batches(false).await?;
             }
             OperatorStatus::None => {
                 info!(
                     "Not my slot to preconfirm, {}",
                     self.get_current_slots_info()?
                 );
+                if !self.batch_builder.is_current_l1_batch_empty() {
+                    warn!("Some batches were not successfully sent in the submitter window");
+                    self.batch_builder = batch_builder::BatchBuilder::new();
+                }
             }
         }
 
@@ -115,24 +114,23 @@ impl Node {
             let preconfirmation_timestamp =
                 self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
             let l2_block = L2Block::new_from(pending_tx_list, preconfirmation_timestamp);
-
-            if self.batch_builder.can_consume_l2_block(&l2_block) {
-                if self.batch_builder.is_new_batch() {
-                    self.batch_builder
-                        .set_anchor_id(self.get_anchor_block_id().await?);
-                }
-                self.taiko
-                    .advance_head_to_new_l2_block(
-                        l2_block.clone(),
-                        self.batch_builder.get_anchor_block_id(),
-                    )
-                    .await?;
-                self.batch_builder.add_l2_block(l2_block);
-                if submit && self.batch_builder.is_batch_full() {
-                    self.submit_batch().await?;
-                }
-            } else if submit {
-                self.submit_batch().await?;
+            let l2_block_for_advancing_head = l2_block.clone();
+            let anchor_block_id: u64;
+            if !self.batch_builder.can_consume_l2_block(&l2_block) {
+                anchor_block_id = self.get_anchor_block_id().await?;
+                self.batch_builder.create_new_batch_and_add_l2_block(anchor_block_id, l2_block);
+            }
+            else {
+                anchor_block_id = self.batch_builder.add_l2_block_and_get_current_anchor_block_id(l2_block);
+            }
+            self.taiko
+                .advance_head_to_new_l2_block(
+                    l2_block_for_advancing_head,
+                    anchor_block_id,
+                )
+                .await?;
+            if submit {
+                self.submit_batches(true).await?;
             }
         } else {
             debug!("No pending txs, skipping preconfirmation");
@@ -141,13 +139,29 @@ impl Node {
         Ok(())
     }
 
-    async fn submit_batch(&mut self) -> Result<(), Error> {
-        debug!("Submitting batch");
-        if let Some(batch) = self.batch_builder.get_batch() {
-            self.ethereum_l1
-                .execution_layer
-                .send_batch_to_l1(batch.l2_blocks, batch.anchor_block_id)
-                .await
+    async fn submit_batches(&mut self, submit_only_full_batches: bool) -> Result<(), Error> {
+        debug!("Submitting batches");
+        if let Some(batches) = self.batch_builder.get_batches() {
+            for batch in batches.iter_mut() {
+                if batch.submitted {
+                    continue;
+                }
+                if batch.l2_blocks.is_empty() || (submit_only_full_batches && !batch.is_full) {
+                    return Ok(());
+                }
+                self.ethereum_l1
+                    .execution_layer
+                    .send_batch_to_l1(batch.l2_blocks.clone(), batch.anchor_block_id)
+                    .await?;
+                batch.submitted = true;
+                debug!("Submitted batch successfully!");
+            }
+            info!("All batches submitted");
+            // since all batches are submitted including not full ones, we can clear the batch builder
+            if !submit_only_full_batches {
+                self.batch_builder = batch_builder::BatchBuilder::new();
+            }
+            Ok(())
         } else {
             Ok(())
         }
@@ -177,4 +191,5 @@ impl Node {
                 .get_l2_slot_number_within_l1_slot()?
         ))
     }
+    
 }

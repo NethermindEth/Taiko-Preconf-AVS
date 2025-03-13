@@ -1,3 +1,4 @@
+use tracing::debug;
 use crate::shared::l2_block::L2Block;
 
 /// Configuration for batching L2 transactions
@@ -21,73 +22,82 @@ impl BatchBuilderConfig {
 pub struct Batch {
     pub l2_blocks: Vec<L2Block>,
     pub anchor_block_id: u64,
+    pub total_l2_blocks_size: u64,
+    pub submitted: bool,
+    pub is_full: bool
 }
 
 pub struct BatchBuilder {
-    total_l2_blocks_size: u64,
     config: BatchBuilderConfig,
-    l1_batch: Batch,
+    l1_batches: Vec<Batch>,
+    pub current_l1_batch_index: usize,
+}
+
+impl Drop for BatchBuilder {
+    fn drop(&mut self) {
+        debug!("BatchBuilder dropped!");
+    }
 }
 
 impl BatchBuilder {
     pub fn new() -> Self {
-        let l1_batch = Batch {
-            l2_blocks: Vec::new(),
-            anchor_block_id: 0,
-        };
         Self {
-            total_l2_blocks_size: 0,
             config: BatchBuilderConfig::new(),
-            l1_batch,
+            l1_batches: vec![],
+            current_l1_batch_index: 0,
         }
     }
 
-    pub fn can_consume_l2_block(&self, l2_block: &L2Block) -> bool {
-        self.total_l2_blocks_size + l2_block.prebuilt_tx_list.bytes_length
-            <= self.config.max_size_of_batch
-            && self.l1_batch.l2_blocks.len() < self.config.max_blocks_per_batch
+    fn get_current_batch(& self) -> &Batch {
+        &self.l1_batches[self.current_l1_batch_index]
+    }
+    
+    fn get_current_batch_mut(&mut self) -> &mut Batch {
+        &mut self.l1_batches[self.current_l1_batch_index]
     }
 
-    pub fn is_batch_full(&self) -> bool {
-        self.l1_batch.l2_blocks.len() >= self.config.max_blocks_per_batch
+    
+    pub fn can_consume_l2_block(&self, l2_block: &L2Block) -> bool {
+        self.l1_batches.len() > 0
+            && self.get_current_batch().total_l2_blocks_size + l2_block.prebuilt_tx_list.bytes_length
+            <= self.config.max_size_of_batch
+            && self.get_current_batch().l2_blocks.len() < self.config.max_blocks_per_batch
+    }
+
+    pub fn create_new_batch_and_add_l2_block(&mut self, anchor_block_id: u64, l2_block: L2Block) {
+        let l1_batch = Batch {
+            l2_blocks: vec![l2_block],
+            anchor_block_id,
+            submitted: false,
+            is_full: false,
+            total_l2_blocks_size: 1,
+        };
+        self.l1_batches.push(l1_batch);
+        self.current_l1_batch_index = self.l1_batches.len() - 1;
     }
 
     /// Returns true if the block was added to the batch, false otherwise.
-    pub fn add_l2_block(&mut self, l2_block: L2Block) {
-        self.total_l2_blocks_size += l2_block.prebuilt_tx_list.bytes_length;
-        self.l1_batch.l2_blocks.push(l2_block);
-        tracing::debug!("Added L2 block to batch: {}", self.l1_batch.l2_blocks.len());
+    pub fn add_l2_block_and_get_current_anchor_block_id(&mut self, l2_block: L2Block) -> u64 {
+        let max_blocks_per_batch = self.config.max_blocks_per_batch;
+        let current_batch = self.get_current_batch_mut();
+        current_batch.total_l2_blocks_size += l2_block.prebuilt_tx_list.bytes_length;
+        current_batch.l2_blocks.push(l2_block);
+        debug!("Added L2 block to batch: {}", current_batch.l2_blocks.len());
+        if current_batch.l2_blocks.len() == max_blocks_per_batch {
+            current_batch.is_full = true;
+        }
+        current_batch.anchor_block_id
     }
 
-    pub fn is_new_batch(&self) -> bool {
-        self.l1_batch.l2_blocks.is_empty()
+    pub fn is_current_l1_batch_empty(&self) -> bool {
+        self.l1_batches.is_empty() || self.get_current_batch().l2_blocks.is_empty()
     }
 
-    pub fn set_anchor_id(&mut self, anchor_block_id: u64) {
-        self.l1_batch.anchor_block_id = anchor_block_id;
-    }
-
-    pub fn get_anchor_block_id(&self) -> u64 {
-        self.l1_batch.anchor_block_id
-    }
-
-    /// Creates a batch from `l2_blocks` and prepares it for sending.
-    fn build_batch(&mut self) -> Batch {
-        tracing::debug!(
-            "Building batch: {} blocks, total size: {} bytes",
-            self.l1_batch.l2_blocks.len(),
-            self.total_l2_blocks_size
-        );
-
-        self.total_l2_blocks_size = 0;
-        std::mem::take(&mut self.l1_batch)
-    }
-
-    pub fn get_batch(&mut self) -> Option<Batch> {
-        if self.l1_batch.l2_blocks.is_empty() {
+    pub fn get_batches(&mut self) -> Option<&mut Vec<Batch>> {
+        if self.l1_batches.is_empty() || self.get_current_batch().l2_blocks.is_empty() {
             None
         } else {
-            Some(self.build_batch())
+            Some(&mut self.l1_batches)
         }
     }
 }
