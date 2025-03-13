@@ -100,7 +100,7 @@ impl BatchBuilder {
         self.get_current_batch().l2_blocks.is_empty()
     }
 
-    pub fn set_anchor_id(&mut self, anchor_block_id: u64) {
+    pub fn set_anchor_block_id(&mut self, anchor_block_id: u64) {
         self.get_current_batch_mut().anchor_block_id = anchor_block_id;
     }
 
