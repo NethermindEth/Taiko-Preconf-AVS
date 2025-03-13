@@ -139,7 +139,6 @@ impl Node {
         debug!("Submitting batches");
         if let Some(batches) = self.batch_builder.get_batches() {
             for batch in batches.iter_mut() {
-                let last_block_timestamp = batch.get_last_l2_block_timestamp();
                 if batch.submitted {
                     continue;
                 }
@@ -148,7 +147,7 @@ impl Node {
                 }
                 let result = self.ethereum_l1
                     .execution_layer
-                    .send_batch_to_l1(batch.l2_blocks.clone(), batch.anchor_block_id, last_block_timestamp)
+                    .send_batch_to_l1(batch.l2_blocks.clone(), batch.anchor_block_id)
                     .await;
                 if result.is_ok() {
                     batch.submitted = true;

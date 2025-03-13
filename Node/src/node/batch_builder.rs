@@ -27,12 +27,6 @@ pub struct Batch {
     pub is_full: bool
 }
 
-impl Batch {
-    pub fn get_last_l2_block_timestamp(&self) -> u64 {
-        self.l2_blocks.last().unwrap().timestamp_sec
-    }
-}
-
 pub struct BatchBuilder {
     config: BatchBuilderConfig,
     l1_batches: Vec<Batch>,
