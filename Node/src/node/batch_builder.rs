@@ -23,12 +23,6 @@ pub struct Batch {
     pub anchor_block_id: u64,
 }
 
-impl Batch {
-    pub fn get_last_l2_block_timestamp(&self) -> u64 {
-        self.l2_blocks.last().unwrap().timestamp_sec
-    }
-}
-
 pub struct BatchBuilder {
     total_l2_blocks_size: u64,
     config: BatchBuilderConfig,
