@@ -90,11 +90,11 @@ impl BatchBuilder {
     }
 
     pub fn is_current_l1_batch_empty(&self) -> bool {
-        self.l1_batches.len() == 0 || self.get_current_batch().l2_blocks.is_empty()
+        self.l1_batches.is_empty() || self.get_current_batch().l2_blocks.is_empty()
     }
 
     pub fn get_batches(&mut self) -> Option<&mut Vec<Batch>> {
-        if self.l1_batches.len() == 0 || self.get_current_batch().l2_blocks.is_empty() {
+        if self.l1_batches.is_empty() || self.get_current_batch().l2_blocks.is_empty() {
             None
         } else {
             Some(&mut self.l1_batches)
