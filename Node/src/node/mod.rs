@@ -82,14 +82,9 @@ impl Node {
             }
             OperatorStatus::L1Submitter => {
                 if let Some(batch) = self.batch_builder.get_batch() {
-                    let last_block_timestamp = batch.get_last_l2_block_timestamp();
                     self.ethereum_l1
                         .execution_layer
-                        .send_batch_to_l1(
-                            batch.l2_blocks,
-                            batch.anchor_block_id,
-                            last_block_timestamp,
-                        )
+                        .send_batch_to_l1(batch.l2_blocks, batch.anchor_block_id)
                         .await?;
                 }
             }
@@ -149,10 +144,9 @@ impl Node {
     async fn submit_batch(&mut self) -> Result<(), Error> {
         debug!("Submitting batch");
         if let Some(batch) = self.batch_builder.get_batch() {
-            let last_block_timestamp = batch.get_last_l2_block_timestamp();
             self.ethereum_l1
                 .execution_layer
-                .send_batch_to_l1(batch.l2_blocks, batch.anchor_block_id, last_block_timestamp)
+                .send_batch_to_l1(batch.l2_blocks, batch.anchor_block_id)
                 .await
         } else {
             Ok(())

@@ -131,24 +131,24 @@ impl ExecutionLayer {
         &self,
         l2_blocks: Vec<L2Block>,
         last_anchor_origin_height: u64,
-        last_block_timestamp: u64,
     ) -> Result<(), Error> {
         let mut tx_vec = Vec::new();
         let mut blocks = Vec::new();
         let nonce = self.preconfer_nonce.fetch_add(1, Ordering::SeqCst);
 
-        for l2_block in l2_blocks {
+        for (i, l2_block) in l2_blocks.iter().enumerate() {
             let count = l2_block.prebuilt_tx_list.tx_list.len() as u16;
-            tx_vec.extend(l2_block.prebuilt_tx_list.tx_list);
+            tx_vec.extend(l2_block.prebuilt_tx_list.tx_list.clone());
 
-            if last_block_timestamp < l2_block.timestamp_sec {
-                return Err(anyhow::anyhow!(
-                    "Last block timestamp is less than L2 block timestamp"
-                ));
-            }
-            let time_shift: u8 = (last_block_timestamp - l2_block.timestamp_sec)
-                .try_into()
-                .map_err(|e| Error::msg(format!("Failed to convert time shift to u8: {}", e)))?;
+            /* times_shift is the difference in seconds between the current L2 block and the L2 previous block. */
+            let time_shift: u8 = if i == 0 {
+                /* For first block, we don't have a previous block to compare the timestamp with. */
+                0
+            } else {
+                (l2_block.timestamp_sec - l2_blocks[i - 1].timestamp_sec)
+                    .try_into()
+                    .map_err(|e| Error::msg(format!("Failed to convert time shift to u8: {}", e)))?
+            };
             blocks.push(BlockParams {
                 numTransactions: count,
                 timeShift: time_shift,
@@ -166,6 +166,7 @@ impl ExecutionLayer {
 
         // TODO estimate gas and select blob or calldata transaction
 
+        let last_block_timestamp = l2_blocks.last().unwrap().timestamp_sec;
         let hash = self
             .propose_batch_blob(
                 nonce,
