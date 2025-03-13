@@ -164,30 +164,67 @@ impl ExecutionLayer {
             tx_lists_bytes.len(),
         );
 
-        // TODO estimate gas and select blob or calldata transaction
-
         let last_block_timestamp = l2_blocks.last().unwrap().timestamp_sec;
-        let hash = self
-            .propose_batch_blob(
+
+        // Build eip4844 transaction
+        let tx_blob = self
+            .build_batch_tx_blob(
+                nonce,
+                &tx_lists_bytes,
+                blocks.clone(),
+                last_anchor_origin_height,
+                last_block_timestamp,
+            )
+            .await?;
+        let tx_blob_gas = self.provider_ws.estimate_gas(&tx_blob).await?;
+
+        // Build eip1559 transaction
+        let tx_calldata = self
+            .build_batch_tx_calldata(
                 nonce,
                 tx_lists_bytes,
                 blocks,
                 last_anchor_origin_height,
                 last_block_timestamp,
             )
-            .await
-            .map_err(|e| Error::msg(format!("Failed to propose batch blob: {}", e)))?;
+            .await?;
+        let tx_calldata_gas = self.provider_ws.estimate_gas(&tx_calldata).await?;
 
-        debug!("Proposed batch with hash {}", hash);
+        tracing::debug!(
+            "Calldata gas: {} Blob gas: {}",
+            tx_calldata_gas,
+            tx_blob_gas
+        );
+
+        // Select transaction to send
+        // If price the same, choose calldata
+        let tx = if tx_blob_gas > tx_calldata_gas {
+            tx_blob
+        } else {
+            tx_calldata
+        };
+
+        // Send transaction
+        let pending_tx = self
+            .provider_ws
+            .send_transaction(tx)
+            .await?
+            .register()
+            .await?;
+
+        debug!("Proposed batch with hash {}", pending_tx.tx_hash());
+
         Ok(())
     }
 
-    pub async fn propose_batch_calldata(
+    async fn build_batch_tx_calldata(
         &self,
         nonce: u64,
         tx_list: Vec<u8>,
         blocks: Vec<BlockParams>,
-    ) -> Result<FixedBytes<32>, Error> {
+        last_anchor_origin_height: u64,
+        last_block_timestamp: u64,
+    ) -> Result<TransactionRequest, Error> {
         let tx_list_len = tx_list.len() as u32;
         let tx_list = Bytes::from(tx_list);
 
@@ -199,8 +236,8 @@ impl ExecutionLayer {
                 &self.wallet,
             ),
             parentMetaHash: FixedBytes::from(&[0u8; 32]),
-            anchorBlockId: 0,
-            lastBlockTimestamp: 0,
+            anchorBlockId: last_anchor_origin_height,
+            lastBlockTimestamp: last_block_timestamp,
             revertIfNotFirstProposal: false,
             blobParams: BlobParams {
                 blobHashes: vec![],
@@ -233,34 +270,23 @@ impl ExecutionLayer {
                 _txList: tx_list,
             });
 
-        let pending_tx = self
-            .provider_ws
-            .send_transaction(tx)
-            .await?
-            .register()
-            .await?;
-
-        tracing::debug!(
-            "Call proposeBatch with calldata and hash {}",
-            pending_tx.tx_hash()
-        );
-        Ok(*pending_tx.tx_hash())
+        Ok(tx)
     }
 
-    pub async fn propose_batch_blob(
+    async fn build_batch_tx_blob(
         &self,
         nonce: u64,
-        tx_list: Vec<u8>,
+        tx_list: &[u8],
         blocks: Vec<BlockParams>,
         last_anchor_origin_height: u64,
         last_block_timestamp: u64,
-    ) -> Result<FixedBytes<32>, Error> {
+    ) -> Result<TransactionRequest, Error> {
         let tx_list_len = tx_list.len() as u32;
 
         let bytes_x = Bytes::new();
 
         //TODO split blobs
-        let sidecar: SidecarBuilder<SimpleCoder> = SidecarBuilder::from_slice(&tx_list);
+        let sidecar: SidecarBuilder<SimpleCoder> = SidecarBuilder::from_slice(tx_list);
         let sidecar = sidecar.build()?;
         let num_blobs = sidecar.blobs.len() as u8;
 
@@ -303,21 +329,9 @@ impl ExecutionLayer {
             .with_call(&PreconfRouter::proposeBatchCall {
                 _params: encoded_propose_batch_wrapper,
                 _txList: Bytes::new(),
-            })
-            .with_gas_limit(1_000_000); // TODO fix gas calculation
+            });
 
-        let pending_tx = self
-            .provider_ws
-            .send_transaction(tx)
-            .await?
-            .register()
-            .await?;
-
-        tracing::debug!(
-            "Call proposeBatch with blob and hash {}",
-            pending_tx.tx_hash()
-        );
-        Ok(*pending_tx.tx_hash())
+        Ok(tx)
     }
 
     async fn fetch_pacaya_config(
