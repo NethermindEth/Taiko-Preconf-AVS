@@ -166,7 +166,10 @@ impl ExecutionLayer {
 
         // TODO estimate gas and select blob or calldata transaction
 
-        let last_block_timestamp = l2_blocks.last().unwrap().timestamp_sec;
+        let last_block_timestamp = l2_blocks
+            .last()
+            .ok_or(anyhow::anyhow!("No L2 blocks provided"))?
+            .timestamp_sec;
         let hash = self
             .propose_batch_blob(
                 nonce,
