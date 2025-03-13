@@ -63,7 +63,7 @@ impl BatchBuilder {
         &mut self.l1_batches[self.current_l1_batch_index]
     }
 
-    fn can_consume_l2_block(&mut self, l2_block: &L2Block) -> bool {
+    fn can_consume_l2_block(&self, l2_block: &L2Block) -> bool {
         self.get_current_batch().total_l2_blocks_size + l2_block.prebuilt_tx_list.bytes_length
             <= self.config.max_size_of_batch
             && self.get_current_batch().l2_blocks.len() < self.config.max_blocks_per_batch
@@ -104,7 +104,7 @@ impl BatchBuilder {
         self.get_current_batch_mut().anchor_block_id = anchor_block_id;
     }
 
-    pub fn get_anchor_block_id(&mut self) -> u64 {
+    pub fn get_anchor_block_id(&self) -> u64 {
         self.get_current_batch().anchor_block_id
     }
 
