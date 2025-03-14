@@ -29,7 +29,7 @@ pub struct SlotClock<T: Clock = RealClock> {
     slot_duration: Duration,
     slots_per_epoch: u64,
     preconf_heartbeat_ms: u64,
-    clock: T,
+    pub clock: T,
 }
 
 impl<T: Clock> SlotClock<T> {
@@ -196,11 +196,13 @@ impl<T: Clock> SlotClock<T> {
 
     pub fn get_l2_slot_begin_timestamp(&self) -> Result<u64, Error> {
         let now = self.clock.now().duration_since(UNIX_EPOCH)?;
+        let now_from_genesis = now - self.genesis_duration;
         let preconf_heartbeat_ms: u128 = self.preconf_heartbeat_ms as u128;
-        let timestamp_sec: u64 =
-            (((now.as_millis() / preconf_heartbeat_ms) * preconf_heartbeat_ms) / 1000)
-                .try_into()
-                .map_err(|_| anyhow::anyhow!("get_l2_slot_begin_timestamp: Conversion overflow"))?;
+        let timestamp_sec = TryInto::<u64>::try_into(
+            ((now_from_genesis.as_millis() / preconf_heartbeat_ms) * preconf_heartbeat_ms) / 1000,
+        )
+        .map_err(|_| anyhow::anyhow!("get_l2_slot_begin_timestamp: Conversion overflow"))?
+            + self.genesis_duration.as_secs();
         Ok(timestamp_sec)
     }
 
@@ -221,12 +223,11 @@ mod tests {
 
     #[test]
     fn test_duration_to_next_slot() {
-        let slot_clock: SlotClock =
-            SlotClock::new(0u64, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
+        let slot_clock: SlotClock = SlotClock::new(0, 5, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
 
         let now = Duration::from_secs(10);
         let duration_to_next_slot = slot_clock.duration_to_next_slot_from(now).unwrap();
-        assert_eq!(duration_to_next_slot, Duration::from_secs(2));
+        assert_eq!(duration_to_next_slot, Duration::from_secs(7));
     }
 
     #[test]
@@ -365,49 +366,48 @@ mod tests {
         assert_eq!(duration, Duration::from_secs(5));
     }
 
+    #[derive(Default)]
+    pub struct MockClock {
+        pub timestamp: i64,
+    }
+    impl Clock for MockClock {
+        fn now(&self) -> SystemTime {
+            SystemTime::from(DateTime::from_timestamp(self.timestamp, 0).unwrap())
+        }
+    }
+
     #[test]
     fn test_get_l2_slot_number_within_l1_slot() {
-        #[derive(Default)]
-        pub struct MockClock;
-        impl Clock for MockClock {
-            fn now(&self) -> SystemTime {
-                SystemTime::from(DateTime::from_timestamp(36, 0).unwrap())
-            }
-        }
-        let slot_clock: SlotClock<MockClock> =
+        let mut slot_clock: SlotClock<MockClock> =
             SlotClock::<MockClock>::new(0u64, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
+        slot_clock.clock.timestamp = 36;
 
         let l2_slot_number_within_l1_slot = slot_clock.get_l2_slot_number_within_l1_slot().unwrap();
         assert_eq!(l2_slot_number_within_l1_slot, 0);
 
-        #[derive(Default)]
-        pub struct MockClock2;
-        impl Clock for MockClock2 {
-            fn now(&self) -> SystemTime {
-                SystemTime::from(DateTime::from_timestamp(44, 0).unwrap())
-            }
-        }
-        let slot_clock: SlotClock<MockClock2> =
-            SlotClock::<MockClock2>::new(0u64, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
-
+        slot_clock.clock.timestamp = 44;
         let l2_slot_number_within_l1_slot = slot_clock.get_l2_slot_number_within_l1_slot().unwrap();
         assert_eq!(l2_slot_number_within_l1_slot, 2);
     }
 
     #[test]
     fn test_get_l2_slot_begin_timestamp() {
-        #[derive(Default)]
-        pub struct MockClock;
-        impl Clock for MockClock {
-            fn now(&self) -> SystemTime {
-                SystemTime::from(DateTime::from_timestamp(44, 0).unwrap())
-            }
-        }
+        let mut slot_clock =
+            SlotClock::<MockClock>::new(0u64, 5, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
 
-        let slot_clock: SlotClock<MockClock> =
-            SlotClock::<MockClock>::new(0u64, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
+        slot_clock.clock.timestamp = 22;
+        assert_eq!(slot_clock.get_l2_slot_begin_timestamp().unwrap(), 20);
 
-        let l2_slot_begin_timestamp = slot_clock.get_l2_slot_begin_timestamp().unwrap();
-        assert_eq!(l2_slot_begin_timestamp, 42);
+        slot_clock.clock.timestamp = 23;
+        assert_eq!(slot_clock.get_l2_slot_begin_timestamp().unwrap(), 23);
+
+        slot_clock.clock.timestamp = 24;
+        assert_eq!(slot_clock.get_l2_slot_begin_timestamp().unwrap(), 23);
+
+        slot_clock.clock.timestamp = 25;
+        assert_eq!(slot_clock.get_l2_slot_begin_timestamp().unwrap(), 23);
+
+        slot_clock.clock.timestamp = 26;
+        assert_eq!(slot_clock.get_l2_slot_begin_timestamp().unwrap(), 26);
     }
 }
