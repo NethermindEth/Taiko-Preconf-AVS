@@ -29,7 +29,14 @@ pub struct Batch {
 
 impl Batch {
     pub fn is_full(&self) -> bool {
-        self.l2_blocks.len() >= self.max_blocks_per_batch as usize
+        if self.l2_blocks.len() > self.max_blocks_per_batch as usize {
+            warn!(
+                "Batch size grater then max_blocks_per_batch: {} > {}",
+                self.l2_blocks.len(),
+                self.max_blocks_per_batch
+            );
+        }
+        self.l2_blocks.len() == self.max_blocks_per_batch as usize
     }
 }
 
@@ -67,7 +74,7 @@ impl BatchBuilder {
             && self.get_current_batch().total_l2_blocks_size
                 + l2_block.prebuilt_tx_list.bytes_length
                 <= self.config.max_size_of_batch
-            && self.get_current_batch().l2_blocks.len() < self.config.max_blocks_per_batch as usize
+            && !self.get_current_batch().is_full()
     }
 
     pub fn create_new_batch_and_add_l2_block(&mut self, anchor_block_id: u64, l2_block: L2Block) {
