@@ -102,7 +102,7 @@ impl Config {
             .expect("L1_SLOTS_PER_EPOCH must be a number");
 
         let preconf_heartbeat_ms = std::env::var("PRECONF_HEARTBEAT_MS")
-            .unwrap_or("1500".to_string())
+            .unwrap_or("2000".to_string())
             .parse::<u64>()
             .inspect(|&val| {
                 if val == 0 {
