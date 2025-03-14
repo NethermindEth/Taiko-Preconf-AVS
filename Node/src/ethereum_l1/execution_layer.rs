@@ -233,6 +233,7 @@ impl ExecutionLayer {
             .with_to(self.contract_addresses.preconf_router)
             .with_chain_id(self.l1_chain_id)
             .with_nonce(nonce)
+            .with_gas_limit(1_000_000)
             .with_call(&PreconfRouter::proposeBatchCall {
                 _params: encoded_propose_batch_wrapper,
                 _txList: tx_list,
