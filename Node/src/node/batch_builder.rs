@@ -1,5 +1,5 @@
 use crate::shared::l2_block::L2Block;
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// Configuration for batching L2 transactions
 struct BatchBuilderConfig {
