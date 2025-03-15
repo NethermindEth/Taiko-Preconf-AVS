@@ -18,19 +18,14 @@ use alloy::{
 use anyhow::Error;
 #[cfg(test)]
 use mockall::automock;
-use std::{
-    str::FromStr,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::str::FromStr;
 use tracing::debug;
 
 pub struct ExecutionLayer {
     provider_ws: WsProvider,
     wallet: EthereumWallet,
     preconfer_address: Address,
-    preconfer_nonce: AtomicU64,
     contract_addresses: ContractAddresses,
-    l1_chain_id: u64,
     pacaya_config: taiko_inbox::ITaikoInbox::Config,
 }
 
@@ -67,9 +62,6 @@ impl ExecutionLayer {
             .await
             .unwrap();
 
-        let nonce = provider_ws.get_transaction_count(preconfer_address).await?;
-
-        let l1_chain_id = provider_ws.get_chain_id().await?;
 
         let pacaya_config =
             Self::fetch_pacaya_config(&contract_addresses.taiko_l1, &provider_ws).await?;
@@ -78,9 +70,7 @@ impl ExecutionLayer {
             provider_ws,
             wallet,
             preconfer_address,
-            preconfer_nonce: AtomicU64::new(nonce),
             contract_addresses,
-            l1_chain_id,
             pacaya_config,
         })
     }
@@ -134,7 +124,6 @@ impl ExecutionLayer {
     ) -> Result<(), Error> {
         let mut tx_vec = Vec::new();
         let mut blocks = Vec::new();
-        let nonce = self.preconfer_nonce.fetch_add(1, Ordering::SeqCst);
 
         for (i, l2_block) in l2_blocks.iter().enumerate() {
             let count = l2_block.prebuilt_tx_list.tx_list.len() as u16;
@@ -172,7 +161,6 @@ impl ExecutionLayer {
             .timestamp_sec;
         let hash = self
             .propose_batch_calldata(
-                nonce,
                 tx_lists_bytes,
                 blocks,
                 last_anchor_origin_height,
@@ -181,13 +169,12 @@ impl ExecutionLayer {
             .await
             .map_err(|e| Error::msg(format!("Failed to propose batch: {}", e)))?;
 
-        debug!("Proposed batch with hash {hash} and nonce {nonce}");
+        debug!("Proposed batch with hash {hash}");
         Ok(())
     }
 
     pub async fn propose_batch_calldata(
         &self,
-        nonce: u64,
         tx_list: Vec<u8>,
         blocks: Vec<BlockParams>,
         last_anchor_origin_height: u64,
@@ -231,9 +218,6 @@ impl ExecutionLayer {
 
         let tx = TransactionRequest::default()
             .with_to(self.contract_addresses.preconf_router)
-            .with_chain_id(self.l1_chain_id)
-            .with_nonce(nonce)
-            .with_gas_limit(1_000_000)
             .with_call(&PreconfRouter::proposeBatchCall {
                 _params: encoded_propose_batch_wrapper,
                 _txList: tx_list,
@@ -255,7 +239,6 @@ impl ExecutionLayer {
 
     pub async fn propose_batch_blob(
         &self,
-        nonce: u64,
         tx_list: Vec<u8>,
         blocks: Vec<BlockParams>,
         last_anchor_origin_height: u64,
@@ -303,14 +286,11 @@ impl ExecutionLayer {
 
         let tx = TransactionRequest::default()
             .with_to(self.contract_addresses.preconf_router)
-            .with_chain_id(self.l1_chain_id)
-            .with_nonce(nonce)
             .with_blob_sidecar(sidecar)
             .with_call(&PreconfRouter::proposeBatchCall {
                 _params: encoded_propose_batch_wrapper,
                 _txList: Bytes::new(),
-            })
-            .with_gas_limit(1_000_000); // TODO fix gas calculation
+            }); // TODO fix gas calculation
 
         let pending_tx = self
             .provider_ws
@@ -387,7 +367,6 @@ impl ExecutionLayer {
         let wallet = EthereumWallet::from(signer.clone());
 
         let provider = ProviderBuilder::new().on_http(rpc_url.clone());
-        let l1_chain_id = provider.get_chain_id().await?;
 
         let ws = WsConnect::new(ws_rpc_url.to_string());
 
@@ -399,19 +378,16 @@ impl ExecutionLayer {
 
         let preconfer_address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
             .parse()?;
-        let nonce = provider_ws.get_transaction_count(preconfer_address).await?;
 
         Ok(Self {
             provider_ws,
             wallet,
             preconfer_address,
-            preconfer_nonce: AtomicU64::new(nonce),
             contract_addresses: ContractAddresses {
                 taiko_l1: Address::ZERO,
                 preconf_whitelist: Address::ZERO,
                 preconf_router: Address::ZERO,
             },
-            l1_chain_id,
             pacaya_config: taiko_inbox::ITaikoInbox::Config {
                 chainId: 1,
                 maxUnverifiedBatches: 100,
