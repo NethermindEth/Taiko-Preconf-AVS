@@ -6,7 +6,7 @@ use anyhow::Error;
 use operator::{Operator, Status as OperatorStatus};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
-use tracing::{debug, warn, error, info};
+use tracing::{debug, error, info, warn};
 
 pub struct Node {
     taiko: Arc<Taiko>,
@@ -118,16 +118,15 @@ impl Node {
             let anchor_block_id: u64;
             if !self.batch_builder.can_consume_l2_block(&l2_block) {
                 anchor_block_id = self.get_anchor_block_id().await?;
-                self.batch_builder.create_new_batch_and_add_l2_block(anchor_block_id, l2_block);
-            }
-            else {
-                anchor_block_id = self.batch_builder.add_l2_block_and_get_current_anchor_block_id(l2_block);
+                self.batch_builder
+                    .create_new_batch_and_add_l2_block(anchor_block_id, l2_block);
+            } else {
+                anchor_block_id = self
+                    .batch_builder
+                    .add_l2_block_and_get_current_anchor_block_id(l2_block);
             }
             self.taiko
-                .advance_head_to_new_l2_block(
-                    l2_block_for_advancing_head,
-                    anchor_block_id,
-                )
+                .advance_head_to_new_l2_block(l2_block_for_advancing_head, anchor_block_id)
                 .await?;
             if submit {
                 self.submit_batches(true).await?;
@@ -146,7 +145,7 @@ impl Node {
                 if batch.submitted {
                     continue;
                 }
-                if batch.l2_blocks.is_empty() || (submit_only_full_batches && !batch.is_full) {
+                if batch.l2_blocks.is_empty() || (submit_only_full_batches && !batch.is_full()) {
                     return Ok(());
                 }
                 self.ethereum_l1
@@ -191,5 +190,4 @@ impl Node {
                 .get_l2_slot_number_within_l1_slot()?
         ))
     }
-    
 }
