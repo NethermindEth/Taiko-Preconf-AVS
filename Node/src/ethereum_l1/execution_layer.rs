@@ -4,22 +4,30 @@ use crate::{
     utils::{config, types::*},
 };
 use alloy::{
-    consensus::{SidecarBuilder, SimpleCoder},
+    consensus::{SidecarBuilder, SimpleCoder, TxEip4844Variant, TxEnvelope},
     eips::BlockNumberOrTag,
     network::{
         Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder, TransactionBuilder4844,
     },
-    primitives::{Address, Bytes, FixedBytes, B256},
+    primitives::{Address, Bytes, FixedBytes, TxKind, B256},
     providers::{Provider, ProviderBuilder, WsConnect},
-    rpc::types::{BlockTransactionsKind, TransactionRequest},
+    rpc::types::{BlockTransactionsKind, Transaction, TransactionRequest},
     signers::local::PrivateKeySigner,
     sol_types::SolValue,
 };
 use anyhow::Error;
 #[cfg(test)]
 use mockall::automock;
-use std::str::FromStr;
-use tracing::debug;
+use std::{str::FromStr, time::Duration};
+use tokio::{task::JoinHandle, time};
+use tracing::{debug, error, info, trace};
+
+// Transaction status enum
+#[derive(Debug, Clone, PartialEq)]
+pub enum TxStatus {
+    Confirmed(u64), // Block number
+    Failed(String), // Error message
+}
 
 pub struct ExecutionLayer {
     provider_ws: WsProvider,
@@ -61,7 +69,6 @@ impl ExecutionLayer {
             .on_ws(ws.clone())
             .await
             .unwrap();
-
 
         let pacaya_config =
             Self::fetch_pacaya_config(&contract_addresses.taiko_l1, &provider_ws).await?;
@@ -234,6 +241,10 @@ impl ExecutionLayer {
             "Call proposeBatch with calldata and hash {}",
             pending_tx.tx_hash()
         );
+
+        // Spawn a monitor for this transaction
+        let _ = self.monitor_transaction(*pending_tx.tx_hash()).await;
+
         Ok(*pending_tx.tx_hash())
     }
 
@@ -303,6 +314,10 @@ impl ExecutionLayer {
             "Call proposeBatch with blob and hash {}",
             pending_tx.tx_hash()
         );
+
+        // Spawn a monitor for this transaction
+        let _ = self.monitor_transaction(*pending_tx.tx_hash()).await;
+
         Ok(*pending_tx.tx_hash())
     }
 
@@ -353,6 +368,146 @@ impl ExecutionLayer {
             .map_err(|e| Error::msg(format!("Failed to get block by number: {}", e)))?
             .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))?;
         Ok(block.header.hash)
+    }
+
+    pub async fn monitor_transaction(&self, tx_hash: B256) -> JoinHandle<TxStatus> {
+        let provider = self.provider_ws.clone();
+
+        tokio::spawn(async move {
+            let max_attempts = 50;
+            let delay = Duration::from_secs(2);
+
+            for attempt in 0..max_attempts {
+                match provider.get_transaction_receipt(tx_hash).await {
+                    Ok(Some(receipt)) => {
+                        if receipt.status() {
+                            let block_number = if let Some(block_number) = receipt.block_number {
+                                block_number
+                            } else {
+                                debug!("Block number not found for transaction {}", tx_hash);
+                                0
+                            };
+
+                            info!(
+                                "Transaction {} confirmed in block {}",
+                                tx_hash, block_number
+                            );
+                            return TxStatus::Confirmed(block_number);
+                        } else {
+                            // Try to get the revert reason
+                            let tx_details = match provider.get_transaction_by_hash(tx_hash).await {
+                                Ok(Some(tx)) => tx,
+                                _ => {
+                                    let error_msg = format!("Transaction {} failed", tx_hash);
+                                    error!("{}", error_msg);
+                                    return TxStatus::Failed(error_msg);
+                                }
+                            };
+
+                            if let Some(block_number) =
+                                receipt.block_number.map(|n| n.saturating_sub(1))
+                            {
+                                let call_request = Self::get_tx_request_for_call(tx_details);
+
+                                let revert_reason = match provider
+                                    .call(&call_request)
+                                    .block(block_number.into())
+                                    .await
+                                {
+                                    Err(e) => e.to_string(),
+                                    Ok(ok) => format!("Unknown revert reason: {ok}"),
+                                };
+
+                                let error_msg =
+                                    format!("Transaction {tx_hash} failed: {revert_reason}");
+                                error!("{}", error_msg);
+                                return TxStatus::Failed(error_msg);
+                            } else {
+                                debug!("Transaction {tx_hash} failed, but block number not found");
+                                return TxStatus::Failed(format!(
+                                    "Transaction {tx_hash} failed, but block number not found"
+                                ));
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        trace!(
+                            "Transaction {} still pending (attempt {}/{})",
+                            tx_hash,
+                            attempt + 1,
+                            max_attempts
+                        );
+                        time::sleep(delay).await;
+                    }
+                    Err(e) => {
+                        error!("Error checking transaction {}: {}", tx_hash, e);
+                        time::sleep(delay).await;
+                    }
+                }
+            }
+
+            let error_msg = format!(
+                "Transaction {} not confirmed after {} attempts",
+                tx_hash, max_attempts
+            );
+            error!("{}", error_msg);
+            TxStatus::Failed(error_msg)
+        })
+    }
+
+    fn get_tx_request_for_call(tx_details: Transaction) -> TransactionRequest {
+        match tx_details.inner {
+            TxEnvelope::Eip1559(tx) => {
+                let to = match tx.tx().to {
+                    TxKind::Call(to) => to,
+                    _ => Address::default(),
+                };
+                TransactionRequest::default()
+                    .with_from(tx_details.from)
+                    .with_to(to)
+                    .with_input(tx.tx().input.clone())
+                    .with_value(tx.tx().value)
+                    .with_gas_limit(tx.tx().gas_limit)
+            }
+            TxEnvelope::Legacy(tx) => {
+                let to = match tx.tx().to {
+                    TxKind::Call(to) => to,
+                    _ => Address::default(),
+                };
+                TransactionRequest::default()
+                    .with_from(tx_details.from)
+                    .with_to(to)
+                    .with_input(tx.tx().input.clone())
+                    .with_value(tx.tx().value)
+                    .with_gas_limit(tx.tx().gas_limit)
+            }
+            TxEnvelope::Eip2930(tx) => {
+                let to = match tx.tx().to {
+                    TxKind::Call(to) => to,
+                    _ => Address::default(),
+                };
+                TransactionRequest::default()
+                    .with_from(tx_details.from)
+                    .with_to(to)
+                    .with_input(tx.tx().input.clone())
+                    .with_value(tx.tx().value)
+                    .with_gas_limit(tx.tx().gas_limit)
+            }
+            TxEnvelope::Eip4844(tx) => {
+                let tx = tx.tx();
+                let to = match tx {
+                    TxEip4844Variant::TxEip4844(tx) => tx.to,
+                    TxEip4844Variant::TxEip4844WithSidecar(tx) => tx.tx().to,
+                };
+                TransactionRequest::default()
+                    .with_from(tx_details.from)
+                    .with_to(to)
+                    .with_input(tx.tx().input.clone())
+                    .with_value(tx.tx().value)
+                    .with_gas_limit(tx.tx().gas_limit)
+            }
+            _ => TransactionRequest::default(),
+        }
     }
 
     #[cfg(test)]
