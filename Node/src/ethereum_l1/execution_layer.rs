@@ -62,7 +62,6 @@ impl ExecutionLayer {
             .await
             .unwrap();
 
-
         let pacaya_config =
             Self::fetch_pacaya_config(&contract_addresses.taiko_l1, &provider_ws).await?;
 
@@ -341,19 +340,6 @@ impl ExecutionLayer {
             .get_block_number()
             .await
             .map_err(|e| Error::msg(format!("Failed to get L1 height: {}", e)))
-    }
-
-    pub async fn get_block_hash_by_number(&self, number: u64) -> Result<B256, Error> {
-        let block = self
-            .provider_ws
-            .get_block_by_number(
-                BlockNumberOrTag::Number(number),
-                BlockTransactionsKind::Hashes,
-            )
-            .await
-            .map_err(|e| Error::msg(format!("Failed to get block by number: {}", e)))?
-            .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))?;
-        Ok(block.header.hash)
     }
 
     pub async fn get_block_state_root_by_number(&self, number: u64) -> Result<B256, Error> {

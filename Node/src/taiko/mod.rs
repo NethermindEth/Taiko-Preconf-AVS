@@ -10,7 +10,7 @@ use crate::{
     },
 };
 use alloy::{
-    consensus::{SignableTransaction, TxEnvelope, BlockHeader},
+    consensus::{BlockHeader, SignableTransaction, TxEnvelope},
     eips::BlockNumberOrTag,
     network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder},
     primitives::{Address, BlockNumber, B256},
@@ -21,8 +21,7 @@ use alloy::{
     rpc::types::{BlockTransactionsKind, Transaction},
     signers::{
         local::{LocalSigner, PrivateKeySigner},
-        SignerSync,
-        Signature,
+        Signature, SignerSync,
     },
 };
 use anyhow::Error;
@@ -37,7 +36,7 @@ use tracing::{debug, info};
 mod l2_contracts_bindings;
 pub mod preconf_blocks;
 
-unsafe extern {
+unsafe extern "C" {
     unsafe fn GetSignature(inputHash: *mut u8) -> *mut u8;
     unsafe fn FreeBytesArray(ptr: *mut u8);
 }
@@ -300,9 +299,9 @@ impl Taiko {
             .chain_id(self.chain_id);
 
         /*let tx_envelope = call_builder
-            .into_transaction_request()
-            .build(&self.golden_touch_wallet)
-            .await?;*/
+        .into_transaction_request()
+        .build(&self.golden_touch_wallet)
+        .await?;*/
         // TODO fix unwrap
         let typed_tx = call_builder
             .into_transaction_request()
@@ -311,7 +310,9 @@ impl Taiko {
 
         let tx_eip1559 = typed_tx.eip1559().unwrap();
 
-        let tx_hash: [u8; 32] = tx_eip1559.signature_hash().try_into().expect("Anchor Tx signature hash error");
+        let tx_hash: [u8; 32] = tx_eip1559
+            .signature_hash()
+            .into();
 
         // Call GetSignature
         let signature_ptr: *mut u8 = unsafe { GetSignature(tx_hash.as_ptr() as *mut u8) };
@@ -324,7 +325,8 @@ impl Taiko {
         let signature: Signature;
         unsafe {
             let signature_bytes = std::slice::from_raw_parts(signature_ptr, 65);
-            let signature_bytes: [u8; 65] = signature_bytes.try_into().expect("Slice has wrong length");
+            let signature_bytes: [u8; 65] =
+                signature_bytes.try_into().expect("Slice has wrong length");
             debug!("Generated signature: {:?}", hex::encode(signature_bytes));
             signature = Signature::from_raw_array(&signature_bytes).unwrap();
             // Free the memory allocated for the signature
@@ -335,7 +337,11 @@ impl Taiko {
 
         let tx_envelope = TxEnvelope::from(sig_tx);
 
-        debug!("transaction type: {:?} hash: {}", tx_envelope.tx_type(),  tx_envelope.tx_hash());
+        debug!(
+            "transaction type: {:?} hash: {}",
+            tx_envelope.tx_type(),
+            tx_envelope.tx_hash()
+        );
 
         let tx = Transaction {
             inner: tx_envelope,
