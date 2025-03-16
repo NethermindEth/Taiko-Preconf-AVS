@@ -182,10 +182,10 @@ impl Taiko {
     ) -> Result<(), Error> {
         tracing::debug!("Submitting new L2 blocks to the Taiko driver");
 
-        let anchor_block_hash = self
+        let anchor_block_state_root = self
             .ethereum_l1
             .execution_layer
-            .get_block_hash_by_number(anchor_origin_height)
+            .get_block_state_root_by_number(anchor_origin_height)
             .await?;
 
         let base_fee_config = self.get_base_fee_config();
@@ -205,7 +205,7 @@ impl Taiko {
         let anchor_tx = self
             .construct_anchor_tx(
                 anchor_origin_height,
-                anchor_block_hash,
+                anchor_block_state_root,
                 parent_gas_used_u32,
                 base_fee_config.clone(),
                 base_fee,
@@ -221,7 +221,7 @@ impl Taiko {
         let executable_data = preconf_blocks::ExecutableData {
             base_fee_per_gas: base_fee,
             block_number: parent_block_id + 1,
-            extra_data: format!("0x{}", hex::encode(extra_data)),
+            extra_data: format!("0x{:0>64}", hex::encode(extra_data)),
             fee_recipient: format!("0x{}", hex::encode(self.preconfer_address)),
             gas_limit: 241_000_000u64,
             parent_hash: format!("0x{}", hex::encode(parent_hash)),
@@ -282,9 +282,9 @@ impl Taiko {
                 base_fee_config,
                 vec![],
             )
-            .gas(1_000_000) // value expected by Taiko geth
-            .max_fee_per_gas(base_fee as u128)
-            .max_priority_fee_per_gas(8_000_000_000u128) // 8 gwei
+            .gas(1_000_000) // value expected by Taiko
+            .max_fee_per_gas(base_fee as u128) // value expected by Taiko
+            .max_priority_fee_per_gas(0) // value expected by Taiko
             .nonce(
                 self.taiko_geth_provider_ws
                     .get_transaction_count(self.golden_touch_signer.address())
@@ -297,7 +297,7 @@ impl Taiko {
             .build(&self.golden_touch_wallet)
             .await?;
 
-        debug!("transaction type: {:?}", tx_envelope.tx_type());
+        debug!("transaction type: {:?} hash: {}", tx_envelope.tx_type(),  tx_envelope.tx_hash());
 
         let tx = Transaction {
             inner: tx_envelope,

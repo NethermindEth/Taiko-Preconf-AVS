@@ -355,6 +355,19 @@ impl ExecutionLayer {
         Ok(block.header.hash)
     }
 
+    pub async fn get_block_state_root_by_number(&self, number: u64) -> Result<B256, Error> {
+        let block = self
+            .provider_ws
+            .get_block_by_number(
+                BlockNumberOrTag::Number(number),
+                BlockTransactionsKind::Hashes,
+            )
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get block by number: {}", e)))?
+            .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))?;
+        Ok(block.header.state_root)
+    }
+
     #[cfg(test)]
     pub async fn new_from_pk(
         ws_rpc_url: String,
