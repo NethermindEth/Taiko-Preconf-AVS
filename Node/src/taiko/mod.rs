@@ -1,4 +1,5 @@
 #![allow(unused)] // TODO: remove this once using new rpc functions
+extern crate libc;
 
 use crate::{
     ethereum_l1::EthereumL1,
@@ -9,7 +10,7 @@ use crate::{
     },
 };
 use alloy::{
-    consensus::BlockHeader,
+    consensus::{SignableTransaction, TxEnvelope, BlockHeader},
     eips::BlockNumberOrTag,
     network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder},
     primitives::{Address, BlockNumber, B256},
@@ -21,6 +22,7 @@ use alloy::{
     signers::{
         local::{LocalSigner, PrivateKeySigner},
         SignerSync,
+        Signature,
     },
 };
 use anyhow::Error;
@@ -34,6 +36,11 @@ use tracing::{debug, info};
 
 mod l2_contracts_bindings;
 pub mod preconf_blocks;
+
+unsafe extern {
+    unsafe fn GetSignature(inputHash: *mut u8) -> *mut u8;
+    unsafe fn FreeBytesArray(ptr: *mut u8);
+}
 
 const GOLDEN_TOUCH_PRIVATE_KEY: &str =
     "92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38";
@@ -292,10 +299,41 @@ impl Taiko {
             )
             .chain_id(self.chain_id);
 
-        let tx_envelope = call_builder
+        /*let tx_envelope = call_builder
             .into_transaction_request()
             .build(&self.golden_touch_wallet)
-            .await?;
+            .await?;*/
+        // TODO fix unwrap
+        let typed_tx = call_builder
+            .into_transaction_request()
+            .build_typed_tx()
+            .unwrap();
+
+        let tx_eip1559 = typed_tx.eip1559().unwrap();
+
+        let tx_hash: [u8; 32] = tx_eip1559.signature_hash().try_into().expect("Anchor Tx signature hash error");
+
+        // Call GetSignature
+        let signature_ptr: *mut u8 = unsafe { GetSignature(tx_hash.as_ptr() as *mut u8) };
+        if signature_ptr.is_null() {
+            // TODO fix
+            panic!("Anchor tx signature generation failed.");
+        }
+
+        // Create signature from bytes
+        let signature: Signature;
+        unsafe {
+            let signature_bytes = std::slice::from_raw_parts(signature_ptr, 65);
+            let signature_bytes: [u8; 65] = signature_bytes.try_into().expect("Slice has wrong length");
+            debug!("Generated signature: {:?}", hex::encode(signature_bytes));
+            signature = Signature::from_raw_array(&signature_bytes).unwrap();
+            // Free the memory allocated for the signature
+            FreeBytesArray(signature_ptr);
+        }
+
+        let sig_tx = tx_eip1559.clone().into_signed(signature);
+
+        let tx_envelope = TxEnvelope::from(sig_tx);
 
         debug!("transaction type: {:?} hash: {}", tx_envelope.tx_type(),  tx_envelope.tx_hash());
 

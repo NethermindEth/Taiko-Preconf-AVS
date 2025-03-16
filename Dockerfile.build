@@ -6,3 +6,6 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Install dependencies (Go and CMake)
+RUN apt-get update && apt-get install -y cmake golang && rm -rf /var/lib/apt/lists/*
