@@ -33,6 +33,7 @@ use std::{sync::Arc, time::Duration};
 use tracing::{debug, info};
 
 mod l2_contracts_bindings;
+mod taiko_blob_coder;
 pub mod preconf_blocks;
 
 const GOLDEN_TOUCH_PRIVATE_KEY: &str =
