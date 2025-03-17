@@ -20,7 +20,7 @@ use anyhow::Error;
 use mockall::automock;
 use std::{str::FromStr, time::Duration};
 use tokio::{task::JoinHandle, time};
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 
 // Transaction status enum
 #[derive(Debug, Clone, PartialEq)]
@@ -370,6 +370,8 @@ impl ExecutionLayer {
         Ok(block.header.hash)
     }
 
+    /// Monitor a transaction until it is confirmed or fails.
+    /// Spawns a new tokio task to monitor the transaction.
     pub async fn monitor_transaction(&self, tx_hash: B256) -> JoinHandle<TxStatus> {
         let provider = self.provider_ws.clone();
 
@@ -384,7 +386,7 @@ impl ExecutionLayer {
                             let block_number = if let Some(block_number) = receipt.block_number {
                                 block_number
                             } else {
-                                debug!("Block number not found for transaction {}", tx_hash);
+                                warn!("Block number not found for transaction {}", tx_hash);
                                 0
                             };
 
@@ -394,39 +396,17 @@ impl ExecutionLayer {
                             );
                             return TxStatus::Confirmed(block_number);
                         } else {
-                            // Try to get the revert reason
-                            let tx_details = match provider.get_transaction_by_hash(tx_hash).await {
-                                Ok(Some(tx)) => tx,
-                                _ => {
-                                    let error_msg = format!("Transaction {} failed", tx_hash);
-                                    error!("{}", error_msg);
-                                    return TxStatus::Failed(error_msg);
-                                }
-                            };
-
-                            if let Some(block_number) =
-                                receipt.block_number.map(|n| n.saturating_sub(1))
-                            {
-                                let call_request = Self::get_tx_request_for_call(tx_details);
-
-                                let revert_reason = match provider
-                                    .call(&call_request)
-                                    .block(block_number.into())
-                                    .await
-                                {
-                                    Err(e) => e.to_string(),
-                                    Ok(ok) => format!("Unknown revert reason: {ok}"),
-                                };
-
-                                let error_msg =
-                                    format!("Transaction {tx_hash} failed: {revert_reason}");
+                            if let Some(block_number) = receipt.block_number {
+                                return TxStatus::Failed(
+                                    Self::check_for_revert_reason(tx_hash, &provider, block_number)
+                                        .await,
+                                );
+                            } else {
+                                let error_msg = format!(
+                                    "Transaction {tx_hash} failed, but block number not found"
+                                );
                                 error!("{}", error_msg);
                                 return TxStatus::Failed(error_msg);
-                            } else {
-                                debug!("Transaction {tx_hash} failed, but block number not found");
-                                return TxStatus::Failed(format!(
-                                    "Transaction {tx_hash} failed, but block number not found"
-                                ));
                             }
                         }
                     }
@@ -453,6 +433,37 @@ impl ExecutionLayer {
             error!("{}", error_msg);
             TxStatus::Failed(error_msg)
         })
+    }
+
+    async fn check_for_revert_reason(
+        tx_hash: B256,
+        provider: &WsProvider,
+        block_number: u64,
+    ) -> String {
+        let tx_details = match provider.get_transaction_by_hash(tx_hash).await {
+            Ok(Some(tx)) => tx,
+            _ => {
+                let error_msg = format!("Transaction {} failed", tx_hash);
+                error!("{}", error_msg);
+                return error_msg;
+            }
+        };
+
+        let block_number = block_number.saturating_sub(1);
+        let call_request = Self::get_tx_request_for_call(tx_details);
+
+        let revert_reason = match provider
+            .call(&call_request)
+            .block(block_number.into())
+            .await
+        {
+            Err(e) => e.to_string(),
+            Ok(ok) => format!("Unknown revert reason: {ok}"),
+        };
+
+        let error_msg = format!("Transaction {tx_hash} failed: {revert_reason}");
+        error!("{}", error_msg);
+        return error_msg;
     }
 
     fn get_tx_request_for_call(tx_details: Transaction) -> TransactionRequest {
@@ -495,16 +506,21 @@ impl ExecutionLayer {
             }
             TxEnvelope::Eip4844(tx) => {
                 let tx = tx.tx();
-                let to = match tx {
-                    TxEip4844Variant::TxEip4844(tx) => tx.to,
-                    TxEip4844Variant::TxEip4844WithSidecar(tx) => tx.tx().to,
-                };
-                TransactionRequest::default()
-                    .with_from(tx_details.from)
-                    .with_to(to)
-                    .with_input(tx.tx().input.clone())
-                    .with_value(tx.tx().value)
-                    .with_gas_limit(tx.tx().gas_limit)
+                match tx {
+                    TxEip4844Variant::TxEip4844(tx) => TransactionRequest::default()
+                        .with_from(tx_details.from)
+                        .with_to(tx.to)
+                        .with_input(tx.input.clone())
+                        .with_value(tx.value)
+                        .with_gas_limit(tx.gas_limit),
+                    TxEip4844Variant::TxEip4844WithSidecar(tx) => TransactionRequest::default()
+                        .with_from(tx_details.from)
+                        .with_to(tx.tx().to)
+                        .with_input(tx.tx().input.clone())
+                        .with_value(tx.tx().value)
+                        .with_gas_limit(tx.tx().gas_limit)
+                        .with_blob_sidecar(tx.sidecar.clone()),
+                }
             }
             _ => TransactionRequest::default(),
         }
