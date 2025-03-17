@@ -298,37 +298,35 @@ impl Taiko {
             )
             .chain_id(self.chain_id);
 
-        /*let tx_envelope = call_builder
-        .into_transaction_request()
-        .build(&self.golden_touch_wallet)
-        .await?;*/
-        // TODO fix unwrap
         let typed_tx = call_builder
             .into_transaction_request()
             .build_typed_tx()
-            .unwrap();
+            .map_err(|_| anyhow::anyhow!("AnchorTX: Failed to build typed transaction"))?;
 
-        let tx_eip1559 = typed_tx.eip1559().unwrap();
+        let tx_eip1559 = typed_tx
+            .eip1559()
+            .ok_or_else(|| anyhow::anyhow!("AnchorTX: Failed to extract EIP-1559 transaction"))?;
 
-        let tx_hash: [u8; 32] = tx_eip1559
-            .signature_hash()
-            .into();
+        let tx_hash: [u8; 32] = tx_eip1559.signature_hash().into();
 
         // Call GetSignature
         let signature_ptr: *mut u8 = unsafe { GetSignature(tx_hash.as_ptr() as *mut u8) };
         if signature_ptr.is_null() {
-            // TODO fix
-            panic!("Anchor tx signature generation failed.");
+            return Err(anyhow::anyhow!(
+                "Critical error: AnchorTX signature generation failed"
+            ));
         }
 
         // Create signature from bytes
         let signature: Signature;
         unsafe {
             let signature_bytes = std::slice::from_raw_parts(signature_ptr, 65);
-            let signature_bytes: [u8; 65] =
-                signature_bytes.try_into().expect("Slice has wrong length");
-            debug!("Generated signature: {:?}", hex::encode(signature_bytes));
-            signature = Signature::from_raw_array(&signature_bytes).unwrap();
+            let signature_bytes: [u8; 65] = signature_bytes.try_into().map_err(|e| {
+                anyhow::anyhow!("AnchorTX: Failed to convert signature bytes to array: {e}")
+            })?;
+            signature = Signature::from_raw_array(&signature_bytes).map_err(|e| {
+                anyhow::anyhow!("AnchorTX: Failed to create Signature from raw bytes: {e}")
+            })?;
             // Free the memory allocated for the signature
             FreeBytesArray(signature_ptr);
         }
@@ -337,11 +335,7 @@ impl Taiko {
 
         let tx_envelope = TxEnvelope::from(sig_tx);
 
-        debug!(
-            "transaction type: {:?} hash: {}",
-            tx_envelope.tx_type(),
-            tx_envelope.tx_hash()
-        );
+        debug!("AnchorTX transaction hash: {}", tx_envelope.tx_hash());
 
         let tx = Transaction {
             inner: tx_envelope,
