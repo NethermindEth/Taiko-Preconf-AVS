@@ -374,7 +374,7 @@ impl ExecutionLayer {
         let provider = self.provider_ws.clone();
 
         tokio::spawn(async move {
-            let max_attempts = 50;
+            let max_attempts = 50; //TODO move to config
             let delay = Duration::from_secs(2);
 
             for attempt in 0..max_attempts {
