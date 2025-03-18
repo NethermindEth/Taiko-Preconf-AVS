@@ -4,7 +4,7 @@ use crate::{
     utils::{config, types::*},
 };
 use alloy::{
-    consensus::{SidecarBuilder, SimpleCoder, TxEip4844Variant, TxEnvelope},
+    consensus::{TxEip4844Variant, TxEnvelope},
     eips::BlockNumberOrTag,
     network::{
         Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder, TransactionBuilder4844,
@@ -259,9 +259,8 @@ impl ExecutionLayer {
 
         let bytes_x = Bytes::new();
 
-        //TODO split blobs
-        let sidecar: SidecarBuilder<SimpleCoder> = SidecarBuilder::from_slice(&tx_list);
-        let sidecar = sidecar.build()?;
+        // Build sidecar
+        let sidecar = crate::taiko::taiko_blob::build_taiko_blob_sidecar(&tx_list);
         let num_blobs = sidecar.blobs.len() as u8;
 
         let batch_params = BatchParams {

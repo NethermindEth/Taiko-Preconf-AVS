@@ -33,8 +33,9 @@ use std::{sync::Arc, time::Duration};
 use tracing::{debug, info};
 
 mod l2_contracts_bindings;
-mod taiko_blob_coder;
 pub mod preconf_blocks;
+pub mod taiko_blob;
+mod taiko_blob_coder;
 
 const GOLDEN_TOUCH_PRIVATE_KEY: &str =
     "92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38";

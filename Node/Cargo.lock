@@ -4983,6 +4983,7 @@ dependencies = [
  "alloy-rlp",
  "anyhow",
  "beacon-api-client",
+ "c-kzg",
  "chrono",
  "dotenv",
  "ecdsa 0.16.9",
