@@ -153,7 +153,7 @@ impl Node {
                     .send_batch_to_l1(batch.l2_blocks.clone(), batch.anchor_block_id)
                     .await?;
                 batch.submitted = true;
-                debug!("Submitted batch successfully!");
+                debug!("Submitted batch.");
             }
             info!("All batches submitted");
             // since all batches are submitted including not full ones, we can clear the batch builder

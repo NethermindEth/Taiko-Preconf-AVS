@@ -198,7 +198,7 @@ L1 WS URL: {},
 Consensus layer URL: {}
 L1 slot duration: {}
 L1 slots per epoch: {}
-L2 slot duration: {}
+L2 slot duration (heart beat): {}
 Preconf registry expiry seconds: {}
 Contract addresses: {:#?}
 validator index: {}

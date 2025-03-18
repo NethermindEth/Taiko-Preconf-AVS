@@ -64,6 +64,7 @@ parser.add_argument('--rpc', type=str, default='https://RPC.helder.taiko.xyz', h
 parser.add_argument('--slots', nargs='+', type=int, default=[],
                     help='Slots to send transactions (0-31)')
 parser.add_argument('--beacon-rpc', type=str, help='Beacon RPC URL for the Taiko network')
+parser.add_argument('--sleep', type=float, default=2.0, help='Sleep time between transactions in seconds')
 args = parser.parse_args()
 
 
@@ -109,7 +110,7 @@ def spam_transactions(count):
     for _ in range(count):
         send_transaction(nonce)
         nonce += 1
-        time.sleep(2)  # Add a delay to avoid nonce issues
+        time.sleep(args.sleep)
 
 
 if len(args.slots) > 0:

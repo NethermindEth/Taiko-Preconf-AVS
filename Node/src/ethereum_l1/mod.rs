@@ -38,7 +38,6 @@ impl EthereumL1 {
     ) -> Result<Self, Error> {
         let consensus_layer = ConsensusLayer::new(consensus_rpc_url)?;
         let genesis_details = consensus_layer.get_genesis_details().await?;
-        debug!("Genesis details: {genesis_details:?}");
         let slot_clock = Arc::new(SlotClock::new(
             0u64,
             genesis_details.genesis_time,

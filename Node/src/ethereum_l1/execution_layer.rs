@@ -10,8 +10,11 @@ use alloy::{
         Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder, TransactionBuilder4844,
     },
     primitives::{Address, Bytes, FixedBytes, TxKind, B256},
-    providers::{Provider, ProviderBuilder, WsConnect},
-    rpc::types::{BlockTransactionsKind, Transaction, TransactionRequest},
+    providers::{ext::DebugApi, Provider, ProviderBuilder, WsConnect},
+    rpc::types::{
+        trace::geth::GethDebugTracingOptions, BlockTransactionsKind, Transaction,
+        TransactionRequest,
+    },
     signers::local::PrivateKeySigner,
     sol_types::SolValue,
 };
@@ -103,7 +106,12 @@ impl ExecutionLayer {
     pub async fn get_operator_for_current_epoch(&self) -> Result<Address, Error> {
         let contract =
             PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider_ws);
-        let operator = contract.getOperatorForCurrentEpoch().call().await?._0;
+        let operator = contract
+            .getOperatorForCurrentEpoch()
+            .call()
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get operator for current epoch: {}", e)))?
+            ._0;
         Ok(operator)
     }
 
@@ -115,7 +123,12 @@ impl ExecutionLayer {
     pub async fn get_operator_for_next_epoch(&self) -> Result<Address, Error> {
         let contract =
             PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider_ws);
-        let operator = contract.getOperatorForNextEpoch().call().await?._0;
+        let operator = contract
+            .getOperatorForNextEpoch()
+            .call()
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get operator for next epoch: {}", e)))?
+            ._0;
         Ok(operator)
     }
 
@@ -440,6 +453,17 @@ impl ExecutionLayer {
         provider: &WsProvider,
         block_number: u64,
     ) -> String {
+        let default_options = GethDebugTracingOptions::default();
+        let trace = provider
+            .debug_trace_transaction(tx_hash, default_options)
+            .await;
+
+        let trace_errors = if let Ok(trace) = trace {
+            Self::find_errors_from_trace(&format!("{:?}", trace))
+        } else {
+            None
+        };
+
         let tx_details = match provider.get_transaction_by_hash(tx_hash).await {
             Ok(Some(tx)) => tx,
             _ => {
@@ -449,9 +473,7 @@ impl ExecutionLayer {
             }
         };
 
-        let block_number = block_number.saturating_sub(1);
         let call_request = Self::get_tx_request_for_call(tx_details);
-
         let revert_reason = match provider
             .call(&call_request)
             .block(block_number.into())
@@ -461,9 +483,35 @@ impl ExecutionLayer {
             Ok(ok) => format!("Unknown revert reason: {ok}"),
         };
 
-        let error_msg = format!("Transaction {tx_hash} failed: {revert_reason}");
+        let mut error_msg = format!("Transaction {tx_hash} failed: {revert_reason}");
+        if let Some(trace_errors) = trace_errors {
+            error_msg.push_str(&trace_errors);
+        }
         error!("{}", error_msg);
         return error_msg;
+    }
+
+    fn find_errors_from_trace(trace_str: &str) -> Option<String> {
+        let mut start_pos = 0;
+        let mut error_message = String::new();
+        while let Some(error_start) = trace_str[start_pos..].find("error: Some(") {
+            let absolute_pos = start_pos + error_start;
+            if let Some(closing_paren) = trace_str[absolute_pos..].find(')') {
+                let error_content = &trace_str[absolute_pos..absolute_pos + closing_paren + 1];
+                if !error_message.is_empty() {
+                    error_message.push_str(", ");
+                }
+                error_message.push_str(&error_content);
+                start_pos = absolute_pos + closing_paren + 1;
+            } else {
+                break;
+            }
+        }
+        if !error_message.is_empty() {
+            Some(format!(", errors from debug trace: {error_message}"))
+        } else {
+            None
+        }
     }
 
     fn get_tx_request_for_call(tx_details: Transaction) -> TransactionRequest {
@@ -479,6 +527,8 @@ impl ExecutionLayer {
                     .with_input(tx.tx().input.clone())
                     .with_value(tx.tx().value)
                     .with_gas_limit(tx.tx().gas_limit)
+                    .with_max_priority_fee_per_gas(tx.tx().max_priority_fee_per_gas)
+                    .with_max_fee_per_gas(tx.tx().max_fee_per_gas)
             }
             TxEnvelope::Legacy(tx) => {
                 let to = match tx.tx().to {
