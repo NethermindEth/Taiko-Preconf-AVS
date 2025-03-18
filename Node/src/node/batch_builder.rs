@@ -91,7 +91,6 @@ impl BatchBuilder {
 
     /// Returns true if the block was added to the batch, false otherwise.
     pub fn add_l2_block_and_get_current_anchor_block_id(&mut self, l2_block: L2Block) -> u64 {
-        let max_blocks_per_batch = self.config.max_blocks_per_batch;
         let current_batch = self.get_current_batch_mut();
         current_batch.total_l2_blocks_size += l2_block.prebuilt_tx_list.bytes_length;
         current_batch.l2_blocks.push(l2_block);

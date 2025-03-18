@@ -1,4 +1,5 @@
 #![allow(unused)] // TODO: remove this once using new rpc functions
+extern crate libc;
 
 use crate::{
     ethereum_l1::EthereumL1,
@@ -9,7 +10,7 @@ use crate::{
     },
 };
 use alloy::{
-    consensus::BlockHeader,
+    consensus::{BlockHeader, SignableTransaction, TxEnvelope},
     eips::BlockNumberOrTag,
     network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder},
     primitives::{Address, BlockNumber, B256},
@@ -20,7 +21,7 @@ use alloy::{
     rpc::types::{BlockTransactionsKind, Transaction},
     signers::{
         local::{LocalSigner, PrivateKeySigner},
-        SignerSync,
+        Signature, SignerSync,
     },
 };
 use anyhow::Error;
@@ -34,6 +35,11 @@ use tracing::{debug, info};
 
 mod l2_contracts_bindings;
 pub mod preconf_blocks;
+
+unsafe extern "C" {
+    unsafe fn GetSignature(inputHash: *mut u8) -> *mut u8;
+    unsafe fn FreeBytesArray(ptr: *mut u8);
+}
 
 const GOLDEN_TOUCH_PRIVATE_KEY: &str =
     "92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38";
@@ -182,10 +188,10 @@ impl Taiko {
     ) -> Result<(), Error> {
         tracing::debug!("Submitting new L2 blocks to the Taiko driver");
 
-        let anchor_block_hash = self
+        let anchor_block_state_root = self
             .ethereum_l1
             .execution_layer
-            .get_block_hash_by_number(anchor_origin_height)
+            .get_block_state_root_by_number(anchor_origin_height)
             .await?;
 
         let base_fee_config = self.get_base_fee_config();
@@ -205,7 +211,7 @@ impl Taiko {
         let anchor_tx = self
             .construct_anchor_tx(
                 anchor_origin_height,
-                anchor_block_hash,
+                anchor_block_state_root,
                 parent_gas_used_u32,
                 base_fee_config.clone(),
                 base_fee,
@@ -221,7 +227,7 @@ impl Taiko {
         let executable_data = preconf_blocks::ExecutableData {
             base_fee_per_gas: base_fee,
             block_number: parent_block_id + 1,
-            extra_data: format!("0x{}", hex::encode(extra_data)),
+            extra_data: format!("0x{:0>64}", hex::encode(extra_data)),
             fee_recipient: format!("0x{}", hex::encode(self.preconfer_address)),
             gas_limit: 241_000_000u64,
             parent_hash: format!("0x{}", hex::encode(parent_hash)),
@@ -282,9 +288,9 @@ impl Taiko {
                 base_fee_config,
                 vec![],
             )
-            .gas(1_000_000) // value expected by Taiko geth
-            .max_fee_per_gas(base_fee as u128)
-            .max_priority_fee_per_gas(8_000_000_000u128) // 8 gwei
+            .gas(1_000_000) // value expected by Taiko
+            .max_fee_per_gas(base_fee as u128) // value expected by Taiko
+            .max_priority_fee_per_gas(0) // value expected by Taiko
             .nonce(
                 self.taiko_geth_provider_ws
                     .get_transaction_count(self.golden_touch_signer.address())
@@ -292,12 +298,44 @@ impl Taiko {
             )
             .chain_id(self.chain_id);
 
-        let tx_envelope = call_builder
+        let typed_tx = call_builder
             .into_transaction_request()
-            .build(&self.golden_touch_wallet)
-            .await?;
+            .build_typed_tx()
+            .map_err(|_| anyhow::anyhow!("AnchorTX: Failed to build typed transaction"))?;
 
-        debug!("transaction type: {:?}", tx_envelope.tx_type());
+        let tx_eip1559 = typed_tx
+            .eip1559()
+            .ok_or_else(|| anyhow::anyhow!("AnchorTX: Failed to extract EIP-1559 transaction"))?;
+
+        let tx_hash: [u8; 32] = tx_eip1559.signature_hash().into();
+
+        // Call GetSignature
+        let signature_ptr: *mut u8 = unsafe { GetSignature(tx_hash.as_ptr() as *mut u8) };
+        if signature_ptr.is_null() {
+            return Err(anyhow::anyhow!(
+                "Critical error: AnchorTX signature generation failed"
+            ));
+        }
+
+        // Create signature from bytes
+        let signature: Signature;
+        unsafe {
+            let signature_bytes = std::slice::from_raw_parts(signature_ptr, 65);
+            let signature_bytes: [u8; 65] = signature_bytes.try_into().map_err(|e| {
+                anyhow::anyhow!("AnchorTX: Failed to convert signature bytes to array: {e}")
+            })?;
+            signature = Signature::from_raw_array(&signature_bytes).map_err(|e| {
+                anyhow::anyhow!("AnchorTX: Failed to create Signature from raw bytes: {e}")
+            })?;
+            // Free the memory allocated for the signature
+            FreeBytesArray(signature_ptr);
+        }
+
+        let sig_tx = tx_eip1559.clone().into_signed(signature);
+
+        let tx_envelope = TxEnvelope::from(sig_tx);
+
+        debug!("AnchorTX transaction hash: {}", tx_envelope.tx_hash());
 
         let tx = Transaction {
             inner: tx_envelope,
