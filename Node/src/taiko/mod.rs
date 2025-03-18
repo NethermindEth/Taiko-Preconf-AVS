@@ -31,7 +31,7 @@ use l2_contracts_bindings::{LibSharedData, TaikoAnchor};
 use serde_json::Value;
 use std::str::FromStr;
 use std::{sync::Arc, time::Duration};
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 
 mod l2_contracts_bindings;
 pub mod preconf_blocks;
@@ -255,7 +255,7 @@ impl Taiko {
                 )
             })?;
 
-        debug!("preconfBlocks response: {:?}", response);
+        trace!("preconfBlocks response: {:?}", response);
         Ok(())
     }
 
@@ -361,7 +361,8 @@ impl Taiko {
                 base_fee_config,
             )
             .call()
-            .await?
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get base fee: {}", e)))?
             .basefee_;
 
         debug!("base fee: {}", base_fee);

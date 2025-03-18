@@ -22,6 +22,8 @@ pub struct Config {
     pub handover_window_slots: u64,
     pub handover_start_buffer_ms: u64,
     pub l1_height_lag: u64,
+    pub max_bytes_size_of_batch: u64,
+    pub max_blocks_per_batch: u64,
 }
 
 #[derive(Debug)]
@@ -158,6 +160,16 @@ impl Config {
             .parse::<u64>()
             .expect("L1_HEIGHT_LAG must be a number");
 
+        let max_bytes_size_of_batch = std::env::var("MAX_BYTES_SIZE_OF_BATCH")
+            .unwrap_or("130044".to_string())
+            .parse::<u64>()
+            .expect("MAX_BYTES_SIZE_OF_BATCH must be a number");
+
+        let max_blocks_per_batch = std::env::var("MAX_BLOCKS_PER_BATCH")
+            .unwrap_or("4".to_string())
+            .parse::<u64>()
+            .expect("MAX_BLOCKS_PER_BATCH must be a number");
+
         let config = Self {
             taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
                 .unwrap_or("ws://127.0.0.1:1234".to_string()),
@@ -185,6 +197,8 @@ impl Config {
             handover_window_slots,
             handover_start_buffer_ms,
             l1_height_lag,
+            max_bytes_size_of_batch,
+            max_blocks_per_batch,
         };
 
         info!(
@@ -198,7 +212,7 @@ L1 WS URL: {},
 Consensus layer URL: {}
 L1 slot duration: {}
 L1 slots per epoch: {}
-L2 slot duration: {}
+L2 slot duration (heart beat): {}
 Preconf registry expiry seconds: {}
 Contract addresses: {:#?}
 validator index: {}
@@ -209,6 +223,8 @@ taiko l2 address: {}
 handover window slots: {}
 handover start buffer: {}ms
 l1 height lag: {}
+max bytes size of batch: {}
+max blocks per batch: {}
 "#,
             config.taiko_geth_ws_rpc_url,
             config.taiko_geth_auth_rpc_url,
@@ -229,6 +245,8 @@ l1 height lag: {}
             config.handover_window_slots,
             config.handover_start_buffer_ms,
             config.l1_height_lag,
+            config.max_bytes_size_of_batch,
+            config.max_blocks_per_batch,
         );
 
         config

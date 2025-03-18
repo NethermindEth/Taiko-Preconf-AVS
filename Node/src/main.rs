@@ -50,6 +50,8 @@ async fn main() -> Result<(), Error> {
         config.handover_window_slots,
         config.handover_start_buffer_ms,
         config.l1_height_lag,
+        config.max_bytes_size_of_batch,
+        config.max_blocks_per_batch,
     )
     .await?;
     node.entrypoint().await?;

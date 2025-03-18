@@ -31,7 +31,7 @@ def main():
                     'gas': tx['gas'],
                     'gasPrice': tx['gasPrice'],
                 },
-                block_identifier=receipt['blockNumber'] - 1
+                block_identifier=receipt['blockNumber']
             )
         except Exception as e:
             print(f"Revert reason: {str(e)}")

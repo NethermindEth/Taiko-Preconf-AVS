@@ -15,6 +15,7 @@ pub struct Node {
     operator: Operator,
     batch_builder: batch_builder::BatchBuilder,
     l1_height_lag: u64,
+    batch_builder_config: batch_builder::BatchBuilderConfig,
 }
 
 impl Node {
@@ -26,19 +27,24 @@ impl Node {
         handover_window_slots: u64,
         handover_start_buffer_ms: u64,
         l1_height_lag: u64,
+        max_bytes_size_of_batch: u64,
+        max_blocks_per_batch: u64,
     ) -> Result<Self, Error> {
         let operator = Operator::new(
             ethereum_l1.clone(),
             handover_window_slots,
             handover_start_buffer_ms,
         )?;
+        let batch_builder_config =
+            batch_builder::BatchBuilderConfig::new(max_bytes_size_of_batch, max_blocks_per_batch);
         Ok(Self {
-            batch_builder: batch_builder::BatchBuilder::new(),
+            batch_builder: batch_builder::BatchBuilder::new(batch_builder_config.clone()),
             taiko,
             ethereum_l1,
             preconf_heartbeat_ms,
             operator,
             l1_height_lag,
+            batch_builder_config,
         })
     }
 
@@ -90,7 +96,8 @@ impl Node {
                 );
                 if !self.batch_builder.is_current_l1_batch_empty() {
                     warn!("Some batches were not successfully sent in the submitter window");
-                    self.batch_builder = batch_builder::BatchBuilder::new();
+                    self.batch_builder =
+                        batch_builder::BatchBuilder::new(self.batch_builder_config.clone());
                 }
             }
         }
@@ -153,12 +160,13 @@ impl Node {
                     .send_batch_to_l1(batch.l2_blocks.clone(), batch.anchor_block_id)
                     .await?;
                 batch.submitted = true;
-                debug!("Submitted batch successfully!");
+                debug!("Submitted batch.");
             }
             info!("All batches submitted");
             // since all batches are submitted including not full ones, we can clear the batch builder
             if !submit_only_full_batches {
-                self.batch_builder = batch_builder::BatchBuilder::new();
+                self.batch_builder =
+                    batch_builder::BatchBuilder::new(self.batch_builder_config.clone());
             }
             Ok(())
         } else {
