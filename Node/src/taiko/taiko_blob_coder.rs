@@ -13,14 +13,25 @@ pub const MAX_BLOB_DATA_SIZE: usize = DATA_WRITEN_PER_ROUND * ROUNDS - DATA_LENG
 const ENCODING_VERSION: u8 = 0;
 const VERSION_OFFSET: usize = 1; // offset of the version byte in the blob encoding
 
-#[derive(Clone, Copy, Debug, Default)]
-#[non_exhaustive]
 pub struct TaikoBlobCoder {
     read_offset: usize,
     blob_offset: usize,
+    blob: [u8; BYTES_PER_BLOB],
 }
 
 impl TaikoBlobCoder {
+    pub fn encode_blob(data: &[u8]) -> Result<Blob, Error> {
+        TaikoBlobCoder::new().from_data(data)
+    }
+
+    fn new() -> Self {
+        Self {
+            read_offset: 0,
+            blob_offset: 0,
+            blob: [0u8; BYTES_PER_BLOB],
+        }
+    }
+
     fn read1(&mut self, data: &[u8]) -> u8 {
         if self.read_offset >= data.len() {
             return 0;
@@ -30,11 +41,10 @@ impl TaikoBlobCoder {
         r
     }
 
-    fn build_fe(&mut self, first_byte: u8, data31: &[u8]) -> [u8; 32] {
-        let mut buf32 = [0u8; 32];
-        buf32[0] = first_byte;
-        buf32[1..].copy_from_slice(data31);
-        buf32
+    fn write_fe(&mut self, first_byte: u8, data31: &[u8]) {
+        self.blob[self.blob_offset] = first_byte;
+        self.blob[self.blob_offset + 1..self.blob_offset + 32].copy_from_slice(data31);
+        self.blob_offset += 32;
     }
 
     fn read31(&mut self, data: &[u8]) -> [u8; 31] {
@@ -44,15 +54,6 @@ impl TaikoBlobCoder {
             .copy_from_slice(&data[self.read_offset..self.read_offset + available_bytes]);
         self.read_offset += available_bytes;
         result
-    }
-}
-
-impl TaikoBlobCoder {
-    pub fn new() -> Self {
-        Self {
-            read_offset: 0,
-            blob_offset: 0,
-        }
     }
 
     // Encodes the given input data into this blob. The encoding scheme is as follows:
@@ -68,7 +69,7 @@ impl TaikoBlobCoder {
     // For only the very first output field, bytes [1:5] are used to encode the version and the length
     // of the data.
     // Refer to https://github.com/ethereum-optimism/optimism/blob/develop/op-service/eth/blob.go#L92
-    pub fn encode_blob(&mut self, data: &[u8]) -> Result<Blob, Error> {
+    fn from_data(&mut self, data: &[u8]) -> Result<Blob, Error> {
         if data.is_empty() {
             return Err(anyhow::anyhow!("Cannot encode empty data"));
         }
@@ -81,9 +82,6 @@ impl TaikoBlobCoder {
 
         // Init blob offset
         self.blob_offset = 0;
-
-        // Init result
-        let mut blob = [0u8; BYTES_PER_BLOB];
 
         // Init read buffer
         let mut buf31 = [0u8; 31];
@@ -107,31 +105,21 @@ impl TaikoBlobCoder {
             }
 
             let x = self.read1(data);
-            blob[self.blob_offset..self.blob_offset + 32]
-                .clone_from_slice(&self.build_fe(x & 0b0011_1111, &buf31));
-            self.blob_offset += 32;
+            self.write_fe(x & 0b0011_1111, &buf31);
 
             // Second FE
             buf31 = self.read31(data);
             let y = self.read1(data);
-            blob[self.blob_offset..self.blob_offset + 32].clone_from_slice(
-                &self.build_fe((y & 0b0000_1111) | ((x & 0b1100_0000) >> 2), &buf31),
-            );
-            self.blob_offset += 32;
+            self.write_fe((y & 0b0000_1111) | ((x & 0b1100_0000) >> 2), &buf31);
 
             // Third FE
             buf31 = self.read31(data);
             let z = self.read1(data);
-            blob[self.blob_offset..self.blob_offset + 32]
-                .clone_from_slice(&self.build_fe(z & 0b0011_1111, &buf31));
-            self.blob_offset += 32;
+            self.write_fe(z & 0b0011_1111, &buf31);
 
             // Fourth FE
             buf31 = self.read31(data);
-            blob[self.blob_offset..self.blob_offset + 32].clone_from_slice(
-                &self.build_fe(((z & 0b1100_0000) >> 2) | ((y & 0b1111_0000) >> 4), &buf31),
-            );
-            self.blob_offset += 32;
+            self.write_fe(((z & 0b1100_0000) >> 2) | ((y & 0b1111_0000) >> 4), &buf31);
         }
 
         if self.read_offset < data.len() {
@@ -142,6 +130,6 @@ impl TaikoBlobCoder {
             ));
         }
 
-        Ok(Blob::new(blob))
+        Ok(Blob::new(self.blob))
     }
 }

@@ -17,8 +17,7 @@ pub fn build_taiko_blob_sidecar(data: &[u8]) -> Result<BlobTransactionSidecar, E
 
     for raw_data_blob in chunks {
         // Encode blob data
-        let mut coder = TaikoBlobCoder::new();
-        let encoded_blob: Blob = coder.encode_blob(raw_data_blob)?;
+        let encoded_blob: Blob = TaikoBlobCoder::encode_blob(raw_data_blob)?;
         // Compute commitment and proof
         let kzg_settings = EnvKzgSettings::Default.get();
         let commitment = blob_to_kzg_commitment(encoded_blob, kzg_settings)?;
@@ -69,8 +68,7 @@ mod tests {
             0x61, 0x58, 0xF1, 0x1D,
         ];
 
-        let mut coder = TaikoBlobCoder::new();
-        let encoded_blob: Blob = coder.encode_blob(&data).unwrap();
+        let encoded_blob: Blob = TaikoBlobCoder::encode_blob(&data).unwrap();
 
         assert_eq!(
             alloy::primitives::keccak256(&encoded_blob),
