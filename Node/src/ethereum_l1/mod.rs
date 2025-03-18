@@ -17,7 +17,6 @@ use execution_layer::ExecutionLayer;
 use mockall_double::double;
 use slot_clock::SlotClock;
 use std::sync::Arc;
-use tracing::debug;
 
 pub struct EthereumL1 {
     pub slot_clock: Arc<SlotClock>,

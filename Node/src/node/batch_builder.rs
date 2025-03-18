@@ -2,18 +2,19 @@ use crate::shared::l2_block::L2Block;
 use tracing::{debug, warn};
 
 /// Configuration for batching L2 transactions
-struct BatchBuilderConfig {
+#[derive(Clone)]
+pub struct BatchBuilderConfig {
     /// Maximum size of the batch in bytes before sending
-    max_size_of_batch: u64,
+    max_bytes_size_of_batch: u64,
     /// Maximum number of blocks in a batch
     max_blocks_per_batch: u64,
 }
 
 impl BatchBuilderConfig {
-    fn new() -> Self {
+    pub fn new(max_bytes_size_of_batch: u64, max_blocks_per_batch: u64) -> Self {
         Self {
-            max_size_of_batch: 1000000, // TODO: Load from env
-            max_blocks_per_batch: 4,    // TODO: Load from L1 config
+            max_bytes_size_of_batch,
+            max_blocks_per_batch,
         }
     }
 }
@@ -53,9 +54,9 @@ impl Drop for BatchBuilder {
 }
 
 impl BatchBuilder {
-    pub fn new() -> Self {
+    pub fn new(config: BatchBuilderConfig) -> Self {
         Self {
-            config: BatchBuilderConfig::new(),
+            config,
             l1_batches: vec![],
             current_l1_batch_index: 0,
         }
@@ -73,7 +74,7 @@ impl BatchBuilder {
         self.l1_batches.len() > 0
             && self.get_current_batch().total_l2_blocks_size
                 + l2_block.prebuilt_tx_list.bytes_length
-                <= self.config.max_size_of_batch
+                <= self.config.max_bytes_size_of_batch
             && !self.get_current_batch().is_full()
     }
 
@@ -91,7 +92,6 @@ impl BatchBuilder {
 
     /// Returns true if the block was added to the batch, false otherwise.
     pub fn add_l2_block_and_get_current_anchor_block_id(&mut self, l2_block: L2Block) -> u64 {
-        let max_blocks_per_batch = self.config.max_blocks_per_batch;
         let current_batch = self.get_current_batch_mut();
         current_batch.total_l2_blocks_size += l2_block.prebuilt_tx_list.bytes_length;
         current_batch.l2_blocks.push(l2_block);
