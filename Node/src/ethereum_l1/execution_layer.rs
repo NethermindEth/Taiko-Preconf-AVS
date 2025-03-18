@@ -241,7 +241,8 @@ impl ExecutionLayer {
             .with_call(&PreconfRouter::proposeBatchCall {
                 _params: encoded_propose_batch_wrapper,
                 _txList: tx_list,
-            });
+            })
+            .with_gas_limit(2_000_000);
 
         let pending_tx = self
             .provider_ws
@@ -370,7 +371,7 @@ impl ExecutionLayer {
             .map_err(|e| Error::msg(format!("Failed to get L1 height: {}", e)))
     }
 
-    pub async fn get_block_hash_by_number(&self, number: u64) -> Result<B256, Error> {
+    pub async fn get_block_state_root_by_number(&self, number: u64) -> Result<B256, Error> {
         let block = self
             .provider_ws
             .get_block_by_number(
@@ -380,7 +381,7 @@ impl ExecutionLayer {
             .await
             .map_err(|e| Error::msg(format!("Failed to get block by number: {}", e)))?
             .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))?;
-        Ok(block.header.hash)
+        Ok(block.header.state_root)
     }
 
     /// Monitor a transaction until it is confirmed or fails.
