@@ -229,7 +229,7 @@ impl ExecutionLayer {
                 _params: encoded_propose_batch_wrapper,
                 _txList: tx_list,
             })
-            .with_gas_limit(2_000_000);
+            .with_gas_limit(2_000_000); // TODO fix gas limit
 
         let pending_tx = self
             .provider_ws
@@ -301,7 +301,8 @@ impl ExecutionLayer {
             .with_call(&PreconfRouter::proposeBatchCall {
                 _params: encoded_propose_batch_wrapper,
                 _txList: Bytes::new(),
-            });
+            })
+            .with_gas_limit(2_500_000); // TODO fix gas limit
 
         let pending_tx = self
             .provider_ws
