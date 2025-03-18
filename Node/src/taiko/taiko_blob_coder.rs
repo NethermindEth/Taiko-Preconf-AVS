@@ -2,6 +2,7 @@ use alloy::{
     consensus::{utils::WholeFe, Blob, SidecarCoder},
     eips::eip4844::{builder::PartialSidecar, BYTES_PER_BLOB, FIELD_ELEMENT_BYTES_USIZE},
 };
+use anyhow::Error;
 
 const BLOB_SIZE: usize = 4096 * 32; // byte size of a blob. 4096 field elements * 32 bytes
 const DATA_LENGTH_SIZE: usize = 4; // number of bytes to store the data length
@@ -54,12 +55,25 @@ impl TaikoBlobCoder {
         }
     }
 
-    pub fn encode_blob(&mut self, data: &[u8]) -> Blob {
+    // Encodes the given input data into this blob. The encoding scheme is as follows:
+    //
+    // In each round we perform 7 reads of input of lengths (31,1,31,1,31,1,31) bytes respectively for
+    // a total of 127 bytes. This data is encoded into the next 4 field elements of the output by
+    // placing each of the 4x31 byte chunks into bytes [1:32] of its respective field element. The
+    // three single byte chunks (24 bits) are split into 4x6-bit chunks, each of which is written into
+    // the top most byte of its respective field element, leaving the top 2 bits of each field element
+    // empty to avoid modulus overflow.  This process is repeated for up to 1024 rounds until all data
+    // is encoded.
+    //
+    // For only the very first output field, bytes [1:5] are used to encode the version and the length
+    // of the data.
+    // Refer to https://github.com/ethereum-optimism/optimism/blob/develop/op-service/eth/blob.go#L92
+    pub fn encode_blob(&mut self, data: &[u8]) -> Result<Blob, Error> {
         if data.is_empty() {
-            return Blob::new([0u8; BYTES_PER_BLOB]); //TODO
+            return Err(anyhow::anyhow!("Cannot encode empty data"));
         }
         if data.len() > MAX_BLOB_DATA_SIZE {
-            panic!("You use coder incorrectly. It can encode only one blob at a time and you can't add extra data.");
+            return Err(anyhow::anyhow!("Data is bigger than MAX_BLOB_DATA_SIZE"));
         }
 
         // Init read offset
@@ -79,6 +93,7 @@ impl TaikoBlobCoder {
                 break;
             }
 
+            // First FE
             if round == 0 {
                 // leave the firs u8 empty for future setup
                 buf31[0] = ENCODING_VERSION;
@@ -96,6 +111,7 @@ impl TaikoBlobCoder {
                 .clone_from_slice(&self.build_fe(x & 0b0011_1111, &buf31));
             self.blob_offset += 32;
 
+            // Second FE
             buf31 = self.read31(data);
             let y = self.read1(data);
             blob[self.blob_offset..self.blob_offset + 32].clone_from_slice(
@@ -103,12 +119,14 @@ impl TaikoBlobCoder {
             );
             self.blob_offset += 32;
 
+            // Third FE
             buf31 = self.read31(data);
             let z = self.read1(data);
             blob[self.blob_offset..self.blob_offset + 32]
                 .clone_from_slice(&self.build_fe(z & 0b0011_1111, &buf31));
             self.blob_offset += 32;
 
+            // Fourth FE
             buf31 = self.read31(data);
             blob[self.blob_offset..self.blob_offset + 32].clone_from_slice(
                 &self.build_fe(((z & 0b1100_0000) >> 2) | ((y & 0b1111_0000) >> 4), &buf31),
@@ -117,13 +135,13 @@ impl TaikoBlobCoder {
         }
 
         if self.read_offset < data.len() {
-            panic!(
+            return Err(anyhow::anyhow!(
                 "Expected to fit data but failed, read offset: {}, data len: {}",
                 self.read_offset,
                 data.len()
-            );
+            ));
         }
 
-        Blob::new(blob)
+        Ok(Blob::new(blob))
     }
 }

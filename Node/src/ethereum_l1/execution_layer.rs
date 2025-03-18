@@ -167,7 +167,7 @@ impl ExecutionLayer {
             .ok_or(anyhow::anyhow!("No L2 blocks provided"))?
             .timestamp_sec;
         let hash = self
-            .propose_batch_calldata(
+            .propose_batch_blob(
                 tx_lists_bytes,
                 blocks,
                 last_anchor_origin_height,
@@ -261,7 +261,7 @@ impl ExecutionLayer {
         let bytes_x = Bytes::new();
 
         // Build sidecar
-        let sidecar = crate::taiko::taiko_blob::build_taiko_blob_sidecar(&tx_list);
+        let sidecar = crate::taiko::taiko_blob::build_taiko_blob_sidecar(&tx_list)?;
         let num_blobs = sidecar.blobs.len() as u8;
 
         let batch_params = BatchParams {
@@ -301,7 +301,7 @@ impl ExecutionLayer {
             .with_call(&PreconfRouter::proposeBatchCall {
                 _params: encoded_propose_batch_wrapper,
                 _txList: Bytes::new(),
-            }); // TODO fix gas calculation
+            });
 
         let pending_tx = self
             .provider_ws
