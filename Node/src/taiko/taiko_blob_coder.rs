@@ -83,8 +83,8 @@ impl TaikoBlobCoder {
                 buf31[0] = ENCODING_VERSION;
                 let ilen = data.len() as u32;
                 buf31[1..4].copy_from_slice(&ilen.to_be_bytes()[1..]);
-                let to_read = data.len().max(31 - 4);
-                buf31[4..].clone_from_slice(&data[0..to_read]);
+                let to_read = data.len().min(31 - 4);
+                buf31[4..to_read+4].clone_from_slice(&data[..to_read]);
                 self.read_offset += to_read;
             } else {
                 buf31 = self.read31(data);

@@ -5059,7 +5059,6 @@ dependencies = [
  "alloy-rlp",
  "anyhow",
  "beacon-api-client",
- "c-kzg",
  "bindgen",
  "chrono",
  "dotenv",
