@@ -28,6 +28,8 @@ pub struct ExecutionLayer {
     preconfer_address: Address,
     contract_addresses: ContractAddresses,
     pacaya_config: taiko_inbox::ITaikoInbox::Config,
+    #[cfg(feature = "extra_gas_percentage")]
+    extra_gas_percentage: u64,
 }
 
 pub struct ContractAddresses {
@@ -52,6 +54,9 @@ impl ExecutionLayer {
 
         let wallet = EthereumWallet::from(signer.clone());
 
+        #[cfg(feature = "extra_gas_percentage")]
+        let extra_gas_percentage = contract_addresses.extra_gas_percentage;
+
         let contract_addresses = Self::parse_contract_addresses(contract_addresses)
             .map_err(|e| Error::msg(format!("Failed to parse contract addresses: {}", e)))?;
 
@@ -72,6 +77,8 @@ impl ExecutionLayer {
             preconfer_address,
             contract_addresses,
             pacaya_config,
+            #[cfg(feature = "extra_gas_percentage")]
+            extra_gas_percentage,
         })
     }
 
@@ -208,6 +215,9 @@ impl ExecutionLayer {
             (tx_calldata, tx_calldata_gas)
         };
 
+        #[cfg(feature = "extra_gas_percentage")]
+        let gas_limit = gas_limit + gas_limit * self.extra_gas_percentage / 100;
+
         // Set tx gas limit
         let tx = tx.with_gas_limit(gas_limit);
 
@@ -219,10 +229,7 @@ impl ExecutionLayer {
             .register()
             .await?;
 
-        tracing::debug!(
-            "Call proposeBatch with hash {}",
-            pending_tx.tx_hash()
-        );
+        tracing::debug!("Call proposeBatch with hash {}", pending_tx.tx_hash());
 
         // Spawn a monitor for this transaction
         monitor_transaction(self.provider_ws.clone(), *pending_tx.tx_hash()).await;
@@ -394,15 +401,12 @@ impl ExecutionLayer {
     #[cfg(test)]
     pub async fn new_from_pk(
         ws_rpc_url: String,
-        rpc_url: reqwest::Url,
         private_key: elliptic_curve::SecretKey<k256::Secp256k1>,
     ) -> Result<Self, Error> {
         use super::l1_contracts_bindings::taiko_inbox::ITaikoInbox::ForkHeights;
 
         let signer = PrivateKeySigner::from_signing_key(private_key.into());
         let wallet = EthereumWallet::from(signer.clone());
-
-        let provider = ProviderBuilder::new().on_http(rpc_url.clone());
 
         let ws = WsConnect::new(ws_rpc_url.to_string());
 
@@ -452,6 +456,8 @@ impl ExecutionLayer {
                     unzen: 0,
                 },
             },
+            #[cfg(feature = "extra_gas_percentage")]
+            extra_gas_percentage: 5,
         })
     }
 
@@ -501,10 +507,9 @@ mod tests {
     async fn test_call_contract() {
         // Ensure `anvil` is available in $PATH.
         let anvil = Anvil::new().try_spawn().unwrap();
-        let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
         let ws_rpc_url = anvil.ws_endpoint();
         let private_key = anvil.keys()[0].clone();
-        let el = ExecutionLayer::new_from_pk(ws_rpc_url, rpc_url, private_key)
+        let el = ExecutionLayer::new_from_pk(ws_rpc_url, private_key)
             .await
             .unwrap();
         el.call_test_contract().await.unwrap();
