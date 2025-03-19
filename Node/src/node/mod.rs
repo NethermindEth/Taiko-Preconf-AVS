@@ -1,8 +1,9 @@
-mod batch_builder;
+pub mod batch_builder;
 mod operator;
 
 use crate::{ethereum_l1::EthereumL1, shared::l2_block::L2Block, taiko::Taiko};
-use anyhow::Error;
+use anyhow::{Error, Ok};
+use batch_builder::{BatchBuilder, BatchBuilderConfig};
 use operator::{Operator, Status as OperatorStatus};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
@@ -13,9 +14,9 @@ pub struct Node {
     ethereum_l1: Arc<EthereumL1>,
     preconf_heartbeat_ms: u64,
     operator: Operator,
-    batch_builder: batch_builder::BatchBuilder,
+    batch_builder: BatchBuilder,
     l1_height_lag: u64,
-    batch_builder_config: batch_builder::BatchBuilderConfig,
+    batch_builder_config: BatchBuilderConfig,
 }
 
 impl Node {
@@ -27,16 +28,14 @@ impl Node {
         handover_window_slots: u64,
         handover_start_buffer_ms: u64,
         l1_height_lag: u64,
-        max_bytes_size_of_batch: u64,
-        max_blocks_per_batch: u64,
+        batch_builder_config: BatchBuilderConfig,
     ) -> Result<Self, Error> {
         let operator = Operator::new(
             ethereum_l1.clone(),
             handover_window_slots,
             handover_start_buffer_ms,
         )?;
-        let batch_builder_config =
-            batch_builder::BatchBuilderConfig::new(max_bytes_size_of_batch, max_blocks_per_batch);
+
         Ok(Self {
             batch_builder: batch_builder::BatchBuilder::new(batch_builder_config.clone()),
             taiko,
@@ -76,6 +75,7 @@ impl Node {
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
         let current_status = self.operator.get_status().await?;
         match current_status {
+            // TODO: fix for buffer longer than l2 heart beat
             OperatorStatus::PreconferHandoverBuffer(buffer_ms) => {
                 tokio::time::sleep(Duration::from_millis(buffer_ms)).await;
                 self.preconfirm_block(false).await?;
@@ -112,34 +112,50 @@ impl Node {
             self.get_current_slots_info()?
         );
 
+        let preconfirmation_timestamp =
+            self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
+
         if let Some(pending_tx_list) = self.taiko.get_pending_l2_tx_list_from_taiko_geth().await? {
             debug!(
                 "Received pending tx list length: {}, bytes length: {}",
                 pending_tx_list.tx_list.len(),
                 pending_tx_list.bytes_length
             );
-            let preconfirmation_timestamp =
-                self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
             let l2_block = L2Block::new_from(pending_tx_list, preconfirmation_timestamp);
-            let l2_block_for_advancing_head = l2_block.clone();
-            let anchor_block_id: u64;
-            if !self.batch_builder.can_consume_l2_block(&l2_block) {
-                anchor_block_id = self.get_anchor_block_id().await?;
-                self.batch_builder
-                    .create_new_batch_and_add_l2_block(anchor_block_id, l2_block);
-            } else {
-                anchor_block_id = self
-                    .batch_builder
-                    .add_l2_block_and_get_current_anchor_block_id(l2_block);
-            }
-            self.taiko
-                .advance_head_to_new_l2_block(l2_block_for_advancing_head, anchor_block_id)
-                .await?;
-            if submit {
-                self.submit_batches(true).await?;
-            }
+            self.process_new_l2_block(l2_block, submit).await?;
         } else {
-            debug!("No pending txs, skipping preconfirmation");
+            if self
+                .batch_builder
+                .is_time_shift_between_blocks_expiring(preconfirmation_timestamp)
+            {
+                debug!("No pending txs, proposing empty block");
+                let empty_block = L2Block::new_empty(preconfirmation_timestamp);
+                self.process_new_l2_block(empty_block, submit).await?;
+            } else {
+                debug!("No pending txs, skipping preconfirmation");
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn process_new_l2_block(&mut self, l2_block: L2Block, submit: bool) -> Result<(), Error> {
+        let anchor_block_id: u64;
+        if !self.batch_builder.can_consume_l2_block(&l2_block) {
+            anchor_block_id = self.get_anchor_block_id().await?;
+            self.batch_builder
+                .create_new_batch_and_add_l2_block(anchor_block_id, l2_block.clone());
+        } else {
+            anchor_block_id = self
+                .batch_builder
+                .add_l2_block_and_get_current_anchor_block_id(l2_block.clone());
+        }
+        self.taiko
+            .advance_head_to_new_l2_block(l2_block, anchor_block_id)
+            .await?;
+
+        if submit {
+            self.submit_batches(true).await?;
         }
 
         Ok(())
@@ -168,10 +184,8 @@ impl Node {
                 self.batch_builder =
                     batch_builder::BatchBuilder::new(self.batch_builder_config.clone());
             }
-            Ok(())
-        } else {
-            Ok(())
         }
+        Ok(())
     }
 
     async fn get_anchor_block_id(&self) -> Result<u64, Error> {
