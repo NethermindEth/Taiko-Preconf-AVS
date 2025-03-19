@@ -77,12 +77,6 @@ impl TaikoBlobCoder {
             return Err(anyhow::anyhow!("Data is bigger than MAX_BLOB_DATA_SIZE"));
         }
 
-        // Init read offset
-        self.read_offset = 0;
-
-        // Init blob offset
-        self.blob_offset = 0;
-
         // Init read buffer
         let mut buf31 = [0u8; 31];
 
@@ -93,7 +87,7 @@ impl TaikoBlobCoder {
 
             // First FE
             if round == 0 {
-                // leave the firs u8 empty for future setup
+                // special case for the zeroth round
                 buf31[0] = ENCODING_VERSION;
                 let ilen = data.len() as u32;
                 buf31[1..4].copy_from_slice(&ilen.to_be_bytes()[1..]);
