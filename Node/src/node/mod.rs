@@ -35,7 +35,6 @@ impl Node {
             handover_window_slots,
             handover_start_buffer_ms,
         )?;
-
         Ok(Self {
             batch_builder: batch_builder::BatchBuilder::new(batch_builder_config.clone()),
             taiko,

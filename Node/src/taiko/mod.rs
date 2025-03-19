@@ -35,6 +35,8 @@ use tracing::{debug, info, trace};
 
 mod l2_contracts_bindings;
 pub mod preconf_blocks;
+pub mod taiko_blob;
+mod taiko_blob_coder;
 
 unsafe extern "C" {
     unsafe fn GetSignature(inputHash: *mut u8) -> *mut u8;

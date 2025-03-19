@@ -4,7 +4,7 @@ use crate::{
     utils::{config, types::*},
 };
 use alloy::{
-    consensus::{SidecarBuilder, SimpleCoder, TxEip4844Variant, TxEnvelope},
+    consensus::{TxEip4844Variant, TxEnvelope},
     eips::BlockNumberOrTag,
     network::{
         Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder, TransactionBuilder4844,
@@ -180,7 +180,7 @@ impl ExecutionLayer {
             .ok_or(anyhow::anyhow!("No L2 blocks provided"))?
             .timestamp_sec;
         let hash = self
-            .propose_batch_calldata(
+            .propose_batch_blob(
                 tx_lists_bytes,
                 blocks,
                 last_anchor_origin_height,
@@ -242,7 +242,7 @@ impl ExecutionLayer {
                 _params: encoded_propose_batch_wrapper,
                 _txList: tx_list,
             })
-            .with_gas_limit(2_000_000);
+            .with_gas_limit(2_000_000); // TODO fix gas limit
 
         let pending_tx = self
             .provider_ws
@@ -273,9 +273,8 @@ impl ExecutionLayer {
 
         let bytes_x = Bytes::new();
 
-        //TODO split blobs
-        let sidecar: SidecarBuilder<SimpleCoder> = SidecarBuilder::from_slice(&tx_list);
-        let sidecar = sidecar.build()?;
+        // Build sidecar
+        let sidecar = crate::taiko::taiko_blob::build_taiko_blob_sidecar(&tx_list)?;
         let num_blobs = sidecar.blobs.len() as u8;
 
         let batch_params = BatchParams {
@@ -315,7 +314,8 @@ impl ExecutionLayer {
             .with_call(&PreconfRouter::proposeBatchCall {
                 _params: encoded_propose_batch_wrapper,
                 _txList: Bytes::new(),
-            }); // TODO fix gas calculation
+            })
+            .with_gas_limit(2_500_000); // TODO fix gas limit
 
         let pending_tx = self
             .provider_ws
