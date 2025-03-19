@@ -13,4 +13,15 @@ impl L2Block {
             timestamp_sec,
         }
     }
+
+    pub fn new_empty(timestamp_sec: u64) -> Self {
+        L2Block {
+            prebuilt_tx_list: PreBuiltTxList {
+                tx_list: vec![],
+                estimated_gas_used: 0,
+                bytes_length: 0,
+            },
+            timestamp_sec,
+        }
+    }
 }

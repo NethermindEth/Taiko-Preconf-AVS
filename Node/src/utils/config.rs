@@ -24,6 +24,7 @@ pub struct Config {
     pub l1_height_lag: u64,
     pub max_bytes_size_of_batch: u64,
     pub max_blocks_per_batch: u64,
+    pub max_time_shift_between_blocks_sec: u64,
 }
 
 #[derive(Debug)]
@@ -170,6 +171,11 @@ impl Config {
             .parse::<u64>()
             .expect("MAX_BLOCKS_PER_BATCH must be a number");
 
+        let max_time_shift_between_blocks_sec = std::env::var("MAX_TIME_SHIFT_BETWEEN_BLOCKS_SEC")
+            .unwrap_or("255".to_string())
+            .parse::<u64>()
+            .expect("MAX_TIME_SHIFT_BETWEEN_BLOCKS_SEC must be a number");
+
         let config = Self {
             taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
                 .unwrap_or("ws://127.0.0.1:1234".to_string()),
@@ -199,6 +205,7 @@ impl Config {
             l1_height_lag,
             max_bytes_size_of_batch,
             max_blocks_per_batch,
+            max_time_shift_between_blocks_sec,
         };
 
         info!(
@@ -225,6 +232,7 @@ handover start buffer: {}ms
 l1 height lag: {}
 max bytes size of batch: {}
 max blocks per batch: {}
+max time shift between blocks: {}
 "#,
             config.taiko_geth_ws_rpc_url,
             config.taiko_geth_auth_rpc_url,
@@ -247,6 +255,7 @@ max blocks per batch: {}
             config.l1_height_lag,
             config.max_bytes_size_of_batch,
             config.max_blocks_per_batch,
+            config.max_time_shift_between_blocks_sec,
         );
 
         config

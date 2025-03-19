@@ -5,18 +5,13 @@ use tracing::{debug, warn};
 #[derive(Clone)]
 pub struct BatchBuilderConfig {
     /// Maximum size of the batch in bytes before sending
-    max_bytes_size_of_batch: u64,
+    pub max_bytes_size_of_batch: u64,
     /// Maximum number of blocks in a batch
-    max_blocks_per_batch: u64,
-}
-
-impl BatchBuilderConfig {
-    pub fn new(max_bytes_size_of_batch: u64, max_blocks_per_batch: u64) -> Self {
-        Self {
-            max_bytes_size_of_batch,
-            max_blocks_per_batch,
-        }
-    }
+    pub max_blocks_per_batch: u64,
+    /// L1 slot duration in seconds
+    pub l1_slot_duration_sec: u64,
+    /// Maximum time shift between blocks in seconds
+    pub max_time_shift_between_blocks_sec: u64,
 }
 
 #[derive(Default)]
@@ -109,5 +104,65 @@ impl BatchBuilder {
         } else {
             Some(&mut self.l1_batches)
         }
+    }
+
+    pub fn is_time_shift_between_blocks_expiring(
+        &mut self,
+        current_l2_slot_timestamp: u64,
+    ) -> bool {
+        if self.l1_batches.is_empty()
+            || self.get_current_batch().l2_blocks.is_empty()
+            || self.get_current_batch().submitted
+        {
+            return false;
+        }
+
+        if let Some(last_block) = self.get_current_batch().l2_blocks.last() {
+            if current_l2_slot_timestamp < last_block.timestamp_sec {
+                warn!("Preconfirmation timestamp is before the last block timestamp");
+                return false;
+            }
+            // is the last L1 slot to add an empty L2 block so we don't have a time shift overflow
+            self.is_the_last_l1_slot_to_add_an_empty_l2_block(
+                current_l2_slot_timestamp,
+                last_block.timestamp_sec,
+            )
+        } else {
+            false
+        }
+    }
+
+    fn is_the_last_l1_slot_to_add_an_empty_l2_block(
+        &self,
+        current_l2_slot_timestamp: u64,
+        last_block_timestamp: u64,
+    ) -> bool {
+        current_l2_slot_timestamp - last_block_timestamp
+            >= self.config.max_time_shift_between_blocks_sec - self.config.l1_slot_duration_sec
+    }
+}
+
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_the_last_l1_slot_to_add_an_empty_l2_block() {
+        let batch_builder = BatchBuilder::new(BatchBuilderConfig {
+            max_bytes_size_of_batch: 1000,
+            max_blocks_per_batch: 10,
+            l1_slot_duration_sec: 12,
+            max_time_shift_between_blocks_sec: 255,
+        });
+
+        assert_eq!(
+            batch_builder.is_the_last_l1_slot_to_add_an_empty_l2_block(100, 0),
+            false
+        );
+        assert_eq!(
+            batch_builder.is_the_last_l1_slot_to_add_an_empty_l2_block(242, 0),
+            false
+        );
+        assert!(batch_builder.is_the_last_l1_slot_to_add_an_empty_l2_block(243, 0));
+        assert!(batch_builder.is_the_last_l1_slot_to_add_an_empty_l2_block(255, 0));
     }
 }
