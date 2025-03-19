@@ -21,7 +21,7 @@ pub struct TaikoBlobCoder {
 
 impl TaikoBlobCoder {
     pub fn encode_blob(data: &[u8]) -> Result<Blob, Error> {
-        TaikoBlobCoder::new().from_data(data)
+        TaikoBlobCoder::new().encode_data(data)
     }
 
     fn new() -> Self {
@@ -69,7 +69,7 @@ impl TaikoBlobCoder {
     // For only the very first output field, bytes [1:5] are used to encode the version and the length
     // of the data.
     // Refer to https://github.com/ethereum-optimism/optimism/blob/develop/op-service/eth/blob.go#L92
-    fn from_data(&mut self, data: &[u8]) -> Result<Blob, Error> {
+    fn encode_data(&mut self, data: &[u8]) -> Result<Blob, Error> {
         if data.is_empty() {
             return Err(anyhow::anyhow!("Cannot encode empty data"));
         }

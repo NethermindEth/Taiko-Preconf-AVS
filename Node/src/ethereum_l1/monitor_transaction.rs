@@ -40,17 +40,15 @@ pub async fn monitor_transaction(provider: Arc<WsProvider>, tx_hash: B256) -> Jo
                             tx_hash, block_number
                         );
                         return TxStatus::Confirmed(block_number);
-                    } else {
-                        if let Some(block_number) = receipt.block_number {
+                    } else if let Some(block_number) = receipt.block_number {
                             return TxStatus::Failed(
-                                check_for_revert_reason(tx_hash, &provider, block_number).await,
-                            );
-                        } else {
-                            let error_msg =
-                                format!("Transaction {tx_hash} failed, but block number not found");
-                            error!("{}", error_msg);
-                            return TxStatus::Failed(error_msg);
-                        }
+                            check_for_revert_reason(tx_hash, &provider, block_number).await,
+                        );
+                    } else {
+                        let error_msg =
+                            format!("Transaction {tx_hash} failed, but block number not found");
+                        error!("{}", error_msg);
+                        return TxStatus::Failed(error_msg);
                     }
                 }
                 Ok(None) => {
@@ -118,7 +116,7 @@ async fn check_for_revert_reason(
         error_msg.push_str(&trace_errors);
     }
     error!("{}", error_msg);
-    return error_msg;
+    error_msg
 }
 
 fn find_errors_from_trace(trace_str: &str) -> Option<String> {
@@ -131,7 +129,7 @@ fn find_errors_from_trace(trace_str: &str) -> Option<String> {
             if !error_message.is_empty() {
                 error_message.push_str(", ");
             }
-            error_message.push_str(&error_content);
+            error_message.push_str(error_content);
             start_pos = absolute_pos + closing_paren + 1;
         } else {
             break;

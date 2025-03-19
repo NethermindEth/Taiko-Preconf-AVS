@@ -188,17 +188,25 @@ impl ExecutionLayer {
         let tx_blob_gas = self.provider_ws.estimate_gas(&tx_blob).await.unwrap_or(0);
 
         // Build eip1559 transaction
-        let tx_calldata = self.build_propose_batch_calldata(
-            tx_lists_bytes.clone(),
-            blocks.clone(),
-            last_anchor_origin_height,
-            last_block_timestamp,
-        ).await?;
-        let tx_calldata_gas = self.provider_ws.estimate_gas(&tx_calldata).await.unwrap_or(0);
+        let tx_calldata = self
+            .build_propose_batch_calldata(
+                tx_lists_bytes.clone(),
+                blocks.clone(),
+                last_anchor_origin_height,
+                last_block_timestamp,
+            )
+            .await?;
+        let tx_calldata_gas = self
+            .provider_ws
+            .estimate_gas(&tx_calldata)
+            .await
+            .unwrap_or(0);
 
         // If no gas estimate, return error
         if tx_calldata_gas == 0 && tx_blob_gas == 0 {
-            return Err(anyhow::anyhow!("Failed to estimate gas for both transaction types"));
+            return Err(anyhow::anyhow!(
+                "Failed to estimate gas for both transaction types"
+            ));
         }
 
         tracing::debug!(
@@ -293,7 +301,7 @@ impl ExecutionLayer {
 
     pub async fn build_propose_batch_blob(
         &self,
-        tx_list: &Vec<u8>,
+        tx_list: &[u8],
         blocks: Vec<BlockParams>,
         last_anchor_origin_height: u64,
         last_block_timestamp: u64,
