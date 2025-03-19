@@ -1,6 +1,7 @@
 pub mod consensus_layer;
 pub mod execution_layer;
 mod l1_contracts_bindings;
+mod monitor_transaction;
 pub mod slot_clock;
 mod ws_provider;
 
