@@ -41,7 +41,7 @@ pub async fn monitor_transaction(provider: Arc<WsProvider>, tx_hash: B256) -> Jo
                         );
                         return TxStatus::Confirmed(block_number);
                     } else if let Some(block_number) = receipt.block_number {
-                            return TxStatus::Failed(
+                        return TxStatus::Failed(
                             check_for_revert_reason(tx_hash, &provider, block_number).await,
                         );
                     } else {

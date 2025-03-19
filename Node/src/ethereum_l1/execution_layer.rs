@@ -5,14 +5,11 @@ use crate::{
 };
 use alloy::{
     eips::BlockNumberOrTag,
-    network::{
-        Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder, TransactionBuilder4844,
-    },
-    primitives::{Address, Bytes, FixedBytes, B256},
+    network::EthereumWallet,
+    primitives::{Address, B256},
     providers::{Provider, ProviderBuilder, WsConnect},
-    rpc::types::{BlockTransactionsKind, TransactionRequest},
+    rpc::types::BlockTransactionsKind,
     signers::local::PrivateKeySigner,
-    sol_types::SolValue,
 };
 use anyhow::Error;
 #[cfg(test)]
@@ -22,9 +19,10 @@ use std::{str::FromStr, sync::Arc};
 use crate::ethereum_l1::monitor_transaction::monitor_transaction;
 use tracing::debug;
 
+use crate::ethereum_l1::propose_batch_builder::ProposeBatchBuilder;
+
 pub struct ExecutionLayer {
     provider_ws: Arc<WsProvider>,
-    wallet: EthereumWallet,
     preconfer_address: Address,
     contract_addresses: ContractAddresses,
     pacaya_config: taiko_inbox::ITaikoInbox::Config,
@@ -52,7 +50,7 @@ impl ExecutionLayer {
         let preconfer_address: Address = signer.address();
         tracing::info!("AVS node address: {}", preconfer_address);
 
-        let wallet = EthereumWallet::from(signer.clone());
+        let wallet = EthereumWallet::from(signer);
 
         #[cfg(feature = "extra_gas_percentage")]
         let extra_gas_percentage = contract_addresses.extra_gas_percentage;
@@ -63,7 +61,7 @@ impl ExecutionLayer {
         let ws = WsConnect::new(ws_rpc_url.to_string());
 
         let provider_ws: WsProvider = ProviderBuilder::new()
-            .wallet(wallet.clone())
+            .wallet(wallet)
             .on_ws(ws.clone())
             .await
             .unwrap();
@@ -73,7 +71,6 @@ impl ExecutionLayer {
 
         Ok(Self {
             provider_ws: Arc::new(provider_ws),
-            wallet,
             preconfer_address,
             contract_addresses,
             pacaya_config,
@@ -175,59 +172,21 @@ impl ExecutionLayer {
             .ok_or(anyhow::anyhow!("No L2 blocks provided"))?
             .timestamp_sec;
 
-        // TODO estimate gas and select blob or calldata transaction
-        // Build eip4844 transaction
-        let tx_blob = self
-            .build_propose_batch_blob(
-                &tx_lists_bytes,
-                blocks.clone(),
-                last_anchor_origin_height,
-                last_block_timestamp,
-            )
-            .await?;
-        let tx_blob_gas = self.provider_ws.estimate_gas(&tx_blob).await.unwrap_or(0);
-
-        // Build eip1559 transaction
-        let tx_calldata = self
-            .build_propose_batch_calldata(
-                tx_lists_bytes.clone(),
-                blocks.clone(),
-                last_anchor_origin_height,
-                last_block_timestamp,
-            )
-            .await?;
-        let tx_calldata_gas = self
-            .provider_ws
-            .estimate_gas(&tx_calldata)
-            .await
-            .unwrap_or(0);
-
-        // If no gas estimate, return error
-        if tx_calldata_gas == 0 && tx_blob_gas == 0 {
-            return Err(anyhow::anyhow!(
-                "Failed to estimate gas for both transaction types"
-            ));
-        }
-
-        tracing::debug!(
-            "Calldata gas: {} Blob gas: {}",
-            tx_calldata_gas,
-            tx_blob_gas
-        );
-
-        // Select transaction to send
-        // If price the same, choose calldata
-        let (tx, gas_limit) = if tx_blob_gas < tx_calldata_gas {
-            (tx_blob, tx_blob_gas)
-        } else {
-            (tx_calldata, tx_calldata_gas)
-        };
-
+        // Build proposeBatch transaction
+        #[cfg(not(feature = "extra_gas_percentage"))]
+        let builder = ProposeBatchBuilder::new(self.provider_ws.clone());
         #[cfg(feature = "extra_gas_percentage")]
-        let gas_limit = gas_limit + gas_limit * self.extra_gas_percentage / 100;
-
-        // Set tx gas limit
-        let tx = tx.with_gas_limit(gas_limit);
+        let builder = ProposeBatchBuilder::new(self.provider_ws.clone(), self.extra_gas_percentage);
+        let tx = builder
+            .build_propose_batch_tx(
+                self.preconfer_address,
+                self.contract_addresses.preconf_router,
+                tx_lists_bytes,
+                blocks.clone(),
+                last_anchor_origin_height,
+                last_block_timestamp,
+            )
+            .await?;
 
         // Send transaction
         let pending_tx = self
@@ -243,118 +202,6 @@ impl ExecutionLayer {
         monitor_transaction(self.provider_ws.clone(), *pending_tx.tx_hash()).await;
 
         Ok(())
-    }
-
-    pub async fn build_propose_batch_calldata(
-        &self,
-        tx_list: Vec<u8>,
-        blocks: Vec<BlockParams>,
-        last_anchor_origin_height: u64,
-        last_block_timestamp: u64,
-    ) -> Result<TransactionRequest, Error> {
-        let tx_list_len = tx_list.len() as u32;
-        let tx_list = Bytes::from(tx_list);
-
-        let bytes_x = Bytes::new();
-
-        let batch_params = BatchParams {
-            proposer: self.preconfer_address,
-            coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(
-                &self.wallet,
-            ),
-            parentMetaHash: FixedBytes::from(&[0u8; 32]),
-            anchorBlockId: last_anchor_origin_height,
-            lastBlockTimestamp: last_block_timestamp,
-            revertIfNotFirstProposal: false,
-            blobParams: BlobParams {
-                blobHashes: vec![],
-                firstBlobIndex: 0,
-                numBlobs: 0,
-                byteOffset: 0,
-                byteSize: tx_list_len,
-                createdIn: 0,
-            },
-            blocks,
-        };
-
-        let encoded_batch_params = Bytes::from(BatchParams::abi_encode(&batch_params));
-
-        let propose_batch_wrapper = ProposeBatchWrapper {
-            bytesX: bytes_x,
-            bytesY: encoded_batch_params,
-        };
-
-        let encoded_propose_batch_wrapper = Bytes::from(ProposeBatchWrapper::abi_encode_sequence(
-            &propose_batch_wrapper,
-        ));
-
-        let tx = TransactionRequest::default()
-            .with_from(self.preconfer_address)
-            .with_to(self.contract_addresses.preconf_router)
-            .with_call(&PreconfRouter::proposeBatchCall {
-                _params: encoded_propose_batch_wrapper,
-                _txList: tx_list,
-            });
-
-        Ok(tx)
-    }
-
-    pub async fn build_propose_batch_blob(
-        &self,
-        tx_list: &[u8],
-        blocks: Vec<BlockParams>,
-        last_anchor_origin_height: u64,
-        last_block_timestamp: u64,
-    ) -> Result<TransactionRequest, Error> {
-        let tx_list_len = tx_list.len() as u32;
-
-        let bytes_x = Bytes::new();
-
-        // Build sidecar
-        let sidecar = crate::taiko::taiko_blob::build_taiko_blob_sidecar(tx_list)?;
-        let num_blobs = sidecar.blobs.len() as u8;
-
-        let batch_params = BatchParams {
-            proposer: self.preconfer_address,
-            coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(
-                &self.wallet,
-            ),
-            parentMetaHash: FixedBytes::from(&[0u8; 32]),
-            anchorBlockId: last_anchor_origin_height,
-            lastBlockTimestamp: last_block_timestamp,
-            revertIfNotFirstProposal: false,
-            blobParams: BlobParams {
-                blobHashes: vec![],
-                firstBlobIndex: 0,
-                numBlobs: num_blobs,
-                byteOffset: 0,
-                byteSize: tx_list_len,
-                createdIn: 0,
-            },
-            blocks,
-        };
-
-        let encoded_batch_params = Bytes::from(BatchParams::abi_encode(&batch_params));
-
-        let propose_batch_wrapper = ProposeBatchWrapper {
-            bytesX: bytes_x,
-            bytesY: encoded_batch_params,
-        };
-
-        let encoded_propose_batch_wrapper = Bytes::from(ProposeBatchWrapper::abi_encode_sequence(
-            &propose_batch_wrapper,
-        ));
-
-        let tx = TransactionRequest::default()
-            .with_from(self.preconfer_address)
-            .with_to(self.contract_addresses.preconf_router)
-            .with_blob_sidecar(sidecar)
-            .with_call(&PreconfRouter::proposeBatchCall {
-                _params: encoded_propose_batch_wrapper,
-                _txList: Bytes::new(),
-            });
-
-        Ok(tx)
     }
 
     async fn fetch_pacaya_config(
@@ -414,12 +261,12 @@ impl ExecutionLayer {
         use super::l1_contracts_bindings::taiko_inbox::ITaikoInbox::ForkHeights;
 
         let signer = PrivateKeySigner::from_signing_key(private_key.into());
-        let wallet = EthereumWallet::from(signer.clone());
+        let wallet = EthereumWallet::from(signer);
 
         let ws = WsConnect::new(ws_rpc_url.to_string());
 
         let provider_ws: WsProvider = ProviderBuilder::new()
-            .wallet(wallet.clone())
+            .wallet(wallet)
             .on_ws(ws.clone())
             .await
             .unwrap();
@@ -429,7 +276,6 @@ impl ExecutionLayer {
 
         Ok(Self {
             provider_ws: Arc::new(provider_ws),
-            wallet,
             preconfer_address,
             contract_addresses: ContractAddresses {
                 taiko_l1: Address::ZERO,
