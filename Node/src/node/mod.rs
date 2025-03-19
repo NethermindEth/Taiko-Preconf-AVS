@@ -62,6 +62,8 @@ impl Node {
 
         // start preconfirmation loop
         let mut interval = tokio::time::interval(Duration::from_millis(self.preconf_heartbeat_ms));
+        // fix for handover buffer longer than l2 heart beat, keeps the loop synced
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
 
@@ -74,7 +76,6 @@ impl Node {
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
         let current_status = self.operator.get_status().await?;
         match current_status {
-            // TODO: fix for buffer longer than l2 heart beat
             OperatorStatus::PreconferHandoverBuffer(buffer_ms) => {
                 tokio::time::sleep(Duration::from_millis(buffer_ms)).await;
                 self.preconfirm_block(false).await?;
