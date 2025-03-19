@@ -48,8 +48,8 @@ impl ProposeBatchBuilder {
         // Build eip4844 transaction
         let tx_blob = self
             .build_propose_batch_blob(
-                to,
                 from,
+                to,
                 &tx_list,
                 blocks.clone(),
                 last_anchor_origin_height,
@@ -63,8 +63,8 @@ impl ProposeBatchBuilder {
         // Build eip1559 transaction
         let tx_calldata = self
             .build_propose_batch_calldata(
-                to,
                 from,
+                to,
                 tx_list,
                 blocks.clone(),
                 last_anchor_origin_height,
