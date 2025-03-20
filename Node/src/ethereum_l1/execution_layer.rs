@@ -4,40 +4,30 @@ use crate::{
     utils::{config, types::*},
 };
 use alloy::{
-    consensus::{TxEip4844Variant, TxEnvelope},
     eips::BlockNumberOrTag,
-    network::{
-        Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder, TransactionBuilder4844,
-    },
-    primitives::{Address, Bytes, FixedBytes, TxKind, B256},
-    providers::{ext::DebugApi, Provider, ProviderBuilder, WsConnect},
-    rpc::types::{
-        trace::geth::GethDebugTracingOptions, BlockTransactionsKind, Transaction,
-        TransactionRequest,
-    },
+    network::EthereumWallet,
+    primitives::{Address, B256},
+    providers::{Provider, ProviderBuilder, WsConnect},
+    rpc::types::BlockTransactionsKind,
     signers::local::PrivateKeySigner,
-    sol_types::SolValue,
 };
 use anyhow::Error;
 #[cfg(test)]
 use mockall::automock;
-use std::{str::FromStr, time::Duration};
-use tokio::{task::JoinHandle, time};
-use tracing::{debug, error, info, trace, warn};
+use std::{str::FromStr, sync::Arc};
 
-// Transaction status enum
-#[derive(Debug, Clone, PartialEq)]
-pub enum TxStatus {
-    Confirmed(u64), // Block number
-    Failed(String), // Error message
-}
+use crate::ethereum_l1::monitor_transaction::monitor_transaction;
+use tracing::debug;
+
+use crate::ethereum_l1::propose_batch_builder::ProposeBatchBuilder;
 
 pub struct ExecutionLayer {
-    provider_ws: WsProvider,
-    wallet: EthereumWallet,
+    provider_ws: Arc<WsProvider>,
     preconfer_address: Address,
     contract_addresses: ContractAddresses,
     pacaya_config: taiko_inbox::ITaikoInbox::Config,
+    #[cfg(feature = "extra_gas_percentage")]
+    extra_gas_percentage: u64,
 }
 
 pub struct ContractAddresses {
@@ -60,7 +50,10 @@ impl ExecutionLayer {
         let preconfer_address: Address = signer.address();
         tracing::info!("AVS node address: {}", preconfer_address);
 
-        let wallet = EthereumWallet::from(signer.clone());
+        let wallet = EthereumWallet::from(signer);
+
+        #[cfg(feature = "extra_gas_percentage")]
+        let extra_gas_percentage = contract_addresses.extra_gas_percentage;
 
         let contract_addresses = Self::parse_contract_addresses(contract_addresses)
             .map_err(|e| Error::msg(format!("Failed to parse contract addresses: {}", e)))?;
@@ -68,7 +61,7 @@ impl ExecutionLayer {
         let ws = WsConnect::new(ws_rpc_url.to_string());
 
         let provider_ws: WsProvider = ProviderBuilder::new()
-            .wallet(wallet.clone())
+            .wallet(wallet)
             .on_ws(ws.clone())
             .await
             .unwrap();
@@ -77,11 +70,12 @@ impl ExecutionLayer {
             Self::fetch_pacaya_config(&contract_addresses.taiko_l1, &provider_ws).await?;
 
         Ok(Self {
-            provider_ws,
-            wallet,
+            provider_ws: Arc::new(provider_ws),
             preconfer_address,
             contract_addresses,
             pacaya_config,
+            #[cfg(feature = "extra_gas_percentage")]
+            extra_gas_percentage,
         })
     }
 
@@ -173,166 +167,41 @@ impl ExecutionLayer {
             tx_lists_bytes.len(),
         );
 
-        // TODO estimate gas and select blob or calldata transaction
-
         let last_block_timestamp = l2_blocks
             .last()
             .ok_or(anyhow::anyhow!("No L2 blocks provided"))?
             .timestamp_sec;
-        let hash = self
-            .propose_batch_blob(
+
+        // Build proposeBatch transaction
+        #[cfg(not(feature = "extra_gas_percentage"))]
+        let builder = ProposeBatchBuilder::new(self.provider_ws.clone());
+        #[cfg(feature = "extra_gas_percentage")]
+        let builder = ProposeBatchBuilder::new(self.provider_ws.clone(), self.extra_gas_percentage);
+        let tx = builder
+            .build_propose_batch_tx(
+                self.preconfer_address,
+                self.contract_addresses.preconf_router,
                 tx_lists_bytes,
-                blocks,
+                blocks.clone(),
                 last_anchor_origin_height,
                 last_block_timestamp,
             )
-            .await
-            .map_err(|e| Error::msg(format!("Failed to propose batch: {}", e)))?;
+            .await?;
 
-        debug!("Proposed batch with hash {hash}");
+        // Send transaction
+        let pending_tx = self
+            .provider_ws
+            .send_transaction(tx)
+            .await?
+            .register()
+            .await?;
+
+        tracing::debug!("Call proposeBatch with hash {}", pending_tx.tx_hash());
+
+        // Spawn a monitor for this transaction
+        monitor_transaction(self.provider_ws.clone(), *pending_tx.tx_hash()).await;
+
         Ok(())
-    }
-
-    pub async fn propose_batch_calldata(
-        &self,
-        tx_list: Vec<u8>,
-        blocks: Vec<BlockParams>,
-        last_anchor_origin_height: u64,
-        last_block_timestamp: u64,
-    ) -> Result<FixedBytes<32>, Error> {
-        let tx_list_len = tx_list.len() as u32;
-        let tx_list = Bytes::from(tx_list);
-
-        let bytes_x = Bytes::new();
-
-        let batch_params = BatchParams {
-            proposer: self.preconfer_address,
-            coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(
-                &self.wallet,
-            ),
-            parentMetaHash: FixedBytes::from(&[0u8; 32]),
-            anchorBlockId: last_anchor_origin_height,
-            lastBlockTimestamp: last_block_timestamp,
-            revertIfNotFirstProposal: false,
-            blobParams: BlobParams {
-                blobHashes: vec![],
-                firstBlobIndex: 0,
-                numBlobs: 0,
-                byteOffset: 0,
-                byteSize: tx_list_len,
-                createdIn: 0,
-            },
-            blocks,
-        };
-
-        let encoded_batch_params = Bytes::from(BatchParams::abi_encode(&batch_params));
-
-        let propose_batch_wrapper = ProposeBatchWrapper {
-            bytesX: bytes_x,
-            bytesY: encoded_batch_params,
-        };
-
-        let encoded_propose_batch_wrapper = Bytes::from(ProposeBatchWrapper::abi_encode_sequence(
-            &propose_batch_wrapper,
-        ));
-
-        let tx = TransactionRequest::default()
-            .with_to(self.contract_addresses.preconf_router)
-            .with_call(&PreconfRouter::proposeBatchCall {
-                _params: encoded_propose_batch_wrapper,
-                _txList: tx_list,
-            })
-            .with_gas_limit(2_000_000); // TODO fix gas limit
-
-        let pending_tx = self
-            .provider_ws
-            .send_transaction(tx)
-            .await?
-            .register()
-            .await?;
-
-        tracing::debug!(
-            "Call proposeBatch with calldata and hash {}",
-            pending_tx.tx_hash()
-        );
-
-        // Spawn a monitor for this transaction
-        let _ = self.monitor_transaction(*pending_tx.tx_hash()).await;
-
-        Ok(*pending_tx.tx_hash())
-    }
-
-    pub async fn propose_batch_blob(
-        &self,
-        tx_list: Vec<u8>,
-        blocks: Vec<BlockParams>,
-        last_anchor_origin_height: u64,
-        last_block_timestamp: u64,
-    ) -> Result<FixedBytes<32>, Error> {
-        let tx_list_len = tx_list.len() as u32;
-
-        let bytes_x = Bytes::new();
-
-        // Build sidecar
-        let sidecar = crate::taiko::taiko_blob::build_taiko_blob_sidecar(&tx_list)?;
-        let num_blobs = sidecar.blobs.len() as u8;
-
-        let batch_params = BatchParams {
-            proposer: self.preconfer_address,
-            coinbase: <EthereumWallet as NetworkWallet<Ethereum>>::default_signer_address(
-                &self.wallet,
-            ),
-            parentMetaHash: FixedBytes::from(&[0u8; 32]),
-            anchorBlockId: last_anchor_origin_height,
-            lastBlockTimestamp: last_block_timestamp,
-            revertIfNotFirstProposal: false,
-            blobParams: BlobParams {
-                blobHashes: vec![],
-                firstBlobIndex: 0,
-                numBlobs: num_blobs,
-                byteOffset: 0,
-                byteSize: tx_list_len,
-                createdIn: 0,
-            },
-            blocks,
-        };
-
-        let encoded_batch_params = Bytes::from(BatchParams::abi_encode(&batch_params));
-
-        let propose_batch_wrapper = ProposeBatchWrapper {
-            bytesX: bytes_x,
-            bytesY: encoded_batch_params,
-        };
-
-        let encoded_propose_batch_wrapper = Bytes::from(ProposeBatchWrapper::abi_encode_sequence(
-            &propose_batch_wrapper,
-        ));
-
-        let tx = TransactionRequest::default()
-            .with_to(self.contract_addresses.preconf_router)
-            .with_blob_sidecar(sidecar)
-            .with_call(&PreconfRouter::proposeBatchCall {
-                _params: encoded_propose_batch_wrapper,
-                _txList: Bytes::new(),
-            })
-            .with_gas_limit(2_500_000); // TODO fix gas limit
-
-        let pending_tx = self
-            .provider_ws
-            .send_transaction(tx)
-            .await?
-            .register()
-            .await?;
-
-        tracing::debug!(
-            "Call proposeBatch with blob and hash {}",
-            pending_tx.tx_hash()
-        );
-
-        // Spawn a monitor for this transaction
-        let _ = self.monitor_transaction(*pending_tx.tx_hash()).await;
-
-        Ok(*pending_tx.tx_hash())
     }
 
     async fn fetch_pacaya_config(
@@ -384,216 +253,20 @@ impl ExecutionLayer {
         Ok(block.header.state_root)
     }
 
-    /// Monitor a transaction until it is confirmed or fails.
-    /// Spawns a new tokio task to monitor the transaction.
-    pub async fn monitor_transaction(&self, tx_hash: B256) -> JoinHandle<TxStatus> {
-        let provider = self.provider_ws.clone();
-
-        tokio::spawn(async move {
-            let max_attempts = 50; //TODO move to config
-            let delay = Duration::from_secs(2);
-
-            for attempt in 0..max_attempts {
-                match provider.get_transaction_receipt(tx_hash).await {
-                    Ok(Some(receipt)) => {
-                        if receipt.status() {
-                            let block_number = if let Some(block_number) = receipt.block_number {
-                                block_number
-                            } else {
-                                warn!("Block number not found for transaction {}", tx_hash);
-                                0
-                            };
-
-                            info!(
-                                "Transaction {} confirmed in block {}",
-                                tx_hash, block_number
-                            );
-                            return TxStatus::Confirmed(block_number);
-                        } else {
-                            if let Some(block_number) = receipt.block_number {
-                                return TxStatus::Failed(
-                                    Self::check_for_revert_reason(tx_hash, &provider, block_number)
-                                        .await,
-                                );
-                            } else {
-                                let error_msg = format!(
-                                    "Transaction {tx_hash} failed, but block number not found"
-                                );
-                                error!("{}", error_msg);
-                                return TxStatus::Failed(error_msg);
-                            }
-                        }
-                    }
-                    Ok(None) => {
-                        trace!(
-                            "Transaction {} still pending (attempt {}/{})",
-                            tx_hash,
-                            attempt + 1,
-                            max_attempts
-                        );
-                        time::sleep(delay).await;
-                    }
-                    Err(e) => {
-                        error!("Error checking transaction {}: {}", tx_hash, e);
-                        time::sleep(delay).await;
-                    }
-                }
-            }
-
-            let error_msg = format!(
-                "Transaction {} not confirmed after {} attempts",
-                tx_hash, max_attempts
-            );
-            error!("{}", error_msg);
-            TxStatus::Failed(error_msg)
-        })
-    }
-
-    async fn check_for_revert_reason(
-        tx_hash: B256,
-        provider: &WsProvider,
-        block_number: u64,
-    ) -> String {
-        let default_options = GethDebugTracingOptions::default();
-        let trace = provider
-            .debug_trace_transaction(tx_hash, default_options)
-            .await;
-
-        let trace_errors = if let Ok(trace) = trace {
-            Self::find_errors_from_trace(&format!("{:?}", trace))
-        } else {
-            None
-        };
-
-        let tx_details = match provider.get_transaction_by_hash(tx_hash).await {
-            Ok(Some(tx)) => tx,
-            _ => {
-                let error_msg = format!("Transaction {} failed", tx_hash);
-                error!("{}", error_msg);
-                return error_msg;
-            }
-        };
-
-        let call_request = Self::get_tx_request_for_call(tx_details);
-        let revert_reason = match provider
-            .call(&call_request)
-            .block(block_number.into())
-            .await
-        {
-            Err(e) => e.to_string(),
-            Ok(ok) => format!("Unknown revert reason: {ok}"),
-        };
-
-        let mut error_msg = format!("Transaction {tx_hash} failed: {revert_reason}");
-        if let Some(trace_errors) = trace_errors {
-            error_msg.push_str(&trace_errors);
-        }
-        error!("{}", error_msg);
-        return error_msg;
-    }
-
-    fn find_errors_from_trace(trace_str: &str) -> Option<String> {
-        let mut start_pos = 0;
-        let mut error_message = String::new();
-        while let Some(error_start) = trace_str[start_pos..].find("error: Some(") {
-            let absolute_pos = start_pos + error_start;
-            if let Some(closing_paren) = trace_str[absolute_pos..].find(')') {
-                let error_content = &trace_str[absolute_pos..absolute_pos + closing_paren + 1];
-                if !error_message.is_empty() {
-                    error_message.push_str(", ");
-                }
-                error_message.push_str(&error_content);
-                start_pos = absolute_pos + closing_paren + 1;
-            } else {
-                break;
-            }
-        }
-        if !error_message.is_empty() {
-            Some(format!(", errors from debug trace: {error_message}"))
-        } else {
-            None
-        }
-    }
-
-    fn get_tx_request_for_call(tx_details: Transaction) -> TransactionRequest {
-        match tx_details.inner {
-            TxEnvelope::Eip1559(tx) => {
-                let to = match tx.tx().to {
-                    TxKind::Call(to) => to,
-                    _ => Address::default(),
-                };
-                TransactionRequest::default()
-                    .with_from(tx_details.from)
-                    .with_to(to)
-                    .with_input(tx.tx().input.clone())
-                    .with_value(tx.tx().value)
-                    .with_gas_limit(tx.tx().gas_limit)
-                    .with_max_priority_fee_per_gas(tx.tx().max_priority_fee_per_gas)
-                    .with_max_fee_per_gas(tx.tx().max_fee_per_gas)
-            }
-            TxEnvelope::Legacy(tx) => {
-                let to = match tx.tx().to {
-                    TxKind::Call(to) => to,
-                    _ => Address::default(),
-                };
-                TransactionRequest::default()
-                    .with_from(tx_details.from)
-                    .with_to(to)
-                    .with_input(tx.tx().input.clone())
-                    .with_value(tx.tx().value)
-                    .with_gas_limit(tx.tx().gas_limit)
-            }
-            TxEnvelope::Eip2930(tx) => {
-                let to = match tx.tx().to {
-                    TxKind::Call(to) => to,
-                    _ => Address::default(),
-                };
-                TransactionRequest::default()
-                    .with_from(tx_details.from)
-                    .with_to(to)
-                    .with_input(tx.tx().input.clone())
-                    .with_value(tx.tx().value)
-                    .with_gas_limit(tx.tx().gas_limit)
-            }
-            TxEnvelope::Eip4844(tx) => {
-                let tx = tx.tx();
-                match tx {
-                    TxEip4844Variant::TxEip4844(tx) => TransactionRequest::default()
-                        .with_from(tx_details.from)
-                        .with_to(tx.to)
-                        .with_input(tx.input.clone())
-                        .with_value(tx.value)
-                        .with_gas_limit(tx.gas_limit),
-                    TxEip4844Variant::TxEip4844WithSidecar(tx) => TransactionRequest::default()
-                        .with_from(tx_details.from)
-                        .with_to(tx.tx().to)
-                        .with_input(tx.tx().input.clone())
-                        .with_value(tx.tx().value)
-                        .with_gas_limit(tx.tx().gas_limit)
-                        .with_blob_sidecar(tx.sidecar.clone()),
-                }
-            }
-            _ => TransactionRequest::default(),
-        }
-    }
-
     #[cfg(test)]
     pub async fn new_from_pk(
         ws_rpc_url: String,
-        rpc_url: reqwest::Url,
         private_key: elliptic_curve::SecretKey<k256::Secp256k1>,
     ) -> Result<Self, Error> {
         use super::l1_contracts_bindings::taiko_inbox::ITaikoInbox::ForkHeights;
 
         let signer = PrivateKeySigner::from_signing_key(private_key.into());
-        let wallet = EthereumWallet::from(signer.clone());
-
-        let provider = ProviderBuilder::new().on_http(rpc_url.clone());
+        let wallet = EthereumWallet::from(signer);
 
         let ws = WsConnect::new(ws_rpc_url.to_string());
 
         let provider_ws: WsProvider = ProviderBuilder::new()
-            .wallet(wallet.clone())
+            .wallet(wallet)
             .on_ws(ws.clone())
             .await
             .unwrap();
@@ -602,8 +275,7 @@ impl ExecutionLayer {
             .parse()?;
 
         Ok(Self {
-            provider_ws,
-            wallet,
+            provider_ws: Arc::new(provider_ws),
             preconfer_address,
             contract_addresses: ContractAddresses {
                 taiko_l1: Address::ZERO,
@@ -638,6 +310,8 @@ impl ExecutionLayer {
                     unzen: 0,
                 },
             },
+            #[cfg(feature = "extra_gas_percentage")]
+            extra_gas_percentage: 5,
         })
     }
 
@@ -687,10 +361,9 @@ mod tests {
     async fn test_call_contract() {
         // Ensure `anvil` is available in $PATH.
         let anvil = Anvil::new().try_spawn().unwrap();
-        let rpc_url: reqwest::Url = anvil.endpoint().parse().unwrap();
         let ws_rpc_url = anvil.ws_endpoint();
         let private_key = anvil.keys()[0].clone();
-        let el = ExecutionLayer::new_from_pk(ws_rpc_url, rpc_url, private_key)
+        let el = ExecutionLayer::new_from_pk(ws_rpc_url, private_key)
             .await
             .unwrap();
         el.call_test_contract().await.unwrap();
