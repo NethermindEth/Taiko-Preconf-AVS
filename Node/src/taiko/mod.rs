@@ -1,5 +1,4 @@
 #![allow(unused)] // TODO: remove this once using new rpc functions
-extern crate libc;
 
 use crate::{
     ethereum_l1::EthereumL1,
@@ -38,11 +37,6 @@ mod l2_contracts_bindings;
 pub mod preconf_blocks;
 pub mod taiko_blob;
 mod taiko_blob_coder;
-
-unsafe extern "C" {
-    unsafe fn GetSignature(inputHash: *mut u8) -> *mut u8;
-    unsafe fn FreeBytesArray(ptr: *mut u8);
-}
 
 const GOLDEN_TOUCH_PRIVATE_KEY: &str =
     "92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38";
