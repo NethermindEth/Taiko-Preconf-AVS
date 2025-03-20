@@ -372,6 +372,16 @@ impl Taiko {
             .try_into()
             .map_err(|err| anyhow::anyhow!("Failed to convert base fee to u64: {}", err))
     }
+
+    pub async fn get_last_synced_anchor_block_id(&self) -> Result<u64, Error> {
+        Ok(self
+            .taiko_anchor
+            .lastSyncedBlock()
+            .call()
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get last synced anchor block id: {}", e)))?
+            ._0)
+    }
 }
 
 // #[cfg(test)]

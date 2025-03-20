@@ -189,15 +189,14 @@ impl Node {
     }
 
     async fn get_anchor_block_id(&self) -> Result<u64, Error> {
-        let height_from_last_batch = self
-            .ethereum_l1
-            .execution_layer
-            .get_anchor_block_id()
-            .await?;
+        let last_synced_anchor_block_on_l2 = self.taiko.get_last_synced_anchor_block_id().await?;
         let l1_height = self.ethereum_l1.execution_layer.get_l1_height().await?;
         let l1_height_with_lag = l1_height - self.l1_height_lag;
 
-        Ok(std::cmp::max(height_from_last_batch, l1_height_with_lag))
+        Ok(std::cmp::max(
+            last_synced_anchor_block_on_l2,
+            l1_height_with_lag,
+        ))
     }
 
     fn get_current_slots_info(&self) -> Result<String, Error> {
