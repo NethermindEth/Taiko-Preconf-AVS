@@ -32,6 +32,8 @@ pub struct L1ContractAddresses {
     pub taiko_l1: String,
     pub preconf_whitelist: String,
     pub preconf_router: String,
+    #[cfg(feature = "extra_gas_percentage")]
+    pub extra_gas_percentage: u64,
 }
 
 impl Config {
@@ -78,10 +80,18 @@ impl Config {
             default_empty_address.clone()
         });
 
+        #[cfg(feature = "extra_gas_percentage")]
+        let extra_gas_percentage = std::env::var("EXTRA_GAS_PERCENTAGE")
+            .unwrap_or("5".to_string())
+            .parse::<u64>()
+            .expect("EXTRA_GAS_PERCENTAGE must be a number");
+
         let contract_addresses = L1ContractAddresses {
             taiko_l1,
             preconf_whitelist,
             preconf_router,
+            #[cfg(feature = "extra_gas_percentage")]
+            extra_gas_percentage,
         };
 
         let l1_slot_duration_sec = std::env::var("L1_SLOT_DURATION_SEC")

@@ -51,7 +51,9 @@ bindgen = "0.71"
 libc = "0.2"
 
 [features]
+default = ["extra_gas_percentage"]
 use_mock = []
+extra_gas_percentage = []
 
 # TODO: remove when the bug is fixed (https://github.com/ralexstokes/ssz-rs/issues/163)
 [patch."https://github.com/ralexstokes/ssz-rs"]
