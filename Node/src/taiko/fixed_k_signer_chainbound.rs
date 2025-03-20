@@ -1,3 +1,5 @@
+/// Ethereum ECDSA signer with fixed K value, implemented by Chainbound https://chainbound.io/
+// TODO: add reference to the original implementation
 use anyhow::Error;
 use std::str::FromStr;
 
