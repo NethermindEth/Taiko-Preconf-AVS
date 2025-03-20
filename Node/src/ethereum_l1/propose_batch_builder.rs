@@ -8,6 +8,7 @@ use alloy::{
 };
 use anyhow::Error;
 use std::sync::Arc;
+use tracing::warn;
 
 struct FeesPerGas {
     base_fee_per_gas: u128,
@@ -36,6 +37,20 @@ impl ProposeBatchBuilder {
         }
     }
 
+    /// Builds a proposeBatch transaction, choosing between eip1559 and eip4844 based on gas cost.
+    ///
+    /// # Arguments
+    ///
+    /// * `from`: The address of the proposer.
+    /// * `to`: The address of the Taiko L1 contract.
+    /// * `tx_list`: The list of preconfirmed L2 transactions.
+    /// * `blocks`: The list of block params.
+    /// * `last_anchor_origin_height`: The last anchor origin height.
+    /// * `last_block_timestamp`: The last block timestamp.
+    ///
+    /// # Returns
+    ///
+    /// A `TransactionRequest` representing the proposeBatch transaction.
     pub async fn build_propose_batch_tx(
         &self,
         from: Address,
@@ -56,7 +71,17 @@ impl ProposeBatchBuilder {
                 last_block_timestamp,
             )
             .await?;
-        let tx_blob_gas = self.provider_ws.estimate_gas(&tx_blob).await.unwrap_or(0);
+        let tx_blob_gas = match self.provider_ws.estimate_gas(&tx_blob).await {
+            Ok(gas) => gas,
+            Err(e) => {
+                warn!(
+                    "Build proposeBatch: Failed to estimate gas for blob transaction: {}",
+                    e
+                );
+                // In case of error return eip4844 transaction
+                return Ok(tx_blob);
+            }
+        };
         #[cfg(feature = "extra_gas_percentage")]
         let tx_blob_gas = tx_blob_gas + tx_blob_gas * self.extra_gas_percentage / 100;
 
@@ -71,16 +96,22 @@ impl ProposeBatchBuilder {
                 last_block_timestamp,
             )
             .await?;
-        let tx_calldata_gas = self
-            .provider_ws
-            .estimate_gas(&tx_calldata)
-            .await
-            .unwrap_or(0);
+        let tx_calldata_gas = match self.provider_ws.estimate_gas(&tx_calldata).await {
+            Ok(gas) => gas,
+            Err(e) => {
+                warn!(
+                    "Build proposeBatch: Failed to estimate gas for calldata transaction: {}",
+                    e
+                );
+                // In case of error return eip4844 transaction
+                return Ok(tx_blob);
+            }
+        };
         #[cfg(feature = "extra_gas_percentage")]
         let tx_calldata_gas = tx_calldata_gas + tx_calldata_gas * self.extra_gas_percentage / 100;
 
         tracing::debug!(
-            "eip1559 gas: {} eip4844 gas: {}",
+            "Build proposeBatch: eip1559 gas: {} eip4844 gas: {}",
             tx_calldata_gas,
             tx_blob_gas
         );
@@ -88,12 +119,19 @@ impl ProposeBatchBuilder {
         // If no gas estimate, return error
         if tx_calldata_gas == 0 && tx_blob_gas == 0 {
             return Err(anyhow::anyhow!(
-                "Failed to estimate gas for both transaction types"
+                "Build proposeBatch: Failed to estimate gas for both transaction types"
             ));
         }
 
         // Get fees from the network
-        let fees_per_gas = self.get_fees_per_gas().await?;
+        let fees_per_gas = match self.get_fees_per_gas().await {
+            Ok(fees_per_gas) => fees_per_gas,
+            Err(e) => {
+                warn!("Build proposeBatch: Failed to get fees per gas: {}", e);
+                // In case of error return eip4844 transaction
+                return Ok(tx_blob);
+            }
+        };
 
         // Get blob count
         let blob_count = tx_blob
@@ -108,7 +146,7 @@ impl ProposeBatchBuilder {
             .await;
 
         tracing::debug!(
-            "eip1559_cost: {} eip4844_cost: {}",
+            "Build proposeBatch: eip1559_cost: {} eip4844_cost: {}",
             eip1559_cost,
             eip4844_cost
         );
@@ -145,10 +183,6 @@ impl ProposeBatchBuilder {
     }
 
     async fn get_eip1559_cost(&self, fees_per_gas: &FeesPerGas, gas_used: u64) -> u128 {
-        // Calculate the cost of the transaction based on the current base fee and priority fee.
-        // The cost is calculated as:
-        // ( (base fee + priority fee) x units of gas used).
-        // max_fee_per_gas = base_fee_per_gas + max_priority_fee_per_gas
         (fees_per_gas.base_fee_per_gas + fees_per_gas.max_priority_fee_per_gas) * gas_used as u128
     }
 
