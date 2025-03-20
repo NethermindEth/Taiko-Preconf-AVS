@@ -66,7 +66,7 @@ impl BatchBuilder {
     }
 
     pub fn can_consume_l2_block(&self, l2_block: &L2Block) -> bool {
-        self.l1_batches.len() > 0
+        !self.l1_batches.is_empty()
             && self.get_current_batch().total_l2_blocks_size
                 + l2_block.prebuilt_tx_list.bytes_length
                 <= self.config.max_bytes_size_of_batch
