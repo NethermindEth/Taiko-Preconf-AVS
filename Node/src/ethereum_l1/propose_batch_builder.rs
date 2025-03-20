@@ -206,13 +206,19 @@ impl ProposeBatchBuilder {
             .get_fee_history(2, alloy::eips::BlockNumberOrTag::Latest, &[])
             .await?;
 
-        let base_fee_per_gas = fee_history.base_fee_per_gas.last().copied().unwrap_or(0);
+        let base_fee_per_gas = fee_history
+            .base_fee_per_gas
+            .last()
+            .copied()
+            .ok_or_else(|| anyhow::Error::msg("Failed to get base_fee_per_gas from fee history"))?;
 
         let base_fee_per_blob_gas = fee_history
             .base_fee_per_blob_gas
             .last()
             .copied()
-            .unwrap_or(0);
+            .ok_or_else(|| {
+                anyhow::Error::msg("Failed to get base_fee_per_blob_gas from fee history")
+            })?;
 
         let eip1599_estimation = self.provider_ws.estimate_eip1559_fees(None).await?;
 
