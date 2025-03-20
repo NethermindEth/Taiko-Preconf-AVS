@@ -55,7 +55,7 @@ impl BatchManager {
     }
 
     async fn calculate_anchor_block_id(&self) -> Result<u64, Error> {
-        let height_from_last_batch = self.taiko.get_last_anchor_block_id().await?;
+        let height_from_last_batch = self.taiko.get_last_synced_anchor_block_id().await?;
         let l1_height = self.ethereum_l1.execution_layer.get_l1_height().await?;
         let l1_height_with_lag = l1_height - self.l1_height_lag;
 
