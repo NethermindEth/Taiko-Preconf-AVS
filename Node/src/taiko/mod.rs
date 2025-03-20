@@ -329,10 +329,7 @@ impl Taiko {
     }
 
     fn sign_hash_deterministic(&self, hash: B256) -> Result<Signature, Error> {
-        let private_key = hex::decode(GOLDEN_TOUCH_PRIVATE_KEY)
-            .map_err(|e| anyhow::anyhow!("Failed to decode private key: {e}"))?;
-        let private_key = B256::from_slice(&private_key);
-
+        let private_key = B256::from_slice(&self.golden_touch_signer.to_field_bytes());
         fixed_k_signer_chainbound::sign_hash_deterministic(private_key, hash)
     }
 
