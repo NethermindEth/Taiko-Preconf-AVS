@@ -1,6 +1,6 @@
 [package]
 name = "taiko_preconf_avs_node"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -23,7 +23,7 @@ serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0"
 lazy_static = "1.4"
 anyhow = "1.0.86"
-k256 = "0.13"
+k256 = { version = "0.13", features = ["ecdsa"] }
 ecdsa = "0.16"
 elliptic-curve = "0.13"
 reqwest = "0.12"

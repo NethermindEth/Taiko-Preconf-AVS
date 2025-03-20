@@ -33,6 +33,7 @@ use std::str::FromStr;
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, info, trace};
 
+mod fixed_k_signer_chainbound;
 mod l2_contracts_bindings;
 pub mod preconf_blocks;
 pub mod taiko_blob;
@@ -309,30 +310,7 @@ impl Taiko {
             .eip1559()
             .ok_or_else(|| anyhow::anyhow!("AnchorTX: Failed to extract EIP-1559 transaction"))?;
 
-        let tx_hash: [u8; 32] = tx_eip1559.signature_hash().into();
-
-        // Call GetSignature
-        let signature_ptr: *mut u8 = unsafe { GetSignature(tx_hash.as_ptr() as *mut u8) };
-        if signature_ptr.is_null() {
-            return Err(anyhow::anyhow!(
-                "Critical error: AnchorTX signature generation failed"
-            ));
-        }
-
-        // Create signature from bytes
-        let signature: Signature;
-        unsafe {
-            let signature_bytes = std::slice::from_raw_parts(signature_ptr, 65);
-            let signature_bytes: [u8; 65] = signature_bytes.try_into().map_err(|e| {
-                anyhow::anyhow!("AnchorTX: Failed to convert signature bytes to array: {e}")
-            })?;
-            signature = Signature::from_raw_array(&signature_bytes).map_err(|e| {
-                anyhow::anyhow!("AnchorTX: Failed to create Signature from raw bytes: {e}")
-            })?;
-            // Free the memory allocated for the signature
-            FreeBytesArray(signature_ptr);
-        }
-
+        let signature = self.sign_hash_deterministic(tx_eip1559.signature_hash())?;
         let sig_tx = tx_eip1559.clone().into_signed(signature);
 
         let tx_envelope = TxEnvelope::from(sig_tx);
@@ -348,6 +326,14 @@ impl Taiko {
             effective_gas_price: None,
         };
         Ok(tx)
+    }
+
+    fn sign_hash_deterministic(&self, hash: B256) -> Result<Signature, Error> {
+        let private_key = hex::decode(GOLDEN_TOUCH_PRIVATE_KEY)
+            .map_err(|e| anyhow::anyhow!("Failed to decode private key: {e}"))?;
+        let private_key = B256::from_slice(&private_key);
+
+        fixed_k_signer_chainbound::sign_hash_deterministic(private_key, hash)
     }
 
     async fn get_base_fee(
