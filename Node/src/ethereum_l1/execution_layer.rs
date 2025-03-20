@@ -225,14 +225,6 @@ impl ExecutionLayer {
         self.pacaya_config.clone()
     }
 
-    pub async fn get_anchor_block_id(&self) -> Result<u64, Error> {
-        let contract =
-            taiko_inbox::ITaikoInbox::new(self.contract_addresses.taiko_l1, &self.provider_ws);
-        let num_batches = contract.getStats2().call().await?._0.numBatches;
-        let batch = contract.getBatch(num_batches - 1).call().await?.batch_;
-        Ok(batch.anchorBlockId)
-    }
-
     pub async fn get_l1_height(&self) -> Result<u64, Error> {
         self.provider_ws
             .get_block_number()

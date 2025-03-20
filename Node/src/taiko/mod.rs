@@ -350,6 +350,17 @@ impl Taiko {
         Ok(tx)
     }
 
+    pub async fn get_last_anchor_block_id(&self) -> Result<u64, Error> {
+        let last_anchor_block_id = self
+            .taiko_anchor
+            .lastSyncedBlock()
+            .call()
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get last anchor block id: {}", e)))?
+            ._0;
+        Ok(last_anchor_block_id)
+    }
+
     async fn get_base_fee(
         &self,
         parent_gas_used: u32,

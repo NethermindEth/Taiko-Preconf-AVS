@@ -1,18 +1,7 @@
 use crate::shared::l2_block::L2Block;
 use tracing::{debug, warn};
 
-/// Configuration for batching L2 transactions
-#[derive(Clone)]
-pub struct BatchBuilderConfig {
-    /// Maximum size of the batch in bytes before sending
-    pub max_bytes_size_of_batch: u64,
-    /// Maximum number of blocks in a batch
-    pub max_blocks_per_batch: u64,
-    /// L1 slot duration in seconds
-    pub l1_slot_duration_sec: u64,
-    /// Maximum time shift between blocks in seconds
-    pub max_time_shift_between_blocks_sec: u64,
-}
+use super::BatchBuilderConfig;
 
 #[derive(Default)]
 pub struct Batch {
@@ -24,7 +13,7 @@ pub struct Batch {
 }
 
 impl Batch {
-    pub fn is_full(&self) -> bool {
+    pub fn has_reached_max_number_of_blocks(&self) -> bool {
         if self.l2_blocks.len() > self.max_blocks_per_batch as usize {
             warn!(
                 "Batch size grater then max_blocks_per_batch: {} > {}",
@@ -57,6 +46,10 @@ impl BatchBuilder {
         }
     }
 
+    pub fn get_config(&self) -> &BatchBuilderConfig {
+        &self.config
+    }
+
     fn get_current_batch(&self) -> &Batch {
         &self.l1_batches[self.current_l1_batch_index]
     }
@@ -70,7 +63,7 @@ impl BatchBuilder {
             && self.get_current_batch().total_l2_blocks_size
                 + l2_block.prebuilt_tx_list.bytes_length
                 <= self.config.max_bytes_size_of_batch
-            && !self.get_current_batch().is_full()
+            && !self.get_current_batch().has_reached_max_number_of_blocks()
     }
 
     pub fn create_new_batch_and_add_l2_block(&mut self, anchor_block_id: u64, l2_block: L2Block) {
@@ -106,10 +99,7 @@ impl BatchBuilder {
         }
     }
 
-    pub fn is_time_shift_between_blocks_expiring(
-        &mut self,
-        current_l2_slot_timestamp: u64,
-    ) -> bool {
+    pub fn is_time_shift_between_blocks_expiring(&self, current_l2_slot_timestamp: u64) -> bool {
         if self.l1_batches.is_empty()
             || self.get_current_batch().l2_blocks.is_empty()
             || self.get_current_batch().submitted
@@ -142,6 +132,7 @@ impl BatchBuilder {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
