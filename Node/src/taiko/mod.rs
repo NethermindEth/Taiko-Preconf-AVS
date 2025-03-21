@@ -76,7 +76,7 @@ impl Taiko {
         jwt_secret_bytes: &[u8],
         preconfer_address: PreconferAddress,
         ethereum_l1: Arc<EthereumL1>,
-        taiko_l2_address: String,
+        taiko_anchor_address: String,
     ) -> Result<Self, Error> {
         let ws = WsConnect::new(taiko_geth_ws_url.to_string());
         let provider_ws = ProviderBuilder::new()
@@ -87,8 +87,8 @@ impl Taiko {
         let chain_id = provider_ws.get_chain_id().await?;
         info!("L2 Chain ID: {}", chain_id);
 
-        let taiko_l2_address = Address::from_str(&taiko_l2_address)?;
-        let taiko_anchor = TaikoAnchor::new(taiko_l2_address, provider_ws.clone());
+        let taiko_anchor_address = Address::from_str(&taiko_anchor_address)?;
+        let taiko_anchor = TaikoAnchor::new(taiko_anchor_address, provider_ws.clone());
 
         Ok(Self {
             taiko_geth_provider_ws: provider_ws,

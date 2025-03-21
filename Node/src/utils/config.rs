@@ -18,7 +18,7 @@ pub struct Config {
     pub enable_preconfirmation: bool,
     pub jwt_secret_file_path: String,
     pub rpc_client_timeout: Duration,
-    pub taiko_l2_address: String,
+    pub taiko_anchor_address: String,
     pub handover_window_slots: u64,
     pub handover_start_buffer_ms: u64,
     pub l1_height_lag: u64,
@@ -29,7 +29,7 @@ pub struct Config {
 
 #[derive(Debug)]
 pub struct L1ContractAddresses {
-    pub taiko_l1: String,
+    pub taiko_inbox: String,
     pub preconf_whitelist: String,
     pub preconf_router: String,
     #[cfg(feature = "extra_gas_percentage")]
@@ -53,11 +53,11 @@ impl Config {
                 "0x4c0883a69102937d6231471b5dbb6204fe512961708279f2e3e8a5d4b8e3e3e8".to_string()
             });
 
-        const TAIKO_L1_ADDRESS: &str = "TAIKO_L1_ADDRESS";
-        let taiko_l1 = std::env::var(TAIKO_L1_ADDRESS).unwrap_or_else(|_| {
+        const TAIKO_INBOX_ADDRESS: &str = "TAIKO_INBOX_ADDRESS";
+        let taiko_inbox = std::env::var(TAIKO_INBOX_ADDRESS).unwrap_or_else(|_| {
             warn!(
                 "No TaikoL1 contract address found in {} env var, using default",
-                TAIKO_L1_ADDRESS
+                TAIKO_INBOX_ADDRESS
             );
             default_empty_address.clone()
         });
@@ -87,7 +87,7 @@ impl Config {
             .expect("EXTRA_GAS_PERCENTAGE must be a number");
 
         let contract_addresses = L1ContractAddresses {
-            taiko_l1,
+            taiko_inbox,
             preconf_whitelist,
             preconf_router,
             #[cfg(feature = "extra_gas_percentage")]
@@ -153,7 +153,7 @@ impl Config {
             .expect("RPC_CLIENT_TIMEOUT_SEC must be a number");
         let rpc_client_timeout = Duration::from_secs(rpc_client_timeout);
 
-        let taiko_l2_address = std::env::var("TAIKO_L2_ADDRESS")
+        let taiko_anchor_address = std::env::var("TAIKO_ANCHOR_ADDRESS")
             .unwrap_or("0x1670010000000000000000000000000000010001".to_string());
 
         let handover_window_slots = std::env::var("HANDOVER_WINDOW_SLOTS")
@@ -209,7 +209,7 @@ impl Config {
             enable_preconfirmation,
             jwt_secret_file_path,
             rpc_client_timeout,
-            taiko_l2_address,
+            taiko_anchor_address,
             handover_window_slots,
             handover_start_buffer_ms,
             l1_height_lag,
@@ -236,7 +236,7 @@ validator index: {}
 enable preconfirmation: {}
 jwt secret file path: {}
 rpc client timeout: {}
-taiko l2 address: {}
+taiko anchor address: {}
 handover window slots: {}
 handover start buffer: {}ms
 l1 height lag: {}
@@ -259,7 +259,7 @@ max time shift between blocks: {}
             config.enable_preconfirmation,
             config.jwt_secret_file_path,
             config.rpc_client_timeout.as_secs(),
-            config.taiko_l2_address,
+            config.taiko_anchor_address,
             config.handover_window_slots,
             config.handover_start_buffer_ms,
             config.l1_height_lag,
