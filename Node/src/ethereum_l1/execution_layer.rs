@@ -31,7 +31,7 @@ pub struct ExecutionLayer {
 }
 
 pub struct ContractAddresses {
-    pub taiko_l1: Address,
+    pub taiko_inbox: Address,
     pub preconf_whitelist: Address,
     pub preconf_router: Address,
 }
@@ -67,7 +67,7 @@ impl ExecutionLayer {
             .unwrap();
 
         let pacaya_config =
-            Self::fetch_pacaya_config(&contract_addresses.taiko_l1, &provider_ws).await?;
+            Self::fetch_pacaya_config(&contract_addresses.taiko_inbox, &provider_ws).await?;
 
         Ok(Self {
             provider_ws: Arc::new(provider_ws),
@@ -86,12 +86,12 @@ impl ExecutionLayer {
     fn parse_contract_addresses(
         contract_addresses: &config::L1ContractAddresses,
     ) -> Result<ContractAddresses, Error> {
-        let taiko_l1 = contract_addresses.taiko_l1.parse()?;
+        let taiko_inbox = contract_addresses.taiko_inbox.parse()?;
         let preconf_whitelist = contract_addresses.preconf_whitelist.parse()?;
         let preconf_router = contract_addresses.preconf_router.parse()?;
 
         Ok(ContractAddresses {
-            taiko_l1,
+            taiko_inbox,
             preconf_whitelist,
             preconf_router,
         })
@@ -205,10 +205,10 @@ impl ExecutionLayer {
     }
 
     async fn fetch_pacaya_config(
-        taiko_l1_address: &Address,
+        taiko_inbox_address: &Address,
         ws_provider: &WsProvider,
     ) -> Result<taiko_inbox::ITaikoInbox::Config, Error> {
-        let contract = taiko_inbox::ITaikoInbox::new(*taiko_l1_address, ws_provider);
+        let contract = taiko_inbox::ITaikoInbox::new(*taiko_inbox_address, ws_provider);
         let pacaya_config = contract.pacayaConfig().call().await?._0;
 
         debug!(
@@ -270,7 +270,7 @@ impl ExecutionLayer {
             provider_ws: Arc::new(provider_ws),
             preconfer_address,
             contract_addresses: ContractAddresses {
-                taiko_l1: Address::ZERO,
+                taiko_inbox: Address::ZERO,
                 preconf_whitelist: Address::ZERO,
                 preconf_router: Address::ZERO,
             },

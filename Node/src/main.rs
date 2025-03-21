@@ -38,7 +38,7 @@ async fn main() -> Result<(), Error> {
             &jwt_secret_bytes,
             ethereum_l1.execution_layer.get_preconfer_address(),
             ethereum_l1.clone(),
-            config.taiko_l2_address,
+            config.taiko_anchor_address,
         )
         .await?,
     );
