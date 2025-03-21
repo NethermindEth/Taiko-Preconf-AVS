@@ -28,7 +28,7 @@ use ecdsa::SigningKey;
 use k256::Secp256k1;
 use l2_contracts_bindings::{LibSharedData, TaikoAnchor};
 use serde_json::Value;
-use std::{ops::Add, str::FromStr};
+use std::str::FromStr;
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, info, trace};
 
