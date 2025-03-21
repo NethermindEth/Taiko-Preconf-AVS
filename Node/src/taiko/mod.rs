@@ -28,7 +28,7 @@ use ecdsa::SigningKey;
 use k256::Secp256k1;
 use l2_contracts_bindings::{LibSharedData, TaikoAnchor};
 use serde_json::Value;
-use std::str::FromStr;
+use std::{ops::Add, str::FromStr};
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, info, trace};
 
@@ -38,8 +38,15 @@ pub mod preconf_blocks;
 pub mod taiko_blob;
 mod taiko_blob_coder;
 
-const GOLDEN_TOUCH_PRIVATE_KEY: &str =
-    "92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38";
+const GOLDEN_TOUCH_PRIVATE_KEY: B256 = B256::new([
+    0x92, 0x95, 0x43, 0x68, 0xaf, 0xd3, 0xca, 0xa1, 0xf3, 0xce, 0x3e, 0xad, 0x00, 0x69, 0xc1, 0xaf,
+    0x41, 0x40, 0x54, 0xae, 0xfe, 0x1e, 0xf9, 0xae, 0xac, 0xc1, 0xbf, 0x42, 0x62, 0x22, 0xce, 0x38,
+]);
+
+const GOLDEN_TOUCH_ADDRESS: Address = Address::new([
+    0x00, 0x00, 0x77, 0x77, 0x35, 0x36, 0x7b, 0x36, 0xbC, 0x9B, 0x61, 0xC5, 0x00, 0x22, 0xd9, 0xD0,
+    0x70, 0x0d, 0xB4, 0xEc,
+]);
 
 type WsProvider = FillProvider<
     JoinFill<
@@ -56,8 +63,6 @@ pub struct Taiko {
     pub chain_id: u64,
     preconfer_address: PreconferAddress,
     ethereum_l1: Arc<EthereumL1>,
-    golden_touch_signer: LocalSigner<SigningKey<Secp256k1>>,
-    golden_touch_wallet: EthereumWallet,
     taiko_anchor: TaikoAnchor::TaikoAnchorInstance<(), WsProvider>,
 }
 
@@ -82,9 +87,6 @@ impl Taiko {
         let chain_id = provider_ws.get_chain_id().await?;
         info!("L2 Chain ID: {}", chain_id);
 
-        let signer = PrivateKeySigner::from_str(GOLDEN_TOUCH_PRIVATE_KEY)?;
-        let golden_touch_wallet = EthereumWallet::from(signer.clone());
-
         let taiko_l2_address = Address::from_str(&taiko_l2_address)?;
         let taiko_anchor = TaikoAnchor::new(taiko_l2_address, provider_ws.clone());
 
@@ -103,8 +105,6 @@ impl Taiko {
             chain_id,
             preconfer_address,
             ethereum_l1,
-            golden_touch_signer: signer,
-            golden_touch_wallet,
             taiko_anchor,
         })
     }
@@ -290,7 +290,7 @@ impl Taiko {
             .max_priority_fee_per_gas(0) // value expected by Taiko
             .nonce(
                 self.taiko_geth_provider_ws
-                    .get_transaction_count(self.golden_touch_signer.address())
+                    .get_transaction_count(GOLDEN_TOUCH_ADDRESS)
                     .await?,
             )
             .chain_id(self.chain_id);
@@ -313,7 +313,7 @@ impl Taiko {
 
         let tx = Transaction {
             inner: tx_envelope,
-            from: self.golden_touch_signer.address(),
+            from: GOLDEN_TOUCH_ADDRESS,
             block_hash: None,
             block_number: None,
             transaction_index: None,
@@ -323,8 +323,7 @@ impl Taiko {
     }
 
     fn sign_hash_deterministic(&self, hash: B256) -> Result<Signature, Error> {
-        let private_key = B256::from_slice(&self.golden_touch_signer.to_field_bytes());
-        fixed_k_signer_chainbound::sign_hash_deterministic(private_key, hash)
+        fixed_k_signer_chainbound::sign_hash_deterministic(GOLDEN_TOUCH_PRIVATE_KEY, hash)
     }
 
     async fn get_base_fee(
