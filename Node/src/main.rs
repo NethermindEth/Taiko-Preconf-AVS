@@ -50,7 +50,7 @@ async fn main() -> Result<(), Error> {
         config.handover_window_slots,
         config.handover_start_buffer_ms,
         config.l1_height_lag,
-        node::batch_builder::BatchBuilderConfig {
+        node::batch_manager::BatchBuilderConfig {
             max_bytes_size_of_batch: config.max_bytes_size_of_batch,
             max_blocks_per_batch: config.max_blocks_per_batch,
             l1_slot_duration_sec: config.l1_slot_duration_sec,
