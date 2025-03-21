@@ -86,7 +86,7 @@ impl BatchManager {
             anchor_block_id
         } else {
             self.batch_builder
-                .add_l2_block_and_get_current_anchor_block_id(l2_block)
+                .add_l2_block_and_get_current_anchor_block_id(l2_block)?
         };
         Ok(anchor_block_id)
     }
