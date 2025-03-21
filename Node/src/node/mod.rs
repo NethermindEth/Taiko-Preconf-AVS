@@ -1,7 +1,7 @@
 pub(crate) mod batch_manager;
 mod operator;
 
-use crate::{ethereum_l1::EthereumL1, shared::l2_block::L2Block, taiko::Taiko};
+use crate::{ethereum_l1::EthereumL1, taiko::Taiko};
 use anyhow::{Error, Ok};
 use batch_manager::{BatchBuilderConfig, BatchManager};
 use operator::{Operator, Status as OperatorStatus};
@@ -10,7 +10,6 @@ use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, warn};
 
 pub struct Node {
-    taiko: Arc<Taiko>,
     ethereum_l1: Arc<EthereumL1>,
     preconf_heartbeat_ms: u64,
     operator: Operator,
@@ -38,9 +37,8 @@ impl Node {
                 l1_height_lag,
                 batch_builder_config,
                 ethereum_l1.clone(),
-                taiko.clone(),
+                taiko,
             ),
-            taiko,
             ethereum_l1,
             preconf_heartbeat_ms,
             operator,
@@ -112,46 +110,7 @@ impl Node {
             self.get_current_slots_info()?
         );
 
-        let preconfirmation_timestamp =
-            self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
-
-        if let Some(pending_tx_list) = self.taiko.get_pending_l2_tx_list_from_taiko_geth().await? {
-            debug!(
-                "Received pending tx list length: {}, bytes length: {}",
-                pending_tx_list.tx_list.len(),
-                pending_tx_list.bytes_length
-            );
-            let l2_block = L2Block::new_from(pending_tx_list, preconfirmation_timestamp);
-            self.process_new_l2_block(l2_block, submit).await?;
-        } else if self
-            .batch_manager
-            .is_need_empty_block(preconfirmation_timestamp)
-        {
-            debug!("No pending txs, proposing empty block");
-            let empty_block = L2Block::new_empty(preconfirmation_timestamp);
-            self.process_new_l2_block(empty_block, submit).await?;
-        } else {
-            debug!("No pending txs, skipping preconfirmation");
-        }
-
-        Ok(())
-    }
-
-    async fn process_new_l2_block(&mut self, l2_block: L2Block, submit: bool) -> Result<(), Error> {
-        let anchor_block_id: u64 = self
-            .batch_manager
-            .consume_l2_block(l2_block.clone())
-            .await?;
-
-        self.taiko
-            .advance_head_to_new_l2_block(l2_block, anchor_block_id)
-            .await?;
-
-        if submit {
-            self.batch_manager.submit_batches(true).await?;
-        }
-
-        Ok(())
+        self.batch_manager.preconfirm_block(submit).await
     }
 
     fn get_current_slots_info(&self) -> Result<String, Error> {

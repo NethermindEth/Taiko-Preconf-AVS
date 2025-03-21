@@ -23,6 +23,10 @@ impl Batch {
         }
         self.l2_blocks.len() == self.max_blocks_per_batch as usize
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.l2_blocks.is_empty()
+    }
 }
 
 pub struct BatchBuilder {
@@ -91,12 +95,8 @@ impl BatchBuilder {
         self.l1_batches.is_empty() || self.get_current_batch().l2_blocks.is_empty()
     }
 
-    pub fn get_batches(&mut self) -> Option<&mut Vec<Batch>> {
-        if self.l1_batches.is_empty() || self.get_current_batch().l2_blocks.is_empty() {
-            None
-        } else {
-            Some(&mut self.l1_batches)
-        }
+    pub fn get_batches_mut(&mut self) -> &mut Vec<Batch> {
+        &mut self.l1_batches
     }
 
     pub fn is_time_shift_between_blocks_expiring(&self, current_l2_slot_timestamp: u64) -> bool {
