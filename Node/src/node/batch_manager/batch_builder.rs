@@ -57,7 +57,11 @@ impl BatchBuilder {
             && self.l1_batches.last().unwrap().total_l2_blocks_size
                 + l2_block.prebuilt_tx_list.bytes_length
                 <= self.config.max_bytes_size_of_batch
-            && !self.l1_batches.last().unwrap().has_reached_max_number_of_blocks()
+            && !self
+                .l1_batches
+                .last()
+                .unwrap()
+                .has_reached_max_number_of_blocks()
     }
 
     pub fn create_new_batch_and_add_l2_block(&mut self, anchor_block_id: u64, l2_block: L2Block) {
@@ -72,8 +76,14 @@ impl BatchBuilder {
     }
 
     /// Returns true if the block was added to the batch, false otherwise.
-    pub fn add_l2_block_and_get_current_anchor_block_id(&mut self, l2_block: L2Block) -> Result<u64, anyhow::Error> {
-        let current_batch = self.l1_batches.last_mut().ok_or_else(|| anyhow::anyhow!("No current batch"))?;
+    pub fn add_l2_block_and_get_current_anchor_block_id(
+        &mut self,
+        l2_block: L2Block,
+    ) -> Result<u64, anyhow::Error> {
+        let current_batch = self
+            .l1_batches
+            .last_mut()
+            .ok_or_else(|| anyhow::anyhow!("No current batch"))?;
         current_batch.total_l2_blocks_size += l2_block.prebuilt_tx_list.bytes_length;
         current_batch.l2_blocks.push(l2_block);
         debug!("Added L2 block to batch: {}", current_batch.l2_blocks.len());
@@ -82,7 +92,7 @@ impl BatchBuilder {
 
     pub fn is_current_l1_batch_empty(&self) -> bool {
         debug!("is_current_l1_batch_empty: {}", self.l1_batches.len());
-        self.l1_batches.is_empty() ||  self.l1_batches.last().unwrap().l2_blocks.is_empty()
+        self.l1_batches.is_empty() || self.l1_batches.last().unwrap().l2_blocks.is_empty()
     }
 
     pub fn get_batches_mut(&mut self) -> &mut Vec<Batch> {

@@ -93,7 +93,7 @@ impl Node {
                     "Not my slot to preconfirm, {}",
                     self.get_current_slots_info()?
                 );
-                if !self.batch_manager.has_batches() {
+                if self.batch_manager.has_batches() {
                     warn!("Some batches were not successfully sent in the submitter window");
                     self.batch_manager.reset_builder();
                 }
