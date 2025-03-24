@@ -2,7 +2,7 @@ pub(crate) mod batch_manager;
 mod operator;
 
 use crate::{ethereum_l1::EthereumL1, taiko::Taiko};
-use anyhow::{Error, Ok};
+use anyhow::Error;
 use batch_manager::{BatchBuilderConfig, BatchManager};
 use operator::{Operator, Status as OperatorStatus};
 use std::sync::Arc;
@@ -14,6 +14,7 @@ pub struct Node {
     preconf_heartbeat_ms: u64,
     operator: Operator,
     batch_manager: BatchManager,
+    preconf_loop_shift_ms: u64,
 }
 
 impl Node {
@@ -26,6 +27,7 @@ impl Node {
         handover_start_buffer_ms: u64,
         l1_height_lag: u64,
         batch_builder_config: BatchBuilderConfig,
+        preconf_loop_shift_ms: u64,
     ) -> Result<Self, Error> {
         let operator = Operator::new(
             ethereum_l1.clone(),
@@ -42,6 +44,7 @@ impl Node {
             ethereum_l1,
             preconf_heartbeat_ms,
             operator,
+            preconf_loop_shift_ms,
         })
     }
 
@@ -56,8 +59,16 @@ impl Node {
     async fn preconfirmation_loop(&mut self) {
         debug!("Main perconfirmation loop started");
         // Synchronize with L1 Slot Start Time
-        let duration_to_next_slot = self.ethereum_l1.slot_clock.duration_to_next_slot().unwrap();
-        sleep(duration_to_next_slot).await;
+        match self.ethereum_l1.slot_clock.duration_to_next_slot() {
+            Ok(duration) => {
+                let duration_to_next_slot =
+                    duration + Duration::from_millis(self.preconf_loop_shift_ms);
+                sleep(duration_to_next_slot).await;
+            }
+            Err(err) => {
+                error!("Failed to get duration to next slot: {}", err);
+            }
+        }
 
         // start preconfirmation loop
         let mut interval = tokio::time::interval(Duration::from_millis(self.preconf_heartbeat_ms));

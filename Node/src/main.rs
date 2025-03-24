@@ -56,6 +56,7 @@ async fn main() -> Result<(), Error> {
             l1_slot_duration_sec: config.l1_slot_duration_sec,
             max_time_shift_between_blocks_sec: config.max_time_shift_between_blocks_sec,
         },
+        config.preconf_loop_shift_ms,
     )
     .await?;
     node.entrypoint().await?;

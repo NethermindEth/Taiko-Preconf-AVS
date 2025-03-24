@@ -1,5 +1,5 @@
 use crate::shared::l2_block::L2Block;
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 use super::BatchBuilderConfig;
 
@@ -91,7 +91,7 @@ impl BatchBuilder {
     }
 
     pub fn is_current_l1_batch_empty(&self) -> bool {
-        debug!("is_current_l1_batch_empty: {}", self.l1_batches.len());
+        trace!("is_current_l1_batch_empty: {}", self.l1_batches.len());
         self.l1_batches.is_empty() || self.l1_batches.last().unwrap().l2_blocks.is_empty()
     }
 
