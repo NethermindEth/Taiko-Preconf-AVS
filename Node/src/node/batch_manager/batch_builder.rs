@@ -66,11 +66,11 @@ impl BatchBuilder {
 
     pub fn create_new_batch_and_add_l2_block(&mut self, anchor_block_id: u64, l2_block: L2Block) {
         let l1_batch = Batch {
+            total_bytes: l2_block.prebuilt_tx_list.bytes_length,
             l2_blocks: vec![l2_block],
             anchor_block_id,
             submitted: false,
             max_blocks_per_batch: self.config.max_blocks_per_batch,
-            total_bytes: l2_block.prebuilt_tx_list.bytes_length,
         };
         self.l1_batches.push(l1_batch);
     }
