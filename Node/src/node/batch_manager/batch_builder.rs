@@ -7,7 +7,7 @@ use super::BatchBuilderConfig;
 pub struct Batch {
     pub l2_blocks: Vec<L2Block>,
     pub anchor_block_id: u64,
-    pub total_l2_blocks_size: u64,
+    pub total_bytes: u64,
     pub submitted: bool,
     pub max_blocks_per_batch: u64,
 }
@@ -54,7 +54,7 @@ impl BatchBuilder {
 
     pub fn can_consume_l2_block(&self, l2_block: &L2Block) -> bool {
         !self.l1_batches.is_empty()
-            && self.l1_batches.last().unwrap().total_l2_blocks_size
+            && self.l1_batches.last().unwrap().total_bytes
                 + l2_block.prebuilt_tx_list.bytes_length
                 <= self.config.max_bytes_size_of_batch
             && !self
@@ -70,7 +70,7 @@ impl BatchBuilder {
             anchor_block_id,
             submitted: false,
             max_blocks_per_batch: self.config.max_blocks_per_batch,
-            total_l2_blocks_size: 1,
+            total_bytes: l2_block.prebuilt_tx_list.bytes_length,
         };
         self.l1_batches.push(l1_batch);
     }
@@ -84,7 +84,7 @@ impl BatchBuilder {
             .l1_batches
             .last_mut()
             .ok_or_else(|| anyhow::anyhow!("No current batch"))?;
-        current_batch.total_l2_blocks_size += l2_block.prebuilt_tx_list.bytes_length;
+        current_batch.total_bytes += l2_block.prebuilt_tx_list.bytes_length;
         current_batch.l2_blocks.push(l2_block);
         debug!("Added L2 block to batch: {}", current_batch.l2_blocks.len());
         Ok(current_batch.anchor_block_id)
