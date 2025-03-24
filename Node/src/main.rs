@@ -55,6 +55,7 @@ async fn main() -> Result<(), Error> {
             max_blocks_per_batch: config.max_blocks_per_batch,
             l1_slot_duration_sec: config.l1_slot_duration_sec,
             max_time_shift_between_blocks_sec: config.max_time_shift_between_blocks_sec,
+            max_anchor_height_offset: config.max_anchor_height_offset,
         },
     )
     .await?;

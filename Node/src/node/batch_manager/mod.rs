@@ -4,7 +4,7 @@ use crate::{ethereum_l1::EthereumL1, shared::l2_block::L2Block, taiko::Taiko};
 use anyhow::Error;
 use batch_builder::BatchBuilder;
 use std::sync::Arc;
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// Configuration for batching L2 transactions
 #[derive(Clone)]
@@ -17,6 +17,18 @@ pub struct BatchBuilderConfig {
     pub l1_slot_duration_sec: u64,
     /// Maximum time shift between blocks in seconds
     pub max_time_shift_between_blocks_sec: u64,
+    /// The max differences of the anchor height and the current block number
+    pub max_anchor_height_offset: u64,
+}
+
+impl BatchBuilderConfig {
+    pub fn is_within_block_limit(&self, num_blocks: u64) -> bool {
+        num_blocks <= self.max_blocks_per_batch
+    }
+
+    pub fn is_within_bytes_limit(&self, total_bytes: u64) -> bool {
+        total_bytes <= self.max_bytes_size_of_batch
+    }
 }
 
 pub struct BatchManager {
@@ -61,6 +73,20 @@ impl BatchManager {
             debug!("No pending txs, skipping preconfirmation");
         }
 
+        // check max anchor height offset
+        let l1_height = self.ethereum_l1.execution_layer.get_l1_height().await?;
+        if self
+            .batch_builder
+            .is_exceed_max_anchor_height_offset(l1_height)
+        {
+            self.batch_builder.finalize_current_batch(None);
+            if submit {
+                self.submit_batches(true).await?;
+            } else {
+                warn!("Max anchor height offset exceeded but submission is disabled");
+            }
+        }
+
         Ok(())
     }
 
@@ -100,38 +126,9 @@ impl BatchManager {
     }
 
     pub async fn submit_batches(&mut self, submit_only_full_batches: bool) -> Result<(), Error> {
-        debug!("Submitting batches");
-        let batches: &mut Vec<batch_builder::Batch> = self.batch_builder.get_batches_mut();
-        let batches_len = batches.len();
-
-        for (i, batch) in batches.iter_mut().enumerate() {
-            if batch.submitted || batch.is_empty() {
-                continue;
-            }
-
-            let is_last_batch = i + 1 == batches_len;
-            let skip_batch = is_last_batch
-                && submit_only_full_batches
-                && !batch.has_reached_max_number_of_blocks();
-
-            if skip_batch {
-                return Ok(());
-            }
-
-            self.ethereum_l1
-                .execution_layer
-                .send_batch_to_l1(batch.l2_blocks.clone(), batch.anchor_block_id)
-                .await?;
-
-            batch.submitted = true;
-        }
-
-        // Clear the batch builder since we have submitted all batches.
-        debug!("Clearing batch builder");
-        self.batch_builder =
-            batch_builder::BatchBuilder::new(self.batch_builder.get_config().clone());
-
-        Ok(())
+        self.batch_builder
+            .submit_batches(self.ethereum_l1.clone(), submit_only_full_batches)
+            .await
     }
 
     pub fn is_empty_block_required(&self, preconfirmation_timestamp: u64) -> bool {
@@ -140,10 +137,11 @@ impl BatchManager {
     }
 
     pub fn has_batches(&self) -> bool {
-        !self.batch_builder.is_current_l1_batch_empty()
+        !self.batch_builder.is_empty()
     }
 
     pub fn reset_builder(&mut self) {
+        warn!("Resetting batch builder");
         self.batch_builder =
             batch_builder::BatchBuilder::new(self.batch_builder.get_config().clone());
     }
