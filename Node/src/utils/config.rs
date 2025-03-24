@@ -187,10 +187,10 @@ impl Config {
             .parse::<u64>()
             .expect("MAX_TIME_SHIFT_BETWEEN_BLOCKS_SEC must be a number");
 
-        let first_epoch_slot_delay_ms = std::env::var("PRECONF_LOOP_SHIFT_MS")
+        let first_epoch_slot_delay_ms = std::env::var("FIRST_EPOCH_SLOT_DELAY_MS")
             .unwrap_or("100".to_string())
             .parse::<u64>()
-            .expect("PRECONF_LOOP_SHIFT_MS must be a number");
+            .expect("FIRST_EPOCH_SLOT_DELAY_MS must be a number");
 
         let config = Self {
             taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
