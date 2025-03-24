@@ -142,9 +142,4 @@ impl BatchManager {
     pub fn has_batches(&self) -> bool {
         !self.batch_builder.is_current_l1_batch_empty()
     }
-
-    pub fn reset_builder(&mut self) {
-        self.batch_builder =
-            batch_builder::BatchBuilder::new(self.batch_builder.get_config().clone());
-    }
 }

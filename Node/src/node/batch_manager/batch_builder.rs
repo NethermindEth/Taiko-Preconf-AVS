@@ -1,5 +1,5 @@
 use crate::shared::l2_block::L2Block;
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 use super::BatchBuilderConfig;
 
@@ -54,8 +54,7 @@ impl BatchBuilder {
 
     pub fn can_consume_l2_block(&self, l2_block: &L2Block) -> bool {
         !self.l1_batches.is_empty()
-            && self.l1_batches.last().unwrap().total_bytes
-                + l2_block.prebuilt_tx_list.bytes_length
+            && self.l1_batches.last().unwrap().total_bytes + l2_block.prebuilt_tx_list.bytes_length
                 <= self.config.max_bytes_size_of_batch
             && !self
                 .l1_batches
@@ -91,7 +90,7 @@ impl BatchBuilder {
     }
 
     pub fn is_current_l1_batch_empty(&self) -> bool {
-        debug!("is_current_l1_batch_empty: {}", self.l1_batches.len());
+        trace!("is_current_l1_batch_empty: {}", self.l1_batches.len());
         self.l1_batches.is_empty() || self.l1_batches.last().unwrap().l2_blocks.is_empty()
     }
 

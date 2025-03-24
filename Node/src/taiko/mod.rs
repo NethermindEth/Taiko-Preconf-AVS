@@ -343,7 +343,7 @@ impl Taiko {
             .map_err(|e| Error::msg(format!("Failed to get base fee: {}", e)))?
             .basefee_;
 
-        debug!("base fee: {}", base_fee);
+        trace!("base fee: {}", base_fee);
         base_fee
             .try_into()
             .map_err(|err| anyhow::anyhow!("Failed to convert base fee to u64: {}", err))
