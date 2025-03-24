@@ -25,7 +25,7 @@ pub struct Config {
     pub max_bytes_size_of_batch: u64,
     pub max_blocks_per_batch: u64,
     pub max_time_shift_between_blocks_sec: u64,
-    pub preconf_loop_shift_ms: u64,
+    pub first_epoch_slot_delay_ms: u64,
 }
 
 #[derive(Debug)]
@@ -187,7 +187,7 @@ impl Config {
             .parse::<u64>()
             .expect("MAX_TIME_SHIFT_BETWEEN_BLOCKS_SEC must be a number");
 
-        let preconf_loop_shift_ms = std::env::var("PRECONF_LOOP_SHIFT_MS")
+        let first_epoch_slot_delay_ms = std::env::var("PRECONF_LOOP_SHIFT_MS")
             .unwrap_or("100".to_string())
             .parse::<u64>()
             .expect("PRECONF_LOOP_SHIFT_MS must be a number");
@@ -222,7 +222,7 @@ impl Config {
             max_bytes_size_of_batch,
             max_blocks_per_batch,
             max_time_shift_between_blocks_sec,
-            preconf_loop_shift_ms,
+            first_epoch_slot_delay_ms,
         };
 
         info!(
@@ -250,7 +250,7 @@ l1 height lag: {}
 max bytes size of batch: {}
 max blocks per batch: {}
 max time shift between blocks: {}
-preconf loop shift: {}ms
+first epoch slot delay: {}ms
 "#,
             config.taiko_geth_ws_rpc_url,
             config.taiko_geth_auth_rpc_url,
@@ -274,7 +274,7 @@ preconf loop shift: {}ms
             config.max_bytes_size_of_batch,
             config.max_blocks_per_batch,
             config.max_time_shift_between_blocks_sec,
-            config.preconf_loop_shift_ms,
+            config.first_epoch_slot_delay_ms,
         );
 
         config

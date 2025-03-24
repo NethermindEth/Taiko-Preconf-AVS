@@ -14,7 +14,7 @@ pub struct Node {
     preconf_heartbeat_ms: u64,
     operator: Operator,
     batch_manager: BatchManager,
-    preconf_loop_shift_ms: u64,
+    first_epoch_slot_delay_ms: Duration,
 }
 
 impl Node {
@@ -27,7 +27,7 @@ impl Node {
         handover_start_buffer_ms: u64,
         l1_height_lag: u64,
         batch_builder_config: BatchBuilderConfig,
-        preconf_loop_shift_ms: u64,
+        first_epoch_slot_delay_ms: u64,
     ) -> Result<Self, Error> {
         let operator = Operator::new(
             ethereum_l1.clone(),
@@ -44,7 +44,7 @@ impl Node {
             ethereum_l1,
             preconf_heartbeat_ms,
             operator,
-            preconf_loop_shift_ms,
+            first_epoch_slot_delay_ms: Duration::from_millis(first_epoch_slot_delay_ms),
         })
     }
 
@@ -61,9 +61,7 @@ impl Node {
         // Synchronize with L1 Slot Start Time
         match self.ethereum_l1.slot_clock.duration_to_next_slot() {
             Ok(duration) => {
-                let duration_to_next_slot =
-                    duration + Duration::from_millis(self.preconf_loop_shift_ms);
-                sleep(duration_to_next_slot).await;
+                sleep(duration).await;
             }
             Err(err) => {
                 error!("Failed to get duration to next slot: {}", err);
@@ -84,6 +82,11 @@ impl Node {
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
+        if self.ethereum_l1.slot_clock.get_current_slot_of_epoch()? == 0 {
+            // short sleep for first slot of epoch to get correct operator
+            sleep(self.first_epoch_slot_delay_ms).await;
+        }
+
         let current_status = self.operator.get_status().await?;
         match current_status {
             OperatorStatus::PreconferHandoverBuffer(buffer_ms) => {
@@ -106,7 +109,6 @@ impl Node {
                 );
                 if self.batch_manager.has_batches() {
                     warn!("Some batches were not successfully sent in the submitter window");
-                    self.batch_manager.reset_builder();
                 }
             }
         }
