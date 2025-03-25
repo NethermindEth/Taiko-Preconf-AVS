@@ -1,4 +1,4 @@
-use crate::ethereum_l1::EthereumL1;
+use crate::{ethereum_l1::EthereumL1, utils::types::*};
 use anyhow::Error;
 use std::sync::Arc;
 
@@ -6,6 +6,7 @@ pub struct Operator {
     ethereum_l1: Arc<EthereumL1>,
     handover_window_slots: u64,
     handover_start_buffer_ms: u64,
+    nominated_for_next_operator: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -27,29 +28,40 @@ impl Operator {
             ethereum_l1,
             handover_window_slots,
             handover_start_buffer_ms,
+            nominated_for_next_operator: false,
         })
     }
 
     pub async fn get_status(&mut self) -> Result<Status, Error> {
+        let slot = self.ethereum_l1.slot_clock.get_current_slot_of_epoch()?;
+
+        // For the first slot, use the next operator from the previous epoch
+        // it's because of the delay that L1 updates the current operator
+        // after the epoch has changed.
+        if slot == 0 && self.nominated_for_next_operator {
+            self.nominated_for_next_operator = false;
+            return Ok(Status::PreconferAndL1Submitter);
+        }
+
         let is_current_operator = self
             .ethereum_l1
             .execution_layer
             .is_operator_for_current_epoch()
             .await?;
 
-        if self.is_handover_window()? {
-            let is_next_operator = self
+        if self.is_handover_window(slot)? {
+            self.nominated_for_next_operator = self
                 .ethereum_l1
                 .execution_layer
                 .is_operator_for_next_epoch()
                 .await?;
             if is_current_operator {
-                if is_next_operator {
+                if self.nominated_for_next_operator {
                     return Ok(Status::PreconferAndL1Submitter);
                 }
                 return Ok(Status::L1Submitter);
             }
-            if is_next_operator {
+            if self.nominated_for_next_operator {
                 let time_elapsed_since_handover_start = self.get_ms_from_handover_window_start()?;
                 if self.handover_start_buffer_ms > time_elapsed_since_handover_start {
                     return Ok(Status::PreconferHandoverBuffer(
@@ -68,9 +80,7 @@ impl Operator {
         Ok(Status::None)
     }
 
-    fn is_handover_window(&self) -> Result<bool, Error> {
-        let slot = self.ethereum_l1.slot_clock.get_current_slot_of_epoch()?;
-
+    fn is_handover_window(&self, slot: Slot) -> Result<bool, Error> {
         self.ethereum_l1
             .slot_clock
             .is_slot_in_last_n_slots_of_epoch(slot, self.handover_window_slots)
