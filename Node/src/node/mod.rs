@@ -92,6 +92,10 @@ impl Node {
                 self.preconfirm_block(true).await?;
             }
             OperatorStatus::L1Submitter => {
+                info!(
+                    "Submitting left batches, {}",
+                    self.get_current_slots_info()?
+                );
                 self.batch_manager.submit_batches(false).await?;
             }
             OperatorStatus::None => {

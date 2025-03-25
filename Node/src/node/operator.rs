@@ -6,7 +6,7 @@ pub struct Operator {
     ethereum_l1: Arc<EthereumL1>,
     handover_window_slots: u64,
     handover_start_buffer_ms: u64,
-    nominated_for_next_operator: bool,
+    nominated_for_next_operator: Option<bool>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -28,7 +28,7 @@ impl Operator {
             ethereum_l1,
             handover_window_slots,
             handover_start_buffer_ms,
-            nominated_for_next_operator: false,
+            nominated_for_next_operator: None,
         })
     }
 
@@ -38,9 +38,14 @@ impl Operator {
         // For the first slot, use the next operator from the previous epoch
         // it's because of the delay that L1 updates the current operator
         // after the epoch has changed.
-        if slot == 0 && self.nominated_for_next_operator {
-            self.nominated_for_next_operator = false;
-            return Ok(Status::PreconferAndL1Submitter);
+        if slot == 0 {
+            if let Some(nominated_for_next_operator) = self.nominated_for_next_operator.take() {
+                if nominated_for_next_operator {
+                    return Ok(Status::PreconferAndL1Submitter);
+                } else {
+                    return Ok(Status::None);
+                }
+            }
         }
 
         let is_current_operator = self
@@ -50,18 +55,19 @@ impl Operator {
             .await?;
 
         if self.is_handover_window(slot)? {
-            self.nominated_for_next_operator = self
+            let next_operator = self
                 .ethereum_l1
                 .execution_layer
                 .is_operator_for_next_epoch()
                 .await?;
+            self.nominated_for_next_operator = Some(next_operator);
             if is_current_operator {
-                if self.nominated_for_next_operator {
+                if next_operator {
                     return Ok(Status::PreconferAndL1Submitter);
                 }
                 return Ok(Status::L1Submitter);
             }
-            if self.nominated_for_next_operator {
+            if next_operator {
                 let time_elapsed_since_handover_start = self.get_ms_from_handover_window_start()?;
                 if self.handover_start_buffer_ms > time_elapsed_since_handover_start {
                     return Ok(Status::PreconferHandoverBuffer(
