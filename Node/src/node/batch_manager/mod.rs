@@ -54,7 +54,8 @@ impl BatchManager {
     }
 
     pub async fn preconfirm_block(&mut self, submit: bool) -> Result<(), Error> {
-        let preconfirmation_timestamp = self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
+        let preconfirmation_timestamp =
+            self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
 
         // Fetch pending transactions
         if let Some(pending_tx_list) = self.taiko.get_pending_l2_tx_list_from_taiko_geth().await? {
@@ -69,7 +70,10 @@ impl BatchManager {
 
         // Check max anchor height offset
         let l1_height = self.ethereum_l1.execution_layer.get_l1_height().await?;
-        if self.batch_builder.is_exceed_max_anchor_height_offset(l1_height) {
+        if self
+            .batch_builder
+            .is_exceed_max_anchor_height_offset(l1_height)
+        {
             self.batch_builder.finalize_current_batch(None);
 
             if submit {
@@ -93,12 +97,15 @@ impl BatchManager {
     }
 
     async fn process_new_l2_block(&mut self, l2_block: L2Block, submit: bool) -> Result<(), Error> {
+        // Consume L2 block
         let anchor_block_id: u64 = self.consume_l2_block(l2_block.clone()).await?;
 
+        // Advance taiko-driver head to new L2 block
         self.taiko
             .advance_head_to_new_l2_block(l2_block, anchor_block_id)
             .await?;
 
+        // If we can submit, do it
         if submit {
             self.submit_batches(true).await?;
         }
@@ -107,14 +114,17 @@ impl BatchManager {
     }
 
     pub async fn consume_l2_block(&mut self, l2_block: L2Block) -> Result<u64, Error> {
-        let anchor_block_id = if !self.batch_builder.can_consume_l2_block(&l2_block) {
+        // If the L2 block can be added to the current batch, do so
+        let anchor_block_id = if self.batch_builder.can_consume_l2_block(&l2_block) {
+            self.batch_builder
+                .add_l2_block_and_get_current_anchor_block_id(l2_block)?
+        } else {
+            // Otherwise, calculate the anchor block ID and create a new batch
             let anchor_block_id = self.calculate_anchor_block_id().await?;
+            // Add the L2 block to the new batch
             self.batch_builder
                 .create_new_batch_and_add_l2_block(anchor_block_id, l2_block);
             anchor_block_id
-        } else {
-            self.batch_builder
-                .add_l2_block_and_get_current_anchor_block_id(l2_block)?
         };
         Ok(anchor_block_id)
     }
