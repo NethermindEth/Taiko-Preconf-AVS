@@ -72,7 +72,7 @@ impl BatchManager {
         let l1_height = self.ethereum_l1.execution_layer.get_l1_height().await?;
         if self
             .batch_builder
-            .is_exceed_max_anchor_height_offset(l1_height)
+            .is_grater_than_max_anchor_height_offset(l1_height)
         {
             debug!("Max anchor height offset exceeded");
             self.batch_builder.finalize_current_batch(None);

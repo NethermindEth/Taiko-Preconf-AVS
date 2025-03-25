@@ -152,7 +152,7 @@ impl BatchBuilder {
             >= self.config.max_time_shift_between_blocks_sec - self.config.l1_slot_duration_sec
     }
 
-    pub fn is_exceed_max_anchor_height_offset(&self, current_l1_block: u64) -> bool {
+    pub fn is_grater_than_max_anchor_height_offset(&self, current_l1_block: u64) -> bool {
         if let Some(current_batch) = self.current_batch.as_ref() {
             return current_batch.anchor_block_id + self.config.max_anchor_height_offset
                 < current_l1_block;
