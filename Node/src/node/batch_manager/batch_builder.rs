@@ -61,13 +61,12 @@ impl BatchBuilder {
     }
 
     pub fn create_new_batch_and_add_l2_block(&mut self, anchor_block_id: u64, l2_block: L2Block) {
-        let l1_batch = Batch {
+        self.finalize_current_batch();
+        self.current_batch = Some(Batch {
             total_bytes: l2_block.prebuilt_tx_list.bytes_length,
             l2_blocks: vec![l2_block],
             anchor_block_id,
-        };
-        self.finalize_current_batch();
-        self.current_batch = Some(l1_batch);
+        });
     }
 
     /// Returns true if the block was added to the batch, false otherwise.
@@ -103,9 +102,11 @@ impl BatchBuilder {
         ethereum_l1: Arc<EthereumL1>,
         submit_only_full_batches: bool,
     ) -> Result<(), Error> {
-        debug!("Submitting batches: current_batch is none: {}, batches_to_send len: {}",
+        debug!(
+            "Submitting batches: current_batch is none: {}, batches_to_send len: {}",
             self.current_batch.is_none(),
-            self.batches_to_send.len());
+            self.batches_to_send.len()
+        );
         if self.current_batch.is_some()
             && (!submit_only_full_batches
                 || !self.config.is_within_block_limit(
