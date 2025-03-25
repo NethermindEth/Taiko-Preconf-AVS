@@ -90,7 +90,11 @@ impl BatchBuilder {
     }
 
     pub fn is_empty(&self) -> bool {
-        trace!("batch_builder::is_empty: current_batch is none: {}, batches_to_send len: {}", self.current_batch.is_none(), self.batches_to_send.len());
+        trace!(
+            "batch_builder::is_empty: current_batch is none: {}, batches_to_send len: {}",
+            self.current_batch.is_none(),
+            self.batches_to_send.len()
+        );
         self.current_batch.is_none() && self.batches_to_send.is_empty()
     }
 

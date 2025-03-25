@@ -54,9 +54,9 @@ impl BatchManager {
     }
 
     pub async fn preconfirm_block(&mut self, submit: bool) -> Result<(), Error> {
-        let preconfirmation_timestamp =
-            self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
+        let preconfirmation_timestamp = self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
 
+        // Fetch pending transactions
         if let Some(pending_tx_list) = self.taiko.get_pending_l2_tx_list_from_taiko_geth().await? {
             debug!(
                 "Received pending tx list length: {}, bytes length: {}",
@@ -64,28 +64,30 @@ impl BatchManager {
                 pending_tx_list.bytes_length
             );
             let l2_block = L2Block::new_from(pending_tx_list, preconfirmation_timestamp);
-            self.process_new_l2_block(l2_block, submit).await?;
-        } else if self.is_empty_block_required(preconfirmation_timestamp) {
-            debug!("No pending txs, proposing empty block");
-            let empty_block = L2Block::new_empty(preconfirmation_timestamp);
-            self.process_new_l2_block(empty_block, submit).await?;
-        } else {
-            debug!("No pending txs, skipping preconfirmation");
+            return self.process_new_l2_block(l2_block, submit).await;
         }
 
-        // check max anchor height offset
+        // Check max anchor height offset
         let l1_height = self.ethereum_l1.execution_layer.get_l1_height().await?;
-        if self
-            .batch_builder
-            .is_exceed_max_anchor_height_offset(l1_height)
-        {
+        if self.batch_builder.is_exceed_max_anchor_height_offset(l1_height) {
             self.batch_builder.finalize_current_batch(None);
+
             if submit {
                 self.submit_batches(true).await?;
             } else {
                 warn!("Max anchor height offset exceeded but submission is disabled");
             }
+            return Ok(());
         }
+
+        // Handle empty block scenario
+        if self.is_empty_block_required(preconfirmation_timestamp) {
+            debug!("No pending txs, proposing empty block");
+            let empty_block = L2Block::new_empty(preconfirmation_timestamp);
+            return self.process_new_l2_block(empty_block, submit).await;
+        }
+
+        debug!("No pending txs, skipping preconfirmation");
 
         Ok(())
     }
