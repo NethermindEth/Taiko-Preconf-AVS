@@ -14,7 +14,6 @@ pub struct Node {
     preconf_heartbeat_ms: u64,
     operator: Operator,
     batch_manager: BatchManager,
-    first_epoch_slot_delay_ms: Duration,
 }
 
 impl Node {
@@ -27,7 +26,6 @@ impl Node {
         handover_start_buffer_ms: u64,
         l1_height_lag: u64,
         batch_builder_config: BatchBuilderConfig,
-        first_epoch_slot_delay_ms: u64,
     ) -> Result<Self, Error> {
         let operator = Operator::new(
             ethereum_l1.clone(),
@@ -44,7 +42,6 @@ impl Node {
             ethereum_l1,
             preconf_heartbeat_ms,
             operator,
-            first_epoch_slot_delay_ms: Duration::from_millis(first_epoch_slot_delay_ms),
         })
     }
 
@@ -82,11 +79,6 @@ impl Node {
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
-        if self.ethereum_l1.slot_clock.get_current_slot_of_epoch()? == 0 {
-            // short sleep for first slot of epoch to get correct operator
-            sleep(self.first_epoch_slot_delay_ms).await;
-        }
-
         let current_status = self.operator.get_status().await?;
         match current_status {
             OperatorStatus::PreconferHandoverBuffer(buffer_ms) => {
@@ -100,6 +92,10 @@ impl Node {
                 self.preconfirm_block(true).await?;
             }
             OperatorStatus::L1Submitter => {
+                info!(
+                    "Submitting left batches, {}",
+                    self.get_current_slots_info()?
+                );
                 self.batch_manager.submit_batches(false).await?;
             }
             OperatorStatus::None => {
