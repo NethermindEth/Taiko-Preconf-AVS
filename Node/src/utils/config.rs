@@ -257,6 +257,7 @@ l1 height lag: {}
 max bytes size of batch: {}
 max blocks per batch: {}
 max time shift between blocks: {}
+max_anchor_height_offset: {}
 first epoch slot delay: {}ms
 "#,
             config.taiko_geth_ws_rpc_url,
@@ -281,6 +282,7 @@ first epoch slot delay: {}ms
             config.max_bytes_size_of_batch,
             config.max_blocks_per_batch,
             config.max_time_shift_between_blocks_sec,
+            config.max_anchor_height_offset,
             config.first_epoch_slot_delay_ms,
         );
 
