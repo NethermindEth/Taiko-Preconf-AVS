@@ -108,7 +108,9 @@ impl Node {
                     self.get_current_slots_info()?
                 );
                 if self.batch_manager.has_batches() {
-                    warn!("Some batches were not successfully sent in the submitter window");
+                    // TODO: Handle this situation gracefully
+                    self.batch_manager.reset_builder();
+                    warn!("Some batches were not successfully sent in the submitter window. Resetting batch builder.");
                 }
             }
         }

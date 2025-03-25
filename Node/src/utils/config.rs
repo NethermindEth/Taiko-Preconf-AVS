@@ -25,6 +25,7 @@ pub struct Config {
     pub max_bytes_size_of_batch: u64,
     pub max_blocks_per_batch: u64,
     pub max_time_shift_between_blocks_sec: u64,
+    pub max_anchor_height_offset: u64,
     pub first_epoch_slot_delay_ms: u64,
 }
 
@@ -187,6 +188,11 @@ impl Config {
             .parse::<u64>()
             .expect("MAX_TIME_SHIFT_BETWEEN_BLOCKS_SEC must be a number");
 
+        let max_anchor_height_offset = std::env::var("MAX_ANCHOR_HEIGHT_OFFSET")
+            .unwrap_or("54".to_string())
+            .parse::<u64>()
+            .expect("MAX_ANCHOR_HEIGHT_OFFSET must be a number");
+
         let first_epoch_slot_delay_ms = std::env::var("FIRST_EPOCH_SLOT_DELAY_MS")
             .unwrap_or("100".to_string())
             .parse::<u64>()
@@ -222,6 +228,7 @@ impl Config {
             max_bytes_size_of_batch,
             max_blocks_per_batch,
             max_time_shift_between_blocks_sec,
+            max_anchor_height_offset,
             first_epoch_slot_delay_ms,
         };
 
@@ -250,6 +257,7 @@ l1 height lag: {}
 max bytes size of batch: {}
 max blocks per batch: {}
 max time shift between blocks: {}
+max_anchor_height_offset: {}
 first epoch slot delay: {}ms
 "#,
             config.taiko_geth_ws_rpc_url,
@@ -274,6 +282,7 @@ first epoch slot delay: {}ms
             config.max_bytes_size_of_batch,
             config.max_blocks_per_batch,
             config.max_time_shift_between_blocks_sec,
+            config.max_anchor_height_offset,
             config.first_epoch_slot_delay_ms,
         );
 
