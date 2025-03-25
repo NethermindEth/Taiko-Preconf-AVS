@@ -189,7 +189,7 @@ impl Config {
             .expect("MAX_TIME_SHIFT_BETWEEN_BLOCKS_SEC must be a number");
 
         let max_anchor_height_offset = std::env::var("MAX_ANCHOR_HEIGHT_OFFSET")
-            .unwrap_or("64".to_string())
+            .unwrap_or("54".to_string())
             .parse::<u64>()
             .expect("MAX_ANCHOR_HEIGHT_OFFSET must be a number");
 
