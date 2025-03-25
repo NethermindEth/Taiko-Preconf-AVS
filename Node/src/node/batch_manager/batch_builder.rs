@@ -54,11 +54,10 @@ impl BatchBuilder {
             })
     }
 
-    pub fn finalize_current_batch(&mut self, new_batch: Option<Batch>) {
+    pub fn finalize_current_batch(&mut self) {
         if let Some(batch) = self.current_batch.take() {
             self.batches_to_send.push_back(batch);
         }
-        self.current_batch = new_batch;
     }
 
     pub fn create_new_batch_and_add_l2_block(&mut self, anchor_block_id: u64, l2_block: L2Block) {
@@ -67,7 +66,8 @@ impl BatchBuilder {
             l2_blocks: vec![l2_block],
             anchor_block_id,
         };
-        self.finalize_current_batch(Some(l1_batch));
+        self.finalize_current_batch();
+        self.current_batch = Some(l1_batch);
     }
 
     /// Returns true if the block was added to the batch, false otherwise.
@@ -103,14 +103,16 @@ impl BatchBuilder {
         ethereum_l1: Arc<EthereumL1>,
         submit_only_full_batches: bool,
     ) -> Result<(), Error> {
-        debug!("Submitting batches");
+        debug!("Submitting batches: current_batch is none: {}, batches_to_send len: {}",
+            self.current_batch.is_none(),
+            self.batches_to_send.len());
         if self.current_batch.is_some()
             && (!submit_only_full_batches
                 || !self.config.is_within_block_limit(
                     self.current_batch.as_ref().unwrap().l2_blocks.len() as u64 + 1,
                 ))
         {
-            self.finalize_current_batch(None);
+            self.finalize_current_batch();
         }
 
         while let Some(batch) = self.batches_to_send.front() {

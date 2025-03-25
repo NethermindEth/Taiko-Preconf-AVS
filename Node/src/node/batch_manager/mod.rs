@@ -75,7 +75,7 @@ impl BatchManager {
             .is_grater_than_max_anchor_height_offset(l1_height)
         {
             debug!("Max anchor height offset exceeded");
-            self.batch_builder.finalize_current_batch(None);
+            self.batch_builder.finalize_current_batch();
 
             if submit {
                 self.submit_batches(true).await?;
@@ -98,15 +98,12 @@ impl BatchManager {
     }
 
     async fn process_new_l2_block(&mut self, l2_block: L2Block, submit: bool) -> Result<(), Error> {
-        // Consume L2 block
         let anchor_block_id: u64 = self.consume_l2_block(l2_block.clone()).await?;
 
-        // Advance taiko-driver head to new L2 block
         self.taiko
             .advance_head_to_new_l2_block(l2_block, anchor_block_id)
             .await?;
 
-        // If we can submit, do it
         if submit {
             self.submit_batches(true).await?;
         }
