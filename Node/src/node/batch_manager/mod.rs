@@ -74,6 +74,7 @@ impl BatchManager {
             .batch_builder
             .is_exceed_max_anchor_height_offset(l1_height)
         {
+            debug!("Max anchor height offset exceeded");
             self.batch_builder.finalize_current_batch(None);
 
             if submit {
