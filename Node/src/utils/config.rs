@@ -26,6 +26,7 @@ pub struct Config {
     pub max_blocks_per_batch: u64,
     pub max_time_shift_between_blocks_sec: u64,
     pub max_anchor_height_offset: u64,
+    pub first_epoch_slot_delay_ms: u64,
 }
 
 #[derive(Debug)]
@@ -192,6 +193,11 @@ impl Config {
             .parse::<u64>()
             .expect("MAX_ANCHOR_HEIGHT_OFFSET must be a number");
 
+        let first_epoch_slot_delay_ms = std::env::var("FIRST_EPOCH_SLOT_DELAY_MS")
+            .unwrap_or("100".to_string())
+            .parse::<u64>()
+            .expect("FIRST_EPOCH_SLOT_DELAY_MS must be a number");
+
         let config = Self {
             taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
                 .unwrap_or("ws://127.0.0.1:1234".to_string()),
@@ -223,6 +229,7 @@ impl Config {
             max_blocks_per_batch,
             max_time_shift_between_blocks_sec,
             max_anchor_height_offset,
+            first_epoch_slot_delay_ms,
         };
 
         info!(
@@ -250,6 +257,7 @@ l1 height lag: {}
 max bytes size of batch: {}
 max blocks per batch: {}
 max time shift between blocks: {}
+first epoch slot delay: {}ms
 "#,
             config.taiko_geth_ws_rpc_url,
             config.taiko_geth_auth_rpc_url,
@@ -273,6 +281,7 @@ max time shift between blocks: {}
             config.max_bytes_size_of_batch,
             config.max_blocks_per_batch,
             config.max_time_shift_between_blocks_sec,
+            config.first_epoch_slot_delay_ms,
         );
 
         config

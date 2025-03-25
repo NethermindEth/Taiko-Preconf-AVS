@@ -2,7 +2,7 @@ use std::{collections::VecDeque, sync::Arc};
 
 use crate::{ethereum_l1::EthereumL1, shared::l2_block::L2Block};
 use anyhow::Error;
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 use super::BatchBuilderConfig;
 
@@ -90,6 +90,7 @@ impl BatchBuilder {
     }
 
     pub fn is_empty(&self) -> bool {
+        trace!("batch_builder::is_empty: current_batch is none: {}, batches_to_send len: {}", self.current_batch.is_none(), self.batches_to_send.len());
         self.current_batch.is_none() && self.batches_to_send.is_empty()
     }
 

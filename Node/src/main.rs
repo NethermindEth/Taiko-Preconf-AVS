@@ -57,6 +57,7 @@ async fn main() -> Result<(), Error> {
             max_time_shift_between_blocks_sec: config.max_time_shift_between_blocks_sec,
             max_anchor_height_offset: config.max_anchor_height_offset,
         },
+        config.first_epoch_slot_delay_ms,
     )
     .await?;
     node.entrypoint().await?;
