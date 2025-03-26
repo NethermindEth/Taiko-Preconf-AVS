@@ -19,7 +19,7 @@ pub enum TxStatus {
 
 /// Monitor a transaction until it is confirmed or fails.
 /// Spawns a new tokio task to monitor the transaction.
-pub async fn monitor_transaction(provider: Arc<WsProvider>, tx_hash: B256) -> JoinHandle<TxStatus> {
+pub fn monitor_transaction(provider: Arc<WsProvider>, tx_hash: B256) -> JoinHandle<TxStatus> {
     tokio::spawn(async move {
         let max_attempts = 50; //TODO move to config
         let delay = Duration::from_secs(2);

@@ -6,14 +6,18 @@ mod utils;
 
 use anyhow::Error;
 use std::sync::Arc;
+use tokio::signal::unix::{signal, SignalKind};
+use tokio_util::sync::CancellationToken;
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     init_logging();
 
-    tracing::info!("🚀 Starting Whitelist Node v{}", env!("CARGO_PKG_VERSION"));
+    info!("🚀 Starting Whitelist Node v{}", env!("CARGO_PKG_VERSION"));
 
     let config = utils::config::Config::read_env_variables();
+    let cancel_token = CancellationToken::new();
 
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
         &config.l1_ws_rpc_url,
@@ -44,6 +48,7 @@ async fn main() -> Result<(), Error> {
     );
 
     let node = node::Node::new(
+        cancel_token.clone(),
         taiko.clone(),
         ethereum_l1.clone(),
         config.preconf_heartbeat_ms,
@@ -59,9 +64,29 @@ async fn main() -> Result<(), Error> {
         },
     )
     .await?;
-    node.entrypoint().await?;
+    node.entrypoint();
+
+    wait_for_the_termination(cancel_token, config.l1_slot_duration_sec).await;
 
     Ok(())
+}
+
+async fn wait_for_the_termination(cancel_token: CancellationToken, shutdown_delay_secs: u64) {
+    let mut sigterm = signal(SignalKind::terminate()).expect("Failed to set up SIGTERM handler");
+    tokio::select! {
+        _ = sigterm.recv() => {
+            info!("Received SIGTERM, shutting down...");
+            cancel_token.cancel();
+        }
+        _ = tokio::signal::ctrl_c() => {
+            info!("Received Ctrl+C, shutting down...");
+            cancel_token.cancel();
+        }
+    }
+
+    // Give tasks a little time to finish
+    info!("Waiting for {}s", shutdown_delay_secs);
+    tokio::time::sleep(tokio::time::Duration::from_secs(shutdown_delay_secs)).await;
 }
 
 fn init_logging() {

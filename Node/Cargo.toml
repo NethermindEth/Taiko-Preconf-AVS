@@ -1,6 +1,6 @@
 [package]
 name = "taiko_preconf_avs_node"
-version = "0.2.10"
+version = "0.2.11"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -15,6 +15,7 @@ alloy = { version = "0.11", features = [
 ] }
 alloy-rlp = "0.3"
 tokio = { version = "1.38", features = ["full"] }
+tokio-util = "0.7"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 jsonrpsee = { version = "0.24", features = ["http-client", "server"] }

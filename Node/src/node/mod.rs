@@ -7,9 +7,11 @@ use batch_manager::{BatchBuilderConfig, BatchManager};
 use operator::{Operator, Status as OperatorStatus};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 pub struct Node {
+    cancel_token: CancellationToken,
     ethereum_l1: Arc<EthereumL1>,
     preconf_heartbeat_ms: u64,
     operator: Operator,
@@ -19,6 +21,7 @@ pub struct Node {
 impl Node {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
+        cancel_token: CancellationToken,
         taiko: Arc<Taiko>,
         ethereum_l1: Arc<EthereumL1>,
         preconf_heartbeat_ms: u64,
@@ -33,6 +36,7 @@ impl Node {
             handover_start_buffer_ms,
         )?;
         Ok(Self {
+            cancel_token,
             batch_manager: BatchManager::new(
                 l1_height_lag,
                 batch_builder_config,
@@ -47,10 +51,11 @@ impl Node {
 
     /// Consumes the Node and starts two loops:
     /// one for handling incoming messages and one for the block preconfirmation
-    pub async fn entrypoint(mut self) -> Result<(), Error> {
+    pub fn entrypoint(mut self) {
         info!("Starting node");
-        self.preconfirmation_loop().await;
-        Ok(())
+        tokio::spawn(async move {
+            self.preconfirmation_loop().await;
+        });
     }
 
     async fn preconfirmation_loop(&mut self) {
@@ -71,6 +76,13 @@ impl Node {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
+            if self.cancel_token.is_cancelled() {
+                info!("Shutdown signal received, exiting main loop...");
+                if let Err(err) = self.batch_manager.submit_batches(false).await {
+                    error!("Failed to submit batches at the application shut down: {err}");
+                }
+                return;
+            }
 
             if let Err(err) = self.main_block_preconfirmation_step().await {
                 error!("Failed to execute main block preconfirmation step: {}", err);
@@ -92,15 +104,12 @@ impl Node {
                 self.preconfirm_block(true).await?;
             }
             OperatorStatus::L1Submitter => {
-                info!(
-                    "Submitting left batches, {}",
-                    self.get_current_slots_info()?
-                );
+                info!("Submitting left batches {}", self.get_current_slots_info()?);
                 self.batch_manager.submit_batches(false).await?;
             }
             OperatorStatus::None => {
                 info!(
-                    "Not my slot to preconfirm, {}",
+                    "Not my slot to preconfirm {}",
                     self.get_current_slots_info()?
                 );
                 if self.batch_manager.has_batches() {
@@ -116,8 +125,8 @@ impl Node {
 
     async fn preconfirm_block(&mut self, submit: bool) -> Result<(), Error> {
         info!(
-            "Preconfirming (submit: {}) for the {}",
-            submit,
+            "Preconfirming {}{}",
+            if submit { "and submitting " } else { "" },
             self.get_current_slots_info()?
         );
 
@@ -127,7 +136,7 @@ impl Node {
     fn get_current_slots_info(&self) -> Result<String, Error> {
         let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
         Ok(format!(
-            "epoch: {}, slot: {} ({}), L2 slot: {}",
+            "\t epoch: {}\t| slot: {} ({})\t| L2 slot: {}",
             self.ethereum_l1.slot_clock.get_current_epoch()?,
             current_slot,
             self.ethereum_l1.slot_clock.slot_of_epoch(current_slot),
