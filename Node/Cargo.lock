@@ -4976,7 +4976,7 @@ dependencies = [
 
 [[package]]
 name = "taiko_preconf_avs_node"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "alloy",
  "alloy-json-rpc",
@@ -5005,6 +5005,7 @@ dependencies = [
  "serde_json",
  "ssz_rs",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]

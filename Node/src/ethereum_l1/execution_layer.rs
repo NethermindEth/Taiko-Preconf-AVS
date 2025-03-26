@@ -199,7 +199,7 @@ impl ExecutionLayer {
         tracing::debug!("Call proposeBatch with hash {}", pending_tx.tx_hash());
 
         // Spawn a monitor for this transaction
-        monitor_transaction(self.provider_ws.clone(), *pending_tx.tx_hash()).await;
+        let _ = monitor_transaction(self.provider_ws.clone(), *pending_tx.tx_hash());
 
         Ok(())
     }

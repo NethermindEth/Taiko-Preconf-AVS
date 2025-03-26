@@ -103,8 +103,12 @@ impl BatchBuilder {
         submit_only_full_batches: bool,
     ) -> Result<(), Error> {
         debug!(
-            "Submitting batches: current_batch is none: {}, batches_to_send len: {}",
-            self.current_batch.is_none(),
+            "Submitting batches: {}, batches_to_send len: {}",
+            if self.current_batch.is_none() {
+                "current_batch is none"
+            } else {
+                "current batch is some"
+            },
             self.batches_to_send.len()
         );
         if self.current_batch.is_some()
