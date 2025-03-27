@@ -262,20 +262,26 @@ impl ExecutionLayer {
         Ok(batch.lastBlockId)
     }
 
-    pub async fn get_latest_nonce(&self) -> Result<u64, Error> {
-        self.provider_ws
+    pub async fn get_preconfer_latest_nonce(&self) -> Result<u64, Error> {
+        let nonce_str: String = self.provider_ws
             .client()
             .request("eth_getTransactionCount", (self.preconfer_address, "latest"))
             .await
-            .map_err(|e| Error::msg(format!("Failed to get nonce: {}", e)))
+            .map_err(|e| Error::msg(format!("Failed to get nonce: {}", e)))?;
+
+        u64::from_str_radix(nonce_str.trim_start_matches("0x"), 16)
+            .map_err(|e| Error::msg(format!("Failed to convert nonce: {}", e)))
     }
 
-    pub async fn get_pending_nonce(&self) -> Result<u64, Error> {
-        self.provider_ws
+    pub async fn get_preconfer_pending_nonce(&self) -> Result<u64, Error> {
+        let nonce_str: String = self.provider_ws
             .client()
             .request("eth_getTransactionCount", (self.preconfer_address, "pending"))
             .await
-            .map_err(|e| Error::msg(format!("Failed to get nonce: {}", e)))
+            .map_err(|e| Error::msg(format!("Failed to get nonce: {}", e)))?;
+
+        u64::from_str_radix(nonce_str.trim_start_matches("0x"), 16)
+            .map_err(|e| Error::msg(format!("Failed to convert nonce: {}", e)))
     }
 
     #[cfg(test)]

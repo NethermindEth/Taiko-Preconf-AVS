@@ -91,8 +91,8 @@ impl Node {
             panic!("Taiko Geth is not synchronized with L1");
         } else {
             //if so, check if there is a pending tx on the mempool from your address
-            let latest_nonce: u64 = self.ethereum_l1.execution_layer.get_latest_nonce().await?;
-            let pending_nonce: u64 = self.ethereum_l1.execution_layer.get_pending_nonce().await?;
+            let latest_nonce: u64 = self.ethereum_l1.execution_layer.get_preconfer_latest_nonce().await?;
+            let pending_nonce: u64 = self.ethereum_l1.execution_layer.get_preconfer_pending_nonce().await?;
             info!("Latest nonce: {latest_nonce}, Pending nonce: {pending_nonce}");
             //if not, then read blocks from L2 execution to form your buffer (L2 batch) and continue operations normally
             //if yes, then continue operations normally without rebuilding the buffer
