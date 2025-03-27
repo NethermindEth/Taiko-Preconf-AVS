@@ -256,6 +256,7 @@ impl ExecutionLayer {
     pub async fn get_l2_height_from_taiko_inbox(&self) -> Result<u64, Error> {
         let contract = taiko_inbox::ITaikoInbox::new(self.contract_addresses.taiko_inbox.clone(), self.provider_ws.clone());
         let num_batches = contract.getStats2().call().await?._0.numBatches;
+        // It is safe because num_batches initial value is 1
         let batch = contract.getBatch(num_batches - 1).call().await?.batch_;
 
         Ok(batch.lastBlockId)
