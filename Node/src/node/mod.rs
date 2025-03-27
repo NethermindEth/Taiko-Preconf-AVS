@@ -67,8 +67,39 @@ impl Node {
     pub fn entrypoint(mut self) {
         info!("Starting node");
         tokio::spawn(async move {
+            match self.warmup().await {
+                Ok(()) => {
+                    info!("Node warmup successful");
+                }
+                Err(err) => {
+                    error!("Failed to startup node: {}", err);
+                }
+            }
             self.preconfirmation_loop().await;
         });
+    }
+
+    async fn warmup(&mut self) -> Result<(), Error> {
+        info!("Warmup node");
+        let height_taiko_inbox = self.ethereum_l1.execution_layer.get_l2_height_from_taiko_inbox().await?;
+        let height_taiko_geth = self.batch_manager.taiko.get_latest_l2_block_id().await?;
+
+        info!("Height Taiko Inbox: {height_taiko_inbox}, Height Taiko Geth: {height_taiko_geth}");
+        if height_taiko_inbox == height_taiko_geth {
+            return Ok(());
+        } else if height_taiko_inbox > height_taiko_geth {
+            panic!("Taiko Geth is not synchronized with L1");
+        } else {
+            //if so, check if there is a pending tx on the mempool from your address
+            let latest_nonce: u64 = self.ethereum_l1.execution_layer.get_latest_nonce().await?;
+            let pending_nonce: u64 = self.ethereum_l1.execution_layer.get_pending_nonce().await?;
+            info!("Latest nonce: {latest_nonce}, Pending nonce: {pending_nonce}");
+            //if not, then read blocks from L2 execution to form your buffer (L2 batch) and continue operations normally
+            //if yes, then continue operations normally without rebuilding the buffer
+        }
+
+        Ok(())
+
     }
 
     async fn preconfirmation_loop(&mut self) {

@@ -34,7 +34,7 @@ impl BatchBuilderConfig {
 pub struct BatchManager {
     batch_builder: BatchBuilder,
     ethereum_l1: Arc<EthereumL1>,
-    taiko: Arc<Taiko>,
+    pub taiko: Arc<Taiko>,
     l1_height_lag: u64,
 }
 

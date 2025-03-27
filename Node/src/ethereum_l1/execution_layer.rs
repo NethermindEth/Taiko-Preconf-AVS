@@ -262,6 +262,22 @@ impl ExecutionLayer {
         Ok(batch.lastBlockId)
     }
 
+    pub async fn get_latest_nonce(&self) -> Result<u64, Error> {
+        self.provider_ws
+            .client()
+            .request("eth_getTransactionCount", (self.preconfer_address, "latest"))
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get nonce: {}", e)))
+    }
+
+    pub async fn get_pending_nonce(&self) -> Result<u64, Error> {
+        self.provider_ws
+            .client()
+            .request("eth_getTransactionCount", (self.preconfer_address, "pending"))
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get nonce: {}", e)))
+    }
+
     #[cfg(test)]
     pub async fn new_from_pk(
         ws_rpc_url: String,

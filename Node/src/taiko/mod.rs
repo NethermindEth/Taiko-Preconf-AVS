@@ -164,6 +164,14 @@ impl Taiko {
         }
     }
 
+    pub async fn get_latest_l2_block_id(&self) -> Result<u64, Error> {
+        self
+            .taiko_geth_provider_ws
+            .get_block_number()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to get latest L2 block: {}", e))
+    }
+
     async fn get_latest_l2_block_id_hash_and_gas_used(&self) -> Result<(u64, B256, u64), Error> {
         let block = self
             .taiko_geth_provider_ws
