@@ -253,6 +253,14 @@ impl ExecutionLayer {
         Ok(block.header.state_root)
     }
 
+    pub async fn get_l2_height_from_taiko_inbox(&self) -> Result<u64, Error> {
+        let contract = taiko_inbox::ITaikoInbox::new(self.contract_addresses.taiko_inbox.clone(), self.provider_ws.clone());
+        let num_batches = contract.getStats2().call().await?._0.numBatches;
+        let batch = contract.getBatch(num_batches - 1).call().await?.batch_;
+
+        Ok(batch.lastBlockId)
+    }
+
     #[cfg(test)]
     pub async fn new_from_pk(
         ws_rpc_url: String,
