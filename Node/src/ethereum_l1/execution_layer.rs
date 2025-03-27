@@ -79,6 +79,14 @@ impl ExecutionLayer {
         })
     }
 
+    pub fn get_pacaya_config_max_blocks_per_batch(&self) -> u16 {
+        self.pacaya_config.maxBlocksPerBatch
+    }
+
+    pub fn get_pacaya_config_max_anchor_height_offset(&self) -> u64 {
+        self.pacaya_config.maxAnchorHeightOffset
+    }
+
     pub fn get_preconfer_address(&self) -> PreconferAddress {
         self.preconfer_address.into_array()
     }

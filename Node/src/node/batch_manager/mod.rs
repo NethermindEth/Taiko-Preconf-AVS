@@ -12,7 +12,7 @@ pub struct BatchBuilderConfig {
     /// Maximum size of the batch in bytes before sending
     pub max_bytes_size_of_batch: u64,
     /// Maximum number of blocks in a batch
-    pub max_blocks_per_batch: u64,
+    pub max_blocks_per_batch: u16,
     /// L1 slot duration in seconds
     pub l1_slot_duration_sec: u64,
     /// Maximum time shift between blocks in seconds
@@ -22,7 +22,7 @@ pub struct BatchBuilderConfig {
 }
 
 impl BatchBuilderConfig {
-    pub fn is_within_block_limit(&self, num_blocks: u64) -> bool {
+    pub fn is_within_block_limit(&self, num_blocks: u16) -> bool {
         num_blocks <= self.max_blocks_per_batch
     }
 
