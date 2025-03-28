@@ -1,4 +1,4 @@
-use alloy::rpc::types::Transaction;
+use alloy::{consensus::transaction::Recovered, rpc::types::Transaction};
 use anyhow::Error;
 use flate2::{write::ZlibEncoder, Compression};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -89,12 +89,11 @@ where
                 serde::de::Error::custom(format!("Failed to recover signer: {}", e))
             })?;
             Ok(Transaction {
-                inner: tx_envelope,
+                inner: Recovered::new_unchecked(tx_envelope, signer),
                 block_hash: None,
                 block_number: None,
                 transaction_index: None,
                 effective_gas_price: None,
-                from: signer,
             })
         })
         .collect::<Result<Vec<Transaction>, D::Error>>()?;
