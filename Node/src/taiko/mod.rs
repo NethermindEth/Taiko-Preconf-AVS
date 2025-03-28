@@ -9,7 +9,7 @@ use crate::{
     },
 };
 use alloy::{
-    consensus::{BlockHeader, SignableTransaction, TxEnvelope},
+    consensus::{transaction::Recovered, BlockHeader, SignableTransaction, TxEnvelope},
     eips::BlockNumberOrTag,
     network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder},
     primitives::{Address, BlockNumber, B256},
@@ -167,7 +167,7 @@ impl Taiko {
     async fn get_latest_l2_block_id_hash_and_gas_used(&self) -> Result<(u64, B256, u64), Error> {
         let block = self
             .taiko_geth_provider_ws
-            .get_block_by_number(BlockNumberOrTag::Latest, BlockTransactionsKind::Hashes)
+            .get_block_by_number(BlockNumberOrTag::Latest)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get latest L2 block: {}", e))?
             .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))?;
@@ -312,8 +312,7 @@ impl Taiko {
         debug!("AnchorTX transaction hash: {}", tx_envelope.tx_hash());
 
         let tx = Transaction {
-            inner: tx_envelope,
-            from: GOLDEN_TOUCH_ADDRESS,
+            inner: Recovered::new_unchecked(tx_envelope, GOLDEN_TOUCH_ADDRESS),
             block_hash: None,
             block_number: None,
             transaction_index: None,

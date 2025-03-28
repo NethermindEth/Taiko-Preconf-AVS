@@ -8,7 +8,6 @@ use alloy::{
     network::EthereumWallet,
     primitives::{Address, B256},
     providers::{Provider, ProviderBuilder, WsConnect},
-    rpc::types::BlockTransactionsKind,
     signers::local::PrivateKeySigner,
 };
 use anyhow::Error;
@@ -243,10 +242,7 @@ impl ExecutionLayer {
     pub async fn get_block_state_root_by_number(&self, number: u64) -> Result<B256, Error> {
         let block = self
             .provider_ws
-            .get_block_by_number(
-                BlockNumberOrTag::Number(number),
-                BlockTransactionsKind::Hashes,
-            )
+            .get_block_by_number(BlockNumberOrTag::Number(number))
             .await
             .map_err(|e| Error::msg(format!("Failed to get block by number: {}", e)))?
             .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))?;

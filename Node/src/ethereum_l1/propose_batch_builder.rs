@@ -71,7 +71,7 @@ impl ProposeBatchBuilder {
                 last_block_timestamp,
             )
             .await?;
-        let tx_blob_gas = match self.provider_ws.estimate_gas(&tx_blob).await {
+        let tx_blob_gas = match self.provider_ws.estimate_gas(tx_blob.clone()).await {
             Ok(gas) => gas,
             Err(e) => {
                 warn!(
@@ -96,7 +96,7 @@ impl ProposeBatchBuilder {
                 last_block_timestamp,
             )
             .await?;
-        let tx_calldata_gas = match self.provider_ws.estimate_gas(&tx_calldata).await {
+        let tx_calldata_gas = match self.provider_ws.estimate_gas(tx_calldata.clone()).await {
             Ok(gas) => gas,
             Err(e) => {
                 warn!(
@@ -220,7 +220,7 @@ impl ProposeBatchBuilder {
                 anyhow::Error::msg("Failed to get base_fee_per_blob_gas from fee history")
             })?;
 
-        let eip1599_estimation = self.provider_ws.estimate_eip1559_fees(None).await?;
+        let eip1599_estimation = self.provider_ws.estimate_eip1559_fees().await?;
 
         tracing::info!(
             ">max_fee_per_gas: {} base fee + priority fee: {}",
