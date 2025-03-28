@@ -75,29 +75,29 @@ impl BatchManager {
     pub async fn is_block_valid(&self, block_height: u64) -> Result<bool, Error> {
         let block = self.taiko.get_l2_block_by_number(block_height).await?;
         let anchor_tx = match block.transactions.as_transactions() {
-            Some(txs) => txs.first().expect("No transactions in block"),
+            Some(txs) => txs.first().ok_or_else(|| anyhow::anyhow!("No transactions in block"))?,
             None => return Err(anyhow::anyhow!("No transactions in block")),
         };
 
         let anchor_block_id = Taiko::decode_anchor_tx_data(anchor_tx.input())?;
         let l1_height = self.ethereum_l1.execution_layer.get_l1_height().await?;
-        let anchor_offcet = l1_height - anchor_block_id;
+        let anchor_offset = l1_height - anchor_block_id;
         let max_anchor_height_offset = self
             .ethereum_l1
             .execution_layer
             .get_pacaya_config()
             .maxAnchorHeightOffset;
-        if anchor_offcet + MIN_SLOTS_TO_PROPOSE > max_anchor_height_offset {
+        if anchor_offset + MIN_SLOTS_TO_PROPOSE > max_anchor_height_offset {
             warn!(
-                "Skip recovey! Reorg detected! Anchor height offset is greater than max anchor height offset. L1 height: {}, anchor block id: {}, anchor height offset: {}, max anchor height offset: {}",
-                l1_height, anchor_block_id, anchor_offcet, max_anchor_height_offset
+                "Skip recovery! Reorg detected! Anchor height offset is greater than max anchor height offset. L1 height: {}, anchor block id: {}, anchor height offset: {}, max anchor height offset: {}",
+                l1_height, anchor_block_id, anchor_offset, max_anchor_height_offset
             );
             return Ok(false);
         }
-        if max_anchor_height_offset - anchor_offcet <= MAX_SLOTS_TO_PROPOSE {
+        if max_anchor_height_offset - anchor_offset <= MAX_SLOTS_TO_PROPOSE {
             warn!(
-                "Posible Reorg detected! Anchor height offset is close to max anchor height offset. Anchor height offset: {}, max anchor height offset: {}",
-                anchor_offcet, max_anchor_height_offset
+                "Possible Reorg detected! Anchor height offset is close to max anchor height offset. Anchor height offset: {}, max anchor height offset: {}",
+                anchor_offset, max_anchor_height_offset
             );
         }
 

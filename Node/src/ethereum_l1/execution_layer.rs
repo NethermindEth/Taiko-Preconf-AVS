@@ -265,7 +265,7 @@ impl ExecutionLayer {
         Ok(batch.lastBlockId)
     }
 
-    pub async fn get_preconfer_latest_nonce(&self) -> Result<u64, Error> {
+    pub async fn get_preconfer_nonce_latest(&self) -> Result<u64, Error> {
         let nonce_str: String = self
             .provider_ws
             .client()
@@ -280,7 +280,7 @@ impl ExecutionLayer {
             .map_err(|e| Error::msg(format!("Failed to convert nonce: {}", e)))
     }
 
-    pub async fn get_preconfer_pending_nonce(&self) -> Result<u64, Error> {
+    pub async fn get_preconfer_nonce_pending(&self) -> Result<u64, Error> {
         let nonce_str: String = self
             .provider_ws
             .client()

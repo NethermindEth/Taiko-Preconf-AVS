@@ -110,20 +110,20 @@ impl Node {
             // height_taiko_inbox < height_taiko_geth
             // we have unprocessed L2 blocks
             // check if there is a pending tx on the mempool from your address
-            let latest_nonce: u64 = self
+            let nonce_latest: u64 = self
                 .ethereum_l1
                 .execution_layer
-                .get_preconfer_latest_nonce()
+                .get_preconfer_nonce_latest()
                 .await?;
-            let pending_nonce: u64 = self
+            let nonce_pending: u64 = self
                 .ethereum_l1
                 .execution_layer
-                .get_preconfer_pending_nonce()
+                .get_preconfer_nonce_pending()
                 .await?;
-            info!("Latest nonce: {latest_nonce}, Pending nonce: {pending_nonce}");
+            info!("Nonce Latest: {nonce_latest}, Nonce Pending: {nonce_pending}");
             //if not, then read blocks from L2 execution to form your buffer (L2 batch) and continue operations normally
             // we didn't propose blocks to mempool
-            if latest_nonce == pending_nonce {
+            if nonce_latest == nonce_pending {
                 // The first block anchor id is valid, so we can continue.
                 if self
                     .batch_manager
