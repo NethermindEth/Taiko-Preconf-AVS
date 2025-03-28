@@ -254,7 +254,10 @@ impl ExecutionLayer {
     }
 
     pub async fn get_l2_height_from_taiko_inbox(&self) -> Result<u64, Error> {
-        let contract = taiko_inbox::ITaikoInbox::new(self.contract_addresses.taiko_inbox.clone(), self.provider_ws.clone());
+        let contract = taiko_inbox::ITaikoInbox::new(
+            self.contract_addresses.taiko_inbox.clone(),
+            self.provider_ws.clone(),
+        );
         let num_batches = contract.getStats2().call().await?._0.numBatches;
         // It is safe because num_batches initial value is 1
         let batch = contract.getBatch(num_batches - 1).call().await?.batch_;
@@ -263,9 +266,13 @@ impl ExecutionLayer {
     }
 
     pub async fn get_preconfer_latest_nonce(&self) -> Result<u64, Error> {
-        let nonce_str: String = self.provider_ws
+        let nonce_str: String = self
+            .provider_ws
             .client()
-            .request("eth_getTransactionCount", (self.preconfer_address, "latest"))
+            .request(
+                "eth_getTransactionCount",
+                (self.preconfer_address, "latest"),
+            )
             .await
             .map_err(|e| Error::msg(format!("Failed to get nonce: {}", e)))?;
 
@@ -274,9 +281,13 @@ impl ExecutionLayer {
     }
 
     pub async fn get_preconfer_pending_nonce(&self) -> Result<u64, Error> {
-        let nonce_str: String = self.provider_ws
+        let nonce_str: String = self
+            .provider_ws
             .client()
-            .request("eth_getTransactionCount", (self.preconfer_address, "pending"))
+            .request(
+                "eth_getTransactionCount",
+                (self.preconfer_address, "pending"),
+            )
             .await
             .map_err(|e| Error::msg(format!("Failed to get nonce: {}", e)))?;
 

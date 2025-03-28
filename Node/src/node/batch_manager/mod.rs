@@ -1,10 +1,14 @@
 pub mod batch_builder;
 
 use crate::{ethereum_l1::EthereumL1, shared::l2_block::L2Block, taiko::Taiko};
+use alloy::consensus::Transaction;
 use anyhow::Error;
 use batch_builder::BatchBuilder;
 use std::sync::Arc;
 use tracing::{debug, warn};
+
+const MIN_SLOTS_TO_PROPOSE: u64 = 3;
+const MAX_SLOTS_TO_PROPOSE: u64 = 6;
 
 /// Configuration for batching L2 transactions
 #[derive(Clone)]
@@ -51,6 +55,53 @@ impl BatchManager {
             taiko,
             l1_height_lag,
         }
+    }
+
+    pub async fn recover_from_l2_block(&mut self, block_height: u64) -> Result<(), Error> {
+        let block = self.taiko.get_l2_block_by_number(block_height).await?;
+        let (anchor_tx, txs) = match block.transactions.as_transactions() {
+            Some(txs) => txs.split_first().expect("No transactions in block"),
+            None => return Err(anyhow::anyhow!("No transactions in block")),
+        };
+
+        let anchor_block_id = Taiko::decode_anchor_tx_data(anchor_tx.input())?;
+
+        self.batch_builder
+            .recover_from(txs.to_vec(), anchor_block_id, block.header.timestamp);
+
+        Ok(())
+    }
+
+    pub async fn is_block_valid(&self, block_height: u64) -> Result<bool, Error> {
+        let block = self.taiko.get_l2_block_by_number(block_height).await?;
+        let anchor_tx = match block.transactions.as_transactions() {
+            Some(txs) => txs.first().expect("No transactions in block"),
+            None => return Err(anyhow::anyhow!("No transactions in block")),
+        };
+
+        let anchor_block_id = Taiko::decode_anchor_tx_data(anchor_tx.input())?;
+        let l1_height = self.ethereum_l1.execution_layer.get_l1_height().await?;
+        let anchor_offcet = l1_height - anchor_block_id;
+        let max_anchor_height_offset = self
+            .ethereum_l1
+            .execution_layer
+            .get_pacaya_config()
+            .maxAnchorHeightOffset;
+        if anchor_offcet + MIN_SLOTS_TO_PROPOSE > max_anchor_height_offset {
+            warn!(
+                "Skip recovey! Reorg detected! Anchor height offset is greater than max anchor height offset. L1 height: {}, anchor block id: {}, anchor height offset: {}, max anchor height offset: {}",
+                l1_height, anchor_block_id, anchor_offcet, max_anchor_height_offset
+            );
+            return Ok(false);
+        }
+        if max_anchor_height_offset - anchor_offcet <= MAX_SLOTS_TO_PROPOSE {
+            warn!(
+                "Posible Reorg detected! Anchor height offset is close to max anchor height offset. Anchor height offset: {}, max anchor height offset: {}",
+                anchor_offcet, max_anchor_height_offset
+            );
+        }
+
+        Ok(true)
     }
 
     pub async fn preconfirm_block(&mut self, submit: bool) -> Result<(), Error> {

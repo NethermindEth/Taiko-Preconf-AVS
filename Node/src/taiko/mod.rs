@@ -9,7 +9,7 @@ use crate::{
     },
 };
 use alloy::{
-    consensus::{BlockHeader, SignableTransaction, TxEnvelope},
+    consensus::{BlockHeader, SignableTransaction, Transaction as AnchorTransaction, TxEnvelope},
     eips::BlockNumberOrTag,
     network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder},
     primitives::{Address, BlockNumber, B256},
@@ -165,11 +165,23 @@ impl Taiko {
     }
 
     pub async fn get_latest_l2_block_id(&self) -> Result<u64, Error> {
-        self
-            .taiko_geth_provider_ws
+        self.taiko_geth_provider_ws
             .get_block_number()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get latest L2 block: {}", e))
+    }
+
+    pub async fn get_l2_block_by_number(
+        &self,
+        number: u64,
+    ) -> Result<alloy::rpc::types::Block, Error> {
+        let block = self
+            .taiko_geth_provider_ws
+            .get_block_by_number(BlockNumberOrTag::Latest, BlockTransactionsKind::Hashes)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to get L2 block: {}", e))?
+            .ok_or(anyhow::anyhow!("L2 block not found"))?;
+        Ok(block)
     }
 
     async fn get_latest_l2_block_id_hash_and_gas_used(&self) -> Result<(u64, B256, u64), Error> {
@@ -328,6 +340,12 @@ impl Taiko {
             effective_gas_price: None,
         };
         Ok(tx)
+    }
+
+    pub fn decode_anchor_tx_data(data: &[u8]) -> Result<u64, Error> {
+        let tx_data =
+            <TaikoAnchor::anchorV3Call as alloy::sol_types::SolCall>::abi_decode(data, true)?;
+        Ok(tx_data._anchorBlockId)
     }
 
     fn sign_hash_deterministic(&self, hash: B256) -> Result<Signature, Error> {
