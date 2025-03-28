@@ -72,7 +72,7 @@ impl Node {
                     info!("Node warmup successful");
                 }
                 Err(err) => {
-                    error!("Failed to startup node: {}", err);
+                    error!("Failed to warmup node: {}", err);
                 }
             }
             self.preconfirmation_loop().await;
