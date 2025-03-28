@@ -276,7 +276,7 @@ impl Taiko {
         Ok(())
     }
 
-    pub async fn make_l2_reorg(&self, new_l2_height: u64) -> Result<(), Error> {
+    pub async fn trigger_l2_reorg(&self, new_l2_height: u64) -> Result<(), Error> {
         let request_body = preconf_blocks::RemovePreconfBlockRequestBody {
             new_last_block_id: new_l2_height,
         };
@@ -290,7 +290,7 @@ impl Taiko {
             .await
             .map_err(|e| {
                 anyhow::anyhow!(
-                    "Failed to build preconf block for API '{}': {}",
+                    "Failed to delete preconf block for API '{}': {}",
                     API_ENDPOINT,
                     e
                 )

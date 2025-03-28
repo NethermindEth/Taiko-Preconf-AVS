@@ -143,8 +143,11 @@ impl Node {
                 } else {
                     // The first block anchor id is not valid
                     // TODO reorg + reanchor + preconfirm again
-                    // Build form L1 and force reorg
-                    unimplemented!();
+                    // Just do force reorg
+                    self.batch_manager
+                        .taiko
+                        .trigger_l2_reorg(height_taiko_inbox)
+                        .await?;
                 }
             }
             //if yes, then continue operations normally without rebuilding the buffer
