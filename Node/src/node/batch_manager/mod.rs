@@ -75,7 +75,9 @@ impl BatchManager {
     pub async fn is_block_valid(&self, block_height: u64) -> Result<bool, Error> {
         let block = self.taiko.get_l2_block_by_number(block_height).await?;
         let anchor_tx = match block.transactions.as_transactions() {
-            Some(txs) => txs.first().ok_or_else(|| anyhow::anyhow!("No transactions in block"))?,
+            Some(txs) => txs
+                .first()
+                .ok_or_else(|| anyhow::anyhow!("No transactions in block"))?,
             None => return Err(anyhow::anyhow!("No transactions in block")),
         };
 

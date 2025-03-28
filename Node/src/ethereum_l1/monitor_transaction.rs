@@ -102,11 +102,7 @@ async fn check_for_revert_reason(
     };
 
     let call_request = get_tx_request_for_call(tx_details);
-    let revert_reason = match provider
-        .call(&call_request)
-        .block(block_number.into())
-        .await
-    {
+    let revert_reason = match provider.call(call_request).block(block_number.into()).await {
         Err(e) => e.to_string(),
         Ok(ok) => format!("Unknown revert reason: {ok}"),
     };
@@ -143,14 +139,14 @@ fn find_errors_from_trace(trace_str: &str) -> Option<String> {
 }
 
 fn get_tx_request_for_call(tx_details: Transaction) -> TransactionRequest {
-    match tx_details.inner {
+    match tx_details.inner.inner() {
         TxEnvelope::Eip1559(tx) => {
             let to = match tx.tx().to {
                 TxKind::Call(to) => to,
                 _ => Address::default(),
             };
             TransactionRequest::default()
-                .with_from(tx_details.from)
+                .with_from(tx_details.inner.signer())
                 .with_to(to)
                 .with_input(tx.tx().input.clone())
                 .with_value(tx.tx().value)
@@ -164,7 +160,7 @@ fn get_tx_request_for_call(tx_details: Transaction) -> TransactionRequest {
                 _ => Address::default(),
             };
             TransactionRequest::default()
-                .with_from(tx_details.from)
+                .with_from(tx_details.inner.signer())
                 .with_to(to)
                 .with_input(tx.tx().input.clone())
                 .with_value(tx.tx().value)
@@ -176,7 +172,7 @@ fn get_tx_request_for_call(tx_details: Transaction) -> TransactionRequest {
                 _ => Address::default(),
             };
             TransactionRequest::default()
-                .with_from(tx_details.from)
+                .with_from(tx_details.inner.signer())
                 .with_to(to)
                 .with_input(tx.tx().input.clone())
                 .with_value(tx.tx().value)
@@ -186,13 +182,13 @@ fn get_tx_request_for_call(tx_details: Transaction) -> TransactionRequest {
             let tx = tx.tx();
             match tx {
                 TxEip4844Variant::TxEip4844(tx) => TransactionRequest::default()
-                    .with_from(tx_details.from)
+                    .with_from(tx_details.inner.signer())
                     .with_to(tx.to)
                     .with_input(tx.input.clone())
                     .with_value(tx.value)
                     .with_gas_limit(tx.gas_limit),
                 TxEip4844Variant::TxEip4844WithSidecar(tx) => TransactionRequest::default()
-                    .with_from(tx_details.from)
+                    .with_from(tx_details.inner.signer())
                     .with_to(tx.tx().to)
                     .with_input(tx.tx().input.clone())
                     .with_value(tx.tx().value)

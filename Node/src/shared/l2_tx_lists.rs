@@ -1,4 +1,4 @@
-use alloy::rpc::types::Transaction;
+use alloy::{consensus::transaction::Recovered, rpc::types::Transaction};
 use anyhow::Error;
 use flate2::{write::ZlibEncoder, Compression};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -89,12 +89,11 @@ where
                 serde::de::Error::custom(format!("Failed to recover signer: {}", e))
             })?;
             Ok(Transaction {
-                inner: tx_envelope,
+                inner: Recovered::new_unchecked(tx_envelope, signer),
                 block_hash: None,
                 block_number: None,
                 transaction_index: None,
                 effective_gas_price: None,
-                from: signer,
             })
         })
         .collect::<Result<Vec<Transaction>, D::Error>>()?;
@@ -124,7 +123,7 @@ mod tests {
         let tx_legacy = pending_tx_lists[0].tx_list[0].inner.as_legacy().unwrap();
         assert_eq!(tx_legacy.tx().chain_id, Some(167000));
         assert_eq!(
-            pending_tx_lists[0].tx_list[1].from,
+            pending_tx_lists[0].tx_list[1].inner.signer(),
             "0xe25583099ba105d9ec0a67f5ae86d90e50036425"
                 .parse::<alloy::primitives::Address>()
                 .unwrap()
