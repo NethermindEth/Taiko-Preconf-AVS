@@ -262,7 +262,7 @@ impl Taiko {
 
         let response = self
             .driver_rpc
-            .post_json(API_ENDPOINT, &request_body)
+            .request_json(http::Method::POST, API_ENDPOINT, &request_body)
             .await
             .map_err(|e| {
                 anyhow::anyhow!(
@@ -273,6 +273,30 @@ impl Taiko {
             })?;
 
         trace!("preconfBlocks response: {:?}", response);
+        Ok(())
+    }
+
+    pub async fn make_l2_reorg(&self, new_l2_height: u64) -> Result<(), Error> {
+        let request_body = preconf_blocks::RemovePreconfBlockRequestBody {
+            new_last_block_id: new_l2_height,
+        };
+
+        // Use the DirectHttpClient to send the request directly
+        const API_ENDPOINT: &str = "preconfBlocks";
+
+        let response = self
+            .driver_rpc
+            .request_json(http::Method::DELETE, API_ENDPOINT, &request_body)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to build preconf block for API '{}': {}",
+                    API_ENDPOINT,
+                    e
+                )
+            })?;
+
+        trace!("Delete preconfBlocks response: {:?}", response);
         Ok(())
     }
 

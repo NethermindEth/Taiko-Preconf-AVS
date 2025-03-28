@@ -189,23 +189,24 @@ impl HttpRPCClient {
         Ok(client)
     }
 
-    /// Send a POST request to the specified endpoint with the given payload
-    pub async fn post_json<T: Serialize>(
+    /// Send a request to the specified endpoint with the given method and payload
+    pub async fn request_json<T: Serialize>(
         &self,
+        method: http::Method,
         endpoint: &str,
         payload: &T,
     ) -> Result<Value, Error> {
-        let url = if self.base_url.ends_with('/') || endpoint.starts_with('/') {
-            format!("{}{}", self.base_url, endpoint.trim_start_matches('/'))
-        } else {
-            format!("{}/{}", self.base_url, endpoint)
-        };
+        let url = format!(
+            "{}/{}",
+            self.base_url.trim_end_matches('/'),
+            endpoint.trim_start_matches('/')
+        );
 
         let mut response = self
             .client
             .read()
             .await
-            .post(&url)
+            .request(method.clone(), &url)
             .json(payload)
             .send()
             .await
@@ -218,7 +219,7 @@ impl HttpRPCClient {
                 .client
                 .read()
                 .await
-                .post(&url)
+                .request(method, &url)
                 .json(payload)
                 .send()
                 .await
