@@ -5,10 +5,10 @@ use alloy::consensus::Transaction;
 use anyhow::Error;
 use batch_builder::BatchBuilder;
 use std::sync::Arc;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
-const MIN_SLOTS_TO_PROPOSE: u64 = 3;
-const MAX_SLOTS_TO_PROPOSE: u64 = 6;
+// TODO move to config
+const MIN_SLOTS_TO_PROPOSE: u64 = 3; // Minimum number of slots required to propose a batch on L1
 
 /// Configuration for batching L2 transactions
 #[derive(Clone)]
@@ -94,12 +94,11 @@ impl BatchManager {
             );
             return Ok(false);
         }
-        if max_anchor_height_offset - anchor_offset <= MAX_SLOTS_TO_PROPOSE {
-            warn!(
-                "Possible Reorg detected! Anchor height offset is close to max anchor height offset. Anchor height offset: {}, max anchor height offset: {}",
-                anchor_offset, max_anchor_height_offset
-            );
-        }
+
+        info!(
+            "is_block_valid: L1 height: {}, anchor block id: {}, anchor height offset: {}, max anchor height offset: {}",
+            l1_height, anchor_block_id, anchor_offset, max_anchor_height_offset
+        );
 
         Ok(true)
     }

@@ -105,6 +105,7 @@ impl Node {
         if height_taiko_inbox == height_taiko_geth {
             return Ok(());
         } else if height_taiko_inbox > height_taiko_geth {
+            // TODO wait for sync
             panic!("Taiko Geth is not synchronized with L1");
         } else {
             // height_taiko_inbox < height_taiko_geth
