@@ -1,19 +1,36 @@
 use anyhow::Error;
-use beacon_api_client::{mainnet::MainnetClientTypes, Client, GenesisDetails};
-use reqwest;
+// use beacon_api_client::{mainnet::MainnetClientTypes, Client, GenesisDetails};
+// use reqwest;
 
-pub struct ConsensusLayer {
-    client: Client<MainnetClientTypes>,
+use alloy::providers::{Provider, ProviderBuilder};
+// use alloy::rpc::types::beacon::
+use alloy::genesis::Genesis;
+
+pub struct ConsensusLayer<P: Provider> {
+    // client: Client<MainnetClientTypes>,
+    provider: P,
 }
 
-impl ConsensusLayer {
-    pub fn new(rpc_url: &str) -> Result<Self, Error> {
-        let client = Client::new(reqwest::Url::parse(rpc_url)?);
-        Ok(Self { client })
+impl<P: Provider> ConsensusLayer<P> {
+    pub async fn new(rpc_url: &str) -> Result<Self, Error> {
+        // let client = Client::new(reqwest::Url::parse(rpc_url)?);
+
+        // Create an HTTP provider to interact with the beacon node
+        let provider = ProviderBuilder::new()
+            .on_http(rpc_url.parse()?);
+            // .map_err(|e| Error::msg(format!("Failed to create provider: {}", e)))?;
+
+        Ok(Self { provider })
     }
 
-    pub async fn get_genesis_details(&self) -> Result<GenesisDetails, Error> {
-        self.client.get_genesis_details().await.map_err(Error::new)
+    pub async fn get_genesis_details(&self) -> Result<Genesis, Error> {
+        let genesis_data: Genesis = self
+            .provider
+            .call("eth/v1/beacon/genesis", None::<()>)
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get genesis details: {}", e)))?;
+
+        Ok(genesis_data)
     }
 }
 
