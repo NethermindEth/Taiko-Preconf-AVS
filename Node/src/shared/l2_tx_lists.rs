@@ -123,7 +123,7 @@ mod tests {
         let tx_legacy = pending_tx_lists[0].tx_list[0].inner.as_legacy().unwrap();
         assert_eq!(tx_legacy.tx().chain_id, Some(167000));
         assert_eq!(
-            pending_tx_lists[0].tx_list[1].from,
+            pending_tx_lists[0].tx_list[1].inner.signer(),
             "0xe25583099ba105d9ec0a67f5ae86d90e50036425"
                 .parse::<alloy::primitives::Address>()
                 .unwrap()
