@@ -23,9 +23,9 @@ pub struct Config {
     pub handover_start_buffer_ms: u64,
     pub l1_height_lag: u64,
     pub max_bytes_size_of_batch: u64,
-    pub max_blocks_per_batch: u64,
+    pub max_blocks_per_batch_reduction: u16,
     pub max_time_shift_between_blocks_sec: u64,
-    pub max_anchor_height_offset: u64,
+    pub max_anchor_height_offset_reduction: u64,
 }
 
 #[derive(Debug)]
@@ -177,20 +177,28 @@ impl Config {
             .parse::<u64>()
             .expect("MAX_BYTES_SIZE_OF_BATCH must be a number");
 
-        let max_blocks_per_batch = std::env::var("MAX_BLOCKS_PER_BATCH")
-            .unwrap_or("4".to_string())
-            .parse::<u64>()
-            .expect("MAX_BLOCKS_PER_BATCH must be a number");
+        let max_blocks_per_batch_reduction = std::env::var("MAX_BLOCKS_PER_BATCH_REDUCTION_VALUE")
+            .unwrap_or("0".to_string())
+            .parse::<u16>()
+            .expect("MAX_BLOCKS_PER_BATCH_REDUCTION_VALUE must be a number");
 
         let max_time_shift_between_blocks_sec = std::env::var("MAX_TIME_SHIFT_BETWEEN_BLOCKS_SEC")
             .unwrap_or("255".to_string())
             .parse::<u64>()
             .expect("MAX_TIME_SHIFT_BETWEEN_BLOCKS_SEC must be a number");
 
-        let max_anchor_height_offset = std::env::var("MAX_ANCHOR_HEIGHT_OFFSET")
-            .unwrap_or("54".to_string())
-            .parse::<u64>()
-            .expect("MAX_ANCHOR_HEIGHT_OFFSET must be a number");
+        // It is the slot window in which we want to call the proposeBatch transaction
+        // and avoid exceeding the MAX_ANCHOR_HEIGHT_OFFSET.
+        let max_anchor_height_offset_reduction =
+            std::env::var("MAX_ANCHOR_HEIGHT_OFFSET_REDUCTION_VALUE")
+                .unwrap_or("10".to_string())
+                .parse::<u64>()
+                .expect("MAX_ANCHOR_HEIGHT_OFFSET_REDUCTION_VALUE must be a number");
+        if max_anchor_height_offset_reduction < 5 {
+            warn!(
+                "MAX_ANCHOR_HEIGHT_OFFSET_REDUCTION_VALUE is less than 5: you have a small number of slots to call the proposeBatch transaction"
+            );
+        }
 
         let config = Self {
             taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
@@ -220,9 +228,9 @@ impl Config {
             handover_start_buffer_ms,
             l1_height_lag,
             max_bytes_size_of_batch,
-            max_blocks_per_batch,
+            max_blocks_per_batch_reduction,
             max_time_shift_between_blocks_sec,
-            max_anchor_height_offset,
+            max_anchor_height_offset_reduction,
         };
 
         info!(
@@ -248,9 +256,9 @@ handover window slots: {}
 handover start buffer: {}ms
 l1 height lag: {}
 max bytes size of batch: {}
-max blocks per batch: {}
+max blocks per batch reduction value: {}
 max time shift between blocks: {}
-max_anchor_height_offset: {}
+max anchor height offset reduction value: {}
 "#,
             config.taiko_geth_ws_rpc_url,
             config.taiko_geth_auth_rpc_url,
@@ -272,9 +280,9 @@ max_anchor_height_offset: {}
             config.handover_start_buffer_ms,
             config.l1_height_lag,
             config.max_bytes_size_of_batch,
-            config.max_blocks_per_batch,
+            config.max_blocks_per_batch_reduction,
             config.max_time_shift_between_blocks_sec,
-            config.max_anchor_height_offset,
+            config.max_anchor_height_offset_reduction,
         );
 
         config

@@ -47,6 +47,25 @@ async fn main() -> Result<(), Error> {
         .await?,
     );
 
+    let max_anchor_height_offset = ethereum_l1
+        .execution_layer
+        .get_pacaya_config_max_anchor_height_offset();
+    if config.max_anchor_height_offset_reduction >= max_anchor_height_offset {
+        panic!(
+            "max_anchor_height_offset_reduction {} is greater than max_anchor_height_offset from pacaya config {}",
+            config.max_anchor_height_offset_reduction, max_anchor_height_offset
+        );
+    }
+    let max_blocks_per_batch = ethereum_l1
+        .execution_layer
+        .get_pacaya_config_max_blocks_per_batch();
+    if config.max_blocks_per_batch_reduction >= max_blocks_per_batch {
+        panic!(
+            "max_blocks_per_batch {} is greater than max_blocks_per_batch from pacaya config {}",
+            config.max_blocks_per_batch_reduction, max_blocks_per_batch
+        );
+    }
+
     let node = node::Node::new(
         cancel_token.clone(),
         taiko.clone(),
@@ -57,10 +76,11 @@ async fn main() -> Result<(), Error> {
         config.l1_height_lag,
         node::batch_manager::BatchBuilderConfig {
             max_bytes_size_of_batch: config.max_bytes_size_of_batch,
-            max_blocks_per_batch: config.max_blocks_per_batch,
+            max_blocks_per_batch: max_blocks_per_batch - config.max_blocks_per_batch_reduction,
             l1_slot_duration_sec: config.l1_slot_duration_sec,
             max_time_shift_between_blocks_sec: config.max_time_shift_between_blocks_sec,
-            max_anchor_height_offset: config.max_anchor_height_offset,
+            max_anchor_height_offset: max_anchor_height_offset
+                - config.max_anchor_height_offset_reduction,
         },
     )
     .await?;

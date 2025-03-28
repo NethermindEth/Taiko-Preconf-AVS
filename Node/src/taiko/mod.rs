@@ -9,7 +9,7 @@ use crate::{
     },
 };
 use alloy::{
-    consensus::{BlockHeader, SignableTransaction, TxEnvelope},
+    consensus::{transaction::Recovered, BlockHeader, SignableTransaction, TxEnvelope},
     contract::Error as ContractError,
     eips::BlockNumberOrTag,
     network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder},
@@ -178,7 +178,7 @@ impl Taiko {
             .taiko_geth_provider_ws
             .read()
             .await
-            .get_block_by_number(BlockNumberOrTag::Latest, BlockTransactionsKind::Hashes)
+            .get_block_by_number(BlockNumberOrTag::Latest)
             .await;
 
         let block = self
@@ -388,8 +388,7 @@ impl Taiko {
         debug!("AnchorTX transaction hash: {}", tx_envelope.tx_hash());
 
         let tx = Transaction {
-            inner: tx_envelope,
-            from: GOLDEN_TOUCH_ADDRESS,
+            inner: Recovered::new_unchecked(tx_envelope, GOLDEN_TOUCH_ADDRESS),
             block_hash: None,
             block_number: None,
             transaction_index: None,

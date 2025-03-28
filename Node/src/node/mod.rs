@@ -30,6 +30,19 @@ impl Node {
         l1_height_lag: u64,
         batch_builder_config: BatchBuilderConfig,
     ) -> Result<Self, Error> {
+        info!(
+            "Batch builder config:\n\
+             max_bytes_size_of_batch: {}\n\
+             max_blocks_per_batch: {}\n\
+             l1_slot_duration_sec: {}\n\
+             max_time_shift_between_blocks_sec: {}\n\
+             max_anchor_height_offset: {}",
+            batch_builder_config.max_bytes_size_of_batch,
+            batch_builder_config.max_blocks_per_batch,
+            batch_builder_config.l1_slot_duration_sec,
+            batch_builder_config.max_time_shift_between_blocks_sec,
+            batch_builder_config.max_anchor_height_offset,
+        );
         let operator = Operator::new(
             ethereum_l1.clone(),
             handover_window_slots,

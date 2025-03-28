@@ -50,7 +50,7 @@ impl BatchBuilder {
                 self.config.is_within_bytes_limit(batch.total_bytes + l2_block.prebuilt_tx_list.bytes_length)
                     // Check if the number of L2 blocks in the current batch after adding the new L2 block
                     // is less than or equal to the max blocks per batch
-                    && self.config.is_within_block_limit(batch.l2_blocks.len() as u64 + 1)
+                    && self.config.is_within_block_limit(batch.l2_blocks.len() as u16 + 1)
             })
     }
 
@@ -114,7 +114,7 @@ impl BatchBuilder {
         if self.current_batch.is_some()
             && (!submit_only_full_batches
                 || !self.config.is_within_block_limit(
-                    self.current_batch.as_ref().unwrap().l2_blocks.len() as u64 + 1,
+                    self.current_batch.as_ref().unwrap().l2_blocks.len() as u16 + 1,
                 ))
         {
             self.finalize_current_batch();

@@ -8,7 +8,6 @@ use alloy::{
     network::EthereumWallet,
     primitives::{Address, B256},
     providers::{Provider, ProviderBuilder, WsConnect},
-    rpc::types::BlockTransactionsKind,
     signers::local::PrivateKeySigner,
 };
 use anyhow::Error;
@@ -77,6 +76,14 @@ impl ExecutionLayer {
             #[cfg(feature = "extra_gas_percentage")]
             extra_gas_percentage,
         })
+    }
+
+    pub fn get_pacaya_config_max_blocks_per_batch(&self) -> u16 {
+        self.pacaya_config.maxBlocksPerBatch
+    }
+
+    pub fn get_pacaya_config_max_anchor_height_offset(&self) -> u64 {
+        self.pacaya_config.maxAnchorHeightOffset
     }
 
     pub fn get_preconfer_address(&self) -> PreconferAddress {
@@ -235,14 +242,20 @@ impl ExecutionLayer {
     pub async fn get_block_state_root_by_number(&self, number: u64) -> Result<B256, Error> {
         let block = self
             .provider_ws
-            .get_block_by_number(
-                BlockNumberOrTag::Number(number),
-                BlockTransactionsKind::Hashes,
-            )
+            .get_block_by_number(BlockNumberOrTag::Number(number))
             .await
             .map_err(|e| Error::msg(format!("Failed to get block by number ({number}): {}", e)))?
             .ok_or(anyhow::anyhow!("Failed to get block by number ({number})"))?;
         Ok(block.header.state_root)
+    }
+
+    pub async fn get_l2_height_from_taiko_inbox(&self) -> Result<u64, Error> {
+        let contract = taiko_inbox::ITaikoInbox::new(self.contract_addresses.taiko_inbox.clone(), self.provider_ws.clone());
+        let num_batches = contract.getStats2().call().await?._0.numBatches;
+        // It is safe because num_batches initial value is 1
+        let batch = contract.getBatch(num_batches - 1).call().await?.batch_;
+
+        Ok(batch.lastBlockId)
     }
 
     #[cfg(test)]
