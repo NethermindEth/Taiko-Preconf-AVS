@@ -279,9 +279,9 @@ impl Taiko {
         Ok(())
     }
 
-    pub async fn trigger_l2_reorg(&self, new_l2_height: u64) -> Result<(), Error> {
+    pub async fn trigger_l2_reorg(&self, new_last_block_id: u64) -> Result<(), Error> {
         let request_body = preconf_blocks::RemovePreconfBlockRequestBody {
-            new_last_block_id: new_l2_height,
+            new_last_block_id,
         };
 
         // Use the DirectHttpClient to send the request directly
