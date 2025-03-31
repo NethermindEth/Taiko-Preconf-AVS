@@ -196,7 +196,7 @@ impl Taiko {
             .taiko_geth_provider_ws
             .read()
             .await
-            .get_block_by_number(BlockNumberOrTag::Latest)
+            .get_block_by_number(BlockNumberOrTag::Number(number))
             .await;
 
         let block = self
@@ -204,6 +204,29 @@ impl Taiko {
             .await?
             .ok_or(anyhow::anyhow!("Failed to get L2 block: value is None"))?;
         Ok(block)
+    }
+
+    pub async fn get_transaction_by_hash(
+        &self,
+        hash: B256,
+    ) -> Result<alloy::rpc::types::Transaction, Error> {
+        let transaction_by_hash = self
+            .taiko_geth_provider_ws
+            .read()
+            .await
+            .get_transaction_by_hash(hash)
+            .await;
+
+        let transaction = self
+            .check_for_ws_provider_failure(
+                transaction_by_hash,
+                "Failed to get L2 transaction by hash",
+            )
+            .await?
+            .ok_or(anyhow::anyhow!(
+                "Failed to get L2 transaction: value is None"
+            ))?;
+        Ok(transaction)
     }
 
     async fn get_latest_l2_block_id_hash_and_gas_used(&self) -> Result<(u64, B256, u64), Error> {
