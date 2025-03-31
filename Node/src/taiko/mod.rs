@@ -177,7 +177,8 @@ impl Taiko {
     }
 
     pub async fn get_latest_l2_block_id(&self) -> Result<u64, Error> {
-        let block_number = self.taiko_geth_provider_ws
+        let block_number = self
+            .taiko_geth_provider_ws
             .read()
             .await
             .get_block_number()
@@ -359,9 +360,7 @@ impl Taiko {
     }
 
     pub async fn trigger_l2_reorg(&self, new_last_block_id: u64) -> Result<(), Error> {
-        let request_body = preconf_blocks::RemovePreconfBlockRequestBody {
-            new_last_block_id,
-        };
+        let request_body = preconf_blocks::RemovePreconfBlockRequestBody { new_last_block_id };
 
         // Use the DirectHttpClient to send the request directly
         const API_ENDPOINT: &str = "preconfBlocks";
