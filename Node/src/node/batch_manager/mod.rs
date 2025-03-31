@@ -65,8 +65,17 @@ impl BatchManager {
                 pending_tx_list.bytes_length
             );
             let l2_block = L2Block::new_from(pending_tx_list, preconfirmation_timestamp);
-            self.add_new_l2_block(l2_block).await?
-        } else if self.batch_builder.is_grater_than_max_anchor_height_offset(
+            self.add_new_l2_block(l2_block).await?;
+        } else if self.is_empty_block_required(preconfirmation_timestamp) {
+            // Handle time shift between blocks exceeded
+            debug!("No pending txs, proposing empty block");
+            let empty_block = L2Block::new_empty(preconfirmation_timestamp);
+            self.add_new_l2_block(empty_block).await?;
+        } else {
+            debug!("No pending txs, skipping preconfirmation");
+        }
+
+        if self.batch_builder.is_grater_than_max_anchor_height_offset(
             self.ethereum_l1.execution_layer.get_l1_height().await?,
         ) {
             // Handle max anchor height offset exceeded
@@ -76,13 +85,6 @@ impl BatchManager {
             if !submit {
                 warn!("Max anchor height offset exceeded but submission is disabled");
             }
-        } else if self.is_empty_block_required(preconfirmation_timestamp) {
-            // Handle time shift between blocks exceeded
-            debug!("No pending txs, proposing empty block");
-            let empty_block = L2Block::new_empty(preconfirmation_timestamp);
-            self.add_new_l2_block(empty_block).await?
-        } else {
-            debug!("No pending txs, skipping preconfirmation");
         }
 
         // Try to submit every time since we can have batches to send from preconfer only role.
