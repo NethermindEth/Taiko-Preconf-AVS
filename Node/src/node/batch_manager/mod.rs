@@ -65,12 +65,12 @@ impl BatchManager {
                 pending_tx_list.bytes_length
             );
             let l2_block = L2Block::new_from(pending_tx_list, preconfirmation_timestamp);
-            self.add_new_l2_block(l2_block).await?
+            self.add_new_l2_block(l2_block).await?;
         } else if self.is_empty_block_required(preconfirmation_timestamp) {
             // Handle time shift between blocks exceeded
             debug!("No pending txs, proposing empty block");
             let empty_block = L2Block::new_empty(preconfirmation_timestamp);
-            self.add_new_l2_block(empty_block).await?
+            self.add_new_l2_block(empty_block).await?;
         } else {
             debug!("No pending txs, skipping preconfirmation");
         }
