@@ -13,6 +13,7 @@ use alloy::{
         transaction::Recovered, BlockHeader, SignableTransaction, Transaction as AnchorTransaction,
         TxEnvelope,
     },
+    contract::Error as ContractError,
     eips::BlockNumberOrTag,
     network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder},
     primitives::{Address, BlockNumber, B256},
@@ -25,7 +26,9 @@ use alloy::{
         local::{LocalSigner, PrivateKeySigner},
         Signature, SignerSync,
     },
+    transports::TransportErrorKind,
 };
+use alloy_json_rpc::RpcError;
 use anyhow::Error;
 use ecdsa::SigningKey;
 use k256::Secp256k1;
@@ -33,8 +36,8 @@ use l2_contracts_bindings::{LibSharedData, TaikoAnchor};
 use serde_json::Value;
 use std::str::FromStr;
 use std::{sync::Arc, time::Duration};
+use tokio::sync::RwLock;
 use tracing::{debug, info, trace};
-
 mod fixed_k_signer_chainbound;
 mod l2_contracts_bindings;
 pub mod preconf_blocks;
@@ -60,13 +63,15 @@ type WsProvider = FillProvider<
 >;
 
 pub struct Taiko {
-    taiko_geth_provider_ws: WsProvider,
+    taiko_geth_provider_ws: RwLock<WsProvider>,
+    taiko_geth_ws_url: String,
     taiko_geth_auth_rpc: JSONRPCClient,
     driver_rpc: HttpRPCClient,
     pub chain_id: u64,
     preconfer_address: PreconferAddress,
     ethereum_l1: Arc<EthereumL1>,
-    taiko_anchor: TaikoAnchor::TaikoAnchorInstance<(), WsProvider>,
+    taiko_anchor: RwLock<TaikoAnchor::TaikoAnchorInstance<(), WsProvider>>,
+    taiko_anchor_address: Address,
 }
 
 impl Taiko {
@@ -82,19 +87,22 @@ impl Taiko {
         taiko_anchor_address: String,
     ) -> Result<Self, Error> {
         let ws = WsConnect::new(taiko_geth_ws_url.to_string());
-        let provider_ws = ProviderBuilder::new()
-            .on_ws(ws.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("Taiko::new: Failed to create WebSocket provider: {e}"))?;
+        let provider_ws = RwLock::new(ProviderBuilder::new().on_ws(ws.clone()).await.map_err(
+            |e| anyhow::anyhow!("Taiko::new: Failed to create WebSocket provider: {e}"),
+        )?);
 
-        let chain_id = provider_ws.get_chain_id().await?;
+        let chain_id = provider_ws.read().await.get_chain_id().await?;
         info!("L2 Chain ID: {}", chain_id);
 
         let taiko_anchor_address = Address::from_str(&taiko_anchor_address)?;
-        let taiko_anchor = TaikoAnchor::new(taiko_anchor_address, provider_ws.clone());
+        let mut taiko_anchor = RwLock::new(TaikoAnchor::new(
+            taiko_anchor_address,
+            provider_ws.read().await.clone(),
+        ));
 
         Ok(Self {
             taiko_geth_provider_ws: provider_ws,
+            taiko_geth_ws_url: taiko_geth_ws_url.to_string(),
             taiko_geth_auth_rpc: JSONRPCClient::new_with_timeout_and_jwt(
                 taiko_geth_auth_url,
                 rpc_client_timeout,
@@ -109,6 +117,7 @@ impl Taiko {
             preconfer_address,
             ethereum_l1,
             taiko_anchor,
+            taiko_anchor_address,
         })
     }
 
@@ -168,37 +177,107 @@ impl Taiko {
     }
 
     pub async fn get_latest_l2_block_id(&self) -> Result<u64, Error> {
-        self.taiko_geth_provider_ws
-            .get_block_number()
+        let block_number = self.taiko_geth_provider_ws
+            .read()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to get latest L2 block: {}", e))
+            .get_block_number()
+            .await;
+
+        self.check_for_ws_provider_failure(block_number, "Failed to get latest L2 block number")
+            .await
     }
 
     pub async fn get_l2_block_by_number(
         &self,
         number: u64,
     ) -> Result<alloy::rpc::types::Block, Error> {
-        let block = self
+        let block_by_number = self
             .taiko_geth_provider_ws
-            .get_block_by_number(BlockNumberOrTag::Latest)
+            .read()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to get L2 block: {}", e))?
-            .ok_or(anyhow::anyhow!("L2 block not found"))?;
+            .get_block_by_number(BlockNumberOrTag::Latest)
+            .await;
+
+        let block = self
+            .check_for_ws_provider_failure(block_by_number, "Failed to get L2 block by number")
+            .await?
+            .ok_or(anyhow::anyhow!("Failed to get L2 block: value is None"))?;
         Ok(block)
     }
 
     async fn get_latest_l2_block_id_hash_and_gas_used(&self) -> Result<(u64, B256, u64), Error> {
-        let block = self
+        let block_by_number = self
             .taiko_geth_provider_ws
-            .get_block_by_number(BlockNumberOrTag::Latest)
+            .read()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to get latest L2 block: {}", e))?
+            .get_block_by_number(BlockNumberOrTag::Latest)
+            .await;
+
+        let block = self
+            .check_for_ws_provider_failure(block_by_number, "Failed to get latest L2 block")
+            .await?
             .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))?;
+
         Ok((
             block.header.number(),
             block.header.hash,
             block.header.gas_used(),
         ))
+    }
+
+    async fn check_for_ws_provider_failure<T>(
+        &self,
+        result: Result<T, RpcError<TransportErrorKind>>,
+        error_message: &str,
+    ) -> Result<T, Error> {
+        match result {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                let check = self.recreate_ws_provider().await;
+                Err(anyhow::anyhow!(
+                    "{}. Recreating WebSocket provider. Transport error: {}",
+                    error_message,
+                    e
+                ))
+            }
+        }
+    }
+
+    async fn check_for_contract_failure<T>(
+        &self,
+        result: Result<T, ContractError>,
+        error_message: &str,
+    ) -> Result<T, Error> {
+        match result {
+            Ok(result) => Ok(result),
+            Err(ContractError::TransportError(e)) => {
+                let check = self.recreate_ws_provider().await;
+                Err(anyhow::anyhow!(
+                    "{}. Recreating WebSocket provider. Transport error: {}",
+                    error_message,
+                    e
+                ))
+            }
+            Err(e) => Err(anyhow::anyhow!("{}: {}", error_message, e)),
+        }
+    }
+
+    async fn recreate_ws_provider(&self) -> Result<(), Error> {
+        let ws = WsConnect::new(self.taiko_geth_ws_url.clone());
+        let provider = ProviderBuilder::new()
+            .on_ws(ws.clone())
+            .await
+            .map_err(|e| anyhow::anyhow!("Taiko::new: Failed to create WebSocket provider: {e}"))?;
+
+        debug!(
+            "Created new WebSocket provider for {}",
+            self.taiko_geth_ws_url
+        );
+
+        *self.taiko_anchor.write().await =
+            TaikoAnchor::new(self.taiko_anchor_address, provider.clone());
+        *self.taiko_geth_provider_ws.write().await = provider;
+        Ok(())
     }
 
     pub async fn advance_head_to_new_l2_block(
@@ -323,8 +402,18 @@ impl Taiko {
         base_fee: u64,
     ) -> Result<Transaction, Error> {
         // Create the contract call
-        let call_builder = self
-            .taiko_anchor
+        let taiko_anchor = self.taiko_anchor.read().await;
+        let nonce = self
+            .check_for_ws_provider_failure(
+                self.taiko_geth_provider_ws
+                    .read()
+                    .await
+                    .get_transaction_count(GOLDEN_TOUCH_ADDRESS)
+                    .await,
+                "Failed to get nonce",
+            )
+            .await?;
+        let call_builder = taiko_anchor
             .anchorV3(
                 anchor_block_id,
                 anchor_state_root,
@@ -335,11 +424,7 @@ impl Taiko {
             .gas(1_000_000) // value expected by Taiko
             .max_fee_per_gas(base_fee as u128) // value expected by Taiko
             .max_priority_fee_per_gas(0) // value expected by Taiko
-            .nonce(
-                self.taiko_geth_provider_ws
-                    .get_transaction_count(GOLDEN_TOUCH_ADDRESS)
-                    .await?,
-            )
+            .nonce(nonce)
             .chain_id(self.chain_id);
 
         let typed_tx = call_builder
@@ -384,15 +469,20 @@ impl Taiko {
         base_fee_config: LibSharedData::BaseFeeConfig,
     ) -> Result<u64, Error> {
         let base_fee = self
-            .taiko_anchor
-            .getBasefeeV2(
-                parent_gas_used,
-                chrono::Utc::now().timestamp() as u64,
-                base_fee_config,
+            .check_for_contract_failure(
+                self.taiko_anchor
+                    .read()
+                    .await
+                    .getBasefeeV2(
+                        parent_gas_used,
+                        chrono::Utc::now().timestamp() as u64,
+                        base_fee_config,
+                    )
+                    .call()
+                    .await,
+                "Failed to get base fee",
             )
-            .call()
-            .await
-            .map_err(|e| Error::msg(format!("Failed to get base fee: {}", e)))?
+            .await?
             .basefee_;
 
         trace!("base fee: {}", base_fee);
@@ -404,6 +494,8 @@ impl Taiko {
     pub async fn get_last_synced_anchor_block_id(&self) -> Result<u64, Error> {
         Ok(self
             .taiko_anchor
+            .read()
+            .await
             .lastSyncedBlock()
             .call()
             .await
