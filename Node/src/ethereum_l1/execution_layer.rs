@@ -244,8 +244,8 @@ impl ExecutionLayer {
             .provider_ws
             .get_block_by_number(BlockNumberOrTag::Number(number))
             .await
-            .map_err(|e| Error::msg(format!("Failed to get block by number: {}", e)))?
-            .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))?;
+            .map_err(|e| Error::msg(format!("Failed to get block by number ({number}): {}", e)))?
+            .ok_or(anyhow::anyhow!("Failed to get block by number ({number})"))?;
         Ok(block.header.state_root)
     }
 
