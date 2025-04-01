@@ -9,7 +9,10 @@ use crate::{
     },
 };
 use alloy::{
-    consensus::{transaction::Recovered, BlockHeader, SignableTransaction, TxEnvelope},
+    consensus::{
+        transaction::Recovered, BlockHeader, SignableTransaction, Transaction as AnchorTransaction,
+        TxEnvelope,
+    },
     contract::Error as ContractError,
     eips::BlockNumberOrTag,
     network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder},
@@ -173,6 +176,59 @@ impl Taiko {
         }
     }
 
+    pub async fn get_latest_l2_block_id(&self) -> Result<u64, Error> {
+        let block_number = self
+            .taiko_geth_provider_ws
+            .read()
+            .await
+            .get_block_number()
+            .await;
+
+        self.check_for_ws_provider_failure(block_number, "Failed to get latest L2 block number")
+            .await
+    }
+
+    pub async fn get_l2_block_by_number(
+        &self,
+        number: u64,
+    ) -> Result<alloy::rpc::types::Block, Error> {
+        let block_by_number = self
+            .taiko_geth_provider_ws
+            .read()
+            .await
+            .get_block_by_number(BlockNumberOrTag::Number(number))
+            .await;
+
+        let block = self
+            .check_for_ws_provider_failure(block_by_number, "Failed to get L2 block by number")
+            .await?
+            .ok_or(anyhow::anyhow!("Failed to get L2 block: value is None"))?;
+        Ok(block)
+    }
+
+    pub async fn get_transaction_by_hash(
+        &self,
+        hash: B256,
+    ) -> Result<alloy::rpc::types::Transaction, Error> {
+        let transaction_by_hash = self
+            .taiko_geth_provider_ws
+            .read()
+            .await
+            .get_transaction_by_hash(hash)
+            .await;
+
+        let transaction = self
+            .check_for_ws_provider_failure(
+                transaction_by_hash,
+                "Failed to get L2 transaction by hash",
+            )
+            .await?
+            .ok_or(anyhow::anyhow!(
+                "Failed to get L2 transaction: value is None"
+            ))?;
+        Ok(transaction)
+    }
+
     async fn get_latest_l2_block_id_hash_and_gas_used(&self) -> Result<(u64, B256, u64), Error> {
         let block_by_number = self
             .taiko_geth_provider_ws
@@ -312,7 +368,7 @@ impl Taiko {
 
         let response = self
             .driver_rpc
-            .post_json(API_ENDPOINT, &request_body)
+            .request_json(http::Method::POST, API_ENDPOINT, &request_body)
             .await
             .map_err(|e| {
                 anyhow::anyhow!(
@@ -323,6 +379,28 @@ impl Taiko {
             })?;
 
         trace!("preconfBlocks response: {:?}", response);
+        Ok(())
+    }
+
+    pub async fn trigger_l2_reorg(&self, new_last_block_id: u64) -> Result<(), Error> {
+        let request_body = preconf_blocks::RemovePreconfBlockRequestBody { new_last_block_id };
+
+        // Use the DirectHttpClient to send the request directly
+        const API_ENDPOINT: &str = "preconfBlocks";
+
+        let response = self
+            .driver_rpc
+            .request_json(http::Method::DELETE, API_ENDPOINT, &request_body)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to delete preconf block for API '{}': {}",
+                    API_ENDPOINT,
+                    e
+                )
+            })?;
+
+        trace!("Delete preconfBlocks response: {:?}", response);
         Ok(())
     }
 
@@ -395,6 +473,12 @@ impl Taiko {
             effective_gas_price: None,
         };
         Ok(tx)
+    }
+
+    pub fn decode_anchor_tx_data(data: &[u8]) -> Result<u64, Error> {
+        let tx_data =
+            <TaikoAnchor::anchorV3Call as alloy::sol_types::SolCall>::abi_decode(data, true)?;
+        Ok(tx_data._anchorBlockId)
     }
 
     fn sign_hash_deterministic(&self, hash: B256) -> Result<Signature, Error> {

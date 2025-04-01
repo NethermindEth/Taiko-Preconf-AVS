@@ -1,10 +1,15 @@
 pub mod batch_builder;
 
 use crate::{ethereum_l1::EthereumL1, shared::l2_block::L2Block, taiko::Taiko};
+use alloy::consensus::Transaction;
 use anyhow::Error;
 use batch_builder::BatchBuilder;
+use futures_util::future::try_join_all;
 use std::sync::Arc;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
+
+// TODO move to config
+const MIN_SLOTS_TO_PROPOSE: u64 = 3; // Minimum number of slots required to propose a batch on L1
 
 /// Configuration for batching L2 transactions
 #[derive(Clone)]
@@ -34,7 +39,7 @@ impl BatchBuilderConfig {
 pub struct BatchManager {
     batch_builder: BatchBuilder,
     ethereum_l1: Arc<EthereumL1>,
-    taiko: Arc<Taiko>,
+    pub taiko: Arc<Taiko>,
     l1_height_lag: u64,
 }
 
@@ -51,6 +56,67 @@ impl BatchManager {
             taiko,
             l1_height_lag,
         }
+    }
+
+    pub async fn recover_from_l2_block(&mut self, block_height: u64) -> Result<(), Error> {
+        let block = self.taiko.get_l2_block_by_number(block_height).await?;
+        let tx_hashes = block
+            .transactions
+            .as_hashes()
+            .ok_or_else(|| anyhow::anyhow!("recover_from_l2_block: No transactions in block"))?;
+
+        let (anchor_tx_hash, txs_hashes) = tx_hashes
+            .split_first()
+            .ok_or_else(|| anyhow::anyhow!("recover_from_l2_block: No anchor transaction in block"))?;
+
+        let anchor_tx = self.taiko.get_transaction_by_hash(*anchor_tx_hash).await?;
+        let anchor_block_id = Taiko::decode_anchor_tx_data(anchor_tx.input())?;
+
+        // Fetch transactions concurrently
+        let tx_futures = txs_hashes
+            .iter()
+            .map(|tx_hash| self.taiko.get_transaction_by_hash(*tx_hash));
+        let txs: Vec<alloy::rpc::types::Transaction> = try_join_all(tx_futures).await?;
+
+        self.batch_builder
+            .recover_from(txs, anchor_block_id, block.header.timestamp);
+
+        Ok(())
+    }
+
+    pub async fn is_block_valid(&self, block_height: u64) -> Result<bool, Error> {
+        let block = self.taiko.get_l2_block_by_number(block_height).await?;
+
+        let anchor_tx_hash = block
+            .transactions
+            .as_hashes()
+            .and_then(|txs| txs.first())
+            .ok_or_else(|| anyhow::anyhow!("is_block_valid: No transactions in block"))?;
+
+        let anchor_tx = self.taiko.get_transaction_by_hash(*anchor_tx_hash).await?;
+
+        let anchor_block_id = Taiko::decode_anchor_tx_data(anchor_tx.input())?;
+        let l1_height = self.ethereum_l1.execution_layer.get_l1_height().await?;
+        let anchor_offset = l1_height - anchor_block_id;
+        let max_anchor_height_offset = self
+            .ethereum_l1
+            .execution_layer
+            .get_pacaya_config()
+            .maxAnchorHeightOffset;
+        if anchor_offset + MIN_SLOTS_TO_PROPOSE > max_anchor_height_offset {
+            warn!(
+                "Skip recovery! Reorg detected! Anchor height offset is greater than max anchor height offset. L1 height: {}, anchor block id: {}, anchor height offset: {}, max anchor height offset: {}",
+                l1_height, anchor_block_id, anchor_offset, max_anchor_height_offset
+            );
+            return Ok(false);
+        }
+
+        info!(
+            "is_block_valid: L1 height: {}, anchor block id: {}, anchor height offset: {}, max anchor height offset: {}",
+            l1_height, anchor_block_id, anchor_offset, max_anchor_height_offset
+        );
+
+        Ok(true)
     }
 
     pub async fn preconfirm_block(&mut self, submit: bool) -> Result<(), Error> {

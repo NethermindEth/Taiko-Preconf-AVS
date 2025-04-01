@@ -67,8 +67,95 @@ impl Node {
     pub fn entrypoint(mut self) {
         info!("Starting node");
         tokio::spawn(async move {
+            match self.warmup().await {
+                Ok(()) => {
+                    info!("Node warmup successful");
+                }
+                Err(err) => {
+                    error!("Failed to warmup node: {}", err);
+                }
+            }
             self.preconfirmation_loop().await;
         });
+    }
+
+    async fn warmup(&mut self) -> Result<(), Error> {
+        info!("Warmup node");
+        let current_status = self.operator.get_status().await?;
+
+        // TODO check that when we are Preconfer or PreconferHandoverBuffer we will sync our l2 state on epoch boundry
+        if matches!(
+            current_status,
+            OperatorStatus::None
+                | OperatorStatus::Preconfer
+                | OperatorStatus::PreconferHandoverBuffer(_)
+        ) {
+            info!("Status: {:?}, no need for warmup", current_status);
+            return Ok(());
+        }
+
+        let height_taiko_inbox = self
+            .ethereum_l1
+            .execution_layer
+            .get_l2_height_from_taiko_inbox()
+            .await?;
+        let height_taiko_geth = self.batch_manager.taiko.get_latest_l2_block_id().await?;
+        info!("Height Taiko Inbox: {height_taiko_inbox}, Height Taiko Geth: {height_taiko_geth}");
+
+        if height_taiko_inbox == height_taiko_geth {
+            return Ok(());
+        } else if height_taiko_inbox > height_taiko_geth {
+            // TODO wait for sync
+            panic!("Taiko Geth is not synchronized with L1");
+        } else {
+            // height_taiko_inbox < height_taiko_geth
+            // we have unprocessed L2 blocks
+            // check if there is a pending tx on the mempool from your address
+            let nonce_latest: u64 = self
+                .ethereum_l1
+                .execution_layer
+                .get_preconfer_nonce_latest()
+                .await?;
+            let nonce_pending: u64 = self
+                .ethereum_l1
+                .execution_layer
+                .get_preconfer_nonce_pending()
+                .await?;
+            info!("Nonce Latest: {nonce_latest}, Nonce Pending: {nonce_pending}");
+            //if not, then read blocks from L2 execution to form your buffer (L2 batch) and continue operations normally
+            // we didn't propose blocks to mempool
+            if nonce_latest == nonce_pending {
+                // The first block anchor id is valid, so we can continue.
+                if self
+                    .batch_manager
+                    .is_block_valid(height_taiko_inbox + 1)
+                    .await?
+                {
+                    // recover all missed l2 blocks
+                    for current_height in height_taiko_inbox + 1..=height_taiko_geth {
+                        self.batch_manager
+                            .recover_from_l2_block(current_height)
+                            .await?;
+                    }
+                    // TODO calculate batch params and decide is it possible to continue with it, be careful with timeShift
+                    // Sould be fixed with https://github.com/NethermindEth/Taiko-Preconf-AVS/issues/303
+                    // Now just submit all the batches
+                    self.batch_manager.submit_batches(false).await?;
+                } else {
+                    // The first block anchor id is not valid
+                    // TODO reorg + reanchor + preconfirm again
+                    // Just do force reorg
+                    self.batch_manager
+                        .taiko
+                        .trigger_l2_reorg(height_taiko_inbox)
+                        .await?;
+                }
+            }
+            //if yes, then continue operations normally without rebuilding the buffer
+            // TODO handle gracefully
+        }
+
+        Ok(())
     }
 
     async fn preconfirmation_loop(&mut self) {

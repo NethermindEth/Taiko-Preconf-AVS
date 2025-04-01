@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct BuildPreconfBlockRequestBody {
     pub executable_data: ExecutableData,
-    pub signature: String,
+    pub signature: String, // TODO remove, seems we don't need it anymore
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -20,4 +20,10 @@ pub struct ExecutableData {
     pub parent_hash: String,
     pub timestamp: u64,
     pub transactions: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemovePreconfBlockRequestBody {
+    pub new_last_block_id: u64,
 }
