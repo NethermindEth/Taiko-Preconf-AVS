@@ -1,6 +1,10 @@
 pub mod batch_builder;
 
-use crate::{ethereum_l1::EthereumL1, shared::l2_block::L2Block, taiko::Taiko};
+use crate::{
+    ethereum_l1::EthereumL1,
+    shared::{l2_block::L2Block, l2_tx_lists::PreBuiltTxList},
+    taiko::Taiko,
+};
 use alloy::consensus::Transaction;
 use anyhow::Error;
 use batch_builder::BatchBuilder;
@@ -119,11 +123,15 @@ impl BatchManager {
         Ok(true)
     }
 
-    pub async fn preconfirm_block(&mut self, submit: bool) -> Result<(), Error> {
+    pub async fn preconfirm_block(
+        &mut self,
+        submit: bool,
+        pending_tx_list: Option<PreBuiltTxList>,
+    ) -> Result<(), Error> {
         let preconfirmation_timestamp =
             self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
 
-        if let Some(pending_tx_list) = self.taiko.get_pending_l2_tx_list_from_taiko_geth().await? {
+        if let Some(pending_tx_list) = pending_tx_list {
             // Handle the pending tx list from taiko geth
             debug!(
                 "Received pending tx list length: {}, bytes length: {}",

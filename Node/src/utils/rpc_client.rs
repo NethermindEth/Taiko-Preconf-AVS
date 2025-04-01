@@ -101,7 +101,7 @@ impl JSONRPCClient {
             Ok(result) => Ok(result),
             Err(JsonRpcError::Transport(err)) => {
                 if err.to_string().contains("401") {
-                    tracing::debug!("401 error, JWT token expired, recreating client");
+                    tracing::trace!("401 error, JWT token expired, recreating client");
                     self.recreate_client().await?;
                     return self
                         .client
@@ -121,7 +121,7 @@ impl JSONRPCClient {
         let new_client = Self::create_client(&self.url, self.timeout, &self.jwt_secret)
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?;
 
-        tracing::debug!("Created new client");
+        tracing::trace!("Created new client");
         *self.client.write().await = new_client;
         Ok(())
     }
