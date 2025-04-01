@@ -242,7 +242,7 @@ impl Node {
             self.ethereum_l1.slot_clock.slot_of_epoch(current_slot),
             self.ethereum_l1
                 .slot_clock
-                .get_l2_slot_number_within_l1_slot()?
+                .get_l2_slot_number_within_current_l1_slot()?
         ))
     }
 }

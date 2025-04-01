@@ -6,7 +6,7 @@ pub struct Operator {
     ethereum_l1: Arc<EthereumL1>,
     handover_window_slots: u64,
     handover_start_buffer_ms: u64,
-    nominated_for_next_operator: Option<bool>,
+    nominated_for_next_operator: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -28,23 +28,26 @@ impl Operator {
             ethereum_l1,
             handover_window_slots,
             handover_start_buffer_ms,
-            nominated_for_next_operator: None,
+            nominated_for_next_operator: false,
         })
     }
 
     pub async fn get_status(&mut self) -> Result<Status, Error> {
-        let slot = self.ethereum_l1.slot_clock.get_current_slot_of_epoch()?;
+        let l1_slot = self.ethereum_l1.slot_clock.get_current_slot_of_epoch()?;
+        let l2_slot = self
+            .ethereum_l1
+            .slot_clock
+            .get_l2_slot_number_within_l1_slot(l1_slot)?;
 
-        // For the first slot, use the next operator from the previous epoch
+        // For the first L1 slot and the first L2 slot of second L1 slot,
+        //use the next operator from the previous epoch
         // it's because of the delay that L1 updates the current operator
         // after the epoch has changed.
-        if slot == 0 {
-            if let Some(nominated_for_next_operator) = self.nominated_for_next_operator.take() {
-                if nominated_for_next_operator {
-                    return Ok(Status::PreconferAndL1Submitter);
-                } else {
-                    return Ok(Status::None);
-                }
+        if l1_slot == 0 || (l1_slot == 1 && l2_slot == 0) {
+            if self.nominated_for_next_operator {
+                return Ok(Status::PreconferAndL1Submitter);
+            } else {
+                return Ok(Status::None);
             }
         }
 
@@ -54,13 +57,13 @@ impl Operator {
             .is_operator_for_current_epoch()
             .await?;
 
-        if self.is_handover_window(slot)? {
+        if self.is_handover_window(l1_slot)? {
             let next_operator = self
                 .ethereum_l1
                 .execution_layer
                 .is_operator_for_next_epoch()
                 .await?;
-            self.nominated_for_next_operator = Some(next_operator);
+            self.nominated_for_next_operator = next_operator;
             if is_current_operator {
                 if next_operator {
                     return Ok(Status::PreconferAndL1Submitter);
