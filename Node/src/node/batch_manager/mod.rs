@@ -65,9 +65,9 @@ impl BatchManager {
             .as_hashes()
             .ok_or_else(|| anyhow::anyhow!("recover_from_l2_block: No transactions in block"))?;
 
-        let (anchor_tx_hash, txs_hashes) = tx_hashes
-            .split_first()
-            .ok_or_else(|| anyhow::anyhow!("recover_from_l2_block: No anchor transaction in block"))?;
+        let (anchor_tx_hash, txs_hashes) = tx_hashes.split_first().ok_or_else(|| {
+            anyhow::anyhow!("recover_from_l2_block: No anchor transaction in block")
+        })?;
 
         let anchor_tx = self.taiko.get_transaction_by_hash(*anchor_tx_hash).await?;
         let anchor_block_id = Taiko::decode_anchor_tx_data(anchor_tx.input())?;
