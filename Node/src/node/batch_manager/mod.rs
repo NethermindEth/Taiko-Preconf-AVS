@@ -145,7 +145,7 @@ impl BatchManager {
             self.ethereum_l1.execution_layer.get_l1_height().await?,
         ) {
             // Handle max anchor height offset exceeded
-            debug!("Max anchor height offset exceeded");
+            info!("📈 Maximum allowed anchor height offset exceeded, finalizing current batch.");
             self.batch_builder.finalize_current_batch();
 
             if !submit {
@@ -155,7 +155,7 @@ impl BatchManager {
 
         // Try to submit every time since we can have batches to send from preconfer only role.
         if submit {
-            self.submit_batches(true).await?;
+            self.try_submit_batches(true).await?;
         }
 
         Ok(())
@@ -195,9 +195,12 @@ impl BatchManager {
         Ok(std::cmp::max(height_from_last_batch, l1_height_with_lag))
     }
 
-    pub async fn submit_batches(&mut self, submit_only_full_batches: bool) -> Result<(), Error> {
+    pub async fn try_submit_batches(
+        &mut self,
+        submit_only_full_batches: bool,
+    ) -> Result<(), Error> {
         self.batch_builder
-            .submit_batches(self.ethereum_l1.clone(), submit_only_full_batches)
+            .try_submit_batches(self.ethereum_l1.clone(), submit_only_full_batches)
             .await
     }
 

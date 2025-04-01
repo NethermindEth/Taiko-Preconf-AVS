@@ -140,7 +140,7 @@ impl Node {
                     // TODO calculate batch params and decide is it possible to continue with it, be careful with timeShift
                     // Sould be fixed with https://github.com/NethermindEth/Taiko-Preconf-AVS/issues/303
                     // Now just submit all the batches
-                    self.batch_manager.submit_batches(false).await?;
+                    self.batch_manager.try_submit_batches(false).await?;
                 } else {
                     // The first block anchor id is not valid
                     // TODO reorg + reanchor + preconfirm again
@@ -178,7 +178,7 @@ impl Node {
             interval.tick().await;
             if self.cancel_token.is_cancelled() {
                 info!("Shutdown signal received, exiting main loop...");
-                if let Err(err) = self.batch_manager.submit_batches(false).await {
+                if let Err(err) = self.batch_manager.try_submit_batches(false).await {
                     error!("Failed to submit batches at the application shut down: {err}");
                 }
                 return;
@@ -205,7 +205,7 @@ impl Node {
             }
             OperatorStatus::L1Submitter => {
                 info!("Submitting left batches {}", self.get_current_slots_info()?);
-                self.batch_manager.submit_batches(false).await?;
+                self.batch_manager.try_submit_batches(false).await?;
             }
             OperatorStatus::None => {
                 info!(

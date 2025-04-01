@@ -133,20 +133,11 @@ impl BatchBuilder {
         self.current_batch.is_none() && self.batches_to_send.is_empty()
     }
 
-    pub async fn submit_batches(
+    pub async fn try_submit_batches(
         &mut self,
         ethereum_l1: Arc<EthereumL1>,
         submit_only_full_batches: bool,
     ) -> Result<(), Error> {
-        debug!(
-            "Submitting batches: {}, batches_to_send len: {}",
-            if self.current_batch.is_none() {
-                "current_batch is none"
-            } else {
-                "current batch is some"
-            },
-            self.batches_to_send.len()
-        );
         if self.current_batch.is_some()
             && (!submit_only_full_batches
                 || !self.config.is_within_block_limit(
@@ -154,6 +145,10 @@ impl BatchBuilder {
                 ))
         {
             self.finalize_current_batch();
+        }
+
+        if self.batches_to_send.len() > 0 {
+            debug!("Submitting {} batches", self.batches_to_send.len());
         }
 
         while let Some(batch) = self.batches_to_send.front() {

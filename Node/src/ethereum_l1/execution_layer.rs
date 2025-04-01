@@ -168,8 +168,8 @@ impl ExecutionLayer {
 
         let tx_lists_bytes = encode_and_compress(&tx_vec)?;
 
-        tracing::debug!(
-            "Proposing batch with {} bloks and {} bytes length",
+        tracing::info!(
+            "📦 Proposing batch with {} blocks and {} bytes length",
             blocks.len(),
             tx_lists_bytes.len(),
         );
