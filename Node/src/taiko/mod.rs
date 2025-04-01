@@ -138,7 +138,13 @@ impl Taiko {
         let params = vec![
             Value::String(format!("0x{}", hex::encode(self.preconfer_address))), // beneficiary address
             Value::from(base_fee),                                               // baseFee
-            Value::Number(30_000_000.into()),                                    // blockMaxGasLimit
+            Value::Number(
+                self.ethereum_l1
+                    .execution_layer
+                    .get_pacaya_config()
+                    .blockMaxGasLimit
+                    .into(),
+            ), // blockMaxGasLimit
             Value::Number(131_072.into()), // maxBytesPerTxList (128KB)
             Value::Array(vec![]),          // locals (empty array)
             Value::Number(1.into()),       // maxTransactionsLists
