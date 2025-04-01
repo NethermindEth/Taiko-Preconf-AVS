@@ -389,6 +389,8 @@ impl Taiko {
     }
 
     pub async fn trigger_l2_reorg(&self, new_last_block_id: u64) -> Result<(), Error> {
+        debug!("Triggering L2 reorg to block {}", new_last_block_id);
+
         let request_body = preconf_blocks::RemovePreconfBlockRequestBody { new_last_block_id };
 
         // Use the DirectHttpClient to send the request directly
@@ -406,7 +408,7 @@ impl Taiko {
                 )
             })?;
 
-        trace!("Delete preconfBlocks response: {:?}", response);
+        debug!("Delete preconfBlocks response: {:?}", response);
         Ok(())
     }
 

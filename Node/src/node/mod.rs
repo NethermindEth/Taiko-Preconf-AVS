@@ -132,6 +132,7 @@ impl Node {
                     .await?
                 {
                     // recover all missed l2 blocks
+                    info!("Recovering from L2 blocks");
                     for current_height in height_taiko_inbox + 1..=height_taiko_geth {
                         self.batch_manager
                             .recover_from_l2_block(current_height)
@@ -145,6 +146,7 @@ impl Node {
                     // The first block anchor id is not valid
                     // TODO reorg + reanchor + preconfirm again
                     // Just do force reorg
+                    info!("Triggering L2 reorg");
                     self.batch_manager
                         .taiko
                         .trigger_l2_reorg(height_taiko_inbox)
