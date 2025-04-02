@@ -91,16 +91,33 @@ account = w3.eth.account.from_key(private_key)
 amount = w3.to_wei(args.amount, 'ether')
 
 def send_transaction(nonce : int):
+    try:
+        estimated_gas = w3.eth.estimate_gas({
+            'to': recipient,
+            'value': amount,
+            'from': account.address
+        })
+        gas_limit = int(estimated_gas * 1.2)  # Add 20% buffer to avoid out-of-gas errors
+    except Exception as e:
+        print(f"Gas estimation failed: {e}")
+        gas_limit = 40000
+
+    # Dynamically set gas parameters based on network conditions for EIP-1559
+    base_fee = w3.eth.get_block('latest')['baseFeePerGas']
+    priority_fee = w3.eth.max_priority_fee
+    max_fee_per_gas = base_fee * 2 + priority_fee  # 2x base fee + priority fee for buffer
+
     tx = {
         'nonce': nonce,
         'to': recipient,
         'value': amount,
-        'gas': 40000,
-        'gasPrice': w3.to_wei('10', 'gwei'),
-        'chainId': w3.eth.chain_id
+        'gas': gas_limit,
+        'maxFeePerGas': max_fee_per_gas,
+        'maxPriorityFeePerGas': priority_fee,
+        'chainId': w3.eth.chain_id,
+        'type': 2  # EIP-1559 transaction type
     }
-    print(f'Sending transaction: {tx} by RPC: {args.rpc}')
-    print(f'Sending from: {account.address}')
+    print(f'Sending EIP-1559 tx: {tx} from: {account.address}')
     signed_tx = w3.eth.account.sign_transaction(tx, private_key)
     tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
     print(f'Transaction sent: {tx_hash.hex()}')
