@@ -131,6 +131,16 @@ impl Node {
                     .is_block_valid(height_taiko_inbox + 1)
                     .await?
                 {
+                    // check that we have enough bond balance
+                    if !self
+                        .batch_manager
+                        .is_bond_balance_valid(height_taiko_geth - height_taiko_inbox)
+                        .await?
+                    {
+                        return Err(anyhow::anyhow!(
+                            "Recovering from L2 blocks failed: not enough bond balance"
+                        ));
+                    }
                     // recover all missed l2 blocks
                     info!("Recovering from L2 blocks");
                     for current_height in height_taiko_inbox + 1..=height_taiko_geth {
@@ -245,6 +255,16 @@ impl Node {
             if submit { "and submitting " } else { "" },
             self.get_current_slots_info(&pending_tx_list)?
         );
+
+        // check that we have enough bond balance to add one block
+        if !self.batch_manager.is_bond_balance_valid(1).await? {
+            // Force push left batches
+            self.batch_manager.try_submit_batches(false).await?;
+
+            return Err(anyhow::anyhow!(
+                "Preconfirming failed: not enough bond balance"
+            ));
+        }
 
         self.batch_manager
             .preconfirm_block(submit, pending_tx_list)

@@ -6,7 +6,7 @@ use crate::{
 use alloy::{
     eips::BlockNumberOrTag,
     network::EthereumWallet,
-    primitives::{Address, B256},
+    primitives::{aliases::U96, Address, B256},
     providers::{Provider, ProviderBuilder, WsConnect},
     signers::local::PrivateKeySigner,
 };
@@ -86,6 +86,14 @@ impl ExecutionLayer {
         self.pacaya_config.maxAnchorHeightOffset
     }
 
+    pub fn get_pacaya_config_liveness_bond_base(&self) -> U96 {
+        self.pacaya_config.livenessBondBase
+    }
+
+    pub fn get_pacaya_config_liveness_bond_per_block(&self) -> U96 {
+        self.pacaya_config.livenessBondPerBlock
+    }
+
     pub fn get_preconfer_address(&self) -> PreconferAddress {
         self.preconfer_address.into_array()
     }
@@ -102,6 +110,19 @@ impl ExecutionLayer {
             preconf_whitelist,
             preconf_router,
         })
+    }
+
+    pub async fn get_bonds_balance(&self) -> Result<alloy::primitives::U256, Error> {
+        // TODO cache value for same block?
+        let contract =
+            taiko_inbox::ITaikoInbox::new(self.contract_addresses.taiko_inbox, &self.provider_ws);
+        let bonds_balance = contract
+            .bondBalanceOf(self.preconfer_address)
+            .call()
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get bonds balance: {}", e)))?
+            ._0;
+        Ok(bonds_balance)
     }
 
     pub async fn get_operator_for_current_epoch(&self) -> Result<Address, Error> {

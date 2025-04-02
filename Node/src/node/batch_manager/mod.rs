@@ -5,7 +5,10 @@ use crate::{
     shared::{l2_block::L2Block, l2_tx_lists::PreBuiltTxList},
     taiko::Taiko,
 };
-use alloy::consensus::Transaction;
+use alloy::{
+    consensus::Transaction,
+    primitives::{aliases::U96, U256},
+};
 use anyhow::Error;
 use batch_builder::BatchBuilder;
 use futures_util::future::try_join_all;
@@ -28,6 +31,10 @@ pub struct BatchBuilderConfig {
     pub max_time_shift_between_blocks_sec: u64,
     /// The max differences of the anchor height and the current block number
     pub max_anchor_height_offset: u64,
+    /// The amount of Taiko token as a prover liveness bond per batch.
+    pub liveness_bond_base: U96,
+    /// The amount of Taiko token as a prover liveness bond per block.
+    pub liveness_bond_per_block: U96,
 }
 
 impl BatchBuilderConfig {
@@ -62,6 +69,23 @@ impl BatchManager {
         }
     }
 
+    pub async fn is_bond_balance_valid(&self, blocks_to_add: u64) -> Result<bool, Error> {
+        let balance = self.ethereum_l1.execution_layer.get_bonds_balance().await?;
+        debug!("Bond balance: {}", balance);
+
+        let required_balance = self.batch_builder.get_config().liveness_bond_base
+            + self.batch_builder.get_config().liveness_bond_per_block
+                * U96::from(
+                    self.batch_builder.get_current_batch_blocks_count() + blocks_to_add as usize,
+                );
+        debug!("Required bond balance: {}", required_balance);
+
+        if balance < U256::from(required_balance) {
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
     pub async fn recover_from_l2_block(&mut self, block_height: u64) -> Result<(), Error> {
         debug!("Recovering from L2 block {}", block_height);
         let block = self.taiko.get_l2_block_by_number(block_height).await?;
@@ -87,7 +111,12 @@ impl BatchManager {
             .map(|tx_hash| self.taiko.get_transaction_by_hash(*tx_hash));
         let txs: Vec<alloy::rpc::types::Transaction> = try_join_all(tx_futures).await?;
 
-        debug!("Recovering from L2 block {} with {} transactions and timestamp {}", block_height, txs.len(), block.header.timestamp);
+        debug!(
+            "Recovering from L2 block {} with {} transactions and timestamp {}",
+            block_height,
+            txs.len(),
+            block.header.timestamp
+        );
 
         self.batch_builder
             .recover_from(txs, anchor_block_id, block.header.timestamp);

@@ -66,6 +66,14 @@ async fn main() -> Result<(), Error> {
         );
     }
 
+    let liveness_bond_per_block = ethereum_l1
+        .execution_layer
+        .get_pacaya_config_liveness_bond_per_block();
+
+    let liveness_bond_base = ethereum_l1
+        .execution_layer
+        .get_pacaya_config_liveness_bond_base();
+
     let node = node::Node::new(
         cancel_token.clone(),
         taiko.clone(),
@@ -81,6 +89,8 @@ async fn main() -> Result<(), Error> {
             max_time_shift_between_blocks_sec: config.max_time_shift_between_blocks_sec,
             max_anchor_height_offset: max_anchor_height_offset
                 - config.max_anchor_height_offset_reduction,
+            liveness_bond_base,
+            liveness_bond_per_block,
         },
     )
     .await?;

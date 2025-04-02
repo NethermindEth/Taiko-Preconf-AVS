@@ -2,7 +2,7 @@ use std::{collections::VecDeque, sync::Arc};
 
 use crate::{ethereum_l1::EthereumL1, shared::l2_block::L2Block};
 use anyhow::Error;
-use tracing::{debug, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 use super::BatchBuilderConfig;
 
@@ -148,7 +148,7 @@ impl BatchBuilder {
         }
 
         if self.batches_to_send.len() > 0 {
-            debug!("Submitting {} batches", self.batches_to_send.len());
+            info!("Submitting {} batches", self.batches_to_send.len());
         }
 
         while let Some(batch) = self.batches_to_send.front() {
@@ -197,6 +197,13 @@ impl BatchBuilder {
         }
         false
     }
+
+    pub fn get_current_batch_blocks_count(&self) -> usize {
+        if let Some(current_batch) = self.current_batch.as_ref() {
+            return current_batch.l2_blocks.len();
+        }
+        0
+    }
 }
 
 #[cfg(test)]
@@ -211,6 +218,8 @@ mod tests {
             l1_slot_duration_sec: 12,
             max_time_shift_between_blocks_sec: 255,
             max_anchor_height_offset: 10,
+            liveness_bond_base: alloy::primitives::aliases::U96::from(0),
+            liveness_bond_per_block: alloy::primitives::aliases::U96::from(0),
         });
 
         assert_eq!(
