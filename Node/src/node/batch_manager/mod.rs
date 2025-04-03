@@ -5,10 +5,7 @@ use crate::{
     shared::{l2_block::L2Block, l2_tx_lists::PreBuiltTxList},
     taiko::Taiko,
 };
-use alloy::{
-    consensus::Transaction,
-    primitives::{aliases::U96, U256},
-};
+use alloy::{consensus::Transaction, primitives::U256};
 use anyhow::Error;
 use batch_builder::BatchBuilder;
 use futures_util::future::try_join_all;
@@ -32,9 +29,9 @@ pub struct BatchBuilderConfig {
     /// The max differences of the anchor height and the current block number
     pub max_anchor_height_offset: u64,
     /// The amount of Taiko token as a prover liveness bond per batch.
-    pub liveness_bond_base: U96,
+    pub liveness_bond_base: U256,
     /// The amount of Taiko token as a prover liveness bond per block.
-    pub liveness_bond_per_block: U96,
+    pub liveness_bond_per_block: U256,
 }
 
 impl BatchBuilderConfig {
@@ -73,14 +70,22 @@ impl BatchManager {
         let balance = self.ethereum_l1.execution_layer.get_bonds_balance().await?;
         debug!("Bond balance: {}", balance);
 
-        let required_balance = self.batch_builder.get_config().liveness_bond_base
+        let (total_batches, total_blocks) = self
+            .batch_builder
+            .get_batches_and_blocks_count_for_cost_calculation();
+        debug!(
+            "Total batches: {}, Total blocks: {}",
+            total_batches, total_blocks
+        );
+        let total_batches = U256::from(total_batches);
+        let total_blocks = U256::from(total_blocks);
+
+        let required_balance = self.batch_builder.get_config().liveness_bond_base * total_batches
             + self.batch_builder.get_config().liveness_bond_per_block
-                * U96::from(
-                    self.batch_builder.get_current_batch_blocks_count() + blocks_to_add as usize,
-                );
+                * (total_blocks + U256::from(blocks_to_add));
         debug!("Required bond balance: {}", required_balance);
 
-        if balance < U256::from(required_balance) {
+        if balance < required_balance {
             return Ok(false);
         }
         Ok(true)

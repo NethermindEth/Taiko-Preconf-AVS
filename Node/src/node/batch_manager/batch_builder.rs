@@ -198,11 +198,23 @@ impl BatchBuilder {
         false
     }
 
-    pub fn get_current_batch_blocks_count(&self) -> usize {
-        if let Some(current_batch) = self.current_batch.as_ref() {
-            return current_batch.l2_blocks.len();
+    /// If current batch is None, return (1, 0)
+    pub fn get_batches_and_blocks_count_for_cost_calculation(&self) -> (usize, usize) {
+        let (mut total_batches, mut total_blocks) =
+            if let Some(current_batch) = self.current_batch.as_ref() {
+                (1, current_batch.l2_blocks.len())
+            } else {
+                // We return 1 because we want to count one liveness_bond_base and add blocks there
+                (1, 0)
+            };
+
+        // Calculate not sent batches count
+        for batch in self.batches_to_send.iter() {
+            total_blocks += batch.l2_blocks.len();
+            total_batches += 1;
         }
-        0
+
+        (total_batches, total_blocks)
     }
 }
 
@@ -218,8 +230,8 @@ mod tests {
             l1_slot_duration_sec: 12,
             max_time_shift_between_blocks_sec: 255,
             max_anchor_height_offset: 10,
-            liveness_bond_base: alloy::primitives::aliases::U96::from(0),
-            liveness_bond_per_block: alloy::primitives::aliases::U96::from(0),
+            liveness_bond_base: alloy::primitives::U256::from(0),
+            liveness_bond_per_block: alloy::primitives::U256::from(0),
         });
 
         assert_eq!(

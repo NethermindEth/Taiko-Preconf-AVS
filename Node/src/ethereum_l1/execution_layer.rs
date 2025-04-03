@@ -6,7 +6,7 @@ use crate::{
 use alloy::{
     eips::BlockNumberOrTag,
     network::EthereumWallet,
-    primitives::{aliases::U96, Address, B256},
+    primitives::{Address, B256, U256},
     providers::{Provider, ProviderBuilder, WsConnect},
     signers::local::PrivateKeySigner,
 };
@@ -86,12 +86,12 @@ impl ExecutionLayer {
         self.pacaya_config.maxAnchorHeightOffset
     }
 
-    pub fn get_pacaya_config_liveness_bond_base(&self) -> U96 {
-        self.pacaya_config.livenessBondBase
+    pub fn get_pacaya_config_liveness_bond_base(&self) -> U256 {
+        U256::from(self.pacaya_config.livenessBondBase)
     }
 
-    pub fn get_pacaya_config_liveness_bond_per_block(&self) -> U96 {
-        self.pacaya_config.livenessBondPerBlock
+    pub fn get_pacaya_config_liveness_bond_per_block(&self) -> U256 {
+        U256::from(self.pacaya_config.livenessBondPerBlock)
     }
 
     pub fn get_preconfer_address(&self) -> PreconferAddress {
