@@ -49,19 +49,12 @@ impl Operator {
         let l2_slot = self
             .ethereum_l1
             .slot_clock
-            .get_l2_slot_number_within_l1_slot(l1_slot)?;
+            .get_current_l2_slot_within_l1_slot()?;
 
         // For the first L1 slot and the first L2 slot of second L1 slot,
         // use the next operator from the previous epoch
         // it's because of the delay that L1 updates the current operator
         // after the epoch has changed.
-        debug!(
-            "l1_slot: {}, l2_slot: {} l1_slot == 1: {}, l2_slot == 0: {}",
-            l1_slot,
-            l2_slot,
-            l1_slot == 1,
-            l2_slot == 0
-        );
         if l1_slot == 0 || (l1_slot == 1 && l2_slot == 0) {
             if self.nominated_for_next_operator {
                 return Ok((

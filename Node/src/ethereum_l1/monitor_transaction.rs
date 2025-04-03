@@ -1,18 +1,15 @@
 use crate::ethereum_l1::ws_provider::WsProvider;
 use alloy::{
-    consensus::{Transaction as ConsensusTransaction, TxEip4844Variant, TxEnvelope},
-    eips::{eip2718::Encodable2718, BlockNumberOrTag},
-    network::{Ethereum, TransactionBuilder, TransactionBuilder4844},
-    primitives::{Address, FixedBytes, TxKind, B256},
-    providers::{
-        ext::DebugApi, PendingTransactionBuilder, PendingTransactionError, Provider,
-        ProviderBuilder, WalletProvider, WatchTxError, WsConnect,
-    },
+    consensus::{TxEip4844Variant, TxEnvelope},
+    eips::BlockNumberOrTag,
+    network::{TransactionBuilder, TransactionBuilder4844},
+    primitives::{Address, TxKind, B256},
+    providers::{ext::DebugApi, PendingTransactionError, Provider, WatchTxError},
     rpc::types::{trace::geth::GethDebugTracingOptions, Transaction, TransactionRequest},
 };
 use std::{sync::Arc, time::Duration};
-use tokio::{task::JoinHandle, time};
-use tracing::{debug, error, info, trace, warn};
+use tokio::task::JoinHandle;
+use tracing::{debug, error, info, warn};
 
 // Transaction status enum
 #[derive(Debug, Clone, PartialEq)]

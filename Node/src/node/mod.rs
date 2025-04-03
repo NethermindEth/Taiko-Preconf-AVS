@@ -1,9 +1,7 @@
 pub(crate) mod batch_manager;
 mod operator;
 
-use crate::{
-    ethereum_l1::EthereumL1, shared::l2_tx_lists::PreBuiltTxList, taiko::Taiko, utils::types::Slot,
-};
+use crate::{ethereum_l1::EthereumL1, shared::l2_tx_lists::PreBuiltTxList, taiko::Taiko};
 use anyhow::Error;
 use batch_manager::{BatchBuilderConfig, BatchManager};
 use operator::{Operator, Status as OperatorStatus};
@@ -199,7 +197,6 @@ impl Node {
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
-        let l1_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
         let (current_status, exit_point) = self.operator.get_status().await?;
 
         let pending_tx_list = self
@@ -207,7 +204,7 @@ impl Node {
             .taiko
             .get_pending_l2_tx_list_from_taiko_geth()
             .await?;
-        self.print_current_slots_info(&current_status, &pending_tx_list, l1_slot, &exit_point)?;
+        self.print_current_slots_info(&current_status, &pending_tx_list, &exit_point)?;
 
         match current_status {
             OperatorStatus::PreconferHandoverBuffer(buffer_ms) => {
@@ -251,16 +248,16 @@ impl Node {
         &self,
         current_status: &OperatorStatus,
         pending_tx_list: &Option<PreBuiltTxList>,
-        l1_slot: Slot,
         exit_point: &str,
     ) -> Result<(), Error> {
+        let l1_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
         info!(
             "{current_status} | Epoch: {:<6} | Slot: {:<2} | L2 Slot: {:<2} | Pending txs: {:<3} | {exit_point}",
             self.ethereum_l1.slot_clock.get_epoch_from_slot(l1_slot),
             self.ethereum_l1.slot_clock.slot_of_epoch(l1_slot),
             self.ethereum_l1
                 .slot_clock
-                .get_l2_slot_number_within_l1_slot(l1_slot)?,
+                .get_current_l2_slot_within_l1_slot()?,
             pending_tx_list
                 .as_ref()
                 .map_or(0, |tx_list| tx_list.tx_list.len())
