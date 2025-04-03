@@ -97,16 +97,16 @@ async fn wait_for_the_termination(cancel_token: CancellationToken, shutdown_dela
         _ = sigterm.recv() => {
             info!("Received SIGTERM, shutting down...");
             cancel_token.cancel();
+            // Give tasks a little time to finish
+            info!("Waiting for {}s", shutdown_delay_secs);
+            tokio::time::sleep(tokio::time::Duration::from_secs(shutdown_delay_secs)).await;
         }
         _ = tokio::signal::ctrl_c() => {
             info!("Received Ctrl+C, shutting down...");
             cancel_token.cancel();
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
     }
-
-    // Give tasks a little time to finish
-    info!("Waiting for {}s", shutdown_delay_secs);
-    tokio::time::sleep(tokio::time::Duration::from_secs(shutdown_delay_secs)).await;
 }
 
 fn init_logging() {

@@ -1,14 +1,18 @@
 use crate::ethereum_l1::ws_provider::WsProvider;
 use alloy::{
-    consensus::{TxEip4844Variant, TxEnvelope},
-    network::{TransactionBuilder, TransactionBuilder4844},
-    primitives::{Address, TxKind, B256},
-    providers::{ext::DebugApi, Provider},
+    consensus::{Transaction as ConsensusTransaction, TxEip4844Variant, TxEnvelope},
+    eips::{eip2718::Encodable2718, BlockNumberOrTag},
+    network::{Ethereum, TransactionBuilder, TransactionBuilder4844},
+    primitives::{Address, FixedBytes, TxKind, B256},
+    providers::{
+        ext::DebugApi, PendingTransactionBuilder, PendingTransactionError, Provider,
+        ProviderBuilder, WalletProvider, WatchTxError, WsConnect,
+    },
     rpc::types::{trace::geth::GethDebugTracingOptions, Transaction, TransactionRequest},
 };
 use std::{sync::Arc, time::Duration};
 use tokio::{task::JoinHandle, time};
-use tracing::{error, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 // Transaction status enum
 #[derive(Debug, Clone, PartialEq)]
@@ -19,14 +23,89 @@ pub enum TxStatus {
 
 /// Monitor a transaction until it is confirmed or fails.
 /// Spawns a new tokio task to monitor the transaction.
-pub fn monitor_transaction(provider: Arc<WsProvider>, tx_hash: B256) -> JoinHandle<TxStatus> {
+pub fn monitor_transaction(
+    provider: Arc<WsProvider>,
+    tx: TransactionRequest,
+    nonce: u64,
+) -> JoinHandle<TxStatus> {
     tokio::spawn(async move {
-        let max_attempts = 50; //TODO move to config
-        let delay = Duration::from_secs(2);
+        let max_attempts: u64 = 3; //TODO move to config
+        let delay = Duration::from_millis(1000); //Duration::from_secs(12);
+        let mut tx_hash = B256::ZERO;
+
+        // const increase_percentage: u128 = 20;
+        let mut max_priority_fee_per_gas = if tx.max_priority_fee_per_gas.is_none() {
+            1_000_000_000
+        } else {
+            tx.max_priority_fee_per_gas.unwrap()
+        };
+        let mut max_fee_per_gas = if tx.max_fee_per_gas.is_none() {
+            1_000_000_000
+        } else {
+            tx.max_fee_per_gas.unwrap()
+        };
+        let mut max_fee_per_blob_gas = if tx.max_fee_per_blob_gas.is_none() {
+            1
+        } else {
+            tx.max_fee_per_blob_gas.unwrap()
+        };
 
         for attempt in 0..max_attempts {
-            match provider.get_transaction_receipt(tx_hash).await {
-                Ok(Some(receipt)) => {
+            let mut tx_clone = tx.clone();
+            let pending_tx = if attempt > 0 {
+                let block = provider
+                    .get_block_by_number(BlockNumberOrTag::Latest)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                let base_fee = block.header.base_fee_per_gas.unwrap() as u128;
+                debug!("Base fee: {}", base_fee);
+
+                if attempt == 1 {
+                    max_fee_per_gas = base_fee * 2 + max_priority_fee_per_gas + attempt as u128 + 1;
+                    max_priority_fee_per_gas += 10_000_000_000; // max_priority_fee_per_gas * increase_percentage / 100;
+                } else {
+                    max_fee_per_gas = max_fee_per_gas * 2 + 1; // second replacement requires 100% more for penalty
+                    max_priority_fee_per_gas = max_priority_fee_per_gas * 2 + 1;
+                }
+
+                max_fee_per_blob_gas += max_fee_per_blob_gas + 1;
+
+                tx_clone.set_max_priority_fee_per_gas(max_priority_fee_per_gas);
+                tx_clone.set_max_fee_per_gas(max_fee_per_gas);
+                tx_clone.set_max_fee_per_blob_gas(max_fee_per_blob_gas);
+
+                tx_clone.set_nonce(nonce.into());
+
+                debug!("Transaction type: {:?}", tx_clone.preferred_type());
+
+                debug!("Sending transaction max_fee_per_gas: {}, max_priority_fee_per_gas: {}, max_fee_per_blob_gas: {} gas limit: {}, nonce: {}", tx_clone.max_fee_per_gas.unwrap(), tx_clone.max_priority_fee_per_gas.unwrap(), tx_clone.max_fee_per_blob_gas.unwrap(), tx_clone.gas.unwrap(), tx_clone.nonce.unwrap());
+
+                match provider.send_transaction(tx_clone).await {
+                    Ok(tx) => tx,
+                    Err(e) => {
+                        error!("Attempt {attempt}. Failed to send transaction: {:?}", e);
+                        return TxStatus::Failed(e.to_string());
+                    }
+                }
+            } else {
+                debug!("Sending transaction max_fee_per_gas: {}, max_priority_fee_per_gas: {}, max_fee_per_blob_gas: {} gas limit: {}, nonce: {:?}", tx_clone.max_fee_per_gas.unwrap(), tx_clone.max_priority_fee_per_gas.unwrap(), tx_clone.max_fee_per_blob_gas.unwrap(), tx_clone.gas.unwrap(), tx_clone.nonce);
+
+                match provider.send_transaction(tx_clone).await {
+                    Ok(tx) => tx,
+                    Err(e) => {
+                        error!("Failed to send transaction: {:?}", e);
+                        return TxStatus::Failed(e.to_string());
+                    }
+                }
+            };
+
+            tx_hash = *pending_tx.tx_hash();
+            debug!("Transaction hash: {}", tx_hash);
+            let receipt = pending_tx.with_timeout(Some(delay)).get_receipt().await;
+
+            match receipt {
+                Ok(receipt) => {
                     if receipt.status() {
                         let block_number = if let Some(block_number) = receipt.block_number {
                             block_number
@@ -51,19 +130,14 @@ pub fn monitor_transaction(provider: Arc<WsProvider>, tx_hash: B256) -> JoinHand
                         return TxStatus::Failed(error_msg);
                     }
                 }
-                Ok(None) => {
-                    trace!(
-                        "Transaction {} still pending (attempt {}/{})",
-                        tx_hash,
-                        attempt + 1,
-                        max_attempts
-                    );
-                    time::sleep(delay).await;
-                }
-                Err(e) => {
-                    error!("Error checking transaction {}: {}", tx_hash, e);
-                    time::sleep(delay).await;
-                }
+                Err(e) => match e {
+                    PendingTransactionError::TxWatcher(WatchTxError::Timeout) => {
+                        debug!("Transaction watcher timeout");
+                    }
+                    _ => {
+                        error!("Error checking transaction {}: {}", tx_hash, e);
+                    }
+                },
             }
         }
 

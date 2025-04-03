@@ -195,18 +195,13 @@ impl ExecutionLayer {
             )
             .await?;
 
-        // Send transaction
-        let pending_tx = self
+        let nonce = self
             .provider_ws
-            .send_transaction(tx)
-            .await?
-            .register()
+            .get_transaction_count(self.preconfer_address)
             .await?;
 
-        tracing::debug!("Call proposeBatch with hash {}", pending_tx.tx_hash());
-
         // Spawn a monitor for this transaction
-        let _ = monitor_transaction(self.provider_ws.clone(), *pending_tx.tx_hash());
+        let _ = monitor_transaction(self.provider_ws.clone(), tx, nonce);
 
         Ok(())
     }
