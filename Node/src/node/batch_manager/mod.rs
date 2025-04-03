@@ -10,7 +10,7 @@ use anyhow::Error;
 use batch_builder::BatchBuilder;
 use futures_util::future::try_join_all;
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 // TODO move to config
 const MIN_SLOTS_TO_PROPOSE: u64 = 3; // Minimum number of slots required to propose a batch on L1
@@ -87,7 +87,12 @@ impl BatchManager {
             .map(|tx_hash| self.taiko.get_transaction_by_hash(*tx_hash));
         let txs: Vec<alloy::rpc::types::Transaction> = try_join_all(tx_futures).await?;
 
-        debug!("Recovering from L2 block {} with {} transactions and timestamp {}", block_height, txs.len(), block.header.timestamp);
+        debug!(
+            "Recovering from L2 block {} with {} transactions and timestamp {}",
+            block_height,
+            txs.len(),
+            block.header.timestamp
+        );
 
         self.batch_builder
             .recover_from(txs, anchor_block_id, block.header.timestamp);
@@ -159,7 +164,7 @@ impl BatchManager {
             let empty_block = L2Block::new_empty(preconfirmation_timestamp);
             self.add_new_l2_block(empty_block).await?;
         } else {
-            debug!("No pending txs, skipping preconfirmation");
+            trace!("No pending txs, skipping preconfirmation");
         }
 
         if self.batch_builder.is_grater_than_max_anchor_height_offset(
