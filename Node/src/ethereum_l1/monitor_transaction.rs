@@ -26,8 +26,8 @@ pub fn monitor_transaction(
     nonce: u64,
 ) -> JoinHandle<TxStatus> {
     tokio::spawn(async move {
-        let max_attempts: u64 = 3; //TODO move to config
-        let delay = Duration::from_millis(1000); //Duration::from_secs(12);
+        let max_attempts: u64 = 4; //TODO move to config
+        let delay = Duration::from_secs(12);
         let mut tx_hash = B256::ZERO;
 
         // const increase_percentage: u128 = 20;
@@ -59,8 +59,8 @@ pub fn monitor_transaction(
                 debug!("Base fee: {}", base_fee);
 
                 if attempt == 1 {
-                    max_fee_per_gas = base_fee * 2 + max_priority_fee_per_gas + attempt as u128 + 1;
                     max_priority_fee_per_gas += 10_000_000_000; // max_priority_fee_per_gas * increase_percentage / 100;
+                    max_fee_per_gas = base_fee * 2 + max_priority_fee_per_gas + attempt as u128 + 1;
                 } else {
                     max_fee_per_gas = max_fee_per_gas * 2 + 1; // second replacement requires 100% more for penalty
                     max_priority_fee_per_gas = max_priority_fee_per_gas * 2 + 1;
