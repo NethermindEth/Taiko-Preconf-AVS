@@ -44,6 +44,8 @@ impl Operator {
         })
     }
 
+    /// Get the current status of the operator based on the current L1 and L2 slots
+    /// TODO: remove second string parameter, temporary for debugging
     pub async fn get_status(&mut self) -> Result<(Status, String), Error> {
         let l1_slot = self.ethereum_l1.slot_clock.get_current_slot_of_epoch()?;
         let l2_slot = self
