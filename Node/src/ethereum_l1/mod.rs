@@ -20,6 +20,18 @@ use mockall_double::double;
 use slot_clock::SlotClock;
 use std::sync::Arc;
 
+pub struct EthereumL1Config {
+    pub execution_ws_rpc_url: String,
+    pub avs_node_ecdsa_private_key: String,
+    pub contract_addresses: L1ContractAddresses,
+    pub consensus_rpc_url: String,
+    pub min_priority_fee_per_gas_wei: u64,
+    pub tx_fees_increase_percentage: u64,
+    pub slot_duration_sec: u64,
+    pub slots_per_epoch: u64,
+    pub preconf_heartbeat_ms: u64,
+}
+
 pub struct EthereumL1 {
     pub slot_clock: Arc<SlotClock>,
     pub _consensus_layer: ConsensusLayer,
@@ -28,29 +40,23 @@ pub struct EthereumL1 {
 
 impl EthereumL1 {
     #[allow(clippy::too_many_arguments)]
-    pub async fn new(
-        execution_ws_rpc_url: &str,
-        avs_node_ecdsa_private_key: &str,
-        contract_addresses: &L1ContractAddresses,
-        consensus_rpc_url: &str,
-        slot_duration_sec: u64,
-        slots_per_epoch: u64,
-        preconf_heartbeat_ms: u64,
-    ) -> Result<Self, Error> {
-        let consensus_layer = ConsensusLayer::new(consensus_rpc_url)?;
+    pub async fn new(config: EthereumL1Config) -> Result<Self, Error> {
+        let consensus_layer = ConsensusLayer::new(&config.consensus_rpc_url)?;
         let genesis_details = consensus_layer.get_genesis_details().await?;
         let slot_clock = Arc::new(SlotClock::new(
             0u64,
             genesis_details.genesis_time,
-            slot_duration_sec,
-            slots_per_epoch,
-            preconf_heartbeat_ms,
+            config.slot_duration_sec,
+            config.slots_per_epoch,
+            config.preconf_heartbeat_ms,
         ));
 
         let execution_layer = ExecutionLayer::new(
-            execution_ws_rpc_url,
-            avs_node_ecdsa_private_key,
-            contract_addresses,
+            &config.execution_ws_rpc_url,
+            &config.avs_node_ecdsa_private_key,
+            &config.contract_addresses,
+            config.min_priority_fee_per_gas_wei,
+            config.tx_fees_increase_percentage,
         )
         .await?;
 

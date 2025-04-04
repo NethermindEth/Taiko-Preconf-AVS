@@ -1,5 +1,7 @@
 use crate::{
-    ethereum_l1::{l1_contracts_bindings::*, ws_provider::WsProvider},
+    ethereum_l1::{
+        l1_contracts_bindings::*, monitor_transaction::TransactionMonitor, ws_provider::WsProvider,
+    },
     shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress},
     utils::{config, types::*},
 };
@@ -15,7 +17,6 @@ use anyhow::Error;
 use mockall::automock;
 use std::{str::FromStr, sync::Arc};
 
-use crate::ethereum_l1::monitor_transaction::monitor_transaction;
 use tracing::debug;
 
 use crate::ethereum_l1::propose_batch_builder::ProposeBatchBuilder;
@@ -27,6 +28,7 @@ pub struct ExecutionLayer {
     pacaya_config: taiko_inbox::ITaikoInbox::Config,
     #[cfg(feature = "extra_gas_percentage")]
     extra_gas_percentage: u64,
+    transaction_monitor: TransactionMonitor,
 }
 
 pub struct ContractAddresses {
@@ -42,6 +44,8 @@ impl ExecutionLayer {
         ws_rpc_url: &str,
         avs_node_ecdsa_private_key: &str,
         contract_addresses: &config::L1ContractAddresses,
+        min_priority_fee_per_gas_wei: u64,
+        tx_fees_increase_percentage: u64,
     ) -> Result<Self, Error> {
         tracing::debug!("Creating ExecutionLayer with WS URL: {}", ws_rpc_url);
 
@@ -59,22 +63,31 @@ impl ExecutionLayer {
 
         let ws = WsConnect::new(ws_rpc_url.to_string());
 
-        let provider_ws: WsProvider = ProviderBuilder::new()
-            .wallet(wallet)
-            .on_ws(ws.clone())
-            .await
-            .unwrap();
+        let provider_ws: Arc<WsProvider> = Arc::new(
+            ProviderBuilder::new()
+                .wallet(wallet)
+                .on_ws(ws.clone())
+                .await
+                .unwrap(),
+        );
+
+        let transaction_monitor = TransactionMonitor::new(
+            provider_ws.clone(),
+            min_priority_fee_per_gas_wei,
+            tx_fees_increase_percentage,
+        );
 
         let pacaya_config =
             Self::fetch_pacaya_config(&contract_addresses.taiko_inbox, &provider_ws).await?;
 
         Ok(Self {
-            provider_ws: Arc::new(provider_ws),
+            provider_ws: provider_ws,
             preconfer_address,
             contract_addresses,
             pacaya_config,
             #[cfg(feature = "extra_gas_percentage")]
             extra_gas_percentage,
+            transaction_monitor,
         })
     }
 
@@ -201,7 +214,7 @@ impl ExecutionLayer {
             .await?;
 
         // Spawn a monitor for this transaction
-        let _ = monitor_transaction(self.provider_ws.clone(), tx, nonce);
+        let _ = self.transaction_monitor.monitor_new_transaction(tx, nonce);
 
         Ok(())
     }

@@ -19,15 +19,17 @@ async fn main() -> Result<(), Error> {
     let config = utils::config::Config::read_env_variables();
     let cancel_token = CancellationToken::new();
 
-    let ethereum_l1 = ethereum_l1::EthereumL1::new(
-        &config.l1_ws_rpc_url,
-        &config.avs_node_ecdsa_private_key,
-        &config.contract_addresses,
-        &config.l1_beacon_url,
-        config.l1_slot_duration_sec,
-        config.l1_slots_per_epoch,
-        config.preconf_heartbeat_ms,
-    )
+    let ethereum_l1 = ethereum_l1::EthereumL1::new(ethereum_l1::EthereumL1Config {
+        execution_ws_rpc_url: config.l1_ws_rpc_url,
+        avs_node_ecdsa_private_key: config.avs_node_ecdsa_private_key,
+        contract_addresses: config.contract_addresses,
+        consensus_rpc_url: config.l1_beacon_url,
+        slot_duration_sec: config.l1_slot_duration_sec,
+        slots_per_epoch: config.l1_slots_per_epoch,
+        preconf_heartbeat_ms: config.preconf_heartbeat_ms,
+        min_priority_fee_per_gas_wei: config.min_priority_fee_per_gas_wei,
+        tx_fees_increase_percentage: config.tx_fees_increase_percentage,
+    })
     .await?;
 
     let ethereum_l1 = Arc::new(ethereum_l1);
