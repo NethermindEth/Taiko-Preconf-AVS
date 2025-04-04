@@ -9,7 +9,12 @@ use alloy::{
     rpc::types::{trace::geth::GethDebugTracingOptions, Transaction, TransactionRequest},
 };
 use alloy_json_rpc::RpcError;
+use anyhow::Error;
 use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Mutex,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
@@ -22,42 +27,103 @@ pub enum TxStatus {
 }
 
 #[derive(Debug, Clone)]
-pub struct TransactionMonitor {
-    provider: Arc<WsProvider>,
+pub struct TransactionMonitorConfig {
     min_priority_fee_per_gas_wei: u128,
     tx_fees_increase_percentage: u128,
     max_attempts_to_send_tx: u64,
     delay_between_tx_attempts: Duration,
 }
 
+pub struct TransactionMonitorThread {
+    provider: Arc<WsProvider>,
+    config: TransactionMonitorConfig,
+    nonce: u64,
+}
+
+#[derive(Debug)]
+pub struct TransactionMonitor {
+    provider: Arc<WsProvider>,
+    config: TransactionMonitorConfig,
+    l1_slot_sec: u64,
+    nonce_and_timestamp: Mutex<(u64, u64)>, // (nonce, last_sent_timestamp)
+    address: Address,
+}
+
 impl TransactionMonitor {
-    pub fn new(
+    pub async fn new(
         provider: Arc<WsProvider>,
         min_priority_fee_per_gas_wei: u64,
         tx_fees_increase_percentage: u64,
         max_attempts_to_send_tx: u64,
         delay_between_tx_attempts_sec: u64,
-    ) -> Self {
-        Self {
+        address: Address,
+        l1_slot_sec: u64,
+    ) -> Result<Self, Error> {
+        let nonce = provider.get_transaction_count(address).await?;
+        Ok(Self {
             provider,
-            min_priority_fee_per_gas_wei: min_priority_fee_per_gas_wei as u128,
-            tx_fees_increase_percentage: tx_fees_increase_percentage as u128,
-            max_attempts_to_send_tx,
-            delay_between_tx_attempts: Duration::from_secs(delay_between_tx_attempts_sec),
-        }
+            config: TransactionMonitorConfig {
+                min_priority_fee_per_gas_wei: min_priority_fee_per_gas_wei as u128,
+                tx_fees_increase_percentage: tx_fees_increase_percentage as u128,
+                max_attempts_to_send_tx,
+                delay_between_tx_attempts: Duration::from_secs(delay_between_tx_attempts_sec),
+            },
+            l1_slot_sec,
+            nonce_and_timestamp: Mutex::new((nonce, 0)), // Initialize with (nonce, 0)
+            address,
+        })
     }
 
     /// Monitor a transaction until it is confirmed or fails.
     /// Spawns a new tokio task to monitor the transaction.
-    pub fn monitor_new_transaction(
-        &self,
-        tx: TransactionRequest,
-        nonce: u64,
-    ) -> JoinHandle<TxStatus> {
-        self.clone().spawn_monitoring_task(tx, nonce)
+    pub async fn monitor_new_transaction(&self, tx: TransactionRequest) -> JoinHandle<TxStatus> {
+        // Get current timestamp
+        let current_timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let chain_nonce = match self.provider.get_transaction_count(self.address).await {
+            Ok(nonce) => Some(nonce),
+            Err(e) => {
+                error!(
+                    "Failed to get nonce from the chain, using local nonce. Error: {}",
+                    e
+                );
+                None
+            }
+        };
+
+        // Lock the mutex to update both values together
+        let nonce = {
+            let mut guard = self.nonce_and_timestamp.lock().unwrap();
+            let (nonce, last_sent) = *guard;
+
+            if current_timestamp > last_sent + self.l1_slot_sec && chain_nonce.is_some() {
+                *guard = (chain_nonce.unwrap() + 1, current_timestamp);
+                chain_nonce.unwrap()
+            } else {
+                *guard = (nonce + 1, current_timestamp);
+                nonce
+            }
+        };
+
+        let monitor_thread =
+            TransactionMonitorThread::new(self.provider.clone(), self.config.clone(), nonce);
+        monitor_thread.spawn_monitoring_task(tx)
+    }
+}
+
+impl TransactionMonitorThread {
+    pub fn new(provider: Arc<WsProvider>, config: TransactionMonitorConfig, nonce: u64) -> Self {
+        Self {
+            provider,
+            config,
+            nonce,
+        }
     }
 
-    pub fn spawn_monitoring_task(self, tx: TransactionRequest, nonce: u64) -> JoinHandle<TxStatus> {
+    pub fn spawn_monitoring_task(self, tx: TransactionRequest) -> JoinHandle<TxStatus> {
         tokio::spawn(async move {
             let mut tx_hash = B256::ZERO;
 
@@ -79,7 +145,7 @@ impl TransactionMonitor {
             let mut max_fee_per_gas = tx.max_fee_per_gas.unwrap();
             let mut max_fee_per_blob_gas = tx.max_fee_per_blob_gas;
 
-            for attempt in 0..self.max_attempts_to_send_tx {
+            for attempt in 0..self.config.max_attempts_to_send_tx {
                 let mut tx_clone = tx.clone();
                 if attempt > 0 {
                     // replacement requires 100% more for penalty
@@ -90,18 +156,19 @@ impl TransactionMonitor {
                     }
                 } else {
                     // increase fees by percentage
-                    max_fee_per_gas += max_fee_per_gas * self.tx_fees_increase_percentage / 100;
+                    max_fee_per_gas +=
+                        max_fee_per_gas * self.config.tx_fees_increase_percentage / 100;
                     max_priority_fee_per_gas +=
-                        max_priority_fee_per_gas * self.tx_fees_increase_percentage / 100;
+                        max_priority_fee_per_gas * self.config.tx_fees_increase_percentage / 100;
                     if let Some(max_fee_per_blob_gas) = &mut max_fee_per_blob_gas {
                         *max_fee_per_blob_gas +=
-                            *max_fee_per_blob_gas * self.tx_fees_increase_percentage / 100;
+                            *max_fee_per_blob_gas * self.config.tx_fees_increase_percentage / 100;
                     }
 
-                    if max_priority_fee_per_gas < self.min_priority_fee_per_gas_wei {
+                    if max_priority_fee_per_gas < self.config.min_priority_fee_per_gas_wei {
                         max_fee_per_gas +=
-                            self.min_priority_fee_per_gas_wei - max_priority_fee_per_gas;
-                        max_priority_fee_per_gas = self.min_priority_fee_per_gas_wei;
+                            self.config.min_priority_fee_per_gas_wei - max_priority_fee_per_gas;
+                        max_priority_fee_per_gas = self.config.min_priority_fee_per_gas_wei;
                     }
                 }
 
@@ -110,9 +177,9 @@ impl TransactionMonitor {
                 if let Some(max_fee_per_blob_gas) = max_fee_per_blob_gas {
                     tx_clone.set_max_fee_per_blob_gas(max_fee_per_blob_gas);
                 }
-                tx_clone.set_nonce(nonce.into());
+                tx_clone.set_nonce(self.nonce.into());
 
-                debug!("Sending transaction max_fee_per_gas: {:?}, max_priority_fee_per_gas: {:?}, max_fee_per_blob_gas: {:?}, gas limit: {:?}, nonce: {:?}", tx_clone.max_fee_per_gas, tx_clone.max_priority_fee_per_gas, tx_clone.max_fee_per_blob_gas, tx_clone.gas, tx_clone.nonce);
+                debug!("Sending tx, attempt: {attempt}, max_fee_per_gas: {:?}, max_priority_fee_per_gas: {:?}, max_fee_per_blob_gas: {:?}, gas limit: {:?}, nonce: {:?}", tx_clone.max_fee_per_gas, tx_clone.max_priority_fee_per_gas, tx_clone.max_fee_per_blob_gas, tx_clone.gas, tx_clone.nonce);
 
                 let pending_tx = match self.provider.send_transaction(tx_clone).await {
                     Ok(tx) => tx,
@@ -152,7 +219,7 @@ impl TransactionMonitor {
 
             let error_msg = format!(
                 "Transaction {} not confirmed after {} attempts",
-                tx_hash, self.max_attempts_to_send_tx
+                tx_hash, self.config.max_attempts_to_send_tx
             );
             error!("{}", error_msg);
             TxStatus::Failed(error_msg)
@@ -190,7 +257,7 @@ impl TransactionMonitor {
     ) -> TxStatus {
         let tx_hash = *pending_tx.tx_hash();
         let receipt = pending_tx
-            .with_timeout(Some(self.delay_between_tx_attempts))
+            .with_timeout(Some(self.config.delay_between_tx_attempts))
             .get_receipt()
             .await;
 

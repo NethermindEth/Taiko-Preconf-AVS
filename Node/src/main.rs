@@ -19,7 +19,7 @@ async fn main() -> Result<(), Error> {
     let config = utils::config::Config::read_env_variables();
     let cancel_token = CancellationToken::new();
 
-    let ethereum_l1 = ethereum_l1::EthereumL1::new(ethereum_l1::EthereumL1Config {
+    let ethereum_l1 = ethereum_l1::EthereumL1::new(ethereum_l1::config::EthereumL1Config {
         execution_ws_rpc_url: config.l1_ws_rpc_url,
         avs_node_ecdsa_private_key: config.avs_node_ecdsa_private_key,
         contract_addresses: config.contract_addresses,
