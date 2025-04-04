@@ -46,6 +46,8 @@ impl ExecutionLayer {
         contract_addresses: &config::L1ContractAddresses,
         min_priority_fee_per_gas_wei: u64,
         tx_fees_increase_percentage: u64,
+        max_attempts_to_send_tx: u64,
+        delay_between_tx_attempts_sec: u64,
     ) -> Result<Self, Error> {
         tracing::debug!("Creating ExecutionLayer with WS URL: {}", ws_rpc_url);
 
@@ -75,6 +77,8 @@ impl ExecutionLayer {
             provider_ws.clone(),
             min_priority_fee_per_gas_wei,
             tx_fees_increase_percentage,
+            max_attempts_to_send_tx,
+            delay_between_tx_attempts_sec,
         );
 
         let pacaya_config =

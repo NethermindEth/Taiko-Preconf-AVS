@@ -28,6 +28,8 @@ pub struct Config {
     pub max_anchor_height_offset_reduction: u64,
     pub min_priority_fee_per_gas_wei: u64,
     pub tx_fees_increase_percentage: u64,
+    pub max_attempts_to_send_tx: u64,
+    pub delay_between_tx_attempts_sec: u64,
 }
 
 #[derive(Debug)]
@@ -212,6 +214,16 @@ impl Config {
             .parse::<u64>()
             .expect("TX_FEES_INCREASE_PERCENTAGE must be a number");
 
+        let max_attempts_to_send_tx = std::env::var("MAX_ATTEMPTS_TO_SEND_TX")
+            .unwrap_or("4".to_string())
+            .parse::<u64>()
+            .expect("MAX_ATTEMPTS_TO_SEND_TX must be a number");
+
+        let delay_between_tx_attempts_sec = std::env::var("DELAY_BETWEEN_TX_ATTEMPTS_SEC")
+            .unwrap_or("15".to_string())
+            .parse::<u64>()
+            .expect("DELAY_BETWEEN_TX_ATTEMPTS_SEC must be a number");
+
         let config = Self {
             taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
                 .unwrap_or("ws://127.0.0.1:1234".to_string()),
@@ -245,6 +257,8 @@ impl Config {
             max_anchor_height_offset_reduction,
             min_priority_fee_per_gas_wei,
             tx_fees_increase_percentage,
+            max_attempts_to_send_tx,
+            delay_between_tx_attempts_sec,
         };
 
         info!(
@@ -275,6 +289,8 @@ max time shift between blocks: {}
 max anchor height offset reduction value: {}
 min priority fee per gas wei: {}
 tx fees increase percentage: {}
+max attempts to send tx: {}
+delay between tx attempts: {}
 "#,
             config.taiko_geth_ws_rpc_url,
             config.taiko_geth_auth_rpc_url,
@@ -301,6 +317,8 @@ tx fees increase percentage: {}
             config.max_anchor_height_offset_reduction,
             config.min_priority_fee_per_gas_wei,
             config.tx_fees_increase_percentage,
+            config.max_attempts_to_send_tx,
+            config.delay_between_tx_attempts_sec,
         );
 
         config

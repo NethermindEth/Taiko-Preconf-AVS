@@ -26,7 +26,8 @@ pub struct TransactionMonitor {
     provider: Arc<WsProvider>,
     min_priority_fee_per_gas_wei: u128,
     tx_fees_increase_percentage: u128,
-    tx_include_delay: Duration,
+    max_attempts_to_send_tx: u64,
+    delay_between_tx_attempts: Duration,
 }
 
 impl TransactionMonitor {
@@ -34,12 +35,15 @@ impl TransactionMonitor {
         provider: Arc<WsProvider>,
         min_priority_fee_per_gas_wei: u64,
         tx_fees_increase_percentage: u64,
+        max_attempts_to_send_tx: u64,
+        delay_between_tx_attempts_sec: u64,
     ) -> Self {
         Self {
             provider,
             min_priority_fee_per_gas_wei: min_priority_fee_per_gas_wei as u128,
             tx_fees_increase_percentage: tx_fees_increase_percentage as u128,
-            tx_include_delay: Duration::from_secs(14), //TODO move to config
+            max_attempts_to_send_tx,
+            delay_between_tx_attempts: Duration::from_secs(delay_between_tx_attempts_sec),
         }
     }
 
@@ -55,7 +59,6 @@ impl TransactionMonitor {
 
     pub fn spawn_monitoring_task(self, tx: TransactionRequest, nonce: u64) -> JoinHandle<TxStatus> {
         tokio::spawn(async move {
-            const MAX_ATTEMPTS: u64 = 4; //TODO move to config
             let mut tx_hash = B256::ZERO;
 
             if tx.max_fee_per_gas.is_none() || tx.max_priority_fee_per_gas.is_none() {
@@ -76,7 +79,7 @@ impl TransactionMonitor {
             let mut max_fee_per_gas = tx.max_fee_per_gas.unwrap();
             let mut max_fee_per_blob_gas = tx.max_fee_per_blob_gas;
 
-            for attempt in 0..MAX_ATTEMPTS {
+            for attempt in 0..self.max_attempts_to_send_tx {
                 let mut tx_clone = tx.clone();
                 if attempt > 0 {
                     // replacement requires 100% more for penalty
@@ -149,7 +152,7 @@ impl TransactionMonitor {
 
             let error_msg = format!(
                 "Transaction {} not confirmed after {} attempts",
-                tx_hash, MAX_ATTEMPTS
+                tx_hash, self.max_attempts_to_send_tx
             );
             error!("{}", error_msg);
             TxStatus::Failed(error_msg)
@@ -170,7 +173,14 @@ impl TransactionMonitor {
                     TxStatus::Pending
                 }
             }
-            _ => TxStatus::Failed(format!("Transaction {} not found", tx_hash)),
+            _ => {
+                let error_msg = format!(
+                    "Transaction {} not found, probably already included, check previous hashes",
+                    tx_hash
+                );
+                warn!("{}", error_msg);
+                TxStatus::Failed(error_msg)
+            }
         }
     }
 
@@ -180,7 +190,7 @@ impl TransactionMonitor {
     ) -> TxStatus {
         let tx_hash = *pending_tx.tx_hash();
         let receipt = pending_tx
-            .with_timeout(Some(self.tx_include_delay))
+            .with_timeout(Some(self.delay_between_tx_attempts))
             .get_receipt()
             .await;
 

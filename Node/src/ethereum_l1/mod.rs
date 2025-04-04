@@ -30,6 +30,8 @@ pub struct EthereumL1Config {
     pub slot_duration_sec: u64,
     pub slots_per_epoch: u64,
     pub preconf_heartbeat_ms: u64,
+    pub max_attempts_to_send_tx: u64,
+    pub delay_between_tx_attempts_sec: u64,
 }
 
 pub struct EthereumL1 {
@@ -57,6 +59,8 @@ impl EthereumL1 {
             &config.contract_addresses,
             config.min_priority_fee_per_gas_wei,
             config.tx_fees_increase_percentage,
+            config.max_attempts_to_send_tx,
+            config.delay_between_tx_attempts_sec,
         )
         .await?;
 
