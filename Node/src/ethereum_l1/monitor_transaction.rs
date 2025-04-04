@@ -10,12 +10,9 @@ use alloy::{
 };
 use alloy_json_rpc::RpcError;
 use anyhow::Error;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{sync::Arc, time::Duration};
-use std::{
-    sync::Mutex,
-    time::{SystemTime, UNIX_EPOCH},
-};
-use tokio::task::JoinHandle;
+use tokio::{sync::Mutex, task::JoinHandle};
 use tracing::{debug, error, info, warn};
 
 // Transaction status enum
@@ -96,7 +93,7 @@ impl TransactionMonitor {
 
         // Lock the mutex to update both values together
         let nonce = {
-            let mut guard = self.nonce_and_timestamp.lock().unwrap();
+            let mut guard = self.nonce_and_timestamp.lock().await;
             let (nonce, last_sent) = *guard;
 
             if current_timestamp > last_sent + self.l1_slot_sec && chain_nonce.is_some() {

@@ -211,7 +211,7 @@ impl ExecutionLayer {
                 last_block_timestamp,
             )
             .await?;
-        
+
         // Spawn a monitor for this transaction
         let _ = self.transaction_monitor.monitor_new_transaction(tx).await;
 
