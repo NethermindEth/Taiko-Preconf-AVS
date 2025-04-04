@@ -8,7 +8,7 @@ use operator::{Operator, Status as OperatorStatus};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 pub struct Node {
     cancel_token: CancellationToken,
@@ -81,7 +81,7 @@ impl Node {
 
     async fn warmup(&mut self) -> Result<(), Error> {
         info!("Warmup node");
-        let current_status = self.operator.get_status().await?;
+        let (current_status, _) = self.operator.get_status().await?;
 
         // TODO check that when we are Preconfer or PreconferHandoverBuffer we will sync our l2 state on epoch boundry
         if matches!(
@@ -106,7 +106,7 @@ impl Node {
             return Ok(());
         } else if height_taiko_inbox > height_taiko_geth {
             // TODO wait for sync
-            panic!("Taiko Geth is not synchronized with L1");
+            warn!("Taiko Geth is not synchronized with L1");
         } else {
             // height_taiko_inbox < height_taiko_geth
             // we have unprocessed L2 blocks
@@ -165,6 +165,10 @@ impl Node {
         // Synchronize with L1 Slot Start Time
         match self.ethereum_l1.slot_clock.duration_to_next_slot() {
             Ok(duration) => {
+                info!(
+                    "Sleeping for {} ms to synchronize with L1 slot start",
+                    duration.as_millis()
+                );
                 sleep(duration).await;
             }
             Err(err) => {
@@ -193,13 +197,15 @@ impl Node {
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
+        let (current_status, exit_point) = self.operator.get_status().await?;
+
         let pending_tx_list = self
             .batch_manager
             .taiko
             .get_pending_l2_tx_list_from_taiko_geth()
             .await?;
+        self.print_current_slots_info(&current_status, &pending_tx_list, &exit_point)?;
 
-        let current_status = self.operator.get_status().await?;
         match current_status {
             OperatorStatus::PreconferHandoverBuffer(buffer_ms) => {
                 tokio::time::sleep(Duration::from_millis(buffer_ms)).await;
@@ -212,18 +218,9 @@ impl Node {
                 self.preconfirm_block(true, pending_tx_list).await?;
             }
             OperatorStatus::L1Submitter => {
-                info!(
-                    "Submitting left batches {}",
-                    self.get_current_slots_info(&pending_tx_list)?
-                );
                 self.batch_manager.try_submit_batches(false).await?;
             }
             OperatorStatus::None => {
-                info!(
-                    "Not my slot to preconfirm {}",
-                    self.get_current_slots_info(&pending_tx_list)?
-                );
-
                 if self.batch_manager.has_batches() {
                     // TODO: Handle this situation gracefully
                     self.batch_manager.reset_builder();
@@ -240,33 +237,31 @@ impl Node {
         submit: bool,
         pending_tx_list: Option<PreBuiltTxList>,
     ) -> Result<(), Error> {
-        info!(
-            "Preconfirming {}{}",
-            if submit { "and submitting " } else { "" },
-            self.get_current_slots_info(&pending_tx_list)?
-        );
+        trace!("preconfirm_block: {submit} ");
 
         self.batch_manager
             .preconfirm_block(submit, pending_tx_list)
             .await
     }
 
-    fn get_current_slots_info(
+    fn print_current_slots_info(
         &self,
+        current_status: &OperatorStatus,
         pending_tx_list: &Option<PreBuiltTxList>,
-    ) -> Result<String, Error> {
-        let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
-        Ok(format!(
-            "| Epoch: {:<6} | Slot: {:<6} ({:<2}) | L2 Slot: {:<2} | Pending txs: {:<3} |",
-            self.ethereum_l1.slot_clock.get_current_epoch()?,
-            current_slot,
-            self.ethereum_l1.slot_clock.slot_of_epoch(current_slot),
+        exit_point: &str,
+    ) -> Result<(), Error> {
+        let l1_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
+        info!(
+            "| Epoch: {:<6} | Slot: {:<2} | L2 Slot: {:<2} | Pending txs: {:<4} | {current_status} | {exit_point}",
+            self.ethereum_l1.slot_clock.get_epoch_from_slot(l1_slot),
+            self.ethereum_l1.slot_clock.slot_of_epoch(l1_slot),
             self.ethereum_l1
                 .slot_clock
-                .get_l2_slot_number_within_current_l1_slot()?,
+                .get_current_l2_slot_within_l1_slot()?,
             pending_tx_list
                 .as_ref()
                 .map_or(0, |tx_list| tx_list.tx_list.len())
-        ))
+        );
+        Ok(())
     }
 }

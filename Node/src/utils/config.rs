@@ -26,6 +26,10 @@ pub struct Config {
     pub max_blocks_per_batch_reduction: u16,
     pub max_time_shift_between_blocks_sec: u64,
     pub max_anchor_height_offset_reduction: u64,
+    pub min_priority_fee_per_gas_wei: u64,
+    pub tx_fees_increase_percentage: u64,
+    pub max_attempts_to_send_tx: u64,
+    pub delay_between_tx_attempts_sec: u64,
 }
 
 #[derive(Debug)]
@@ -158,7 +162,7 @@ impl Config {
             .unwrap_or("0x1670010000000000000000000000000000010001".to_string());
 
         let handover_window_slots = std::env::var("HANDOVER_WINDOW_SLOTS")
-            .unwrap_or("3".to_string())
+            .unwrap_or("4".to_string())
             .parse::<u64>()
             .expect("HANDOVER_WINDOW_SLOTS must be a number");
 
@@ -200,6 +204,26 @@ impl Config {
             );
         }
 
+        let min_priority_fee_per_gas_wei = std::env::var("MIN_PRIORITY_FEE_PER_GAS_WEI")
+            .unwrap_or("10000000000".to_string()) // 10 Gwei
+            .parse::<u64>()
+            .expect("MIN_PRIORITY_FEE_PER_GAS_WEI must be a number");
+
+        let tx_fees_increase_percentage = std::env::var("TX_FEES_INCREASE_PERCENTAGE")
+            .unwrap_or("20".to_string())
+            .parse::<u64>()
+            .expect("TX_FEES_INCREASE_PERCENTAGE must be a number");
+
+        let max_attempts_to_send_tx = std::env::var("MAX_ATTEMPTS_TO_SEND_TX")
+            .unwrap_or("4".to_string())
+            .parse::<u64>()
+            .expect("MAX_ATTEMPTS_TO_SEND_TX must be a number");
+
+        let delay_between_tx_attempts_sec = std::env::var("DELAY_BETWEEN_TX_ATTEMPTS_SEC")
+            .unwrap_or("15".to_string())
+            .parse::<u64>()
+            .expect("DELAY_BETWEEN_TX_ATTEMPTS_SEC must be a number");
+
         let config = Self {
             taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
                 .unwrap_or("ws://127.0.0.1:1234".to_string()),
@@ -231,6 +255,10 @@ impl Config {
             max_blocks_per_batch_reduction,
             max_time_shift_between_blocks_sec,
             max_anchor_height_offset_reduction,
+            min_priority_fee_per_gas_wei,
+            tx_fees_increase_percentage,
+            max_attempts_to_send_tx,
+            delay_between_tx_attempts_sec,
         };
 
         info!(
@@ -259,6 +287,10 @@ max bytes size of batch: {}
 max blocks per batch reduction value: {}
 max time shift between blocks: {}
 max anchor height offset reduction value: {}
+min priority fee per gas wei: {}
+tx fees increase percentage: {}
+max attempts to send tx: {}
+delay between tx attempts: {}
 "#,
             config.taiko_geth_ws_rpc_url,
             config.taiko_geth_auth_rpc_url,
@@ -283,6 +315,10 @@ max anchor height offset reduction value: {}
             config.max_blocks_per_batch_reduction,
             config.max_time_shift_between_blocks_sec,
             config.max_anchor_height_offset_reduction,
+            config.min_priority_fee_per_gas_wei,
+            config.tx_fees_increase_percentage,
+            config.max_attempts_to_send_tx,
+            config.delay_between_tx_attempts_sec,
         );
 
         config

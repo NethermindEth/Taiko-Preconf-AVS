@@ -19,15 +19,19 @@ async fn main() -> Result<(), Error> {
     let config = utils::config::Config::read_env_variables();
     let cancel_token = CancellationToken::new();
 
-    let ethereum_l1 = ethereum_l1::EthereumL1::new(
-        &config.l1_ws_rpc_url,
-        &config.avs_node_ecdsa_private_key,
-        &config.contract_addresses,
-        &config.l1_beacon_url,
-        config.l1_slot_duration_sec,
-        config.l1_slots_per_epoch,
-        config.preconf_heartbeat_ms,
-    )
+    let ethereum_l1 = ethereum_l1::EthereumL1::new(ethereum_l1::EthereumL1Config {
+        execution_ws_rpc_url: config.l1_ws_rpc_url,
+        avs_node_ecdsa_private_key: config.avs_node_ecdsa_private_key,
+        contract_addresses: config.contract_addresses,
+        consensus_rpc_url: config.l1_beacon_url,
+        slot_duration_sec: config.l1_slot_duration_sec,
+        slots_per_epoch: config.l1_slots_per_epoch,
+        preconf_heartbeat_ms: config.preconf_heartbeat_ms,
+        min_priority_fee_per_gas_wei: config.min_priority_fee_per_gas_wei,
+        tx_fees_increase_percentage: config.tx_fees_increase_percentage,
+        max_attempts_to_send_tx: config.max_attempts_to_send_tx,
+        delay_between_tx_attempts_sec: config.delay_between_tx_attempts_sec,
+    })
     .await?;
 
     let ethereum_l1 = Arc::new(ethereum_l1);
@@ -97,16 +101,16 @@ async fn wait_for_the_termination(cancel_token: CancellationToken, shutdown_dela
         _ = sigterm.recv() => {
             info!("Received SIGTERM, shutting down...");
             cancel_token.cancel();
+            // Give tasks a little time to finish
+            info!("Waiting for {}s", shutdown_delay_secs);
+            tokio::time::sleep(tokio::time::Duration::from_secs(shutdown_delay_secs)).await;
         }
         _ = tokio::signal::ctrl_c() => {
             info!("Received Ctrl+C, shutting down...");
             cancel_token.cancel();
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
     }
-
-    // Give tasks a little time to finish
-    info!("Waiting for {}s", shutdown_delay_secs);
-    tokio::time::sleep(tokio::time::Duration::from_secs(shutdown_delay_secs)).await;
 }
 
 fn init_logging() {
