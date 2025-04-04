@@ -100,7 +100,7 @@ impl Node {
         info!("Taiko Inbox Height: {taiko_inbox_height}, Taiko Geth Height: {taiko_geth_height}");
 
         while taiko_geth_height < taiko_inbox_height {
-            info!("Taiko Geth is behind L1. Waiting 5 seconds...");
+            warn!("Taiko Geth is behind L1. Waiting 5 seconds...");
             sleep(Duration::from_secs(5)).await;
 
             (taiko_inbox_height, taiko_geth_height) = self.get_current_protocol_height().await?;
