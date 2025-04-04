@@ -158,7 +158,7 @@ impl Config {
             .unwrap_or("0x1670010000000000000000000000000000010001".to_string());
 
         let handover_window_slots = std::env::var("HANDOVER_WINDOW_SLOTS")
-            .unwrap_or("3".to_string())
+            .unwrap_or("4".to_string())
             .parse::<u64>()
             .expect("HANDOVER_WINDOW_SLOTS must be a number");
 

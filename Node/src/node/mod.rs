@@ -252,7 +252,7 @@ impl Node {
     ) -> Result<(), Error> {
         let l1_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
         info!(
-            "{current_status} | Epoch: {:<6} | Slot: {:<2} | L2 Slot: {:<2} | Pending txs: {:<3} | {exit_point}",
+            "| Epoch: {:<6} | Slot: {:<2} | L2 Slot: {:<2} | Pending txs: {:<3} | {current_status} | {exit_point}",
             self.ethereum_l1.slot_clock.get_epoch_from_slot(l1_slot),
             self.ethereum_l1.slot_clock.slot_of_epoch(l1_slot),
             self.ethereum_l1

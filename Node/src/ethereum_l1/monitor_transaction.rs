@@ -27,7 +27,7 @@ pub fn monitor_transaction(
 ) -> JoinHandle<TxStatus> {
     tokio::spawn(async move {
         let max_attempts: u64 = 4; //TODO move to config
-        let delay = Duration::from_secs(12);
+        let delay = Duration::from_secs(14);
         let mut tx_hash = B256::ZERO;
 
         // const increase_percentage: u128 = 20;
@@ -58,15 +58,10 @@ pub fn monitor_transaction(
                 let base_fee = block.header.base_fee_per_gas.unwrap() as u128;
                 debug!("Base fee: {}", base_fee);
 
-                if attempt == 1 {
-                    max_priority_fee_per_gas += 10_000_000_000; // max_priority_fee_per_gas * increase_percentage / 100;
-                    max_fee_per_gas = base_fee * 2 + max_priority_fee_per_gas + attempt as u128 + 1;
-                } else {
-                    max_fee_per_gas = max_fee_per_gas * 2 + 1; // second replacement requires 100% more for penalty
-                    max_priority_fee_per_gas = max_priority_fee_per_gas * 2 + 1;
-                }
-
-                max_fee_per_blob_gas += max_fee_per_blob_gas + 1;
+                // replacement requires 100% more for penalty
+                max_fee_per_gas += max_fee_per_gas;
+                max_priority_fee_per_gas += max_priority_fee_per_gas;
+                max_fee_per_blob_gas += max_fee_per_blob_gas;
 
                 tx_clone.set_max_priority_fee_per_gas(max_priority_fee_per_gas);
                 tx_clone.set_max_fee_per_gas(max_fee_per_gas);
@@ -112,7 +107,7 @@ pub fn monitor_transaction(
                         };
 
                         info!(
-                            "Transaction {} confirmed in block {}",
+                            "✅ Transaction {} confirmed in block {}",
                             tx_hash, block_number
                         );
                         return TxStatus::Confirmed(block_number);
