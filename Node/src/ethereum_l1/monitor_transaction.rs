@@ -1,7 +1,6 @@
 use crate::ethereum_l1::ws_provider::WsProvider;
 use alloy::{
     consensus::{TxEip4844Variant, TxEnvelope},
-    eips::BlockNumberOrTag,
     network::{TransactionBuilder, TransactionBuilder4844},
     primitives::{Address, TxKind, B256},
     providers::{ext::DebugApi, PendingTransactionError, Provider, WatchTxError},
@@ -29,6 +28,7 @@ pub fn monitor_transaction(
         let max_attempts: u64 = 4; //TODO move to config
         let delay = Duration::from_secs(14);
         let mut tx_hash = B256::ZERO;
+        const DOUBLE_FROM_THE_BEGINNING: bool = true;
 
         // const increase_percentage: u128 = 20;
         let mut max_priority_fee_per_gas = if tx.max_priority_fee_per_gas.is_none() {
@@ -49,14 +49,14 @@ pub fn monitor_transaction(
 
         for attempt in 0..max_attempts {
             let mut tx_clone = tx.clone();
-            let pending_tx = if attempt > 0 {
-                let block = provider
-                    .get_block_by_number(BlockNumberOrTag::Latest)
-                    .await
-                    .unwrap()
-                    .unwrap();
-                let base_fee = block.header.base_fee_per_gas.unwrap() as u128;
-                debug!("Base fee: {}", base_fee);
+            if attempt > 0 || DOUBLE_FROM_THE_BEGINNING {
+                // let block = provider
+                //     .get_block_by_number(BlockNumberOrTag::Latest)
+                //     .await
+                //     .unwrap()
+                //     .unwrap();
+                // let base_fee = block.header.base_fee_per_gas.unwrap() as u128;
+                // debug!("Base fee: {}", base_fee);
 
                 // replacement requires 100% more for penalty
                 max_fee_per_gas += max_fee_per_gas;
@@ -70,25 +70,15 @@ pub fn monitor_transaction(
                 tx_clone.set_nonce(nonce.into());
 
                 debug!("Transaction type: {:?}", tx_clone.preferred_type());
+            };
 
-                debug!("Sending transaction max_fee_per_gas: {}, max_priority_fee_per_gas: {}, max_fee_per_blob_gas: {} gas limit: {}, nonce: {}", tx_clone.max_fee_per_gas.unwrap(), tx_clone.max_priority_fee_per_gas.unwrap(), tx_clone.max_fee_per_blob_gas.unwrap(), tx_clone.gas.unwrap(), tx_clone.nonce.unwrap());
+            debug!("Sending transaction max_fee_per_gas: {:?}, max_priority_fee_per_gas: {:?}, max_fee_per_blob_gas: {:?}, gas limit: {:?}, nonce: {:?}", tx_clone.max_fee_per_gas, tx_clone.max_priority_fee_per_gas, tx_clone.max_fee_per_blob_gas, tx_clone.gas, tx_clone.nonce);
 
-                match provider.send_transaction(tx_clone).await {
-                    Ok(tx) => tx,
-                    Err(e) => {
-                        error!("Attempt {attempt}. Failed to send transaction: {:?}", e);
-                        return TxStatus::Failed(e.to_string());
-                    }
-                }
-            } else {
-                debug!("Sending transaction max_fee_per_gas: {}, max_priority_fee_per_gas: {}, max_fee_per_blob_gas: {} gas limit: {}, nonce: {:?}", tx_clone.max_fee_per_gas.unwrap(), tx_clone.max_priority_fee_per_gas.unwrap(), tx_clone.max_fee_per_blob_gas.unwrap(), tx_clone.gas.unwrap(), tx_clone.nonce);
-
-                match provider.send_transaction(tx_clone).await {
-                    Ok(tx) => tx,
-                    Err(e) => {
-                        error!("Failed to send transaction: {:?}", e);
-                        return TxStatus::Failed(e.to_string());
-                    }
+            let pending_tx = match provider.send_transaction(tx_clone).await {
+                Ok(tx) => tx,
+                Err(e) => {
+                    error!("Failed to send transaction: {:?}", e);
+                    return TxStatus::Failed(e.to_string());
                 }
             };
 
