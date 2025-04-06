@@ -373,18 +373,11 @@ impl Taiko {
         const API_ENDPOINT: &str = "preconfBlocks";
 
         let response = self
-            .driver_rpc
-            .request_json(http::Method::POST, API_ENDPOINT, &request_body)
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to build preconf block for API '{}': {}",
-                    API_ENDPOINT,
-                    e
-                )
-            })?;
+            .call_driver_until_success(http::Method::POST, API_ENDPOINT, &request_body)
+            .await?;
 
-        trace!("preconfBlocks response: {:?}", response);
+        trace!("Response from preconfBlocks: {}", response);
+
         Ok(())
     }
 
@@ -397,19 +390,47 @@ impl Taiko {
         const API_ENDPOINT: &str = "preconfBlocks";
 
         let response = self
-            .driver_rpc
-            .request_json(http::Method::DELETE, API_ENDPOINT, &request_body)
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to delete preconf block for API '{}': {}",
-                    API_ENDPOINT,
-                    e
-                )
-            })?;
+            .call_driver_until_success(http::Method::DELETE, API_ENDPOINT, &request_body)
+            .await?;
 
-        debug!("Delete preconfBlocks response: {:?}", response);
+        trace!("Response from deleting preconfBlocks: {:?}", response);
+
         Ok(())
+    }
+
+    async fn call_driver_until_success<T>(
+        &self,
+        method: http::Method,
+        endpoint: &str,
+        payload: &T,
+    ) -> Result<Value, Error>
+    where
+        T: serde::Serialize,
+    {
+        // infinity retry
+        let mut response;
+        // TODO loop for specified number of iterations
+        // Note: if we can't send request after specified number of iterations, we should remove block from the batch
+        loop {
+            response = self
+                .driver_rpc
+                .request_json(method.clone(), endpoint, payload)
+                .await;
+
+            match response {
+                Ok(ref data) => {
+                    return Ok(data.clone());
+                }
+                Err(ref e) => {
+                    tracing::error!(
+                        "Failed to call driver RPC for API '{}': {}. Retrying...",
+                        endpoint,
+                        e
+                    );
+                    self.driver_rpc.recreate_client().await?;
+                }
+            }
+        }
     }
 
     fn get_base_fee_config(&self) -> LibSharedData::BaseFeeConfig {

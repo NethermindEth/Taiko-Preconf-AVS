@@ -240,7 +240,7 @@ impl HttpRPCClient {
             .map_err(|e| anyhow::anyhow!("Failed to parse response as JSON: {e}"))
     }
 
-    async fn recreate_client(&self) -> Result<(), Error> {
+    pub async fn recreate_client(&self) -> Result<(), Error> {
         let new_client = Self::create_client(self.timeout, &self.jwt_secret)
             .map_err(|e| anyhow::anyhow!("Failed to create HttpRPCClient: {e}"))?;
 
