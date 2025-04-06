@@ -409,6 +409,8 @@ impl Taiko {
     {
         // infinity retry
         let mut response;
+        // TODO loop for specified number of iterations
+        // Note: if we can't send request after specified number of iterations, we should remove block from the batch
         loop {
             response = self
                 .driver_rpc
