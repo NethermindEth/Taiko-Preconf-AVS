@@ -21,6 +21,8 @@ use tracing::debug;
 
 use crate::ethereum_l1::propose_batch_builder::ProposeBatchBuilder;
 
+use super::config::EthereumL1Config;
+
 pub struct ExecutionLayer {
     provider_ws: Arc<WsProvider>,
     preconfer_address: Address,
@@ -40,30 +42,25 @@ pub struct ContractAddresses {
 #[cfg_attr(test, allow(dead_code))]
 #[cfg_attr(test, automock)]
 impl ExecutionLayer {
-    pub async fn new(
-        ws_rpc_url: &str,
-        avs_node_ecdsa_private_key: &str,
-        contract_addresses: &config::L1ContractAddresses,
-        min_priority_fee_per_gas_wei: u64,
-        tx_fees_increase_percentage: u64,
-        max_attempts_to_send_tx: u64,
-        delay_between_tx_attempts_sec: u64,
-    ) -> Result<Self, Error> {
-        tracing::debug!("Creating ExecutionLayer with WS URL: {}", ws_rpc_url);
+    pub async fn new(config: EthereumL1Config) -> Result<Self, Error> {
+        tracing::debug!(
+            "Creating ExecutionLayer with WS URL: {}",
+            config.execution_ws_rpc_url
+        );
 
-        let signer = PrivateKeySigner::from_str(avs_node_ecdsa_private_key)?;
+        let signer = PrivateKeySigner::from_str(&config.avs_node_ecdsa_private_key)?;
         let preconfer_address: Address = signer.address();
         tracing::info!("AVS node address: {}", preconfer_address);
 
         let wallet = EthereumWallet::from(signer);
 
         #[cfg(feature = "extra_gas_percentage")]
-        let extra_gas_percentage = contract_addresses.extra_gas_percentage;
+        let extra_gas_percentage = config.contract_addresses.extra_gas_percentage;
 
-        let contract_addresses = Self::parse_contract_addresses(contract_addresses)
+        let contract_addresses = Self::parse_contract_addresses(&config.contract_addresses)
             .map_err(|e| Error::msg(format!("Failed to parse contract addresses: {}", e)))?;
 
-        let ws = WsConnect::new(ws_rpc_url.to_string());
+        let ws = WsConnect::new(config.execution_ws_rpc_url.to_string());
 
         let provider_ws: Arc<WsProvider> = Arc::new(
             ProviderBuilder::new()
@@ -75,11 +72,14 @@ impl ExecutionLayer {
 
         let transaction_monitor = TransactionMonitor::new(
             provider_ws.clone(),
-            min_priority_fee_per_gas_wei,
-            tx_fees_increase_percentage,
-            max_attempts_to_send_tx,
-            delay_between_tx_attempts_sec,
-        );
+            config.min_priority_fee_per_gas_wei,
+            config.tx_fees_increase_percentage,
+            config.max_attempts_to_send_tx,
+            config.delay_between_tx_attempts_sec,
+            preconfer_address,
+            config.slot_duration_sec,
+        )
+        .await?;
 
         let pacaya_config =
             Self::fetch_pacaya_config(&contract_addresses.taiko_inbox, &provider_ws).await?;
@@ -212,13 +212,8 @@ impl ExecutionLayer {
             )
             .await?;
 
-        let nonce = self
-            .provider_ws
-            .get_transaction_count(self.preconfer_address)
-            .await?;
-
         // Spawn a monitor for this transaction
-        let _ = self.transaction_monitor.monitor_new_transaction(tx, nonce);
+        let _ = self.transaction_monitor.monitor_new_transaction(tx).await;
 
         Ok(())
     }
@@ -315,17 +310,19 @@ impl ExecutionLayer {
 
         let ws = WsConnect::new(ws_rpc_url.to_string());
 
-        let provider_ws: WsProvider = ProviderBuilder::new()
-            .wallet(wallet)
-            .on_ws(ws.clone())
-            .await
-            .unwrap();
+        let provider_ws: Arc<WsProvider> = Arc::new(
+            ProviderBuilder::new()
+                .wallet(wallet)
+                .on_ws(ws.clone())
+                .await
+                .unwrap(),
+        );
 
         let preconfer_address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
             .parse()?;
 
         Ok(Self {
-            provider_ws: Arc::new(provider_ws),
+            provider_ws: provider_ws.clone(),
             preconfer_address,
             contract_addresses: ContractAddresses {
                 taiko_inbox: Address::ZERO,
@@ -362,6 +359,13 @@ impl ExecutionLayer {
             },
             #[cfg(feature = "extra_gas_percentage")]
             extra_gas_percentage: 5,
+            transaction_monitor: TransactionMonitor::new(
+                provider_ws.clone(),
+                1000000000000000000,
+                5,
+                4,
+                15,
+            ),
         })
     }
 

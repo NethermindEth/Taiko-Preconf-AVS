@@ -270,27 +270,27 @@ Taiko driver URL: {},
 MEV Boost URL: {},
 L1 WS URL: {},
 Consensus layer URL: {}
-L1 slot duration: {}
+L1 slot duration: {}s
 L1 slots per epoch: {}
 L2 slot duration (heart beat): {}
-Preconf registry expiry seconds: {}
+Preconf registry expiry: {}s
 Contract addresses: {:#?}
 validator index: {}
 enable preconfirmation: {}
 jwt secret file path: {}
-rpc client timeout: {}
+rpc client timeout: {}s
 taiko anchor address: {}
 handover window slots: {}
 handover start buffer: {}ms
 l1 height lag: {}
 max bytes size of batch: {}
 max blocks per batch reduction value: {}
-max time shift between blocks: {}
+max time shift between blocks: {}s
 max anchor height offset reduction value: {}
 min priority fee per gas wei: {}
 tx fees increase percentage: {}
 max attempts to send tx: {}
-delay between tx attempts: {}
+delay between tx attempts: {}s
 "#,
             config.taiko_geth_ws_rpc_url,
             config.taiko_geth_auth_rpc_url,
