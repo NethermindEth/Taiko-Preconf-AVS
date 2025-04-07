@@ -1,14 +1,14 @@
 pub(crate) mod batch_manager;
 mod operator;
 
-use crate::{ethereum_l1::EthereumL1, taiko::Taiko};
+use crate::{ethereum_l1::EthereumL1, shared::l2_tx_lists::PreBuiltTxList, taiko::Taiko};
 use anyhow::Error;
 use batch_manager::{BatchBuilderConfig, BatchManager};
 use operator::{Operator, Status as OperatorStatus};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 pub struct Node {
     cancel_token: CancellationToken,
@@ -67,8 +67,114 @@ impl Node {
     pub fn entrypoint(mut self) {
         info!("Starting node");
         tokio::spawn(async move {
+            match self.warmup().await {
+                Ok(()) => {
+                    info!("Node warmup successful");
+                }
+                Err(err) => {
+                    error!("Failed to warmup node: {}", err);
+                }
+            }
             self.preconfirmation_loop().await;
         });
+    }
+
+    async fn get_current_protocol_height(&self) -> Result<(u64, u64), Error> {
+        let taiko_inbox_height = self
+            .ethereum_l1
+            .execution_layer
+            .get_l2_height_from_taiko_inbox()
+            .await?;
+
+        let taiko_geth_height = self.batch_manager.taiko.get_latest_l2_block_id().await?;
+
+        Ok((taiko_inbox_height, taiko_geth_height))
+    }
+
+    async fn warmup(&mut self) -> Result<(), Error> {
+        info!("Warmup node");
+
+        // Wait for Taiko Geth to synchronize with L1
+        let (mut taiko_inbox_height, mut taiko_geth_height) = self.get_current_protocol_height().await?;
+
+        info!("Taiko Inbox Height: {taiko_inbox_height}, Taiko Geth Height: {taiko_geth_height}");
+
+        while taiko_geth_height < taiko_inbox_height {
+            warn!("Taiko Geth is behind L1. Waiting 5 seconds...");
+            sleep(Duration::from_secs(5)).await;
+
+            (taiko_inbox_height, taiko_geth_height) = self.get_current_protocol_height().await?;
+
+            info!("Taiko Inbox Height: {taiko_inbox_height}, Taiko Geth Height: {taiko_geth_height}");
+        }
+
+        let (current_status, _) = self.operator.get_status().await?;
+
+        // TODO check that when we are Preconfer or PreconferHandoverBuffer we will sync our l2 state on epoch boundry
+        if matches!(
+            current_status,
+            OperatorStatus::None
+                | OperatorStatus::Preconfer
+                | OperatorStatus::PreconferHandoverBuffer(_)
+        ) {
+            info!("Status: {:?}, no need for warmup", current_status);
+            return Ok(());
+        }
+
+        if taiko_inbox_height == taiko_geth_height {
+            return Ok(());
+        } else {
+            // We check previously that taiko_inbox_height > taiko_geth_height is not true,
+            // so it is taiko_inbox_height < height_taiko_geth.
+            // We have unprocessed L2 blocks.
+            // Check if there is a pending tx on the mempool from your address.
+            let nonce_latest: u64 = self
+                .ethereum_l1
+                .execution_layer
+                .get_preconfer_nonce_latest()
+                .await?;
+            let nonce_pending: u64 = self
+                .ethereum_l1
+                .execution_layer
+                .get_preconfer_nonce_pending()
+                .await?;
+            info!("Nonce Latest: {nonce_latest}, Nonce Pending: {nonce_pending}");
+            //if not, then read blocks from L2 execution to form your buffer (L2 batch) and continue operations normally
+            // we didn't propose blocks to mempool
+            if nonce_latest == nonce_pending {
+                // The first block anchor id is valid, so we can continue.
+                if self
+                    .batch_manager
+                    .is_block_valid(taiko_inbox_height + 1)
+                    .await?
+                {
+                    // recover all missed l2 blocks
+                    info!("Recovering from L2 blocks");
+                    for current_height in taiko_inbox_height + 1..=taiko_geth_height {
+                        self.batch_manager
+                            .recover_from_l2_block(current_height)
+                            .await?;
+                    }
+                    // TODO calculate batch params and decide is it possible to continue with it, be careful with timeShift
+                    // Sould be fixed with https://github.com/NethermindEth/Taiko-Preconf-AVS/issues/303
+                    // Now just submit all the batches
+                    self.batch_manager.try_submit_batches(false).await?;
+                } else {
+                    // The first block anchor id is not valid
+                    // TODO reorg + reanchor + preconfirm again
+                    // Just do force reorg
+                    info!("Triggering L2 reorg");
+                    self.batch_manager
+                        .taiko
+                        .trigger_l2_reorg(taiko_inbox_height)
+                        .await?;
+                }
+            }
+            //if yes, then continue operations normally without rebuilding the buffer
+            // TODO handle gracefully
+        }
+
+        Ok(())
     }
 
     async fn preconfirmation_loop(&mut self) {
@@ -76,6 +182,10 @@ impl Node {
         // Synchronize with L1 Slot Start Time
         match self.ethereum_l1.slot_clock.duration_to_next_slot() {
             Ok(duration) => {
+                info!(
+                    "Sleeping for {} ms to synchronize with L1 slot start",
+                    duration.as_millis()
+                );
                 sleep(duration).await;
             }
             Err(err) => {
@@ -91,7 +201,7 @@ impl Node {
             interval.tick().await;
             if self.cancel_token.is_cancelled() {
                 info!("Shutdown signal received, exiting main loop...");
-                if let Err(err) = self.batch_manager.submit_batches(false).await {
+                if let Err(err) = self.batch_manager.try_submit_batches(false).await {
                     error!("Failed to submit batches at the application shut down: {err}");
                 }
                 return;
@@ -104,27 +214,30 @@ impl Node {
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
-        let current_status = self.operator.get_status().await?;
+        let (current_status, exit_point) = self.operator.get_status().await?;
+
+        let pending_tx_list = self
+            .batch_manager
+            .taiko
+            .get_pending_l2_tx_list_from_taiko_geth()
+            .await?;
+        self.print_current_slots_info(&current_status, &pending_tx_list, &exit_point)?;
+
         match current_status {
             OperatorStatus::PreconferHandoverBuffer(buffer_ms) => {
                 tokio::time::sleep(Duration::from_millis(buffer_ms)).await;
-                self.preconfirm_block(false).await?;
+                self.preconfirm_block(false, pending_tx_list).await?;
             }
             OperatorStatus::Preconfer => {
-                self.preconfirm_block(false).await?;
+                self.preconfirm_block(false, pending_tx_list).await?;
             }
             OperatorStatus::PreconferAndL1Submitter => {
-                self.preconfirm_block(true).await?;
+                self.preconfirm_block(true, pending_tx_list).await?;
             }
             OperatorStatus::L1Submitter => {
-                info!("Submitting left batches {}", self.get_current_slots_info()?);
-                self.batch_manager.submit_batches(false).await?;
+                self.batch_manager.try_submit_batches(false).await?;
             }
             OperatorStatus::None => {
-                info!(
-                    "Not my slot to preconfirm {}",
-                    self.get_current_slots_info()?
-                );
                 if self.batch_manager.has_batches() {
                     // TODO: Handle this situation gracefully
                     self.batch_manager.reset_builder();
@@ -136,26 +249,36 @@ impl Node {
         Ok(())
     }
 
-    async fn preconfirm_block(&mut self, submit: bool) -> Result<(), Error> {
-        info!(
-            "Preconfirming {}{}",
-            if submit { "and submitting " } else { "" },
-            self.get_current_slots_info()?
-        );
+    async fn preconfirm_block(
+        &mut self,
+        submit: bool,
+        pending_tx_list: Option<PreBuiltTxList>,
+    ) -> Result<(), Error> {
+        trace!("preconfirm_block: {submit} ");
 
-        self.batch_manager.preconfirm_block(submit).await
+        self.batch_manager
+            .preconfirm_block(submit, pending_tx_list)
+            .await
     }
 
-    fn get_current_slots_info(&self) -> Result<String, Error> {
-        let current_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
-        Ok(format!(
-            "\t epoch: {}\t| slot: {} ({})\t| L2 slot: {}",
-            self.ethereum_l1.slot_clock.get_current_epoch()?,
-            current_slot,
-            self.ethereum_l1.slot_clock.slot_of_epoch(current_slot),
+    fn print_current_slots_info(
+        &self,
+        current_status: &OperatorStatus,
+        pending_tx_list: &Option<PreBuiltTxList>,
+        exit_point: &str,
+    ) -> Result<(), Error> {
+        let l1_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
+        info!(
+            "| Epoch: {:<6} | Slot: {:<2} | L2 Slot: {:<2} | Pending txs: {:<4} | {current_status} | {exit_point}",
+            self.ethereum_l1.slot_clock.get_epoch_from_slot(l1_slot),
+            self.ethereum_l1.slot_clock.slot_of_epoch(l1_slot),
             self.ethereum_l1
                 .slot_clock
-                .get_l2_slot_number_within_l1_slot()?
-        ))
+                .get_current_l2_slot_within_l1_slot()?,
+            pending_tx_list
+                .as_ref()
+                .map_or(0, |tx_list| tx_list.tx_list.len())
+        );
+        Ok(())
     }
 }

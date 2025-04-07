@@ -88,6 +88,42 @@ impl BatchBuilder {
         }
     }
 
+    pub fn recover_from(
+        &mut self,
+        tx_list: Vec<alloy::rpc::types::Transaction>,
+        anchor_block_id: u64,
+        timestamp_sec: u64,
+    ) {
+        if !self.is_same_anchor_block_id(anchor_block_id) {
+            self.finalize_current_batch();
+            self.current_batch = Some(Batch {
+                total_bytes: 0,
+                l2_blocks: vec![],
+                anchor_block_id,
+            });
+        }
+
+        let l2_block = L2Block::new_from(
+            crate::shared::l2_tx_lists::PreBuiltTxList {
+                tx_list,
+                estimated_gas_used: 0,
+                bytes_length: 0,
+            },
+            timestamp_sec,
+        );
+        self.current_batch
+            .as_mut()
+            .unwrap()
+            .l2_blocks
+            .push(l2_block);
+    }
+
+    fn is_same_anchor_block_id(&self, anchor_block_id: u64) -> bool {
+        self.current_batch
+            .as_ref()
+            .map_or(false, |batch| batch.anchor_block_id == anchor_block_id)
+    }
+
     pub fn is_empty(&self) -> bool {
         trace!(
             "batch_builder::is_empty: current_batch is none: {}, batches_to_send len: {}",
@@ -97,20 +133,11 @@ impl BatchBuilder {
         self.current_batch.is_none() && self.batches_to_send.is_empty()
     }
 
-    pub async fn submit_batches(
+    pub async fn try_submit_batches(
         &mut self,
         ethereum_l1: Arc<EthereumL1>,
         submit_only_full_batches: bool,
     ) -> Result<(), Error> {
-        debug!(
-            "Submitting batches: {}, batches_to_send len: {}",
-            if self.current_batch.is_none() {
-                "current_batch is none"
-            } else {
-                "current batch is some"
-            },
-            self.batches_to_send.len()
-        );
         if self.current_batch.is_some()
             && (!submit_only_full_batches
                 || !self.config.is_within_block_limit(
@@ -118,6 +145,10 @@ impl BatchBuilder {
                 ))
         {
             self.finalize_current_batch();
+        }
+
+        if self.batches_to_send.len() > 0 {
+            debug!("Submitting {} batches", self.batches_to_send.len());
         }
 
         while let Some(batch) = self.batches_to_send.front() {

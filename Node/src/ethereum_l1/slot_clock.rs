@@ -157,6 +157,10 @@ impl<T: Clock> SlotClock<T> {
         Ok(slot / self.slots_per_epoch)
     }
 
+    pub fn get_epoch_from_slot(&self, slot: Slot) -> Epoch {
+        slot / self.slots_per_epoch
+    }
+
     pub fn get_current_slot_of_epoch(&self) -> Result<Slot, Error> {
         let now = self.clock.now().duration_since(UNIX_EPOCH)?;
         let cur_slot = self.slot_of(now)?;
@@ -188,9 +192,10 @@ impl<T: Clock> SlotClock<T> {
     }
 
     // 0 based L2 slot number within the current L1 slot
-    pub fn get_l2_slot_number_within_l1_slot(&self) -> Result<u64, Error> {
+    pub fn get_current_l2_slot_within_l1_slot(&self) -> Result<u64, Error> {
+        let l1_slot = self.get_current_slot()?;
         let now = self.clock.now().duration_since(UNIX_EPOCH)?;
-        let slot_begin = self.start_of(self.get_current_slot()?)?;
+        let slot_begin = self.start_of(l1_slot)?;
         Ok(self.which_l2_slot_is_it((now - slot_begin).as_millis() as u64))
     }
 
@@ -382,11 +387,13 @@ mod tests {
             SlotClock::<MockClock>::new(0u64, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
         slot_clock.clock.timestamp = 36;
 
-        let l2_slot_number_within_l1_slot = slot_clock.get_l2_slot_number_within_l1_slot().unwrap();
+        let l2_slot_number_within_l1_slot =
+            slot_clock.get_current_l2_slot_within_l1_slot().unwrap();
         assert_eq!(l2_slot_number_within_l1_slot, 0);
 
         slot_clock.clock.timestamp = 44;
-        let l2_slot_number_within_l1_slot = slot_clock.get_l2_slot_number_within_l1_slot().unwrap();
+        let l2_slot_number_within_l1_slot =
+            slot_clock.get_current_l2_slot_within_l1_slot().unwrap();
         assert_eq!(l2_slot_number_within_l1_slot, 2);
     }
 

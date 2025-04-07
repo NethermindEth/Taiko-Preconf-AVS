@@ -1,3 +1,4 @@
+pub mod config;
 pub mod consensus_layer;
 pub mod execution_layer;
 mod l1_contracts_bindings;
@@ -6,8 +7,8 @@ mod propose_batch_builder;
 pub mod slot_clock;
 mod ws_provider;
 
-use crate::utils::config::L1ContractAddresses;
 use anyhow::Error;
+use config::EthereumL1Config;
 use consensus_layer::ConsensusLayer;
 #[cfg(not(test))]
 use execution_layer::ExecutionLayer;
@@ -28,31 +29,18 @@ pub struct EthereumL1 {
 
 impl EthereumL1 {
     #[allow(clippy::too_many_arguments)]
-    pub async fn new(
-        execution_ws_rpc_url: &str,
-        avs_node_ecdsa_private_key: &str,
-        contract_addresses: &L1ContractAddresses,
-        consensus_rpc_url: &str,
-        slot_duration_sec: u64,
-        slots_per_epoch: u64,
-        preconf_heartbeat_ms: u64,
-    ) -> Result<Self, Error> {
-        let consensus_layer = ConsensusLayer::new(consensus_rpc_url)?;
+    pub async fn new(config: EthereumL1Config) -> Result<Self, Error> {
+        let consensus_layer = ConsensusLayer::new(&config.consensus_rpc_url)?;
         let genesis_details = consensus_layer.get_genesis_details().await?;
         let slot_clock = Arc::new(SlotClock::new(
             0u64,
             genesis_details.timestamp,
-            slot_duration_sec,
-            slots_per_epoch,
-            preconf_heartbeat_ms,
+            config.slot_duration_sec,
+            config.slots_per_epoch,
+            config.preconf_heartbeat_ms,
         ));
 
-        let execution_layer = ExecutionLayer::new(
-            execution_ws_rpc_url,
-            avs_node_ecdsa_private_key,
-            contract_addresses,
-        )
-        .await?;
+        let execution_layer = ExecutionLayer::new(config).await?;
 
         Ok(Self {
             slot_clock,

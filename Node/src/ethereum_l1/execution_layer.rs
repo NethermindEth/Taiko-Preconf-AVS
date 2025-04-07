@@ -1,5 +1,7 @@
 use crate::{
-    ethereum_l1::{l1_contracts_bindings::*, ws_provider::WsProvider},
+    ethereum_l1::{
+        l1_contracts_bindings::*, monitor_transaction::TransactionMonitor, ws_provider::WsProvider,
+    },
     shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress},
     utils::{config, types::*},
 };
@@ -15,10 +17,11 @@ use anyhow::Error;
 use mockall::automock;
 use std::{str::FromStr, sync::Arc};
 
-use crate::ethereum_l1::monitor_transaction::monitor_transaction;
 use tracing::debug;
 
 use crate::ethereum_l1::propose_batch_builder::ProposeBatchBuilder;
+
+use super::config::EthereumL1Config;
 
 pub struct ExecutionLayer {
     provider_ws: Arc<WsProvider>,
@@ -27,6 +30,7 @@ pub struct ExecutionLayer {
     pacaya_config: taiko_inbox::ITaikoInbox::Config,
     #[cfg(feature = "extra_gas_percentage")]
     extra_gas_percentage: u64,
+    transaction_monitor: TransactionMonitor,
 }
 
 pub struct ContractAddresses {
@@ -38,43 +42,56 @@ pub struct ContractAddresses {
 #[cfg_attr(test, allow(dead_code))]
 #[cfg_attr(test, automock)]
 impl ExecutionLayer {
-    pub async fn new(
-        ws_rpc_url: &str,
-        avs_node_ecdsa_private_key: &str,
-        contract_addresses: &config::L1ContractAddresses,
-    ) -> Result<Self, Error> {
-        tracing::debug!("Creating ExecutionLayer with WS URL: {}", ws_rpc_url);
+    pub async fn new(config: EthereumL1Config) -> Result<Self, Error> {
+        tracing::debug!(
+            "Creating ExecutionLayer with WS URL: {}",
+            config.execution_ws_rpc_url
+        );
 
-        let signer = PrivateKeySigner::from_str(avs_node_ecdsa_private_key)?;
+        let signer = PrivateKeySigner::from_str(&config.avs_node_ecdsa_private_key)?;
         let preconfer_address: Address = signer.address();
         tracing::info!("AVS node address: {}", preconfer_address);
 
         let wallet = EthereumWallet::from(signer);
 
         #[cfg(feature = "extra_gas_percentage")]
-        let extra_gas_percentage = contract_addresses.extra_gas_percentage;
+        let extra_gas_percentage = config.contract_addresses.extra_gas_percentage;
 
-        let contract_addresses = Self::parse_contract_addresses(contract_addresses)
+        let contract_addresses = Self::parse_contract_addresses(&config.contract_addresses)
             .map_err(|e| Error::msg(format!("Failed to parse contract addresses: {}", e)))?;
 
-        let ws = WsConnect::new(ws_rpc_url.to_string());
+        let ws = WsConnect::new(config.execution_ws_rpc_url.to_string());
 
-        let provider_ws: WsProvider = ProviderBuilder::new()
-            .wallet(wallet)
-            .on_ws(ws.clone())
-            .await
-            .unwrap();
+        let provider_ws: Arc<WsProvider> = Arc::new(
+            ProviderBuilder::new()
+                .wallet(wallet)
+                .on_ws(ws.clone())
+                .await
+                .unwrap(),
+        );
+
+        let transaction_monitor = TransactionMonitor::new(
+            provider_ws.clone(),
+            config.min_priority_fee_per_gas_wei,
+            config.tx_fees_increase_percentage,
+            config.max_attempts_to_send_tx,
+            config.delay_between_tx_attempts_sec,
+            preconfer_address,
+            config.slot_duration_sec,
+        )
+        .await?;
 
         let pacaya_config =
             Self::fetch_pacaya_config(&contract_addresses.taiko_inbox, &provider_ws).await?;
 
         Ok(Self {
-            provider_ws: Arc::new(provider_ws),
+            provider_ws: provider_ws,
             preconfer_address,
             contract_addresses,
             pacaya_config,
             #[cfg(feature = "extra_gas_percentage")]
             extra_gas_percentage,
+            transaction_monitor,
         })
     }
 
@@ -168,8 +185,8 @@ impl ExecutionLayer {
 
         let tx_lists_bytes = encode_and_compress(&tx_vec)?;
 
-        tracing::debug!(
-            "Proposing batch with {} bloks and {} bytes length",
+        tracing::info!(
+            "📦 Proposing batch with {} blocks and {} bytes length",
             blocks.len(),
             tx_lists_bytes.len(),
         );
@@ -195,18 +212,8 @@ impl ExecutionLayer {
             )
             .await?;
 
-        // Send transaction
-        let pending_tx = self
-            .provider_ws
-            .send_transaction(tx)
-            .await?
-            .register()
-            .await?;
-
-        tracing::debug!("Call proposeBatch with hash {}", pending_tx.tx_hash());
-
         // Spawn a monitor for this transaction
-        let _ = monitor_transaction(self.provider_ws.clone(), *pending_tx.tx_hash());
+        let _ = self.transaction_monitor.monitor_new_transaction(tx).await;
 
         Ok(())
     }
@@ -250,12 +257,45 @@ impl ExecutionLayer {
     }
 
     pub async fn get_l2_height_from_taiko_inbox(&self) -> Result<u64, Error> {
-        let contract = taiko_inbox::ITaikoInbox::new(self.contract_addresses.taiko_inbox.clone(), self.provider_ws.clone());
+        let contract = taiko_inbox::ITaikoInbox::new(
+            self.contract_addresses.taiko_inbox.clone(),
+            self.provider_ws.clone(),
+        );
         let num_batches = contract.getStats2().call().await?._0.numBatches;
         // It is safe because num_batches initial value is 1
         let batch = contract.getBatch(num_batches - 1).call().await?.batch_;
 
         Ok(batch.lastBlockId)
+    }
+
+    pub async fn get_preconfer_nonce_latest(&self) -> Result<u64, Error> {
+        let nonce_str: String = self
+            .provider_ws
+            .client()
+            .request(
+                "eth_getTransactionCount",
+                (self.preconfer_address, "latest"),
+            )
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get nonce: {}", e)))?;
+
+        u64::from_str_radix(nonce_str.trim_start_matches("0x"), 16)
+            .map_err(|e| Error::msg(format!("Failed to convert nonce: {}", e)))
+    }
+
+    pub async fn get_preconfer_nonce_pending(&self) -> Result<u64, Error> {
+        let nonce_str: String = self
+            .provider_ws
+            .client()
+            .request(
+                "eth_getTransactionCount",
+                (self.preconfer_address, "pending"),
+            )
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get nonce: {}", e)))?;
+
+        u64::from_str_radix(nonce_str.trim_start_matches("0x"), 16)
+            .map_err(|e| Error::msg(format!("Failed to convert nonce: {}", e)))
     }
 
     #[cfg(test)]
@@ -270,17 +310,19 @@ impl ExecutionLayer {
 
         let ws = WsConnect::new(ws_rpc_url.to_string());
 
-        let provider_ws: WsProvider = ProviderBuilder::new()
-            .wallet(wallet)
-            .on_ws(ws.clone())
-            .await
-            .unwrap();
+        let provider_ws: Arc<WsProvider> = Arc::new(
+            ProviderBuilder::new()
+                .wallet(wallet)
+                .on_ws(ws.clone())
+                .await
+                .unwrap(),
+        );
 
         let preconfer_address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
             .parse()?;
 
         Ok(Self {
-            provider_ws: Arc::new(provider_ws),
+            provider_ws: provider_ws.clone(),
             preconfer_address,
             contract_addresses: ContractAddresses {
                 taiko_inbox: Address::ZERO,
@@ -317,6 +359,13 @@ impl ExecutionLayer {
             },
             #[cfg(feature = "extra_gas_percentage")]
             extra_gas_percentage: 5,
+            transaction_monitor: TransactionMonitor::new(
+                provider_ws.clone(),
+                1000000000000000000,
+                5,
+                4,
+                15,
+            ),
         })
     }
 
