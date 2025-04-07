@@ -79,8 +79,35 @@ impl Node {
         });
     }
 
+    async fn get_current_protocol_height(&self) -> Result<(u64, u64), Error> {
+        let taiko_inbox_height = self
+            .ethereum_l1
+            .execution_layer
+            .get_l2_height_from_taiko_inbox()
+            .await?;
+
+        let taiko_geth_height = self.batch_manager.taiko.get_latest_l2_block_id().await?;
+
+        Ok((taiko_inbox_height, taiko_geth_height))
+    }
+
     async fn warmup(&mut self) -> Result<(), Error> {
         info!("Warmup node");
+
+        // Wait for Taiko Geth to synchronize with L1
+        let (mut taiko_inbox_height, mut taiko_geth_height) = self.get_current_protocol_height().await?;
+
+        info!("Taiko Inbox Height: {taiko_inbox_height}, Taiko Geth Height: {taiko_geth_height}");
+
+        while taiko_geth_height < taiko_inbox_height {
+            warn!("Taiko Geth is behind L1. Waiting 5 seconds...");
+            sleep(Duration::from_secs(5)).await;
+
+            (taiko_inbox_height, taiko_geth_height) = self.get_current_protocol_height().await?;
+
+            info!("Taiko Inbox Height: {taiko_inbox_height}, Taiko Geth Height: {taiko_geth_height}");
+        }
+
         let (current_status, _) = self.operator.get_status().await?;
 
         // TODO check that when we are Preconfer or PreconferHandoverBuffer we will sync our l2 state on epoch boundry
@@ -94,23 +121,13 @@ impl Node {
             return Ok(());
         }
 
-        let height_taiko_inbox = self
-            .ethereum_l1
-            .execution_layer
-            .get_l2_height_from_taiko_inbox()
-            .await?;
-        let height_taiko_geth = self.batch_manager.taiko.get_latest_l2_block_id().await?;
-        info!("Height Taiko Inbox: {height_taiko_inbox}, Height Taiko Geth: {height_taiko_geth}");
-
-        if height_taiko_inbox == height_taiko_geth {
+        if taiko_inbox_height == taiko_geth_height {
             return Ok(());
-        } else if height_taiko_inbox > height_taiko_geth {
-            // TODO wait for sync
-            warn!("Taiko Geth is not synchronized with L1");
         } else {
-            // height_taiko_inbox < height_taiko_geth
-            // we have unprocessed L2 blocks
-            // check if there is a pending tx on the mempool from your address
+            // We check previously that taiko_inbox_height > taiko_geth_height is not true,
+            // so it is taiko_inbox_height < height_taiko_geth.
+            // We have unprocessed L2 blocks.
+            // Check if there is a pending tx on the mempool from your address.
             let nonce_latest: u64 = self
                 .ethereum_l1
                 .execution_layer
@@ -128,12 +145,12 @@ impl Node {
                 // The first block anchor id is valid, so we can continue.
                 if self
                     .batch_manager
-                    .is_block_valid(height_taiko_inbox + 1)
+                    .is_block_valid(taiko_inbox_height + 1)
                     .await?
                 {
                     // recover all missed l2 blocks
                     info!("Recovering from L2 blocks");
-                    for current_height in height_taiko_inbox + 1..=height_taiko_geth {
+                    for current_height in taiko_inbox_height + 1..=taiko_geth_height {
                         self.batch_manager
                             .recover_from_l2_block(current_height)
                             .await?;
@@ -149,7 +166,7 @@ impl Node {
                     info!("Triggering L2 reorg");
                     self.batch_manager
                         .taiko
-                        .trigger_l2_reorg(height_taiko_inbox)
+                        .trigger_l2_reorg(taiko_inbox_height)
                         .await?;
                 }
             }
