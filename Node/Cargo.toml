@@ -30,9 +30,7 @@ ecdsa = "0.16"
 elliptic-curve = "0.13"
 reqwest = "0.12"
 hex = "0.4"
-# beacon-api-client = { git = "https://github.com/ralexstokes/ethereum-consensus", package = "beacon-api-client" }
-# ethereum-consensus = { git = "https://github.com/ralexstokes/ethereum-consensus", package = "ethereum-consensus" }
-# ssz_rs = { git = "https://github.com/ralexstokes/ssz-rs", rev = "84ef2b71aa004f6767420badb42c902ad56b8b72" }
+ethereum-consensus = { git = "https://github.com/ralexstokes/ethereum-consensus", package = "ethereum-consensus", rev = "ade5ce6c4a19107c1059e5338d8f18855bd2d931" }
 dotenv = "0.15"
 rand_core = "0.6"
 chrono = "0.4"
@@ -51,7 +49,3 @@ alloy-json-rpc = "0.13"
 default = ["extra_gas_percentage"]
 use_mock = []
 extra_gas_percentage = []
-
-# TODO: remove when the bug is fixed (https://github.com/ralexstokes/ssz-rs/issues/163)
-[patch."https://github.com/ralexstokes/ssz-rs"]
-ssz_rs = { git = "https://github.com/noahfigueras/ssz-rs", branch = "partial_merkle_tree" }
