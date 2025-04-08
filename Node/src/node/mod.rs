@@ -217,6 +217,7 @@ impl Node {
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
+        self.synchronize_with_l1_slot_beginning().await?;
         let l2_slot_timestamp = self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
         let (current_status, exit_point) = self.operator.get_status().await?;
         let pending_tx_list = self
@@ -252,6 +253,28 @@ impl Node {
             }
         }
 
+        Ok(())
+    }
+
+    async fn synchronize_with_l1_slot_beginning(&mut self) -> Result<(), Error> {
+        let l2_slot = self
+            .ethereum_l1
+            .slot_clock
+            .get_current_l2_slot_within_l1_slot()?;
+        if l2_slot == 0 {
+            let mut counter = 0;
+            let expected_l1_block_number = self.ethereum_l1.slot_clock.get_current_slot()?;
+            debug!(
+                "Waiting for L1 block number to be {}",
+                expected_l1_block_number
+            );
+            while self.ethereum_l1.execution_layer.get_l1_height().await? < expected_l1_block_number
+                && counter < 1000
+            {
+                sleep(Duration::from_millis(1)).await;
+                counter += 1;
+            }
+        }
         Ok(())
     }
 
