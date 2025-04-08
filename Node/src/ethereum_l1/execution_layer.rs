@@ -318,12 +318,12 @@ impl ExecutionLayer {
                 .unwrap(),
         );
 
-        let preconfer_address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
+        let preconfer_address: Address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
             .parse()?;
 
         Ok(Self {
             provider_ws: provider_ws.clone(),
-            preconfer_address,
+            preconfer_address: preconfer_address.clone(),
             contract_addresses: ContractAddresses {
                 taiko_inbox: Address::ZERO,
                 preconf_whitelist: Address::ZERO,
@@ -365,7 +365,10 @@ impl ExecutionLayer {
                 5,
                 4,
                 15,
-            ),
+                preconfer_address,
+                12,
+            )
+            .await?,
         })
     }
 
