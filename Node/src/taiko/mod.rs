@@ -419,9 +419,7 @@ impl Taiko {
     {
         // infinity retry
         let mut response;
-        // TODO loop for specified number of iterations
-        // Note: if we can't send request after specified number of iterations, we should remove block from the batch
-        loop {
+        for _ in 0..10 {
             response = self
                 .driver_rpc
                 .request_json(method.clone(), endpoint, payload)
@@ -437,10 +435,15 @@ impl Taiko {
                         endpoint,
                         e
                     );
+                    tokio::time::sleep(Duration::from_millis(10)).await;
                     self.driver_rpc.recreate_client().await?;
                 }
             }
         }
+        Err(anyhow::anyhow!(
+            "Failed to call driver RPC for API '{}'",
+            endpoint
+        ))
     }
 
     fn get_base_fee_config(&self) -> LibSharedData::BaseFeeConfig {

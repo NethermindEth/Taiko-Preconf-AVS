@@ -78,13 +78,30 @@ impl BatchBuilder {
             current_batch.total_bytes += l2_block.prebuilt_tx_list.bytes_length;
             current_batch.l2_blocks.push(l2_block);
             debug!(
-                "Added L2 block to batch: {} total bytes {}",
+                "Added L2 block to batch: l2 blocks: {}, total bytes: {}",
                 current_batch.l2_blocks.len(),
                 current_batch.total_bytes
             );
             Ok(current_batch.anchor_block_id)
         } else {
             Err(anyhow::anyhow!("No current batch"))
+        }
+    }
+
+    pub fn remove_last_l2_block(&mut self) {
+        if let Some(current_batch) = self.current_batch.as_mut() {
+            let removed_block = current_batch.l2_blocks.pop();
+            if let Some(removed_block) = removed_block {
+                current_batch.total_bytes -= removed_block.prebuilt_tx_list.bytes_length;
+                if current_batch.l2_blocks.len() == 0 {
+                    self.current_batch = None;
+                }
+                debug!(
+                    "Removed L2 block from batch: {} txs, {} bytes",
+                    removed_block.prebuilt_tx_list.tx_list.len(),
+                    removed_block.prebuilt_tx_list.bytes_length
+                );
+            }
         }
     }
 
