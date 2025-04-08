@@ -95,7 +95,8 @@ impl Node {
         info!("Warmup node");
 
         // Wait for Taiko Geth to synchronize with L1
-        let (mut taiko_inbox_height, mut taiko_geth_height) = self.get_current_protocol_height().await?;
+        let (mut taiko_inbox_height, mut taiko_geth_height) =
+            self.get_current_protocol_height().await?;
 
         info!("Taiko Inbox Height: {taiko_inbox_height}, Taiko Geth Height: {taiko_geth_height}");
 
@@ -105,7 +106,9 @@ impl Node {
 
             (taiko_inbox_height, taiko_geth_height) = self.get_current_protocol_height().await?;
 
-            info!("Taiko Inbox Height: {taiko_inbox_height}, Taiko Geth Height: {taiko_geth_height}");
+            info!(
+                "Taiko Inbox Height: {taiko_inbox_height}, Taiko Geth Height: {taiko_geth_height}"
+            );
         }
 
         let (current_status, _) = self.operator.get_status().await?;
@@ -214,25 +217,28 @@ impl Node {
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
+        let l2_slot_timestamp = self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
         let (current_status, exit_point) = self.operator.get_status().await?;
-
         let pending_tx_list = self
             .batch_manager
             .taiko
-            .get_pending_l2_tx_list_from_taiko_geth()
+            .get_pending_l2_tx_list_from_taiko_geth(l2_slot_timestamp)
             .await?;
         self.print_current_slots_info(&current_status, &pending_tx_list, &exit_point)?;
 
         match current_status {
             OperatorStatus::PreconferHandoverBuffer(buffer_ms) => {
                 tokio::time::sleep(Duration::from_millis(buffer_ms)).await;
-                self.preconfirm_block(false, pending_tx_list).await?;
+                self.preconfirm_block(false, pending_tx_list, l2_slot_timestamp)
+                    .await?;
             }
             OperatorStatus::Preconfer => {
-                self.preconfirm_block(false, pending_tx_list).await?;
+                self.preconfirm_block(false, pending_tx_list, l2_slot_timestamp)
+                    .await?;
             }
             OperatorStatus::PreconferAndL1Submitter => {
-                self.preconfirm_block(true, pending_tx_list).await?;
+                self.preconfirm_block(true, pending_tx_list, l2_slot_timestamp)
+                    .await?;
             }
             OperatorStatus::L1Submitter => {
                 self.batch_manager.try_submit_batches(false).await?;
@@ -253,11 +259,12 @@ impl Node {
         &mut self,
         submit: bool,
         pending_tx_list: Option<PreBuiltTxList>,
+        l2_slot_timestamp: u64,
     ) -> Result<(), Error> {
         trace!("preconfirm_block: {submit} ");
 
         self.batch_manager
-            .preconfirm_block(submit, pending_tx_list)
+            .preconfirm_block(submit, pending_tx_list, l2_slot_timestamp)
             .await
     }
 
