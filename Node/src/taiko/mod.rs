@@ -123,6 +123,7 @@ impl Taiko {
 
     pub async fn get_pending_l2_tx_list_from_taiko_geth(
         &self,
+        l2_slot_timestamp: u64,
     ) -> Result<Option<PreBuiltTxList>, Error> {
         let (_, _, parent_gas_used) = self.get_latest_l2_block_id_hash_and_gas_used().await?;
 
@@ -132,7 +133,11 @@ impl Taiko {
         })?;
 
         let base_fee = self
-            .get_base_fee(parent_gas_used_u32, self.get_base_fee_config())
+            .get_base_fee(
+                parent_gas_used_u32,
+                self.get_base_fee_config(),
+                l2_slot_timestamp,
+            )
             .await?;
 
         let params = vec![
@@ -314,6 +319,7 @@ impl Taiko {
         &self,
         l2_block: L2Block,
         anchor_origin_height: u64,
+        l2_slot_timestamp: u64,
     ) -> Result<(), Error> {
         tracing::debug!("Submitting new L2 blocks to the Taiko driver");
 
@@ -335,7 +341,11 @@ impl Taiko {
             anyhow::anyhow!("parent_gas_used {} exceeds u32 max value", parent_gas_used)
         })?;
         let base_fee = self
-            .get_base_fee(parent_gas_used_u32, base_fee_config.clone())
+            .get_base_fee(
+                parent_gas_used_u32,
+                base_fee_config.clone(),
+                l2_slot_timestamp,
+            )
             .await?;
         let anchor_tx = self
             .construct_anchor_tx(
@@ -518,17 +528,14 @@ impl Taiko {
         &self,
         parent_gas_used: u32,
         base_fee_config: LibSharedData::BaseFeeConfig,
+        l2_slot_timestamp: u64,
     ) -> Result<u64, Error> {
         let base_fee = self
             .check_for_contract_failure(
                 self.taiko_anchor
                     .read()
                     .await
-                    .getBasefeeV2(
-                        parent_gas_used,
-                        chrono::Utc::now().timestamp() as u64,
-                        base_fee_config,
-                    )
+                    .getBasefeeV2(parent_gas_used, l2_slot_timestamp, base_fee_config)
                     .call()
                     .await,
                 "Failed to get base fee",

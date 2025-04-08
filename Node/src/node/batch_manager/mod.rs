@@ -145,10 +145,8 @@ impl BatchManager {
         &mut self,
         submit: bool,
         pending_tx_list: Option<PreBuiltTxList>,
+        l2_slot_timestamp: u64,
     ) -> Result<(), Error> {
-        let preconfirmation_timestamp =
-            self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
-
         if let Some(pending_tx_list) = pending_tx_list {
             // Handle the pending tx list from taiko geth
             debug!(
@@ -156,13 +154,14 @@ impl BatchManager {
                 pending_tx_list.tx_list.len(),
                 pending_tx_list.bytes_length
             );
-            let l2_block = L2Block::new_from(pending_tx_list, preconfirmation_timestamp);
-            self.add_new_l2_block(l2_block).await?;
-        } else if self.is_empty_block_required(preconfirmation_timestamp) {
+            let l2_block = L2Block::new_from(pending_tx_list, l2_slot_timestamp);
+            self.add_new_l2_block(l2_block, l2_slot_timestamp).await?;
+        } else if self.is_empty_block_required(l2_slot_timestamp) {
             // Handle time shift between blocks exceeded
             debug!("No pending txs, proposing empty block");
-            let empty_block = L2Block::new_empty(preconfirmation_timestamp);
-            self.add_new_l2_block(empty_block).await?;
+            let empty_block = L2Block::new_empty(l2_slot_timestamp);
+            self.add_new_l2_block(empty_block, l2_slot_timestamp)
+                .await?;
         } else {
             trace!("No pending txs, skipping preconfirmation");
         }
@@ -187,11 +186,15 @@ impl BatchManager {
         Ok(())
     }
 
-    async fn add_new_l2_block(&mut self, l2_block: L2Block) -> Result<(), Error> {
+    async fn add_new_l2_block(
+        &mut self,
+        l2_block: L2Block,
+        l2_slot_timestamp: u64,
+    ) -> Result<(), Error> {
         let anchor_block_id: u64 = self.consume_l2_block(l2_block.clone()).await?;
 
         self.taiko
-            .advance_head_to_new_l2_block(l2_block, anchor_block_id)
+            .advance_head_to_new_l2_block(l2_block, anchor_block_id, l2_slot_timestamp)
             .await?;
 
         Ok(())
