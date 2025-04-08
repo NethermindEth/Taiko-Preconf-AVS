@@ -368,7 +368,8 @@ impl ExecutionLayer {
                 preconfer_address,
                 12,
             )
-            .await?,
+            .await
+            .unwrap(),
         })
     }
 
