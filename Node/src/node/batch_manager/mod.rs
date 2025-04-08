@@ -10,7 +10,7 @@ use anyhow::Error;
 use batch_builder::BatchBuilder;
 use futures_util::future::try_join_all;
 use std::sync::Arc;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 // TODO move to config
 const MIN_SLOTS_TO_PROPOSE: u64 = 3; // Minimum number of slots required to propose a batch on L1
@@ -193,10 +193,14 @@ impl BatchManager {
     ) -> Result<(), Error> {
         let anchor_block_id: u64 = self.consume_l2_block(l2_block.clone()).await?;
 
-        self.taiko
+        if let Err(err) = self
+            .taiko
             .advance_head_to_new_l2_block(l2_block, anchor_block_id, l2_slot_timestamp)
-            .await?;
-
+            .await
+        {
+            error!("Failed to advance head to new L2 block: {}", err);
+            self.remove_last_l2_block().await?;
+        }
         Ok(())
     }
 
@@ -214,6 +218,11 @@ impl BatchManager {
             anchor_block_id
         };
         Ok(anchor_block_id)
+    }
+
+    async fn remove_last_l2_block(&mut self) -> Result<(), Error> {
+        self.batch_builder.remove_last_l2_block();
+        Ok(())
     }
 
     async fn calculate_anchor_block_id(&self) -> Result<u64, Error> {
