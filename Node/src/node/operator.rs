@@ -23,7 +23,7 @@ impl std::fmt::Display for Status {
         match self {
             Status::None => write!(f, "Not my slot to preconfirm"),
             Status::Preconfer => write!(f, "Preconfirming"),
-            Status::PreconferHandoverBuffer => write!(f, "Preconfirming after handover buffer"),
+            Status::PreconferHandoverBuffer => write!(f, "Handover buffer"),
             Status::PreconferAndL1Submitter => write!(f, "Preconfirming and submitting"),
             Status::L1Submitter => write!(f, "Submitting left batches"),
         }
