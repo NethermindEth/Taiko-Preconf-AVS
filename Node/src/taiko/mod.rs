@@ -2,7 +2,9 @@
 
 use crate::{
     ethereum_l1::EthereumL1,
-    shared::{l2_block::L2Block, l2_tx_lists, l2_tx_lists::PreBuiltTxList},
+    shared::{
+        l2_block::L2Block, l2_slot_info::L2SlotInfo, l2_tx_lists, l2_tx_lists::PreBuiltTxList,
+    },
     utils::{
         rpc_client::{HttpRPCClient, JSONRPCClient},
         types::*,
@@ -245,8 +247,10 @@ impl Taiko {
         ))
     }
 
-    pub async fn calculate_base_fee(&self, l2_slot_timestamp: u64) -> Result<u64, Error> {
-        let (_, _, parent_gas_used) = self.get_latest_l2_block_id_hash_and_gas_used().await?;
+    pub async fn get_l2_slot_info(&self) -> Result<L2SlotInfo, Error> {
+        let l2_slot_timestamp = self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
+        let (parent_id, parent_hash, parent_gas_used) =
+            self.get_latest_l2_block_id_hash_and_gas_used().await?;
 
         // Safe conversion with overflow check
         let parent_gas_used_u32 = u32::try_from(parent_gas_used).map_err(|_| {
@@ -255,8 +259,17 @@ impl Taiko {
 
         let base_fee_config = self.get_base_fee_config();
 
-        self.get_base_fee(parent_gas_used_u32, base_fee_config, l2_slot_timestamp)
-            .await
+        let base_fee = self
+            .get_base_fee(parent_gas_used_u32, base_fee_config, l2_slot_timestamp)
+            .await?;
+
+        Ok(L2SlotInfo::new(
+            base_fee,
+            l2_slot_timestamp,
+            parent_id,
+            parent_hash,
+            parent_gas_used_u32,
+        ))
     }
 
     /// Warning: be sure not to `read` from the rwlock
@@ -321,8 +334,7 @@ impl Taiko {
         &self,
         l2_block: L2Block,
         anchor_origin_height: u64,
-        l2_slot_timestamp: u64,
-        base_fee: u64,
+        l2_slot_info: L2SlotInfo,
     ) -> Result<(), Error> {
         tracing::debug!("Submitting new L2 blocks to the Taiko driver");
 
@@ -336,21 +348,14 @@ impl Taiko {
         let sharing_pctg = base_fee_config.sharingPctg;
 
         debug!("processing {} txs", l2_block.prebuilt_tx_list.tx_list.len());
-        let (parent_block_id, parent_hash, parent_gas_used) =
-            self.get_latest_l2_block_id_hash_and_gas_used().await?;
-
-        // Safe conversion with overflow check
-        let parent_gas_used_u32 = u32::try_from(parent_gas_used).map_err(|_| {
-            anyhow::anyhow!("parent_gas_used {} exceeds u32 max value", parent_gas_used)
-        })?;
 
         let anchor_tx = self
             .construct_anchor_tx(
                 anchor_origin_height,
                 anchor_block_state_root,
-                parent_gas_used_u32,
+                l2_slot_info.parent_gas_used(),
                 base_fee_config.clone(),
-                base_fee,
+                l2_slot_info.base_fee(),
             )
             .await?;
         let tx_list = std::iter::once(anchor_tx)
@@ -361,12 +366,12 @@ impl Taiko {
         let extra_data = vec![sharing_pctg];
 
         let executable_data = preconf_blocks::ExecutableData {
-            base_fee_per_gas: base_fee,
-            block_number: parent_block_id + 1,
+            base_fee_per_gas: l2_slot_info.base_fee(),
+            block_number: l2_slot_info.parent_id() + 1,
             extra_data: format!("0x{:0>64}", hex::encode(extra_data)),
             fee_recipient: format!("0x{}", hex::encode(self.preconfer_address)),
             gas_limit: 241_000_000u64,
-            parent_hash: format!("0x{}", hex::encode(parent_hash)),
+            parent_hash: format!("0x{}", hex::encode(l2_slot_info.parent_hash())),
             timestamp: l2_block.timestamp_sec,
             transactions: format!("0x{}", hex::encode(tx_list_bytes)),
         };

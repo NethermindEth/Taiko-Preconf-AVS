@@ -1,7 +1,11 @@
 pub(crate) mod batch_manager;
 mod operator;
 
-use crate::{ethereum_l1::EthereumL1, shared::l2_tx_lists::PreBuiltTxList, taiko::Taiko};
+use crate::{
+    ethereum_l1::EthereumL1,
+    shared::{l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
+    taiko::Taiko,
+};
 use anyhow::Error;
 use batch_manager::{BatchBuilderConfig, BatchManager};
 use operator::{Operator, Status as OperatorStatus};
@@ -217,19 +221,19 @@ impl Node {
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
-        let l2_slot_timestamp = self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
-        let base_fee = self
-            .batch_manager
-            .taiko
-            .calculate_base_fee(l2_slot_timestamp)
-            .await?;
+        let l2_slot_info = self.batch_manager.taiko.get_l2_slot_info().await?;
         let (current_status, exit_point) = self.operator.get_status().await?;
         let pending_tx_list = self
             .batch_manager
             .taiko
-            .get_pending_l2_tx_list_from_taiko_geth(base_fee)
+            .get_pending_l2_tx_list_from_taiko_geth(l2_slot_info.base_fee())
             .await?;
-        self.print_current_slots_info(&current_status, &pending_tx_list, &exit_point, base_fee)?;
+        self.print_current_slots_info(
+            &current_status,
+            &pending_tx_list,
+            &exit_point,
+            l2_slot_info.base_fee(),
+        )?;
 
         match current_status {
             OperatorStatus::PreconferHandoverBuffer => {
@@ -237,11 +241,11 @@ impl Node {
                 return Ok(());
             }
             OperatorStatus::Preconfer => {
-                self.preconfirm_block(false, pending_tx_list, l2_slot_timestamp, base_fee)
+                self.preconfirm_block(false, pending_tx_list, l2_slot_info)
                     .await?;
             }
             OperatorStatus::PreconferAndL1Submitter => {
-                self.preconfirm_block(true, pending_tx_list, l2_slot_timestamp, base_fee)
+                self.preconfirm_block(true, pending_tx_list, l2_slot_info)
                     .await?;
             }
             OperatorStatus::L1Submitter => {
@@ -263,13 +267,12 @@ impl Node {
         &mut self,
         submit: bool,
         pending_tx_list: Option<PreBuiltTxList>,
-        l2_slot_timestamp: u64,
-        base_fee: u64,
+        l2_slot_info: L2SlotInfo,
     ) -> Result<(), Error> {
         trace!("preconfirm_block: {submit} ");
 
         self.batch_manager
-            .preconfirm_block(submit, pending_tx_list, l2_slot_timestamp, base_fee)
+            .preconfirm_block(submit, pending_tx_list, l2_slot_info)
             .await
     }
 
