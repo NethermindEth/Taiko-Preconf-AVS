@@ -13,7 +13,7 @@ pub struct Operator {
 pub enum Status {
     None,                    // not an operator
     Preconfer,               // handover window before being an operator, can preconfirm only
-    PreconferHandoverBuffer, // beginning of handover window, need to wait given milliseconds before preconfirming
+    PreconferHandoverBuffer, // beginning of handover window
     PreconferAndL1Submitter, // preconfing and submitting period before handover window for next preconfer
     L1Submitter,             // handover window for next operator, can submit only
 }
