@@ -13,6 +13,7 @@ impl ConsensusLayer {
     }
 
     pub async fn get_genesis_details(&self) -> Result<GenesisDetails, Error> {
+        tracing::debug!("Getting genesis details");
         self.client.get_genesis_details().await.map_err(Error::new)
     }
 }

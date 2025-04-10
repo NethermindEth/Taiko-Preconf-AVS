@@ -1,7 +1,11 @@
 pub(crate) mod batch_manager;
 mod operator;
 
-use crate::{ethereum_l1::EthereumL1, shared::l2_tx_lists::PreBuiltTxList, taiko::Taiko};
+use crate::{
+    ethereum_l1::EthereumL1,
+    shared::{l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
+    taiko::Taiko,
+};
 use anyhow::Error;
 use batch_manager::{BatchBuilderConfig, BatchManager};
 use operator::{Operator, Status as OperatorStatus};
@@ -118,7 +122,7 @@ impl Node {
             current_status,
             OperatorStatus::None
                 | OperatorStatus::Preconfer
-                | OperatorStatus::PreconferHandoverBuffer(_)
+                | OperatorStatus::PreconferHandoverBuffer
         ) {
             info!("Status: {:?}, no need for warmup", current_status);
             return Ok(());
@@ -217,27 +221,31 @@ impl Node {
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
-        let l2_slot_timestamp = self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
+        let l2_slot_info = self.batch_manager.taiko.get_l2_slot_info().await?;
         let (current_status, exit_point) = self.operator.get_status().await?;
         let pending_tx_list = self
             .batch_manager
             .taiko
-            .get_pending_l2_tx_list_from_taiko_geth(l2_slot_timestamp)
+            .get_pending_l2_tx_list_from_taiko_geth(l2_slot_info.base_fee())
             .await?;
-        self.print_current_slots_info(&current_status, &pending_tx_list, &exit_point)?;
+        self.print_current_slots_info(
+            &current_status,
+            &pending_tx_list,
+            &exit_point,
+            l2_slot_info.base_fee(),
+        )?;
 
         match current_status {
-            OperatorStatus::PreconferHandoverBuffer(buffer_ms) => {
-                tokio::time::sleep(Duration::from_millis(buffer_ms)).await;
-                self.preconfirm_block(false, pending_tx_list, l2_slot_timestamp)
-                    .await?;
+            OperatorStatus::PreconferHandoverBuffer => {
+                // skip the slot
+                return Ok(());
             }
             OperatorStatus::Preconfer => {
-                self.preconfirm_block(false, pending_tx_list, l2_slot_timestamp)
+                self.preconfirm_block(false, pending_tx_list, l2_slot_info)
                     .await?;
             }
             OperatorStatus::PreconferAndL1Submitter => {
-                self.preconfirm_block(true, pending_tx_list, l2_slot_timestamp)
+                self.preconfirm_block(true, pending_tx_list, l2_slot_info)
                     .await?;
             }
             OperatorStatus::L1Submitter => {
@@ -259,12 +267,12 @@ impl Node {
         &mut self,
         submit: bool,
         pending_tx_list: Option<PreBuiltTxList>,
-        l2_slot_timestamp: u64,
+        l2_slot_info: L2SlotInfo,
     ) -> Result<(), Error> {
         trace!("preconfirm_block: {submit} ");
 
         self.batch_manager
-            .preconfirm_block(submit, pending_tx_list, l2_slot_timestamp)
+            .preconfirm_block(submit, pending_tx_list, l2_slot_info)
             .await
     }
 
@@ -273,10 +281,11 @@ impl Node {
         current_status: &OperatorStatus,
         pending_tx_list: &Option<PreBuiltTxList>,
         exit_point: &str,
+        base_fee: u64,
     ) -> Result<(), Error> {
         let l1_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
         info!(
-            "| Epoch: {:<6} | Slot: {:<2} | L2 Slot: {:<2} | Pending txs: {:<4} | {current_status} | {exit_point}",
+            "| Epoch: {:<6} | Slot: {:<2} | L2 Slot: {:<2} | Pending txs: {:<4} | b. fee: {:<7} | {current_status} | {exit_point}",
             self.ethereum_l1.slot_clock.get_epoch_from_slot(l1_slot),
             self.ethereum_l1.slot_clock.slot_of_epoch(l1_slot),
             self.ethereum_l1
@@ -284,7 +293,8 @@ impl Node {
                 .get_current_l2_slot_within_l1_slot()?,
             pending_tx_list
                 .as_ref()
-                .map_or(0, |tx_list| tx_list.tx_list.len())
+                .map_or(0, |tx_list| tx_list.tx_list.len()),
+            base_fee
         );
         Ok(())
     }

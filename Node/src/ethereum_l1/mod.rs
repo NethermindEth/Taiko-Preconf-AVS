@@ -30,6 +30,7 @@ pub struct EthereumL1 {
 impl EthereumL1 {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(config: EthereumL1Config) -> Result<Self, Error> {
+        tracing::info!("Creating EthereumL1 instance");
         let consensus_layer = ConsensusLayer::new(&config.consensus_rpc_url)?;
         let genesis_details = consensus_layer.get_genesis_details().await?;
         let slot_clock = Arc::new(SlotClock::new(

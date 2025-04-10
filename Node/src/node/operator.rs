@@ -11,9 +11,9 @@ pub struct Operator {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Status {
-    None,                         // not an operator
-    Preconfer,                    // handover window before being an operator, can preconfirm only
-    PreconferHandoverBuffer(u64), // beginning of handover window, need to wait given milliseconds before preconfirming
+    None,                    // not an operator
+    Preconfer,               // handover window before being an operator, can preconfirm only
+    PreconferHandoverBuffer, // beginning of the handover window, no preconfirmation
     PreconferAndL1Submitter, // preconfing and submitting period before handover window for next preconfer
     L1Submitter,             // handover window for next operator, can submit only
 }
@@ -23,7 +23,7 @@ impl std::fmt::Display for Status {
         match self {
             Status::None => write!(f, "Not my slot to preconfirm"),
             Status::Preconfer => write!(f, "Preconfirming"),
-            Status::PreconferHandoverBuffer(_) => write!(f, "Preconfirming after handover buffer"),
+            Status::PreconferHandoverBuffer => write!(f, "Handover buffer"),
             Status::PreconferAndL1Submitter => write!(f, "Preconfirming and submitting"),
             Status::L1Submitter => write!(f, "Submitting left batches"),
         }
@@ -100,9 +100,7 @@ impl Operator {
                 let time_elapsed_since_handover_start = self.get_ms_from_handover_window_start()?;
                 if self.handover_start_buffer_ms > time_elapsed_since_handover_start {
                     return Ok((
-                        Status::PreconferHandoverBuffer(
-                            self.handover_start_buffer_ms - time_elapsed_since_handover_start,
-                        ),
+                        Status::PreconferHandoverBuffer,
                         "HW: next operator, buffer".to_string(),
                     ));
                 }
