@@ -98,6 +98,38 @@ impl Node {
     async fn warmup(&mut self) -> Result<(), Error> {
         info!("Warmup node");
 
+        // Check TAIKO TOKEN balance
+        let bond_balance = self
+            .ethereum_l1
+            .execution_layer
+            .get_preconfer_inbox_bonds()
+            .await
+            .map_err(|e| Error::msg(format!("Failed to fetch bond balance: {}", e)))?;
+
+        let wallet_balance = self
+            .ethereum_l1
+            .execution_layer
+            .get_preconfer_wallet_bonds()
+            .await
+            .map_err(|e| Error::msg(format!("Failed to fetch bond balance: {}", e)))?;
+
+        let total_balance = bond_balance + wallet_balance;
+        let threshold = alloy::primitives::U256::from(10);
+
+        if total_balance < threshold {
+            anyhow::bail!(
+                "Total balance ({}) is below the required threshold ({})",
+                total_balance,
+                threshold
+            );
+        }
+
+        info!(
+            bond_balance = %bond_balance,
+            wallet_balance = %wallet_balance,
+            "Preconfer bonds are sufficient"
+        );
+
         // Wait for Taiko Geth to synchronize with L1
         let (mut taiko_inbox_height, mut taiko_geth_height) =
             self.get_current_protocol_height().await?;
