@@ -10,9 +10,8 @@ use alloy::{
 };
 use alloy_json_rpc::RpcError;
 use anyhow::Error;
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::{sync::Arc, time::Duration};
-use tokio::{sync::Mutex, task::JoinHandle};
+use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
 // Transaction status enum
@@ -41,9 +40,6 @@ pub struct TransactionMonitorThread {
 pub struct TransactionMonitor {
     provider: Arc<WsProvider>,
     config: TransactionMonitorConfig,
-    l1_slot_sec: u64,
-    nonce_and_timestamp: Mutex<(u64, u64)>, // (nonce, last_sent_timestamp)
-    address: Address,
 }
 
 impl TransactionMonitor {
@@ -53,10 +49,7 @@ impl TransactionMonitor {
         tx_fees_increase_percentage: u64,
         max_attempts_to_send_tx: u64,
         delay_between_tx_attempts_sec: u64,
-        address: Address,
-        l1_slot_sec: u64,
     ) -> Result<Self, Error> {
-        let nonce = provider.get_transaction_count(address).await?;
         Ok(Self {
             provider,
             config: TransactionMonitorConfig {
@@ -65,46 +58,16 @@ impl TransactionMonitor {
                 max_attempts_to_send_tx,
                 delay_between_tx_attempts: Duration::from_secs(delay_between_tx_attempts_sec),
             },
-            l1_slot_sec,
-            nonce_and_timestamp: Mutex::new((nonce, 0)), // Initialize with (nonce, 0)
-            address,
         })
     }
 
     /// Monitor a transaction until it is confirmed or fails.
     /// Spawns a new tokio task to monitor the transaction.
-    pub async fn monitor_new_transaction(&self, tx: TransactionRequest) -> JoinHandle<TxStatus> {
-        // Get current timestamp
-        let current_timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-
-        let chain_nonce = match self.provider.get_transaction_count(self.address).await {
-            Ok(nonce) => Some(nonce),
-            Err(e) => {
-                error!(
-                    "Failed to get nonce from the chain, using local nonce. Error: {}",
-                    e
-                );
-                None
-            }
-        };
-
-        // Lock the mutex to update both values together
-        let nonce = {
-            let mut guard = self.nonce_and_timestamp.lock().await;
-            let (nonce, last_sent) = *guard;
-
-            if current_timestamp > last_sent + self.l1_slot_sec && chain_nonce.is_some() {
-                *guard = (chain_nonce.unwrap() + 1, current_timestamp);
-                chain_nonce.unwrap()
-            } else {
-                *guard = (nonce + 1, current_timestamp);
-                nonce
-            }
-        };
-
+    pub async fn monitor_new_transaction(
+        &self,
+        tx: TransactionRequest,
+        nonce: u64,
+    ) -> JoinHandle<TxStatus> {
         let monitor_thread =
             TransactionMonitorThread::new(self.provider.clone(), self.config.clone(), nonce);
         monitor_thread.spawn_monitoring_task(tx)
@@ -176,7 +139,10 @@ impl TransactionMonitorThread {
                 }
                 tx_clone.set_nonce(self.nonce.into());
 
-                debug!("Sending tx, attempt: {attempt}, max_fee_per_gas: {:?}, max_priority_fee_per_gas: {:?}, max_fee_per_blob_gas: {:?}, gas limit: {:?}, nonce: {:?}", tx_clone.max_fee_per_gas, tx_clone.max_priority_fee_per_gas, tx_clone.max_fee_per_blob_gas, tx_clone.gas, tx_clone.nonce);
+                debug!(
+                    "Sending tx, attempt: {attempt}, max_fee_per_gas: {:?}, max_priority_fee_per_gas: {:?}, max_fee_per_blob_gas: {:?}, gas limit: {:?}, nonce: {:?}.{}", tx_clone.max_fee_per_gas, tx_clone.max_priority_fee_per_gas, tx_clone.max_fee_per_blob_gas, tx_clone.gas, tx_clone.nonce,
+                    if attempt > 0 { format!(" Replacing {}", tx_hash) } else { "".to_string() }
+                );
 
                 let pending_tx = match self.provider.send_transaction(tx_clone).await {
                     Ok(tx) => tx,

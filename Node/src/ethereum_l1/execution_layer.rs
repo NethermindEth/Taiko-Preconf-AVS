@@ -76,8 +76,6 @@ impl ExecutionLayer {
             config.tx_fees_increase_percentage,
             config.max_attempts_to_send_tx,
             config.delay_between_tx_attempts_sec,
-            preconfer_address,
-            config.slot_duration_sec,
         )
         .await?;
 
@@ -212,8 +210,12 @@ impl ExecutionLayer {
             )
             .await?;
 
+        let pending_nonce = self.get_preconfer_nonce_pending().await?;
         // Spawn a monitor for this transaction
-        let _ = self.transaction_monitor.monitor_new_transaction(tx).await;
+        let _ = self
+            .transaction_monitor
+            .monitor_new_transaction(tx, pending_nonce)
+            .await;
 
         Ok(())
     }
@@ -365,8 +367,6 @@ impl ExecutionLayer {
                 5,
                 4,
                 15,
-                preconfer_address,
-                12,
             )
             .await
             .unwrap(),
