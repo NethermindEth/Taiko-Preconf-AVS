@@ -191,9 +191,10 @@ impl BatchManager {
         l2_slot_info: L2SlotInfo,
     ) -> Result<(), Error> {
         info!(
-            "Adding new L2 block id: {}, timestamp: {} to the batch",
+            "Adding new L2 block to the batch, id: {}, timestamp: {}, parent gas used: {}",
             l2_slot_info.parent_id() + 1,
-            l2_slot_info.slot_timestamp()
+            l2_slot_info.slot_timestamp(),
+            l2_slot_info.parent_gas_used()
         );
         let anchor_block_id: u64 = self.consume_l2_block(l2_block.clone()).await?;
 
