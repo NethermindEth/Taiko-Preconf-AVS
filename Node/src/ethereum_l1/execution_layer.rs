@@ -344,6 +344,11 @@ impl ExecutionLayer {
         Ok(balance.min(allowance))
     }
 
+    pub async fn get_preconfer_eth_balance(&self) -> Result<alloy::primitives::U256, Error> {
+        let balance = self.provider_ws.get_balance(self.preconfer_address).await?;
+        Ok(balance)
+    }
+
     #[cfg(test)]
     pub async fn new_from_pk(
         ws_rpc_url: String,

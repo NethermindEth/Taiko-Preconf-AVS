@@ -5,6 +5,7 @@ mod taiko;
 mod utils;
 
 use anyhow::Error;
+use node::Thresholds;
 use std::sync::Arc;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
@@ -85,6 +86,10 @@ async fn main() -> Result<(), Error> {
             max_time_shift_between_blocks_sec: config.max_time_shift_between_blocks_sec,
             max_anchor_height_offset: max_anchor_height_offset
                 - config.max_anchor_height_offset_reduction,
+        },
+        Thresholds {
+            eth: config.threshold_eth,
+            taiko: config.threshold_taiko,
         },
     )
     .await?;
