@@ -155,6 +155,8 @@ impl Node {
             );
         }
 
+        info!("ETH balance is sufficient ({})", balance);
+
         // Wait for Taiko Geth to synchronize with L1
         let (mut taiko_inbox_height, mut taiko_geth_height) =
             self.get_current_protocol_height().await?;
