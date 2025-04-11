@@ -48,7 +48,7 @@ impl Node {
             batch_builder_config.max_anchor_height_offset,
         );
         let operator = Operator::new(
-            ethereum_l1.clone(),
+            &ethereum_l1,
             handover_window_slots,
             handover_start_buffer_ms,
         )?;
@@ -239,6 +239,11 @@ impl Node {
             OperatorStatus::PreconferHandoverBuffer => {
                 // skip the slot
                 return Ok(());
+            }
+            OperatorStatus::PreconferAndVerifier => {
+                // TODO: handle prev operator not proposed blocks
+                self.preconfirm_block(true, pending_tx_list, l2_slot_info)
+                    .await?;
             }
             OperatorStatus::Preconfer => {
                 self.preconfirm_block(false, pending_tx_list, l2_slot_info)

@@ -123,8 +123,7 @@ impl BatchManager {
         let max_anchor_height_offset = self
             .ethereum_l1
             .execution_layer
-            .get_pacaya_config()
-            .maxAnchorHeightOffset;
+            .get_config_max_anchor_height_offset();
         if anchor_offset + MIN_SLOTS_TO_PROPOSE > max_anchor_height_offset {
             warn!(
                 "Skip recovery! Reorg detected! Anchor height offset is greater than max anchor height offset. L1 height: {}, anchor block id: {}, anchor height offset: {}, max anchor height offset: {}",

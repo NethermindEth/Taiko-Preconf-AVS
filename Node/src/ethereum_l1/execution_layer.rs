@@ -13,8 +13,6 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use anyhow::Error;
-#[cfg(test)]
-use mockall::automock;
 use std::{str::FromStr, sync::Arc};
 
 use tracing::debug;
@@ -39,8 +37,6 @@ pub struct ContractAddresses {
     pub preconf_router: Address,
 }
 
-#[cfg_attr(test, allow(dead_code))]
-#[cfg_attr(test, automock)]
 impl ExecutionLayer {
     pub async fn new(config: EthereumL1Config) -> Result<Self, Error> {
         tracing::debug!(
@@ -93,18 +89,6 @@ impl ExecutionLayer {
         })
     }
 
-    pub fn get_pacaya_config_max_blocks_per_batch(&self) -> u16 {
-        self.pacaya_config.maxBlocksPerBatch
-    }
-
-    pub fn get_pacaya_config_max_anchor_height_offset(&self) -> u64 {
-        self.pacaya_config.maxAnchorHeightOffset
-    }
-
-    pub fn get_preconfer_address(&self) -> PreconferAddress {
-        self.preconfer_address.into_array()
-    }
-
     fn parse_contract_addresses(
         contract_addresses: &config::L1ContractAddresses,
     ) -> Result<ContractAddresses, Error> {
@@ -119,7 +103,7 @@ impl ExecutionLayer {
         })
     }
 
-    pub async fn get_operator_for_current_epoch(&self) -> Result<Address, Error> {
+    async fn get_operator_for_current_epoch(&self) -> Result<Address, Error> {
         let contract =
             PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider_ws);
         let operator = contract
@@ -131,12 +115,7 @@ impl ExecutionLayer {
         Ok(operator)
     }
 
-    pub async fn is_operator_for_current_epoch(&self) -> Result<bool, Error> {
-        let operator = self.get_operator_for_current_epoch().await?;
-        Ok(operator == self.preconfer_address)
-    }
-
-    pub async fn get_operator_for_next_epoch(&self) -> Result<Address, Error> {
+    async fn get_operator_for_next_epoch(&self) -> Result<Address, Error> {
         let contract =
             PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider_ws);
         let operator = contract
@@ -146,11 +125,6 @@ impl ExecutionLayer {
             .map_err(|e| Error::msg(format!("Failed to get operator for next epoch: {}", e)))?
             ._0;
         Ok(operator)
-    }
-
-    pub async fn is_operator_for_next_epoch(&self) -> Result<bool, Error> {
-        let operator = self.get_operator_for_next_epoch().await?;
-        Ok(operator == self.preconfer_address)
     }
 
     pub async fn send_batch_to_l1(
@@ -239,65 +213,6 @@ impl ExecutionLayer {
 
     pub fn get_pacaya_config(&self) -> taiko_inbox::ITaikoInbox::Config {
         self.pacaya_config.clone()
-    }
-
-    pub async fn get_l1_height(&self) -> Result<u64, Error> {
-        self.provider_ws
-            .get_block_number()
-            .await
-            .map_err(|e| Error::msg(format!("Failed to get L1 height: {}", e)))
-    }
-
-    pub async fn get_block_state_root_by_number(&self, number: u64) -> Result<B256, Error> {
-        let block = self
-            .provider_ws
-            .get_block_by_number(BlockNumberOrTag::Number(number))
-            .await
-            .map_err(|e| Error::msg(format!("Failed to get block by number ({number}): {}", e)))?
-            .ok_or(anyhow::anyhow!("Failed to get block by number ({number})"))?;
-        Ok(block.header.state_root)
-    }
-
-    pub async fn get_l2_height_from_taiko_inbox(&self) -> Result<u64, Error> {
-        let contract = taiko_inbox::ITaikoInbox::new(
-            self.contract_addresses.taiko_inbox.clone(),
-            self.provider_ws.clone(),
-        );
-        let num_batches = contract.getStats2().call().await?._0.numBatches;
-        // It is safe because num_batches initial value is 1
-        let batch = contract.getBatch(num_batches - 1).call().await?.batch_;
-
-        Ok(batch.lastBlockId)
-    }
-
-    pub async fn get_preconfer_nonce_latest(&self) -> Result<u64, Error> {
-        let nonce_str: String = self
-            .provider_ws
-            .client()
-            .request(
-                "eth_getTransactionCount",
-                (self.preconfer_address, "latest"),
-            )
-            .await
-            .map_err(|e| Error::msg(format!("Failed to get nonce: {}", e)))?;
-
-        u64::from_str_radix(nonce_str.trim_start_matches("0x"), 16)
-            .map_err(|e| Error::msg(format!("Failed to convert nonce: {}", e)))
-    }
-
-    pub async fn get_preconfer_nonce_pending(&self) -> Result<u64, Error> {
-        let nonce_str: String = self
-            .provider_ws
-            .client()
-            .request(
-                "eth_getTransactionCount",
-                (self.preconfer_address, "pending"),
-            )
-            .await
-            .map_err(|e| Error::msg(format!("Failed to get nonce: {}", e)))?;
-
-        u64::from_str_radix(nonce_str.trim_start_matches("0x"), 16)
-            .map_err(|e| Error::msg(format!("Failed to convert nonce: {}", e)))
     }
 
     #[cfg(test)]
@@ -407,6 +322,98 @@ impl ExecutionLayer {
         assert_eq!(number, "43");
 
         Ok(())
+    }
+
+    pub fn get_config_max_blocks_per_batch(&self) -> u16 {
+        self.pacaya_config.maxBlocksPerBatch
+    }
+
+    pub fn get_config_max_anchor_height_offset(&self) -> u64 {
+        self.pacaya_config.maxAnchorHeightOffset
+    }
+
+    pub fn get_config_block_max_gas_limit(&self) -> u32 {
+        self.pacaya_config.blockMaxGasLimit
+    }
+
+    pub fn get_preconfer_address(&self) -> PreconferAddress {
+        self.preconfer_address.into_array()
+    }
+
+    pub async fn get_l1_height(&self) -> Result<u64, Error> {
+        self.provider_ws
+            .get_block_number()
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get L1 height: {}", e)))
+    }
+
+    pub async fn get_block_state_root_by_number(&self, number: u64) -> Result<B256, Error> {
+        let block = self
+            .provider_ws
+            .get_block_by_number(BlockNumberOrTag::Number(number))
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get block by number ({number}): {}", e)))?
+            .ok_or(anyhow::anyhow!("Failed to get block by number ({number})"))?;
+        Ok(block.header.state_root)
+    }
+
+    pub async fn get_l2_height_from_taiko_inbox(&self) -> Result<u64, Error> {
+        let contract = taiko_inbox::ITaikoInbox::new(
+            self.contract_addresses.taiko_inbox.clone(),
+            self.provider_ws.clone(),
+        );
+        let num_batches = contract.getStats2().call().await?._0.numBatches;
+        // It is safe because num_batches initial value is 1
+        let batch = contract.getBatch(num_batches - 1).call().await?.batch_;
+
+        Ok(batch.lastBlockId)
+    }
+
+    pub async fn get_preconfer_nonce_latest(&self) -> Result<u64, Error> {
+        let nonce_str: String = self
+            .provider_ws
+            .client()
+            .request(
+                "eth_getTransactionCount",
+                (self.preconfer_address, "latest"),
+            )
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get nonce: {}", e)))?;
+
+        u64::from_str_radix(nonce_str.trim_start_matches("0x"), 16)
+            .map_err(|e| Error::msg(format!("Failed to convert nonce: {}", e)))
+    }
+
+    pub async fn get_preconfer_nonce_pending(&self) -> Result<u64, Error> {
+        let nonce_str: String = self
+            .provider_ws
+            .client()
+            .request(
+                "eth_getTransactionCount",
+                (self.preconfer_address, "pending"),
+            )
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get nonce: {}", e)))?;
+
+        u64::from_str_radix(nonce_str.trim_start_matches("0x"), 16)
+            .map_err(|e| Error::msg(format!("Failed to convert nonce: {}", e)))
+    }
+}
+
+pub trait PreconfOperator {
+    async fn is_operator_for_current_epoch(&self) -> Result<bool, Error>;
+    async fn is_operator_for_next_epoch(&self) -> Result<bool, Error>;
+}
+
+impl PreconfOperator for ExecutionLayer {
+    async fn is_operator_for_current_epoch(&self) -> Result<bool, Error> {
+        let operator = self.get_operator_for_current_epoch().await?;
+        Ok(operator == self.preconfer_address)
+    }
+
+    async fn is_operator_for_next_epoch(&self) -> Result<bool, Error> {
+        let operator = self.get_operator_for_next_epoch().await?;
+        Ok(operator == self.preconfer_address)
     }
 }
 
