@@ -44,11 +44,25 @@ const SUBMITTED_BATCHES_VERIFICATION_SLOT: u64 = 1;
 
 impl std::fmt::Display for Status {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Preconfirming: {}, Submitting: {}, Verifying: {}",
-            self.preconfer, self.submitter, self.verifier
-        )
+        let mut roles = Vec::new();
+
+        if self.preconfer {
+            roles.push("Preconf");
+        }
+
+        if self.submitter {
+            roles.push("Submit");
+        }
+
+        if self.verifier {
+            roles.push("Verify");
+        }
+
+        if roles.is_empty() {
+            write!(f, "No active roles")
+        } else {
+            write!(f, "{}", roles.join(", "))
+        }
     }
 }
 
