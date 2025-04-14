@@ -53,7 +53,7 @@ async fn main() -> Result<(), Error> {
 
     let max_anchor_height_offset = ethereum_l1
         .execution_layer
-        .get_pacaya_config_max_anchor_height_offset();
+        .get_config_max_anchor_height_offset();
     if config.max_anchor_height_offset_reduction >= max_anchor_height_offset {
         panic!(
             "max_anchor_height_offset_reduction {} is greater than max_anchor_height_offset from pacaya config {}",
@@ -62,7 +62,7 @@ async fn main() -> Result<(), Error> {
     }
     let max_blocks_per_batch = ethereum_l1
         .execution_layer
-        .get_pacaya_config_max_blocks_per_batch();
+        .get_config_max_blocks_per_batch();
     if config.max_blocks_per_batch_reduction >= max_blocks_per_batch {
         panic!(
             "max_blocks_per_batch {} is greater than max_blocks_per_batch from pacaya config {}",

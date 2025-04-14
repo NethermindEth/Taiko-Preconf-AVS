@@ -123,8 +123,7 @@ impl BatchManager {
         let max_anchor_height_offset = self
             .ethereum_l1
             .execution_layer
-            .get_pacaya_config()
-            .maxAnchorHeightOffset;
+            .get_config_max_anchor_height_offset();
         if anchor_offset + MIN_SLOTS_TO_PROPOSE > max_anchor_height_offset {
             warn!(
                 "Skip recovery! Reorg detected! Anchor height offset is greater than max anchor height offset. L1 height: {}, anchor block id: {}, anchor height offset: {}, max anchor height offset: {}",
@@ -143,7 +142,6 @@ impl BatchManager {
 
     pub async fn preconfirm_block(
         &mut self,
-        submit: bool,
         pending_tx_list: Option<PreBuiltTxList>,
         l2_slot_info: L2SlotInfo,
     ) -> Result<(), Error> {
@@ -171,15 +169,6 @@ impl BatchManager {
             // Handle max anchor height offset exceeded
             info!("📈 Maximum allowed anchor height offset exceeded, finalizing current batch.");
             self.batch_builder.finalize_current_batch();
-
-            if !submit {
-                warn!("Max anchor height offset exceeded but submission is disabled");
-            }
-        }
-
-        // Try to submit every time since we can have batches to send from preconfer only role.
-        if submit {
-            self.try_submit_batches(true).await?;
         }
 
         Ok(())

@@ -1,6 +1,6 @@
 [package]
 name = "taiko_preconf_avs_node"
-version = "0.2.26"
+version = "0.2.27"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -39,11 +39,8 @@ flate2 = "1.1"
 alloy-json-rpc = "0.12"
 
 [dev-dependencies]
-mockall_double = "0.3"
-mockall = "0.13"
 mockito = "1.4"
 
 [features]
 default = ["extra_gas_percentage"]
-use_mock = []
 extra_gas_percentage = []

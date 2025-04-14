@@ -133,8 +133,7 @@ impl Taiko {
             Value::Number(
                 self.ethereum_l1
                     .execution_layer
-                    .get_pacaya_config()
-                    .blockMaxGasLimit
+                    .get_config_block_max_gas_limit()
                     .into(),
             ), // blockMaxGasLimit
             Value::Number(131_072.into()), // maxBytesPerTxList (128KB)
