@@ -104,7 +104,7 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
         Ok(Status {
             preconfer: self.is_preconfer(current_operator, handover_window)?,
             submitter: self.is_submitter(l1_slot, current_operator),
-            verifier: self.is_verifier(l1_slot),
+            verifier: self.is_verifier(l1_slot, current_operator),
         })
     }
 
@@ -130,8 +130,8 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
         current_operator
     }
 
-    fn is_verifier(&self, l1_slot: u64) -> bool {
-        l1_slot == SUBMITTED_BATCHES_VERIFICATION_SLOT && !self.continuing_role
+    fn is_verifier(&self, l1_slot: u64, current_operator: bool) -> bool {
+        current_operator && l1_slot == SUBMITTED_BATCHES_VERIFICATION_SLOT && !self.continuing_role
     }
 
     fn is_handover_window(&self, slot: Slot) -> bool {
@@ -181,13 +181,26 @@ mod tests {
             false,
         );
         operator.next_operator = true;
-
         assert_eq!(
             operator.get_status().await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: false,
                 verifier: true,
+            }
+        );
+
+        let mut operator = create_operator(
+            32 * 12 + 12 + 2, // second l1 slot, second l2 slot
+            false,
+            false,
+        );
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: false,
+                submitter: false,
+                verifier: false,
             }
         );
     }
