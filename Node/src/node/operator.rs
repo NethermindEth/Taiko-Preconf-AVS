@@ -241,6 +241,21 @@ mod tests {
                 verifier: false,
             }
         );
+
+        let mut operator = create_operator(
+            31 * 12, // last slot
+            false,
+            false,
+            false,
+        );
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: false,
+                submitter: false,
+                verifier: false,
+            }
+        );
     }
 
     #[tokio::test]
@@ -311,6 +326,37 @@ mod tests {
             operator.get_status().await.unwrap(),
             Status {
                 preconfer: false,
+                submitter: true,
+                verifier: false,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_l1_statuses_for_operator_continuing_role() {
+        let mut operator = create_operator(
+            0, // first slot of epoch
+            true, true, true,
+        );
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: true,
+                submitter: false,
+                verifier: false,
+            }
+        );
+
+        let mut operator = create_operator(
+            2 * 12, // third slot of epoch
+            true,
+            true,
+            true,
+        );
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: true,
                 submitter: true,
                 verifier: false,
             }
