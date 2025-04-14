@@ -142,7 +142,6 @@ impl BatchManager {
 
     pub async fn preconfirm_block(
         &mut self,
-        submit: bool,
         pending_tx_list: Option<PreBuiltTxList>,
         l2_slot_info: L2SlotInfo,
     ) -> Result<(), Error> {
@@ -170,15 +169,6 @@ impl BatchManager {
             // Handle max anchor height offset exceeded
             info!("📈 Maximum allowed anchor height offset exceeded, finalizing current batch.");
             self.batch_builder.finalize_current_batch();
-
-            if !submit {
-                warn!("Max anchor height offset exceeded but submission is disabled");
-            }
-        }
-
-        // Try to submit every time since we can have batches to send from preconfer only role.
-        if submit {
-            self.try_submit_batches(true).await?;
         }
 
         Ok(())
