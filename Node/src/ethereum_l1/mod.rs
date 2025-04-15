@@ -10,21 +10,14 @@ mod ws_provider;
 use anyhow::Error;
 use config::EthereumL1Config;
 use consensus_layer::ConsensusLayer;
-#[cfg(not(test))]
 use execution_layer::ExecutionLayer;
-#[cfg(test)]
-#[cfg_attr(feature = "use_mock", double)]
-use execution_layer::ExecutionLayer;
-#[cfg(test)]
-#[cfg(feature = "use_mock")]
-use mockall_double::double;
 use slot_clock::SlotClock;
 use std::sync::Arc;
 
 pub struct EthereumL1 {
     pub slot_clock: Arc<SlotClock>,
     pub _consensus_layer: ConsensusLayer,
-    pub execution_layer: ExecutionLayer,
+    pub execution_layer: Arc<ExecutionLayer>,
 }
 
 impl EthereumL1 {
@@ -46,7 +39,7 @@ impl EthereumL1 {
         Ok(Self {
             slot_clock,
             _consensus_layer: consensus_layer,
-            execution_layer,
+            execution_layer: Arc::new(execution_layer),
         })
     }
 }

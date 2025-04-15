@@ -171,8 +171,8 @@ impl<T: Clock> SlotClock<T> {
         slot % self.slots_per_epoch
     }
 
-    pub fn is_slot_in_last_n_slots_of_epoch(&self, slot: Slot, n: Slot) -> Result<bool, Error> {
-        Ok(slot >= self.slots_per_epoch - n && slot < self.slots_per_epoch)
+    pub fn is_slot_in_last_n_slots_of_epoch(&self, slot: Slot, n: Slot) -> bool {
+        slot >= self.slots_per_epoch - n && slot < self.slots_per_epoch
     }
 
     pub fn time_from_n_last_slots_of_epoch(&self, n: Slot) -> Result<Duration, Error> {
@@ -217,7 +217,24 @@ impl<T: Clock> SlotClock<T> {
 }
 
 #[cfg(test)]
+pub mod mock {
+    use super::*;
+    use chrono::DateTime;
+
+    #[derive(Default)]
+    pub struct MockClock {
+        pub timestamp: i64,
+    }
+    impl Clock for MockClock {
+        fn now(&self) -> SystemTime {
+            SystemTime::from(DateTime::from_timestamp(self.timestamp, 0).unwrap())
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
+    use super::mock::*;
     use super::*;
     use chrono::DateTime;
     use ethereum_consensus::phase0::mainnet::SLOTS_PER_EPOCH;
@@ -331,24 +348,12 @@ mod tests {
         let slot_clock: SlotClock =
             SlotClock::new(0u64, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
 
-        assert_eq!(
-            slot_clock.is_slot_in_last_n_slots_of_epoch(0, 2).unwrap(),
-            false
-        );
-        assert_eq!(
-            slot_clock.is_slot_in_last_n_slots_of_epoch(1, 2).unwrap(),
-            false
-        );
-        assert_eq!(
-            slot_clock.is_slot_in_last_n_slots_of_epoch(29, 2).unwrap(),
-            false
-        );
-        assert!(slot_clock.is_slot_in_last_n_slots_of_epoch(30, 2).unwrap());
-        assert!(slot_clock.is_slot_in_last_n_slots_of_epoch(31, 2).unwrap());
-        assert_eq!(
-            slot_clock.is_slot_in_last_n_slots_of_epoch(32, 2).unwrap(),
-            false
-        );
+        assert_eq!(slot_clock.is_slot_in_last_n_slots_of_epoch(0, 2), false);
+        assert_eq!(slot_clock.is_slot_in_last_n_slots_of_epoch(1, 2), false);
+        assert_eq!(slot_clock.is_slot_in_last_n_slots_of_epoch(29, 2), false);
+        assert!(slot_clock.is_slot_in_last_n_slots_of_epoch(30, 2));
+        assert!(slot_clock.is_slot_in_last_n_slots_of_epoch(31, 2));
+        assert_eq!(slot_clock.is_slot_in_last_n_slots_of_epoch(32, 2), false);
     }
 
     #[test]
@@ -369,16 +374,6 @@ mod tests {
 
         let duration = slot_clock.time_from_n_last_slots_of_epoch(3).unwrap();
         assert_eq!(duration, Duration::from_secs(5));
-    }
-
-    #[derive(Default)]
-    pub struct MockClock {
-        pub timestamp: i64,
-    }
-    impl Clock for MockClock {
-        fn now(&self) -> SystemTime {
-            SystemTime::from(DateTime::from_timestamp(self.timestamp, 0).unwrap())
-        }
     }
 
     #[test]

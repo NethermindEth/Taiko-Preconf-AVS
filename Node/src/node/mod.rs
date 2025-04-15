@@ -56,7 +56,7 @@ impl Node {
             batch_builder_config.max_anchor_height_offset,
         );
         let operator = Operator::new(
-            ethereum_l1.clone(),
+            &ethereum_l1,
             handover_window_slots,
             handover_start_buffer_ms,
         )?;
@@ -174,15 +174,10 @@ impl Node {
             );
         }
 
-        let (current_status, _) = self.operator.get_status().await?;
+        let current_status = self.operator.get_status().await?;
 
         // TODO check that when we are Preconfer or PreconferHandoverBuffer we will sync our l2 state on epoch boundry
-        if matches!(
-            current_status,
-            OperatorStatus::None
-                | OperatorStatus::Preconfer
-                | OperatorStatus::PreconferHandoverBuffer
-        ) {
+        if !current_status.is_submitter() {
             info!("Status: {:?}, no need for warmup", current_status);
             return Ok(());
         }
@@ -281,42 +276,34 @@ impl Node {
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
         let l2_slot_info = self.batch_manager.taiko.get_l2_slot_info().await?;
-        let (current_status, exit_point) = self.operator.get_status().await?;
+        let current_status = self.operator.get_status().await?;
         let pending_tx_list = self
             .batch_manager
             .taiko
             .get_pending_l2_tx_list_from_taiko_geth(l2_slot_info.base_fee())
             .await?;
-        self.print_current_slots_info(
-            &current_status,
-            &pending_tx_list,
-            &exit_point,
-            l2_slot_info.base_fee(),
-        )?;
+        self.print_current_slots_info(&current_status, &pending_tx_list, l2_slot_info.base_fee())?;
 
-        match current_status {
-            OperatorStatus::PreconferHandoverBuffer => {
-                // skip the slot
-                return Ok(());
-            }
-            OperatorStatus::Preconfer => {
-                self.preconfirm_block(false, pending_tx_list, l2_slot_info)
-                    .await?;
-            }
-            OperatorStatus::PreconferAndL1Submitter => {
-                self.preconfirm_block(true, pending_tx_list, l2_slot_info)
-                    .await?;
-            }
-            OperatorStatus::L1Submitter => {
-                self.batch_manager.try_submit_batches(false).await?;
-            }
-            OperatorStatus::None => {
-                if self.batch_manager.has_batches() {
-                    // TODO: Handle this situation gracefully
-                    self.batch_manager.reset_builder();
-                    warn!("Some batches were not successfully sent in the submitter window. Resetting batch builder.");
-                }
-            }
+        if current_status.is_preconfer() {
+            self.preconfirm_block(pending_tx_list, l2_slot_info).await?;
+        }
+
+        if current_status.is_submitter() {
+            self.batch_manager
+                .try_submit_batches(current_status.is_preconfer())
+                .await?;
+        }
+
+        if current_status.is_verifier() {
+            // TODO: handle prev operator not proposed blocks
+        }
+
+        if !current_status.is_submitter()
+            && !current_status.is_preconfer()
+            && self.batch_manager.has_batches()
+        {
+            self.batch_manager.reset_builder();
+            error!("Some batches were not successfully sent in the submitter window. Resetting batch builder.");
         }
 
         Ok(())
@@ -324,14 +311,13 @@ impl Node {
 
     async fn preconfirm_block(
         &mut self,
-        submit: bool,
         pending_tx_list: Option<PreBuiltTxList>,
         l2_slot_info: L2SlotInfo,
     ) -> Result<(), Error> {
-        trace!("preconfirm_block: {submit} ");
+        trace!("preconfirm_block");
 
         self.batch_manager
-            .preconfirm_block(submit, pending_tx_list, l2_slot_info)
+            .preconfirm_block(pending_tx_list, l2_slot_info)
             .await
     }
 
@@ -339,12 +325,11 @@ impl Node {
         &self,
         current_status: &OperatorStatus,
         pending_tx_list: &Option<PreBuiltTxList>,
-        exit_point: &str,
         base_fee: u64,
     ) -> Result<(), Error> {
         let l1_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
         info!(
-            "| Epoch: {:<6} | Slot: {:<2} | L2 Slot: {:<2} | Pending txs: {:<4} | b. fee: {:<7} | {current_status} | {exit_point}",
+            "| Epoch: {:<6} | Slot: {:<2} | L2 Slot: {:<2} | Pending txs: {:<4} | b. fee: {:<7} | {current_status} |",
             self.ethereum_l1.slot_clock.get_epoch_from_slot(l1_slot),
             self.ethereum_l1.slot_clock.slot_of_epoch(l1_slot),
             self.ethereum_l1
