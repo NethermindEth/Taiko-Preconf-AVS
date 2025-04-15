@@ -214,6 +214,14 @@ impl BatchBuilder {
         }
         false
     }
+
+    pub fn clone_without_batches(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            batches_to_send: VecDeque::new(),
+            current_batch: None,
+        }
+    }
 }
 
 #[cfg(test)]

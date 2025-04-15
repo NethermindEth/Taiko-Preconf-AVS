@@ -30,6 +30,7 @@ pub struct Config {
     pub tx_fees_increase_percentage: u64,
     pub max_attempts_to_send_tx: u64,
     pub delay_between_tx_attempts_sec: u64,
+    pub simulate_not_submitting_at_the_end_of_epoch: bool,
 }
 
 #[derive(Debug)]
@@ -224,6 +225,12 @@ impl Config {
             .parse::<u64>()
             .expect("DELAY_BETWEEN_TX_ATTEMPTS_SEC must be a number");
 
+        let simulate_not_submitting_at_the_end_of_epoch =
+            std::env::var("SIMULATE_NOT_SUBMITTING_AT_THE_END_OF_EPOCH")
+                .unwrap_or("false".to_string())
+                .parse::<bool>()
+                .expect("SIMULATE_NOT_SUBMITTING_AT_THE_END_OF_EPOCH must be a boolean");
+
         let config = Self {
             taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
                 .unwrap_or("ws://127.0.0.1:1234".to_string()),
@@ -259,6 +266,7 @@ impl Config {
             tx_fees_increase_percentage,
             max_attempts_to_send_tx,
             delay_between_tx_attempts_sec,
+            simulate_not_submitting_at_the_end_of_epoch,
         };
 
         info!(
@@ -291,6 +299,7 @@ min priority fee per gas wei: {}
 tx fees increase percentage: {}
 max attempts to send tx: {}
 delay between tx attempts: {}s
+simulate not submitting at the end of epoch: {}
 "#,
             config.taiko_geth_ws_rpc_url,
             config.taiko_geth_auth_rpc_url,
@@ -319,6 +328,7 @@ delay between tx attempts: {}s
             config.tx_fees_increase_percentage,
             config.max_attempts_to_send_tx,
             config.delay_between_tx_attempts_sec,
+            config.simulate_not_submitting_at_the_end_of_epoch,
         );
 
         config

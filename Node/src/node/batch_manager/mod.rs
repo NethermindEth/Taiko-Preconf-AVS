@@ -250,4 +250,13 @@ impl BatchManager {
         self.batch_builder =
             batch_builder::BatchBuilder::new(self.batch_builder.get_config().clone());
     }
+
+    pub fn clone_without_batches(&self) -> Self {
+        Self {
+            batch_builder: self.batch_builder.clone_without_batches(),
+            ethereum_l1: self.ethereum_l1.clone(),
+            taiko: self.taiko.clone(),
+            l1_height_lag: self.l1_height_lag,
+        }
+    }
 }
