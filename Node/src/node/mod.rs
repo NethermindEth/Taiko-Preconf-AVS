@@ -233,13 +233,18 @@ impl Node {
             self.batch_manager
                 .try_submit_batches(current_status.is_preconfer())
                 .await?;
-        } else if self.batch_manager.has_batches() {
-            self.batch_manager.reset_builder();
-            error!("Some batches were not successfully sent in the submitter window. Resetting batch builder.");
         }
 
         if current_status.is_verifier() {
             // TODO: handle prev operator not proposed blocks
+        }
+
+        if !current_status.is_submitter()
+            && !current_status.is_preconfer()
+            && self.batch_manager.has_batches()
+        {
+            self.batch_manager.reset_builder();
+            error!("Some batches were not successfully sent in the submitter window. Resetting batch builder.");
         }
 
         Ok(())

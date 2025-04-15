@@ -15,6 +15,7 @@ pub struct Operator<T: PreconfOperator = ExecutionLayer, U: Clock = RealClock> {
     handover_window_slots: u64,
     handover_start_buffer_ms: u64,
     next_operator: bool,
+    continuing_role: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -43,11 +44,25 @@ const SUBMITTED_BATCHES_VERIFICATION_SLOT: u64 = 1;
 
 impl std::fmt::Display for Status {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Preconfirming: {}, Submitting: {}, Verifying: {}",
-            self.preconfer, self.submitter, self.verifier
-        )
+        let mut roles = Vec::new();
+
+        if self.preconfer {
+            roles.push("Preconf");
+        }
+
+        if self.submitter {
+            roles.push("Submit");
+        }
+
+        if self.verifier {
+            roles.push("Verify");
+        }
+
+        if roles.is_empty() {
+            write!(f, "No active roles")
+        } else {
+            write!(f, "{}", roles.join(", "))
+        }
     }
 }
 
@@ -63,6 +78,7 @@ impl Operator {
             handover_window_slots,
             handover_start_buffer_ms,
             next_operator: false,
+            continuing_role: false,
         })
     }
 }
@@ -78,7 +94,9 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
             self.next_operator
         } else {
             self.next_operator = self.execution_layer.is_operator_for_next_epoch().await?;
-            self.execution_layer.is_operator_for_current_epoch().await?
+            let current_operator = self.execution_layer.is_operator_for_current_epoch().await?;
+            self.continuing_role = current_operator && self.next_operator;
+            current_operator
         };
 
         let handover_window = self.is_handover_window(l1_slot);
@@ -86,7 +104,7 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
         Ok(Status {
             preconfer: self.is_preconfer(current_operator, handover_window)?,
             submitter: self.is_submitter(l1_slot, current_operator),
-            verifier: self.is_verifier(l1_slot),
+            verifier: self.is_verifier(l1_slot, current_operator),
         })
     }
 
@@ -105,15 +123,15 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
     }
 
     fn is_submitter(&self, l1_slot: u64, current_operator: bool) -> bool {
-        if l1_slot < OPERATOR_TRANSITION_SLOTS {
+        if l1_slot < OPERATOR_TRANSITION_SLOTS && !self.continuing_role {
             return false; // do not summit here, it's for verification
         }
 
         current_operator
     }
 
-    fn is_verifier(&self, l1_slot: u64) -> bool {
-        l1_slot == SUBMITTED_BATCHES_VERIFICATION_SLOT
+    fn is_verifier(&self, l1_slot: u64, current_operator: bool) -> bool {
+        current_operator && l1_slot == SUBMITTED_BATCHES_VERIFICATION_SLOT && !self.continuing_role
     }
 
     fn is_handover_window(&self, slot: Slot) -> bool {
@@ -161,15 +179,28 @@ mod tests {
             32 * 12 + 12 + 2, // second l1 slot, second l2 slot
             true,
             false,
-            true,
         );
-
+        operator.next_operator = true;
         assert_eq!(
             operator.get_status().await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: false,
                 verifier: true,
+            }
+        );
+
+        let mut operator = create_operator(
+            32 * 12 + 12 + 2, // second l1 slot, second l2 slot
+            false,
+            false,
+        );
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: false,
+                submitter: false,
+                verifier: false,
             }
         );
     }
@@ -180,7 +211,6 @@ mod tests {
             31 * 12, // last slot of epoch
             false,
             true,
-            false,
         );
         assert_eq!(
             operator.get_status().await.unwrap(),
@@ -194,7 +224,6 @@ mod tests {
         let mut operator = create_operator(
             32 * 12, // first slot of next epoch
             true,
-            false,
             false,
         );
         operator.next_operator = true;
@@ -215,7 +244,6 @@ mod tests {
             20 * 12, // middle of epoch
             false,
             false,
-            false,
         );
         assert_eq!(
             operator.get_status().await.unwrap(),
@@ -231,7 +259,6 @@ mod tests {
             32 * 12, // first slot of next epoch
             false,
             false,
-            false,
         );
         assert_eq!(
             operator.get_status().await.unwrap(),
@@ -244,7 +271,6 @@ mod tests {
 
         let mut operator = create_operator(
             31 * 12, // last slot
-            false,
             false,
             false,
         );
@@ -265,7 +291,6 @@ mod tests {
             (32 - 6) * 12, // handover buffer
             false,
             true,
-            false,
         );
         // Override the handover start buffer to be larger than the mock timestamp
         assert_eq!(
@@ -285,7 +310,6 @@ mod tests {
             31 * 12, // last slot of epoch (handover window)
             true,
             true,
-            false,
         );
         assert_eq!(
             operator.get_status().await.unwrap(),
@@ -300,7 +324,6 @@ mod tests {
         let mut operator = create_operator(
             20 * 12, // middle of epoch
             true,
-            false,
             false,
         );
         assert_eq!(
@@ -320,7 +343,6 @@ mod tests {
             31 * 12, // last slot of epoch
             true,
             false,
-            false,
         );
         assert_eq!(
             operator.get_status().await.unwrap(),
@@ -336,13 +358,32 @@ mod tests {
     async fn test_get_l1_statuses_for_operator_continuing_role() {
         let mut operator = create_operator(
             0, // first slot of epoch
-            true, true, true,
+            true, true,
         );
+        operator.next_operator = true;
+        operator.continuing_role = true;
+
         assert_eq!(
             operator.get_status().await.unwrap(),
             Status {
                 preconfer: true,
-                submitter: false,
+                submitter: true,
+                verifier: false,
+            }
+        );
+
+        let mut operator = create_operator(
+            1 * 12, // second slot of epoch
+            true,
+            true,
+        );
+        operator.next_operator = true;
+        operator.continuing_role = true;
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: true,
+                submitter: true,
                 verifier: false,
             }
         );
@@ -351,8 +392,8 @@ mod tests {
             2 * 12, // third slot of epoch
             true,
             true,
-            true,
         );
+        operator.continuing_role = true;
         assert_eq!(
             operator.get_status().await.unwrap(),
             Status {
@@ -367,7 +408,6 @@ mod tests {
         timestamp: i64,
         current_operator: bool,
         next_operator: bool,
-        nominated_from_previous_epoch: bool,
     ) -> Operator<ExecutionLayerMock, MockClock> {
         let mut slot_clock = SlotClock::<MockClock>::new(0, 0, 12, 32, 2000);
         slot_clock.clock.timestamp = timestamp; // second l1 slot, second l2 slot
@@ -379,7 +419,8 @@ mod tests {
             slot_clock: Arc::new(slot_clock),
             handover_window_slots: 6,
             handover_start_buffer_ms: 1000,
-            next_operator: nominated_from_previous_epoch,
+            next_operator: false,
+            continuing_role: false,
         }
     }
 }
