@@ -446,6 +446,36 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_get_preconfirmation_started_status() {
+        let mut operator = create_operator(
+            31 * 12, // last slot of epoch
+            false,
+            true,
+        );
+        operator.was_preconfer = false;
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: true,
+                submitter: false,
+                verifier: false,
+                preconfirmation_started: true,
+            }
+        );
+
+        // second get_status call, preconfirmation_started should be false
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: true,
+                submitter: false,
+                verifier: false,
+                preconfirmation_started: false,
+            }
+        );
+    }
+
     fn create_operator(
         timestamp: i64,
         current_operator: bool,

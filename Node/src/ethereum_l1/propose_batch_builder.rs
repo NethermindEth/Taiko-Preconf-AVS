@@ -59,6 +59,7 @@ impl ProposeBatchBuilder {
         blocks: Vec<BlockParams>,
         last_anchor_origin_height: u64,
         last_block_timestamp: u64,
+        coinbase: Address,
     ) -> Result<TransactionRequest, Error> {
         // Build eip4844 transaction
         let tx_blob = self
@@ -69,6 +70,7 @@ impl ProposeBatchBuilder {
                 blocks.clone(),
                 last_anchor_origin_height,
                 last_block_timestamp,
+                coinbase,
             )
             .await?;
         let tx_blob_gas = match self.provider_ws.estimate_gas(tx_blob.clone()).await {
@@ -94,6 +96,7 @@ impl ProposeBatchBuilder {
                 blocks.clone(),
                 last_anchor_origin_height,
                 last_block_timestamp,
+                coinbase,
             )
             .await?;
         let tx_calldata_gas = match self.provider_ws.estimate_gas(tx_calldata.clone()).await {
@@ -244,6 +247,7 @@ impl ProposeBatchBuilder {
         blocks: Vec<BlockParams>,
         last_anchor_origin_height: u64,
         last_block_timestamp: u64,
+        coinbase: Address,
     ) -> Result<TransactionRequest, Error> {
         let tx_list_len = tx_list.len() as u32;
         let tx_list = Bytes::from(tx_list);
@@ -252,7 +256,7 @@ impl ProposeBatchBuilder {
 
         let batch_params = BatchParams {
             proposer: from,
-            coinbase: from,
+            coinbase,
             parentMetaHash: FixedBytes::from(&[0u8; 32]),
             anchorBlockId: last_anchor_origin_height,
             lastBlockTimestamp: last_block_timestamp,
@@ -298,6 +302,7 @@ impl ProposeBatchBuilder {
         blocks: Vec<BlockParams>,
         last_anchor_origin_height: u64,
         last_block_timestamp: u64,
+        coinbase: Address,
     ) -> Result<TransactionRequest, Error> {
         let tx_list_len = tx_list.len() as u32;
 
@@ -309,7 +314,7 @@ impl ProposeBatchBuilder {
 
         let batch_params = BatchParams {
             proposer: from,
-            coinbase: from,
+            coinbase,
             parentMetaHash: FixedBytes::from(&[0u8; 32]),
             anchorBlockId: last_anchor_origin_height,
             lastBlockTimestamp: last_block_timestamp,

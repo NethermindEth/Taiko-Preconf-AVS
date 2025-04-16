@@ -149,12 +149,14 @@ impl Node {
             //if not, then read blocks from L2 execution to form your buffer (L2 batch) and continue operations normally
             // we didn't propose blocks to mempool
             if nonce_latest == nonce_pending {
-                verifier::handle_unprocessed_blocks(
-                    &mut self.batch_manager,
-                    taiko_inbox_height,
-                    taiko_geth_height,
+                let mut verifier = verifier::Verifier::new(
+                    self.ethereum_l1.execution_layer.clone(),
+                    self.batch_manager.taiko.clone(),
                 )
                 .await?;
+                verifier
+                    .verify_submitted_blocks(self.batch_manager.clone_without_batches())
+                    .await?;
             }
             //if yes, then continue operations normally without rebuilding the buffer
             // TODO handle gracefully
@@ -231,7 +233,7 @@ impl Node {
 
         if current_status.is_verifier() && self.verifier.is_some() {
             self.verifier
-                .as_ref()
+                .as_mut()
                 .unwrap()
                 .verify_submitted_blocks(self.batch_manager.clone_without_batches())
                 .await?;
