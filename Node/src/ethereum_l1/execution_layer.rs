@@ -108,6 +108,7 @@ impl ExecutionLayer {
             PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider_ws);
         let operator = contract
             .getOperatorForCurrentEpoch()
+            .block(alloy::eips::BlockId::pending())
             .call()
             .await
             .map_err(|e| Error::msg(format!("Failed to get operator for current epoch: {}", e)))?
@@ -120,6 +121,7 @@ impl ExecutionLayer {
             PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider_ws);
         let operator = contract
             .getOperatorForNextEpoch()
+            .block(alloy::eips::BlockId::pending())
             .call()
             .await
             .map_err(|e| Error::msg(format!("Failed to get operator for next epoch: {}", e)))?
