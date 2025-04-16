@@ -1,7 +1,7 @@
 use alloy::{consensus::BlockHeader, primitives::Address};
 use anyhow::Error;
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::{ethereum_l1::execution_layer::ExecutionLayer, taiko::Taiko};
 
