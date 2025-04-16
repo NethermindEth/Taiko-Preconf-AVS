@@ -92,7 +92,7 @@ pub async fn handle_unprocessed_blocks(
         // The first block anchor id is not valid
         // TODO reorg + reanchor + preconfirm again
         // Just do force reorg
-        info!("Triggering L2 reorg");
+        warn!("Triggering L2 reorg");
         batch_manager
             .taiko
             .trigger_l2_reorg(taiko_inbox_height)

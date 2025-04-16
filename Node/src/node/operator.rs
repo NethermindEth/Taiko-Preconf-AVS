@@ -47,6 +47,7 @@ impl Status {
 }
 
 const OPERATOR_TRANSITION_SLOTS: u64 = 2;
+// Should be less than OPERATOR_TRANSITION_SLOTS
 const SUBMITTED_BATCHES_VERIFICATION_SLOT: u64 = 1;
 
 impl std::fmt::Display for Status {
