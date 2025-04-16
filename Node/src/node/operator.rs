@@ -7,6 +7,7 @@ use crate::{
     utils::types::*,
 };
 use anyhow::Error;
+use tracing::warn;
 use std::sync::Arc;
 
 pub struct Operator<T: PreconfOperator = ExecutionLayer, U: Clock = RealClock> {
@@ -104,7 +105,13 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
         let current_operator = if l1_slot < OPERATOR_TRANSITION_SLOTS {
             self.next_operator
         } else {
-            self.next_operator = self.execution_layer.is_operator_for_next_epoch().await?;
+            self.next_operator = match self.execution_layer.is_operator_for_next_epoch().await {
+                Ok(val) => val,
+                Err(e) => {
+                    warn!("Warning: failed to check next epoch operator: {:?}", e);
+                    false
+                }
+            };
             let current_operator = self.execution_layer.is_operator_for_current_epoch().await?;
             self.continuing_role = current_operator && self.next_operator;
             current_operator
