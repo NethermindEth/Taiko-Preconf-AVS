@@ -7,8 +7,8 @@ use crate::{
     utils::types::*,
 };
 use anyhow::Error;
-use tracing::warn;
 use std::sync::Arc;
+use tracing::warn;
 
 pub struct Operator<T: PreconfOperator = ExecutionLayer, U: Clock = RealClock> {
     execution_layer: Arc<T>,

@@ -51,7 +51,7 @@ impl Verifier {
 
             let first_block = self
                 .taiko
-                .get_l2_block_by_number(taiko_inbox_height + 1)
+                .get_l2_block_by_number(taiko_inbox_height + 1, false)
                 .await?;
             let coinbase = first_block.header.beneficiary();
 
