@@ -133,6 +133,7 @@ impl ExecutionLayer {
         &self,
         l2_blocks: Vec<L2Block>,
         last_anchor_origin_height: u64,
+        coinbase: Option<Address>,
     ) -> Result<(), Error> {
         let mut tx_vec = Vec::new();
         let mut blocks = Vec::new();
@@ -183,6 +184,7 @@ impl ExecutionLayer {
                 blocks.clone(),
                 last_anchor_origin_height,
                 last_block_timestamp,
+                coinbase.unwrap_or(self.preconfer_address),
             )
             .await?;
 

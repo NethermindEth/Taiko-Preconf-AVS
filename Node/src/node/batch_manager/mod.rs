@@ -5,7 +5,7 @@ use crate::{
     shared::{l2_block::L2Block, l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
     taiko::Taiko,
 };
-use alloy::consensus::Transaction;
+use alloy::{consensus::Transaction, primitives::Address};
 use anyhow::Error;
 use batch_builder::BatchBuilder;
 use futures_util::future::try_join_all;
@@ -232,7 +232,16 @@ impl BatchManager {
         submit_only_full_batches: bool,
     ) -> Result<(), Error> {
         self.batch_builder
-            .try_submit_batches(self.ethereum_l1.clone(), submit_only_full_batches)
+            .try_submit_batches(self.ethereum_l1.clone(), submit_only_full_batches, None)
+            .await
+    }
+
+    pub async fn try_submit_batches_with_coinbase(
+        &mut self,
+        coinbase: Address,
+    ) -> Result<(), Error> {
+        self.batch_builder
+            .try_submit_batches(self.ethereum_l1.clone(), false, Some(coinbase))
             .await
     }
 
@@ -249,5 +258,14 @@ impl BatchManager {
         warn!("Resetting batch builder");
         self.batch_builder =
             batch_builder::BatchBuilder::new(self.batch_builder.get_config().clone());
+    }
+
+    pub fn clone_without_batches(&self) -> Self {
+        Self {
+            batch_builder: self.batch_builder.clone_without_batches(),
+            ethereum_l1: self.ethereum_l1.clone(),
+            taiko: self.taiko.clone(),
+            l1_height_lag: self.l1_height_lag,
+        }
     }
 }

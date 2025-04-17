@@ -17,6 +17,8 @@ pub struct Operator<T: PreconfOperator = ExecutionLayer, U: Clock = RealClock> {
     handover_start_buffer_ms: u64,
     next_operator: bool,
     continuing_role: bool,
+    simulate_not_submitting_at_the_end_of_epoch: bool,
+    was_preconfer: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -24,6 +26,7 @@ pub struct Status {
     preconfer: bool,
     submitter: bool,
     verifier: bool,
+    preconfirmation_started: bool,
 }
 
 impl Status {
@@ -38,9 +41,14 @@ impl Status {
     pub fn is_verifier(&self) -> bool {
         self.verifier
     }
+
+    pub fn is_preconfirmation_start_slot(&self) -> bool {
+        self.preconfirmation_started
+    }
 }
 
 const OPERATOR_TRANSITION_SLOTS: u64 = 2;
+// Should be less than OPERATOR_TRANSITION_SLOTS
 const SUBMITTED_BATCHES_VERIFICATION_SLOT: u64 = 1;
 
 impl std::fmt::Display for Status {
@@ -72,6 +80,7 @@ impl Operator {
         ethereum_l1: &EthereumL1,
         handover_window_slots: u64,
         handover_start_buffer_ms: u64,
+        simulate_not_submitting_at_the_end_of_epoch: bool,
     ) -> Result<Self, Error> {
         Ok(Self {
             execution_layer: ethereum_l1.execution_layer.clone(),
@@ -80,6 +89,8 @@ impl Operator {
             handover_start_buffer_ms,
             next_operator: false,
             continuing_role: false,
+            simulate_not_submitting_at_the_end_of_epoch,
+            was_preconfer: false,
         })
     }
 }
@@ -107,11 +118,15 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
         };
 
         let handover_window = self.is_handover_window(l1_slot);
+        let preconfer = self.is_preconfer(current_operator, handover_window)?;
+        let preconfirmation_started = self.is_preconfirmation_start_l2_slot(preconfer);
+        self.was_preconfer = preconfer;
 
         Ok(Status {
-            preconfer: self.is_preconfer(current_operator, handover_window)?,
-            submitter: self.is_submitter(l1_slot, current_operator),
+            preconfer,
+            submitter: self.is_submitter(l1_slot, current_operator, handover_window),
             verifier: self.is_verifier(l1_slot, current_operator),
+            preconfirmation_started,
         })
     }
 
@@ -129,9 +144,13 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
         Ok(self.get_ms_from_handover_window_start()? <= self.handover_start_buffer_ms)
     }
 
-    fn is_submitter(&self, l1_slot: u64, current_operator: bool) -> bool {
+    fn is_submitter(&self, l1_slot: u64, current_operator: bool, handover_window: bool) -> bool {
         if l1_slot < OPERATOR_TRANSITION_SLOTS && !self.continuing_role {
             return false; // do not summit here, it's for verification
+        }
+
+        if handover_window && self.simulate_not_submitting_at_the_end_of_epoch {
+            return false;
         }
 
         current_operator
@@ -139,6 +158,10 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
 
     fn is_verifier(&self, l1_slot: u64, current_operator: bool) -> bool {
         current_operator && l1_slot == SUBMITTED_BATCHES_VERIFICATION_SLOT && !self.continuing_role
+    }
+
+    fn is_preconfirmation_start_l2_slot(&self, preconfer: bool) -> bool {
+        !self.was_preconfer && preconfer
     }
 
     fn is_handover_window(&self, slot: Slot) -> bool {
@@ -188,12 +211,14 @@ mod tests {
             false,
         );
         operator.next_operator = true;
+        operator.was_preconfer = true;
         assert_eq!(
             operator.get_status().await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: false,
                 verifier: true,
+                preconfirmation_started: false,
             }
         );
 
@@ -202,12 +227,14 @@ mod tests {
             false,
             false,
         );
+        operator.was_preconfer = true;
         assert_eq!(
             operator.get_status().await.unwrap(),
             Status {
                 preconfer: false,
                 submitter: false,
                 verifier: false,
+                preconfirmation_started: false,
             }
         );
     }
@@ -225,6 +252,7 @@ mod tests {
                 preconfer: true,
                 submitter: false,
                 verifier: false,
+                preconfirmation_started: true,
             }
         );
 
@@ -234,12 +262,14 @@ mod tests {
             false,
         );
         operator.next_operator = true;
+        operator.was_preconfer = true;
         assert_eq!(
             operator.get_status().await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: false,
                 verifier: false,
+                preconfirmation_started: false,
             }
         );
     }
@@ -258,6 +288,7 @@ mod tests {
                 preconfer: false,
                 submitter: false,
                 verifier: false,
+                preconfirmation_started: false,
             }
         );
 
@@ -273,6 +304,7 @@ mod tests {
                 preconfer: false,
                 submitter: false,
                 verifier: false,
+                preconfirmation_started: false,
             }
         );
 
@@ -287,6 +319,7 @@ mod tests {
                 preconfer: false,
                 submitter: false,
                 verifier: false,
+                preconfirmation_started: false,
             }
         );
     }
@@ -306,6 +339,7 @@ mod tests {
                 preconfer: false,
                 submitter: false,
                 verifier: false,
+                preconfirmation_started: false,
             }
         );
     }
@@ -324,6 +358,7 @@ mod tests {
                 preconfer: true,
                 submitter: true,
                 verifier: false,
+                preconfirmation_started: true,
             }
         );
 
@@ -339,6 +374,7 @@ mod tests {
                 preconfer: true,
                 submitter: true,
                 verifier: false,
+                preconfirmation_started: true,
             }
         );
     }
@@ -357,6 +393,7 @@ mod tests {
                 preconfer: false,
                 submitter: true,
                 verifier: false,
+                preconfirmation_started: false,
             }
         );
     }
@@ -369,6 +406,7 @@ mod tests {
         );
         operator.next_operator = true;
         operator.continuing_role = true;
+        operator.was_preconfer = true;
 
         assert_eq!(
             operator.get_status().await.unwrap(),
@@ -376,6 +414,7 @@ mod tests {
                 preconfer: true,
                 submitter: true,
                 verifier: false,
+                preconfirmation_started: false,
             }
         );
 
@@ -386,12 +425,14 @@ mod tests {
         );
         operator.next_operator = true;
         operator.continuing_role = true;
+        operator.was_preconfer = true;
         assert_eq!(
             operator.get_status().await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: true,
                 verifier: false,
+                preconfirmation_started: false,
             }
         );
 
@@ -401,12 +442,44 @@ mod tests {
             true,
         );
         operator.continuing_role = true;
+        operator.was_preconfer = true;
         assert_eq!(
             operator.get_status().await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: true,
                 verifier: false,
+                preconfirmation_started: false,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_preconfirmation_started_status() {
+        let mut operator = create_operator(
+            31 * 12, // last slot of epoch
+            false,
+            true,
+        );
+        operator.was_preconfer = false;
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: true,
+                submitter: false,
+                verifier: false,
+                preconfirmation_started: true,
+            }
+        );
+
+        // second get_status call, preconfirmation_started should be false
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: true,
+                submitter: false,
+                verifier: false,
+                preconfirmation_started: false,
             }
         );
     }
@@ -428,6 +501,8 @@ mod tests {
             handover_start_buffer_ms: 1000,
             next_operator: false,
             continuing_role: false,
+            simulate_not_submitting_at_the_end_of_epoch: false,
+            was_preconfer: false,
         }
     }
 }

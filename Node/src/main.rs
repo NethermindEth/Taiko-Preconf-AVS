@@ -86,6 +86,7 @@ async fn main() -> Result<(), Error> {
             max_anchor_height_offset: max_anchor_height_offset
                 - config.max_anchor_height_offset_reduction,
         },
+        config.simulate_not_submitting_at_the_end_of_epoch,
     )
     .await?;
     node.entrypoint();
