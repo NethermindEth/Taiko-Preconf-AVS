@@ -121,11 +121,12 @@ impl BatchBuilder {
             });
         }
 
+        let bytes_length = crate::shared::l2_tx_lists::encode_and_compress(&tx_list)?.len() as u64;
         let l2_block = L2Block::new_from(
             crate::shared::l2_tx_lists::PreBuiltTxList {
                 tx_list,
                 estimated_gas_used: 0,
-                bytes_length: 0,
+                bytes_length,
             },
             timestamp_sec,
         );
