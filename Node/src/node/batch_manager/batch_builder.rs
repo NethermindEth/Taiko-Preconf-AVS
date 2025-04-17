@@ -111,7 +111,7 @@ impl BatchBuilder {
         tx_list: Vec<alloy::rpc::types::Transaction>,
         anchor_block_id: u64,
         timestamp_sec: u64,
-    ) {
+    ) -> Result<(), Error> {
         if !self.is_same_anchor_block_id(anchor_block_id) {
             self.finalize_current_batch();
             self.current_batch = Some(Batch {
@@ -129,11 +129,14 @@ impl BatchBuilder {
             },
             timestamp_sec,
         );
-        self.current_batch
-            .as_mut()
-            .unwrap()
-            .l2_blocks
-            .push(l2_block);
+
+        if self.can_consume_l2_block(&l2_block) {
+            self.add_l2_block_and_get_current_anchor_block_id(l2_block)?;
+        } else {
+            self.create_new_batch_and_add_l2_block(anchor_block_id, l2_block);
+        }
+
+        Ok(())
     }
 
     fn is_same_anchor_block_id(&self, anchor_block_id: u64) -> bool {

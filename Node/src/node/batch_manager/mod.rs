@@ -95,9 +95,7 @@ impl BatchManager {
         );
 
         self.batch_builder
-            .recover_from(txs, anchor_block_id, block.header.timestamp);
-
-        Ok(())
+            .recover_from(txs, anchor_block_id, block.header.timestamp)
     }
 
     pub async fn is_block_valid(&self, block_height: u64) -> Result<bool, Error> {
