@@ -37,6 +37,8 @@ futures-util = "0.3"
 http = "1.2"
 flate2 = "1.1"
 alloy-json-rpc = "0.12"
+prometheus = "0.14"
+warp = "0.3"
 
 [dev-dependencies]
 mockito = "1.4"

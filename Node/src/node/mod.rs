@@ -143,7 +143,7 @@ impl Node {
         let balance = self
             .ethereum_l1
             .execution_layer
-            .get_preconfer_eth_balance()
+            .get_preconfer_wallet_eth()
             .await
             .map_err(|e| Error::msg(format!("Failed to fetch ETH balance: {}", e)))?;
 
