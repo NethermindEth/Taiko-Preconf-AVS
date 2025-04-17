@@ -87,6 +87,27 @@ impl ProposeBatchBuilder {
         #[cfg(feature = "extra_gas_percentage")]
         let tx_blob_gas = tx_blob_gas + tx_blob_gas * self.extra_gas_percentage / 100;
 
+        // Get fees from the network
+        let fees_per_gas = match self.get_fees_per_gas().await {
+            Ok(fees_per_gas) => fees_per_gas,
+            Err(e) => {
+                warn!("Build proposeBatch: Failed to get fees per gas: {}", e);
+                // In case of error return eip4844 transaction
+                return Ok(tx_blob);
+            }
+        };
+
+        // Get blob count
+        let blob_count = tx_blob
+            .sidecar
+            .as_ref()
+            .map_or(0, |sidecar| sidecar.blobs.len() as u64);
+
+        // Calculate the cost of the transaction
+        let eip4844_cost = self
+            .get_eip4844_cost(&fees_per_gas, blob_count, tx_blob_gas)
+            .await;
+
         // Build eip1559 transaction
         let tx_calldata = self
             .build_propose_batch_calldata(
@@ -126,27 +147,8 @@ impl ProposeBatchBuilder {
             ));
         }
 
-        // Get fees from the network
-        let fees_per_gas = match self.get_fees_per_gas().await {
-            Ok(fees_per_gas) => fees_per_gas,
-            Err(e) => {
-                warn!("Build proposeBatch: Failed to get fees per gas: {}", e);
-                // In case of error return eip4844 transaction
-                return Ok(tx_blob);
-            }
-        };
-
-        // Get blob count
-        let blob_count = tx_blob
-            .sidecar
-            .as_ref()
-            .map_or(0, |sidecar| sidecar.blobs.len() as u64);
-
-        // Calculate the cost of the transactions
+        // Calculate the cost of the transaction
         let eip1559_cost = self.get_eip1559_cost(&fees_per_gas, tx_calldata_gas).await;
-        let eip4844_cost = self
-            .get_eip4844_cost(&fees_per_gas, blob_count, tx_blob_gas)
-            .await;
 
         tracing::debug!(
             "Build proposeBatch: eip1559_cost: {} eip4844_cost: {}",
