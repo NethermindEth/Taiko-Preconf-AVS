@@ -1,19 +1,19 @@
 mod ethereum_l1;
+mod metrics;
 mod node;
 mod shared;
 mod taiko;
 mod utils;
-mod metrics;
 
 use anyhow::Error;
+use metrics::Metrics;
 use node::Thresholds;
 use std::sync::Arc;
 use tokio::signal::unix::{signal, SignalKind};
+use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
-use metrics::Metrics;
 use warp::Filter;
-use tokio::time::{sleep, Duration};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -112,12 +112,18 @@ async fn update_metrics_loop(ethereum_l1: Arc<ethereum_l1::EthereumL1>, metrics:
     loop {
         //metrics.update().await;
         if let Ok(balance) = ethereum_l1.execution_layer.get_preconfer_wallet_eth().await {
+            info!("ETH Balance {}", balance);
             metrics.set_preconfer_eth_balance(balance);
         } else {
             warn!("Failed to get preconfer eth balance");
         }
 
-        if let Ok(balance) = ethereum_l1.execution_layer.get_preconfer_wallet_bonds().await {
+        if let Ok(balance) = ethereum_l1
+            .execution_layer
+            .get_preconfer_total_bonds()
+            .await
+        {
+            info!("TAIKO Balance {}", balance);
             metrics.set_preconfer_taiko_balance(balance);
         } else {
             warn!("Failed to get preconfer taiko balance");

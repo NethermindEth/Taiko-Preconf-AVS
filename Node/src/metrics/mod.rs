@@ -1,4 +1,5 @@
-use prometheus::{Encoder, Gauge, TextEncoder, Registry};
+use prometheus::{Encoder, Gauge, Registry, TextEncoder};
+use tracing::error;
 
 pub struct Metrics {
     preconfer_eth_balance: Gauge,
@@ -10,11 +11,25 @@ impl Metrics {
     pub fn new() -> Self {
         let registry = Registry::new();
 
-        let preconfer_eth_balance = Gauge::new("preconfer_taiko_balance", "Ethereum balance of the preconfer wallet").unwrap();
-        let preconfer_taiko_balance = Gauge::new("preconfer_taiko_balance", "TAIKO balance of the preconfer wallet").unwrap();
+        let preconfer_eth_balance = Gauge::new(
+            "preconfer_eth_balance",
+            "Ethereum balance of the preconfer wallet",
+        )
+        .expect("Failed to create preconfer_eth_balance gauge");
 
-        registry.register(Box::new(preconfer_eth_balance.clone())).unwrap();
-        registry.register(Box::new(preconfer_taiko_balance.clone())).unwrap();
+        let preconfer_taiko_balance = Gauge::new(
+            "preconfer_taiko_balance",
+            "TAIKO balance of the preconfer wallet",
+        )
+        .expect("Failed to create preconfer_taiko_balance gauge");
+
+        if let Err(err) = registry.register(Box::new(preconfer_eth_balance.clone())) {
+            error!("Error: Failed to register preconfer_eth_balance: {}", err);
+        }
+
+        if let Err(err) = registry.register(Box::new(preconfer_taiko_balance.clone())) {
+            error!("Error: Failed to register preconfer_taiko_balance: {}", err);
+        }
 
         Self {
             preconfer_eth_balance,
@@ -24,11 +39,13 @@ impl Metrics {
     }
 
     pub fn set_preconfer_eth_balance(&self, balance: alloy::primitives::U256) {
-        self.preconfer_eth_balance.set(Metrics::u256_to_f64(balance));
+        self.preconfer_eth_balance
+            .set(Metrics::u256_to_f64(balance));
     }
 
     pub fn set_preconfer_taiko_balance(&self, balance: alloy::primitives::U256) {
-        self.preconfer_taiko_balance.set(Metrics::u256_to_f64(balance));
+        self.preconfer_taiko_balance
+            .set(Metrics::u256_to_f64(balance));
     }
 
     fn u256_to_f64(balance: alloy::primitives::U256) -> f64 {
@@ -45,7 +62,7 @@ impl Metrics {
         }
 
         result.insert(len - 18, '.');
-        let result = result.split_at(len - 14).0.to_string();
+        let result = result.split_at(len - 13).0.to_string();
 
         match result.parse::<f64>() {
             Ok(v) => v,
