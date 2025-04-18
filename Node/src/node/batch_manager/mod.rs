@@ -8,7 +8,6 @@ use crate::{
 use alloy::{consensus::Transaction, primitives::Address};
 use anyhow::Error;
 use batch_builder::BatchBuilder;
-use futures_util::future::try_join_all;
 use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
 
@@ -64,28 +63,19 @@ impl BatchManager {
 
     pub async fn recover_from_l2_block(&mut self, block_height: u64) -> Result<(), Error> {
         debug!("Recovering from L2 block {}", block_height);
-        let block = self.taiko.get_l2_block_by_number(block_height).await?;
-        let tx_hashes = block
-            .transactions
-            .as_hashes()
-            .ok_or_else(|| anyhow::anyhow!("recover_from_l2_block: No transactions in block"))?;
+        let block = self.taiko.get_l2_block_by_number(block_height, true).await?;
+        let (anchor_tx, txs) = match block.transactions.as_transactions() {
+            Some(txs) => txs
+                .split_first()
+                .ok_or_else(|| anyhow::anyhow!("Cannot get anchor transaction from block"))?,
+            None => return Err(anyhow::anyhow!("No transactions in block")),
+        };
 
-        let (anchor_tx_hash, txs_hashes) = tx_hashes.split_first().ok_or_else(|| {
-            anyhow::anyhow!("recover_from_l2_block: No anchor transaction in block")
-        })?;
-
-        let anchor_tx = self.taiko.get_transaction_by_hash(*anchor_tx_hash).await?;
         let anchor_block_id = Taiko::decode_anchor_tx_data(anchor_tx.input())?;
         debug!(
             "Recovering from L2 block {} with anchor block id {}",
             block_height, anchor_block_id
         );
-
-        // Fetch transactions concurrently
-        let tx_futures = txs_hashes
-            .iter()
-            .map(|tx_hash| self.taiko.get_transaction_by_hash(*tx_hash));
-        let txs: Vec<alloy::rpc::types::Transaction> = try_join_all(tx_futures).await?;
 
         debug!(
             "Recovering from L2 block {} with {} transactions and timestamp {}",
@@ -95,12 +85,12 @@ impl BatchManager {
         );
 
         self.batch_builder
-            .recover_from(txs, anchor_block_id, block.header.timestamp)
+            .recover_from(txs.to_vec(), anchor_block_id, block.header.timestamp)
     }
 
     pub async fn is_block_valid(&self, block_height: u64) -> Result<bool, Error> {
         debug!("is_block_valid: Checking L2 block {}", block_height);
-        let block = self.taiko.get_l2_block_by_number(block_height).await?;
+        let block = self.taiko.get_l2_block_by_number(block_height, false).await?;
 
         let anchor_tx_hash = block
             .transactions
