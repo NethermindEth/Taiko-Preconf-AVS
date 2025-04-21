@@ -1,5 +1,6 @@
 pub(crate) mod batch_manager;
 mod operator;
+mod verifier;
 
 use crate::{
     ethereum_l1::EthereumL1,
@@ -27,6 +28,7 @@ pub struct Node {
     operator: Operator,
     batch_manager: BatchManager,
     thresholds: Thresholds,
+    verifier: Option<verifier::Verifier>,
 }
 
 impl Node {
@@ -41,6 +43,7 @@ impl Node {
         l1_height_lag: u64,
         batch_builder_config: BatchBuilderConfig,
         thresholds: Thresholds,
+        simulate_not_submitting_at_the_end_of_epoch: bool,
     ) -> Result<Self, Error> {
         info!(
             "Batch builder config:\n\
@@ -59,6 +62,7 @@ impl Node {
             &ethereum_l1,
             handover_window_slots,
             handover_start_buffer_ms,
+            simulate_not_submitting_at_the_end_of_epoch,
         )?;
         Ok(Self {
             cancel_token,
@@ -72,6 +76,7 @@ impl Node {
             preconf_heartbeat_ms,
             operator,
             thresholds,
+            verifier: None,
         })
     }
 
@@ -190,33 +195,14 @@ impl Node {
             //if not, then read blocks from L2 execution to form your buffer (L2 batch) and continue operations normally
             // we didn't propose blocks to mempool
             if nonce_latest == nonce_pending {
-                // The first block anchor id is valid, so we can continue.
-                if self
-                    .batch_manager
-                    .is_block_valid(taiko_inbox_height + 1)
-                    .await?
-                {
-                    // recover all missed l2 blocks
-                    info!("Recovering from L2 blocks");
-                    for current_height in taiko_inbox_height + 1..=taiko_geth_height {
-                        self.batch_manager
-                            .recover_from_l2_block(current_height)
-                            .await?;
-                    }
-                    // TODO calculate batch params and decide is it possible to continue with it, be careful with timeShift
-                    // Sould be fixed with https://github.com/NethermindEth/Taiko-Preconf-AVS/issues/303
-                    // Now just submit all the batches
-                    self.batch_manager.try_submit_batches(false).await?;
-                } else {
-                    // The first block anchor id is not valid
-                    // TODO reorg + reanchor + preconfirm again
-                    // Just do force reorg
-                    info!("Triggering L2 reorg");
-                    self.batch_manager
-                        .taiko
-                        .trigger_l2_reorg(taiko_inbox_height)
-                        .await?;
-                }
+                let mut verifier = verifier::Verifier::new(
+                    self.ethereum_l1.execution_layer.clone(),
+                    self.batch_manager.taiko.clone(),
+                )
+                .await?;
+                verifier
+                    .verify_submitted_blocks(self.batch_manager.clone_without_batches())
+                    .await?;
             }
             //if yes, then continue operations normally without rebuilding the buffer
             // TODO handle gracefully
@@ -271,6 +257,16 @@ impl Node {
             .await?;
         self.print_current_slots_info(&current_status, &pending_tx_list, l2_slot_info.base_fee())?;
 
+        if current_status.is_preconfirmation_start_slot() {
+            self.verifier = Some(
+                verifier::Verifier::new(
+                    self.ethereum_l1.execution_layer.clone(),
+                    self.batch_manager.taiko.clone(),
+                )
+                .await?,
+            );
+        }
+
         if current_status.is_preconfer() {
             self.preconfirm_block(pending_tx_list, l2_slot_info).await?;
         }
@@ -281,8 +277,12 @@ impl Node {
                 .await?;
         }
 
-        if current_status.is_verifier() {
-            // TODO: handle prev operator not proposed blocks
+        if current_status.is_verifier() && self.verifier.is_some() {
+            self.verifier
+                .as_mut()
+                .unwrap()
+                .verify_submitted_blocks(self.batch_manager.clone_without_batches())
+                .await?;
         }
 
         if !current_status.is_submitter()

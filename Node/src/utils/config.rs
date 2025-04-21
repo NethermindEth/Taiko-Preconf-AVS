@@ -33,6 +33,7 @@ pub struct Config {
     pub delay_between_tx_attempts_sec: u64,
     pub threshold_eth: U256,
     pub threshold_taiko: U256,
+    pub simulate_not_submitting_at_the_end_of_epoch: bool,
 }
 
 #[derive(Debug)]
@@ -239,6 +240,12 @@ impl Config {
         let threshold_taiko =
             U256::from_str_radix(&threshold_taiko, 10).expect("THRESHOLD_TAIKO must be a number");
 
+        let simulate_not_submitting_at_the_end_of_epoch =
+            std::env::var("SIMULATE_NOT_SUBMITTING_AT_THE_END_OF_EPOCH")
+                .unwrap_or("false".to_string())
+                .parse::<bool>()
+                .expect("SIMULATE_NOT_SUBMITTING_AT_THE_END_OF_EPOCH must be a boolean");
+
         let config = Self {
             taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
                 .unwrap_or("ws://127.0.0.1:1234".to_string()),
@@ -276,6 +283,7 @@ impl Config {
             delay_between_tx_attempts_sec,
             threshold_eth,
             threshold_taiko,
+            simulate_not_submitting_at_the_end_of_epoch,
         };
 
         info!(
@@ -310,6 +318,7 @@ max attempts to send tx: {}
 delay between tx attempts: {}s
 threshold_eth: {}
 threshold_taiko: {}
+simulate not submitting at the end of epoch: {}
 "#,
             config.taiko_geth_ws_rpc_url,
             config.taiko_geth_auth_rpc_url,
@@ -340,6 +349,7 @@ threshold_taiko: {}
             config.delay_between_tx_attempts_sec,
             threshold_eth,
             threshold_taiko,
+            config.simulate_not_submitting_at_the_end_of_epoch,
         );
 
         config

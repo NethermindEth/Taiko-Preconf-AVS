@@ -188,16 +188,20 @@ impl Taiko {
     pub async fn get_l2_block_by_number(
         &self,
         number: u64,
+        full_txs: bool,
     ) -> Result<alloy::rpc::types::Block, Error> {
-        let block_by_number = self
+        let mut block_by_number = self
             .taiko_geth_provider_ws
             .read()
             .await
-            .get_block_by_number(BlockNumberOrTag::Number(number))
-            .await;
+            .get_block_by_number(BlockNumberOrTag::Number(number));
+
+        if full_txs {
+            block_by_number = block_by_number.full();
+        }
 
         let block = self
-            .check_for_ws_provider_failure(block_by_number, "Failed to get L2 block by number")
+            .check_for_ws_provider_failure(block_by_number.await, "Failed to get L2 block by number")
             .await?
             .ok_or(anyhow::anyhow!("Failed to get L2 block: value is None"))?;
         Ok(block)

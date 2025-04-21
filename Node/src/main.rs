@@ -95,6 +95,7 @@ async fn main() -> Result<(), Error> {
             eth: config.threshold_eth,
             taiko: config.threshold_taiko,
         },
+        config.simulate_not_submitting_at_the_end_of_epoch,
     )
     .await?;
     node.entrypoint();

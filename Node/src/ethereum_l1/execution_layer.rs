@@ -121,6 +121,7 @@ impl ExecutionLayer {
             PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider_ws);
         let operator = contract
             .getOperatorForCurrentEpoch()
+            .block(alloy::eips::BlockId::pending())
             .call()
             .await
             .map_err(|e| Error::msg(format!("Failed to get operator for current epoch: {}", e)))?
@@ -133,6 +134,7 @@ impl ExecutionLayer {
             PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider_ws);
         let operator = contract
             .getOperatorForNextEpoch()
+            .block(alloy::eips::BlockId::pending())
             .call()
             .await
             .map_err(|e| Error::msg(format!("Failed to get operator for next epoch: {}", e)))?
@@ -144,6 +146,7 @@ impl ExecutionLayer {
         &self,
         l2_blocks: Vec<L2Block>,
         last_anchor_origin_height: u64,
+        coinbase: Option<Address>,
     ) -> Result<(), Error> {
         let mut tx_vec = Vec::new();
         let mut blocks = Vec::new();
@@ -194,6 +197,7 @@ impl ExecutionLayer {
                 blocks.clone(),
                 last_anchor_origin_height,
                 last_block_timestamp,
+                coinbase.unwrap_or(self.preconfer_address),
             )
             .await?;
 

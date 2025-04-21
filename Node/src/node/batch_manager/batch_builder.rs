@@ -1,6 +1,7 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use crate::{ethereum_l1::EthereumL1, shared::l2_block::L2Block};
+use alloy::primitives::Address;
 use anyhow::Error;
 use tracing::{debug, trace, warn};
 
@@ -110,7 +111,7 @@ impl BatchBuilder {
         tx_list: Vec<alloy::rpc::types::Transaction>,
         anchor_block_id: u64,
         timestamp_sec: u64,
-    ) {
+    ) -> Result<(), Error> {
         if !self.is_same_anchor_block_id(anchor_block_id) {
             self.finalize_current_batch();
             self.current_batch = Some(Batch {
@@ -120,19 +121,23 @@ impl BatchBuilder {
             });
         }
 
+        let bytes_length = crate::shared::l2_tx_lists::encode_and_compress(&tx_list)?.len() as u64;
         let l2_block = L2Block::new_from(
             crate::shared::l2_tx_lists::PreBuiltTxList {
                 tx_list,
                 estimated_gas_used: 0,
-                bytes_length: 0,
+                bytes_length,
             },
             timestamp_sec,
         );
-        self.current_batch
-            .as_mut()
-            .unwrap()
-            .l2_blocks
-            .push(l2_block);
+
+        if self.can_consume_l2_block(&l2_block) {
+            self.add_l2_block_and_get_current_anchor_block_id(l2_block)?;
+        } else {
+            self.create_new_batch_and_add_l2_block(anchor_block_id, l2_block);
+        }
+
+        Ok(())
     }
 
     fn is_same_anchor_block_id(&self, anchor_block_id: u64) -> bool {
@@ -154,6 +159,7 @@ impl BatchBuilder {
         &mut self,
         ethereum_l1: Arc<EthereumL1>,
         submit_only_full_batches: bool,
+        coinbase: Option<Address>,
     ) -> Result<(), Error> {
         if self.current_batch.is_some()
             && (!submit_only_full_batches
@@ -171,7 +177,7 @@ impl BatchBuilder {
         while let Some(batch) = self.batches_to_send.front() {
             ethereum_l1
                 .execution_layer
-                .send_batch_to_l1(batch.l2_blocks.clone(), batch.anchor_block_id)
+                .send_batch_to_l1(batch.l2_blocks.clone(), batch.anchor_block_id, coinbase)
                 .await?;
 
             self.batches_to_send.pop_front();
@@ -213,6 +219,14 @@ impl BatchBuilder {
                 < current_l1_block;
         }
         false
+    }
+
+    pub fn clone_without_batches(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            batches_to_send: VecDeque::new(),
+            current_batch: None,
+        }
     }
 }
 
