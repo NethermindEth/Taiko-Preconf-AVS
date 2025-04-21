@@ -114,21 +114,12 @@ impl Node {
         info!("Warmup node");
 
         // Check TAIKO TOKEN balance
-        let bond_balance = self
+        let total_balance = self
             .ethereum_l1
             .execution_layer
-            .get_preconfer_inbox_bonds()
+            .get_preconfer_total_bonds()
             .await
             .map_err(|e| Error::msg(format!("Failed to fetch bond balance: {}", e)))?;
-
-        let wallet_balance = self
-            .ethereum_l1
-            .execution_layer
-            .get_preconfer_wallet_bonds()
-            .await
-            .map_err(|e| Error::msg(format!("Failed to fetch bond balance: {}", e)))?;
-
-        let total_balance = bond_balance + wallet_balance;
 
         if total_balance < self.thresholds.taiko {
             anyhow::bail!(
@@ -138,17 +129,13 @@ impl Node {
             );
         }
 
-        info!(
-            bond_balance = %bond_balance,
-            wallet_balance = %wallet_balance,
-            "Preconfer bonds are sufficient"
-        );
+        info!("Preconfer taiko balance are sufficient: {}", total_balance);
 
         // Check ETH balance
         let balance = self
             .ethereum_l1
             .execution_layer
-            .get_preconfer_eth_balance()
+            .get_preconfer_wallet_eth()
             .await
             .map_err(|e| Error::msg(format!("Failed to fetch ETH balance: {}", e)))?;
 

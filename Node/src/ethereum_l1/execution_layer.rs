@@ -263,7 +263,22 @@ impl ExecutionLayer {
         Ok(balance.min(allowance))
     }
 
-    pub async fn get_preconfer_eth_balance(&self) -> Result<alloy::primitives::U256, Error> {
+    pub async fn get_preconfer_total_bonds(&self) -> Result<alloy::primitives::U256, Error> {
+        // Check TAIKO TOKEN balance
+        let bond_balance = self
+            .get_preconfer_inbox_bonds()
+            .await
+            .map_err(|e| Error::msg(format!("Failed to fetch bond balance: {}", e)))?;
+
+        let wallet_balance = self
+            .get_preconfer_wallet_bonds()
+            .await
+            .map_err(|e| Error::msg(format!("Failed to fetch bond balance: {}", e)))?;
+
+        Ok(bond_balance + wallet_balance)
+    }
+
+    pub async fn get_preconfer_wallet_eth(&self) -> Result<alloy::primitives::U256, Error> {
         let balance = self.provider_ws.get_balance(self.preconfer_address).await?;
         Ok(balance)
     }
