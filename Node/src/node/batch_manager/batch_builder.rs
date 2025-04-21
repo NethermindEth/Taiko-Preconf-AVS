@@ -112,7 +112,12 @@ impl BatchBuilder {
         anchor_block_id: u64,
         timestamp_sec: u64,
     ) -> Result<(), Error> {
-        if !self.is_same_anchor_block_id(anchor_block_id) {
+        // We have a new batch if any of the following is true:
+        // 1. Anchor block IDs differ
+        // 2. Time difference between two blocks exceeds u8
+        if !self.is_same_anchor_block_id(anchor_block_id)
+            || self.is_time_shift_expired(timestamp_sec)
+        {
             self.finalize_current_batch();
             self.current_batch = Some(Batch {
                 total_bytes: 0,
@@ -184,6 +189,16 @@ impl BatchBuilder {
         }
 
         Ok(())
+    }
+
+    pub fn is_time_shift_expired(&self, current_l2_slot_timestamp: u64) -> bool {
+        if let Some(current_batch) = self.current_batch.as_ref() {
+            if let Some(last_block) = current_batch.l2_blocks.last() {
+                return current_l2_slot_timestamp - last_block.timestamp_sec
+                    > self.config.max_time_shift_between_blocks_sec;
+            }
+        }
+        false
     }
 
     pub fn is_time_shift_between_blocks_expiring(&self, current_l2_slot_timestamp: u64) -> bool {

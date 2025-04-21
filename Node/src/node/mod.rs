@@ -195,14 +195,20 @@ impl Node {
             //if not, then read blocks from L2 execution to form your buffer (L2 batch) and continue operations normally
             // we didn't propose blocks to mempool
             if nonce_latest == nonce_pending {
-                let mut verifier = verifier::Verifier::new(
-                    self.ethereum_l1.execution_layer.clone(),
-                    self.batch_manager.taiko.clone(),
-                )
-                .await?;
-                verifier
-                    .verify_submitted_blocks(self.batch_manager.clone_without_batches())
-                    .await?;
+                let mut verifier =
+                    verifier::Verifier::new(self.batch_manager.taiko.clone()).await?;
+                if let Err(e) = verifier
+                    .verify_submitted_blocks(
+                        self.batch_manager.clone_without_batches(),
+                        taiko_inbox_height,
+                    )
+                    .await
+                {
+                    warn!("Force Reorg: Verifier return an error: {}", e);
+                    self.batch_manager
+                        .trigger_l2_reorg(taiko_inbox_height)
+                        .await?;
+                }
             }
             //if yes, then continue operations normally without rebuilding the buffer
             // TODO handle gracefully
@@ -258,13 +264,7 @@ impl Node {
         self.print_current_slots_info(&current_status, &pending_tx_list, l2_slot_info.base_fee())?;
 
         if current_status.is_preconfirmation_start_slot() {
-            self.verifier = Some(
-                verifier::Verifier::new(
-                    self.ethereum_l1.execution_layer.clone(),
-                    self.batch_manager.taiko.clone(),
-                )
-                .await?,
-            );
+            self.verifier = Some(verifier::Verifier::new(self.batch_manager.taiko.clone()).await?);
         }
 
         if current_status.is_preconfer() {
@@ -278,11 +278,26 @@ impl Node {
         }
 
         if current_status.is_verifier() && self.verifier.is_some() {
-            self.verifier
+            let taiko_inbox_height = self
+                .ethereum_l1
+                .execution_layer
+                .get_l2_height_from_taiko_inbox()
+                .await?;
+            if let Err(e) = self
+                .verifier
                 .as_mut()
                 .unwrap()
-                .verify_submitted_blocks(self.batch_manager.clone_without_batches())
-                .await?;
+                .verify_submitted_blocks(
+                    self.batch_manager.clone_without_batches(),
+                    taiko_inbox_height,
+                )
+                .await
+            {
+                warn!("Force Reorg: Verifier return an error: {}", e);
+                self.batch_manager
+                    .trigger_l2_reorg(taiko_inbox_height)
+                    .await?;
+            }
         }
 
         if !current_status.is_submitter()

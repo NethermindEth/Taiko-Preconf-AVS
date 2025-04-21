@@ -3,29 +3,24 @@ use anyhow::Error;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-use crate::{ethereum_l1::execution_layer::ExecutionLayer, taiko::Taiko};
+use crate::taiko::Taiko;
 
 use super::batch_manager::BatchManager;
 
 pub struct Verifier {
-    execution_layer: Arc<ExecutionLayer>,
     taiko: Arc<Taiko>,
     taiko_geth_height: u64,
     verified_height: u64,
 }
 
 impl Verifier {
-    pub async fn new(
-        execution_layer: Arc<ExecutionLayer>,
-        taiko: Arc<Taiko>,
-    ) -> Result<Self, Error> {
+    pub async fn new(taiko: Arc<Taiko>) -> Result<Self, Error> {
         let taiko_geth_height = taiko.get_latest_l2_block_id().await?;
         debug!(
             "Verifier created with taiko_geth_height: {}",
             taiko_geth_height
         );
         Ok(Self {
-            execution_layer,
             taiko,
             taiko_geth_height,
             verified_height: 0,
@@ -35,12 +30,8 @@ impl Verifier {
     pub async fn verify_submitted_blocks(
         &mut self,
         mut batch_manager: BatchManager,
+        taiko_inbox_height: u64,
     ) -> Result<(), Error> {
-        let taiko_inbox_height = self
-            .execution_layer
-            .get_l2_height_from_taiko_inbox()
-            .await?;
-
         if self.taiko_geth_height > taiko_inbox_height
             && self.taiko_geth_height > self.verified_height
         {
@@ -75,28 +66,40 @@ pub async fn handle_unprocessed_blocks(
     taiko_geth_height: u64,
     coinbase: Address,
 ) -> Result<(), Error> {
+    let anchor_offset = batch_manager
+        .get_anchor_block_offset(taiko_inbox_height + 1)
+        .await?;
+    let mut extra_slots: u64 = 0;
     // The first block anchor id is valid, so we can continue.
-    if batch_manager.is_block_valid(taiko_inbox_height + 1).await? {
+    if batch_manager.is_anchor_block_offset_valid(anchor_offset) {
+        let start = std::time::Instant::now();
         // recover all missed l2 blocks
         info!("Recovering from L2 blocks for coinbase: {}", coinbase);
         for current_height in taiko_inbox_height + 1..=taiko_geth_height {
             batch_manager.recover_from_l2_block(current_height).await?;
         }
+        let elapsed = start.elapsed().as_secs();
+        extra_slots = elapsed / batch_manager.get_config().l1_slot_duration_sec;
+        info!(
+            "Recovered in {} seconds (extra_slots = {})",
+            elapsed, extra_slots
+        );
+    }
+    if batch_manager.is_anchor_block_offset_valid(anchor_offset + extra_slots) {
         // TODO calculate batch params and decide is it possible to continue with it, be careful with timeShift
         // Sould be fixed with https://github.com/NethermindEth/Taiko-Preconf-AVS/issues/303
         // Now just submit all the batches
+        info!("Submit batches");
         batch_manager
             .try_submit_batches_with_coinbase(coinbase)
             .await?;
     } else {
         // The first block anchor id is not valid
-        // TODO reorg + reanchor + preconfirm again
         // Just do force reorg
         warn!("Triggering L2 reorg");
-        batch_manager
-            .taiko
-            .trigger_l2_reorg(taiko_inbox_height)
-            .await?;
+        return Err(anyhow::anyhow!(
+            "Error: L2 chain state may be inconsistent."
+        ));
     }
 
     Ok(())
