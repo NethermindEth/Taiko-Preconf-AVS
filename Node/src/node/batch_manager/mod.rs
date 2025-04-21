@@ -5,15 +5,14 @@ use crate::{
     shared::{l2_block::L2Block, l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
     taiko::Taiko,
 };
-use alloy::consensus::Transaction;
+use alloy::{consensus::Transaction, primitives::Address};
 use anyhow::Error;
 use batch_builder::BatchBuilder;
-use futures_util::future::try_join_all;
 use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
 
 // TODO move to config
-const MIN_SLOTS_TO_PROPOSE: u64 = 3; // Minimum number of slots required to propose a batch on L1
+const MIN_SLOTS_TO_PROPOSE: u64 = 5; // Minimum number of slots required to propose a batch on L1
 
 /// Configuration for batching L2 transactions
 #[derive(Clone)]
@@ -64,28 +63,22 @@ impl BatchManager {
 
     pub async fn recover_from_l2_block(&mut self, block_height: u64) -> Result<(), Error> {
         debug!("Recovering from L2 block {}", block_height);
-        let block = self.taiko.get_l2_block_by_number(block_height).await?;
-        let tx_hashes = block
-            .transactions
-            .as_hashes()
-            .ok_or_else(|| anyhow::anyhow!("recover_from_l2_block: No transactions in block"))?;
+        let block = self
+            .taiko
+            .get_l2_block_by_number(block_height, true)
+            .await?;
+        let (anchor_tx, txs) = match block.transactions.as_transactions() {
+            Some(txs) => txs
+                .split_first()
+                .ok_or_else(|| anyhow::anyhow!("Cannot get anchor transaction from block"))?,
+            None => return Err(anyhow::anyhow!("No transactions in block")),
+        };
 
-        let (anchor_tx_hash, txs_hashes) = tx_hashes.split_first().ok_or_else(|| {
-            anyhow::anyhow!("recover_from_l2_block: No anchor transaction in block")
-        })?;
-
-        let anchor_tx = self.taiko.get_transaction_by_hash(*anchor_tx_hash).await?;
         let anchor_block_id = Taiko::decode_anchor_tx_data(anchor_tx.input())?;
         debug!(
             "Recovering from L2 block {} with anchor block id {}",
             block_height, anchor_block_id
         );
-
-        // Fetch transactions concurrently
-        let tx_futures = txs_hashes
-            .iter()
-            .map(|tx_hash| self.taiko.get_transaction_by_hash(*tx_hash));
-        let txs: Vec<alloy::rpc::types::Transaction> = try_join_all(tx_futures).await?;
 
         debug!(
             "Recovering from L2 block {} with {} transactions and timestamp {}",
@@ -95,49 +88,58 @@ impl BatchManager {
         );
 
         self.batch_builder
-            .recover_from(txs, anchor_block_id, block.header.timestamp);
-
-        Ok(())
+            .recover_from(txs.to_vec(), anchor_block_id, block.header.timestamp)
     }
 
-    pub async fn is_block_valid(&self, block_height: u64) -> Result<bool, Error> {
-        debug!("is_block_valid: Checking L2 block {}", block_height);
-        let block = self.taiko.get_l2_block_by_number(block_height).await?;
+    pub fn get_config(&self) -> &BatchBuilderConfig {
+        self.batch_builder.get_config()
+    }
+
+    pub async fn get_anchor_block_offset(&self, block_height: u64) -> Result<u64, Error> {
+        debug!(
+            "get_anchor_block_offset: Checking L2 block {}",
+            block_height
+        );
+        let block = self
+            .taiko
+            .get_l2_block_by_number(block_height, false)
+            .await?;
 
         let anchor_tx_hash = block
             .transactions
             .as_hashes()
             .and_then(|txs| txs.first())
-            .ok_or_else(|| anyhow::anyhow!("is_block_valid: No transactions in block"))?;
+            .ok_or_else(|| anyhow::anyhow!("get_anchor_block_offset: No transactions in block"))?;
 
         let anchor_tx = self.taiko.get_transaction_by_hash(*anchor_tx_hash).await?;
         let anchor_block_id = Taiko::decode_anchor_tx_data(anchor_tx.input())?;
 
         debug!(
-            "is_block_valid: L2 block {} has anchor block id {}",
+            "get_anchor_block_offset: L2 block {} has anchor block id {}",
             block_height, anchor_block_id
         );
 
         let l1_height = self.ethereum_l1.execution_layer.get_l1_height().await?;
         let anchor_offset = l1_height - anchor_block_id;
-        let max_anchor_height_offset = self
-            .ethereum_l1
-            .execution_layer
-            .get_config_max_anchor_height_offset();
-        if anchor_offset + MIN_SLOTS_TO_PROPOSE > max_anchor_height_offset {
-            warn!(
-                "Skip recovery! Reorg detected! Anchor height offset is greater than max anchor height offset. L1 height: {}, anchor block id: {}, anchor height offset: {}, max anchor height offset: {}",
-                l1_height, anchor_block_id, anchor_offset, max_anchor_height_offset
-            );
-            return Ok(false);
-        }
 
-        info!(
-            "is_block_valid: L1 height: {}, anchor block id: {}, anchor height offset: {}, max anchor height offset: {}",
-            l1_height, anchor_block_id, anchor_offset, max_anchor_height_offset
-        );
+        Ok(anchor_offset)
+    }
 
-        Ok(true)
+    pub async fn trigger_l2_reorg(&mut self, new_last_block_id: u64) -> Result<(), Error> {
+        warn!("Triggering L2 reorg {}", new_last_block_id);
+        self.taiko.trigger_l2_reorg(new_last_block_id).await?;
+
+        self.reset_builder();
+
+        Ok(())
+    }
+
+    pub fn is_anchor_block_offset_valid(&self, anchor_block_offset: u64) -> bool {
+        anchor_block_offset + MIN_SLOTS_TO_PROPOSE
+            < self
+                .ethereum_l1
+                .execution_layer
+                .get_config_max_anchor_height_offset()
     }
 
     pub async fn preconfirm_block(
@@ -232,7 +234,16 @@ impl BatchManager {
         submit_only_full_batches: bool,
     ) -> Result<(), Error> {
         self.batch_builder
-            .try_submit_batches(self.ethereum_l1.clone(), submit_only_full_batches)
+            .try_submit_batches(self.ethereum_l1.clone(), submit_only_full_batches, None)
+            .await
+    }
+
+    pub async fn try_submit_batches_with_coinbase(
+        &mut self,
+        coinbase: Address,
+    ) -> Result<(), Error> {
+        self.batch_builder
+            .try_submit_batches(self.ethereum_l1.clone(), false, Some(coinbase))
             .await
     }
 
@@ -249,5 +260,14 @@ impl BatchManager {
         warn!("Resetting batch builder");
         self.batch_builder =
             batch_builder::BatchBuilder::new(self.batch_builder.get_config().clone());
+    }
+
+    pub fn clone_without_batches(&self) -> Self {
+        Self {
+            batch_builder: self.batch_builder.clone_without_batches(),
+            ethereum_l1: self.ethereum_l1.clone(),
+            taiko: self.taiko.clone(),
+            l1_height_lag: self.l1_height_lag,
+        }
     }
 }
