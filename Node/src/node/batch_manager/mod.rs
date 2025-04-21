@@ -63,7 +63,10 @@ impl BatchManager {
 
     pub async fn recover_from_l2_block(&mut self, block_height: u64) -> Result<(), Error> {
         debug!("Recovering from L2 block {}", block_height);
-        let block = self.taiko.get_l2_block_by_number(block_height, true).await?;
+        let block = self
+            .taiko
+            .get_l2_block_by_number(block_height, true)
+            .await?;
         let (anchor_tx, txs) = match block.transactions.as_transactions() {
             Some(txs) => txs
                 .split_first()
@@ -90,7 +93,10 @@ impl BatchManager {
 
     pub async fn is_block_valid(&self, block_height: u64) -> Result<bool, Error> {
         debug!("is_block_valid: Checking L2 block {}", block_height);
-        let block = self.taiko.get_l2_block_by_number(block_height, false).await?;
+        let block = self
+            .taiko
+            .get_l2_block_by_number(block_height, false)
+            .await?;
 
         let anchor_tx_hash = block
             .transactions
