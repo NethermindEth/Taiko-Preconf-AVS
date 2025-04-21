@@ -33,6 +33,7 @@ pub struct ExecutionLayer {
 
 pub struct ContractAddresses {
     pub taiko_inbox: Address,
+    pub taiko_token: Address,
     pub preconf_whitelist: Address,
     pub preconf_router: Address,
 }
@@ -53,9 +54,6 @@ impl ExecutionLayer {
         #[cfg(feature = "extra_gas_percentage")]
         let extra_gas_percentage = config.contract_addresses.extra_gas_percentage;
 
-        let contract_addresses = Self::parse_contract_addresses(&config.contract_addresses)
-            .map_err(|e| Error::msg(format!("Failed to parse contract addresses: {}", e)))?;
-
         let ws = WsConnect::new(config.execution_ws_rpc_url.to_string());
 
         let provider_ws: Arc<WsProvider> = Arc::new(
@@ -65,6 +63,11 @@ impl ExecutionLayer {
                 .await
                 .unwrap(),
         );
+
+        let contract_addresses =
+            Self::parse_contract_addresses(provider_ws.clone(), &config.contract_addresses)
+                .await
+                .map_err(|e| Error::msg(format!("Failed to parse contract addresses: {}", e)))?;
 
         let transaction_monitor = TransactionMonitor::new(
             provider_ws.clone(),
@@ -89,15 +92,25 @@ impl ExecutionLayer {
         })
     }
 
-    fn parse_contract_addresses(
+    async fn parse_contract_addresses(
+        provider: Arc<WsProvider>,
         contract_addresses: &config::L1ContractAddresses,
     ) -> Result<ContractAddresses, Error> {
         let taiko_inbox = contract_addresses.taiko_inbox.parse()?;
         let preconf_whitelist = contract_addresses.preconf_whitelist.parse()?;
         let preconf_router = contract_addresses.preconf_router.parse()?;
 
+        let contract = taiko_inbox::ITaikoInbox::new(taiko_inbox, provider);
+        let taiko_token = contract
+            .bondToken()
+            .call()
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get bond token: {}", e)))?
+            ._0;
+
         Ok(ContractAddresses {
             taiko_inbox,
+            taiko_token,
             preconf_whitelist,
             preconf_router,
         })
@@ -219,6 +232,42 @@ impl ExecutionLayer {
         self.pacaya_config.clone()
     }
 
+    pub async fn get_preconfer_inbox_bonds(&self) -> Result<alloy::primitives::U256, Error> {
+        let contract =
+            taiko_inbox::ITaikoInbox::new(self.contract_addresses.taiko_inbox, &self.provider_ws);
+        let bonds_balance = contract
+            .bondBalanceOf(self.preconfer_address)
+            .call()
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get bonds balance: {}", e)))?
+            ._0;
+        Ok(bonds_balance)
+    }
+
+    pub async fn get_preconfer_wallet_bonds(&self) -> Result<alloy::primitives::U256, Error> {
+        let contract = IERC20::new(self.contract_addresses.taiko_token, &self.provider_ws);
+        let allowance = contract
+            .allowance(self.preconfer_address, self.contract_addresses.taiko_inbox)
+            .call()
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get allowance: {}", e)))?
+            ._0;
+
+        let balance = contract
+            .balanceOf(self.preconfer_address)
+            .call()
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get preconfer balance: {}", e)))?
+            ._0;
+
+        Ok(balance.min(allowance))
+    }
+
+    pub async fn get_preconfer_eth_balance(&self) -> Result<alloy::primitives::U256, Error> {
+        let balance = self.provider_ws.get_balance(self.preconfer_address).await?;
+        Ok(balance)
+    }
+
     #[cfg(test)]
     pub async fn new_from_pk(
         ws_rpc_url: String,
@@ -247,6 +296,7 @@ impl ExecutionLayer {
             preconfer_address,
             contract_addresses: ContractAddresses {
                 taiko_inbox: Address::ZERO,
+                taiko_token: Address::ZERO,
                 preconf_whitelist: Address::ZERO,
                 preconf_router: Address::ZERO,
             },

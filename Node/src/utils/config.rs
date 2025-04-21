@@ -1,3 +1,4 @@
+use alloy::primitives::U256;
 use std::time::Duration;
 use tracing::{info, warn};
 
@@ -30,6 +31,8 @@ pub struct Config {
     pub tx_fees_increase_percentage: u64,
     pub max_attempts_to_send_tx: u64,
     pub delay_between_tx_attempts_sec: u64,
+    pub threshold_eth: U256,
+    pub threshold_taiko: U256,
     pub simulate_not_submitting_at_the_end_of_epoch: bool,
 }
 
@@ -225,6 +228,18 @@ impl Config {
             .parse::<u64>()
             .expect("DELAY_BETWEEN_TX_ATTEMPTS_SEC must be a number");
 
+        // 0.5 ETH
+        let threshold_eth =
+            std::env::var("THRESHOLD_ETH").unwrap_or("500000000000000000".to_string());
+        let threshold_eth =
+            U256::from_str_radix(&threshold_eth, 10).expect("THRESHOLD_ETH must be a number");
+
+        // 1000 TAIKO
+        let threshold_taiko =
+            std::env::var("THRESHOLD_TAIKO").unwrap_or("10000000000000000000000".to_string());
+        let threshold_taiko =
+            U256::from_str_radix(&threshold_taiko, 10).expect("THRESHOLD_TAIKO must be a number");
+
         let simulate_not_submitting_at_the_end_of_epoch =
             std::env::var("SIMULATE_NOT_SUBMITTING_AT_THE_END_OF_EPOCH")
                 .unwrap_or("false".to_string())
@@ -266,6 +281,8 @@ impl Config {
             tx_fees_increase_percentage,
             max_attempts_to_send_tx,
             delay_between_tx_attempts_sec,
+            threshold_eth,
+            threshold_taiko,
             simulate_not_submitting_at_the_end_of_epoch,
         };
 
@@ -299,6 +316,8 @@ min priority fee per gas wei: {}
 tx fees increase percentage: {}
 max attempts to send tx: {}
 delay between tx attempts: {}s
+threshold_eth: {}
+threshold_taiko: {}
 simulate not submitting at the end of epoch: {}
 "#,
             config.taiko_geth_ws_rpc_url,
@@ -328,6 +347,8 @@ simulate not submitting at the end of epoch: {}
             config.tx_fees_increase_percentage,
             config.max_attempts_to_send_tx,
             config.delay_between_tx_attempts_sec,
+            threshold_eth,
+            threshold_taiko,
             config.simulate_not_submitting_at_the_end_of_epoch,
         );
 
