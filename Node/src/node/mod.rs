@@ -166,54 +166,6 @@ impl Node {
             );
         }
 
-        let current_status = self.operator.get_status().await?;
-
-        // TODO check that when we are Preconfer or PreconferHandoverBuffer we will sync our l2 state on epoch boundry
-        if !current_status.is_submitter() {
-            info!("Status: {:?}, no need for warmup", current_status);
-            return Ok(());
-        }
-
-        if taiko_inbox_height == taiko_geth_height {
-            return Ok(());
-        } else {
-            // We check previously that taiko_inbox_height > taiko_geth_height is not true,
-            // so it is taiko_inbox_height < height_taiko_geth.
-            // We have unprocessed L2 blocks.
-            // Check if there is a pending tx on the mempool from your address.
-            let nonce_latest: u64 = self
-                .ethereum_l1
-                .execution_layer
-                .get_preconfer_nonce_latest()
-                .await?;
-            let nonce_pending: u64 = self
-                .ethereum_l1
-                .execution_layer
-                .get_preconfer_nonce_pending()
-                .await?;
-            info!("Nonce Latest: {nonce_latest}, Nonce Pending: {nonce_pending}");
-            //if not, then read blocks from L2 execution to form your buffer (L2 batch) and continue operations normally
-            // we didn't propose blocks to mempool
-            if nonce_latest == nonce_pending {
-                let mut verifier =
-                    verifier::Verifier::new(self.batch_manager.taiko.clone()).await?;
-                if let Err(e) = verifier
-                    .verify_submitted_blocks(
-                        self.batch_manager.clone_without_batches(),
-                        taiko_inbox_height,
-                    )
-                    .await
-                {
-                    warn!("Force Reorg: Verifier return an error: {}", e);
-                    self.batch_manager
-                        .trigger_l2_reorg(taiko_inbox_height)
-                        .await?;
-                }
-            }
-            //if yes, then continue operations normally without rebuilding the buffer
-            // TODO handle gracefully
-        }
-
         Ok(())
     }
 
@@ -253,6 +205,50 @@ impl Node {
         }
     }
 
+    async fn verify_proposed_batches(&mut self) -> Result<(), Error> {
+        let (taiko_inbox_height, taiko_geth_height) = self.get_current_protocol_height().await?;
+
+        info!(
+            "📨 Taiko Inbox Height: {taiko_inbox_height}, Taiko Geth Height: {taiko_geth_height}"
+        );
+
+        if taiko_inbox_height == taiko_geth_height {
+            return Ok(());
+        } else {
+            let nonce_latest: u64 = self
+                .ethereum_l1
+                .execution_layer
+                .get_preconfer_nonce_latest()
+                .await?;
+            let nonce_pending: u64 = self
+                .ethereum_l1
+                .execution_layer
+                .get_preconfer_nonce_pending()
+                .await?;
+            debug!("Nonce Latest: {nonce_latest}, Nonce Pending: {nonce_pending}");
+            if nonce_latest == nonce_pending {
+                let mut verifier = verifier::Verifier::with_taiko_height(
+                    taiko_inbox_height,
+                    self.batch_manager.taiko.clone(),
+                );
+                if let Err(e) = verifier
+                    .verify_submitted_blocks(
+                        self.batch_manager.clone_without_batches(),
+                        taiko_inbox_height,
+                    )
+                    .await
+                {
+                    warn!("Force Reorg: Verifier return an error: {}", e);
+                    self.batch_manager
+                        .trigger_l2_reorg(taiko_inbox_height)
+                        .await?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
         let l2_slot_info = self.batch_manager.taiko.get_l2_slot_info().await?;
         let current_status = self.operator.get_status().await?;
@@ -264,7 +260,15 @@ impl Node {
         self.print_current_slots_info(&current_status, &pending_tx_list, l2_slot_info.base_fee())?;
 
         if current_status.is_preconfirmation_start_slot() {
-            self.verifier = Some(verifier::Verifier::new(self.batch_manager.taiko.clone()).await?);
+            if current_status.is_submitter() {
+                // We start preconfirmation in the middle of the epoch.
+                // Need to check for unproposed L2 blocks.
+                self.verify_proposed_batches().await?;
+            } else {
+                // Expected behaviour
+                self.verifier =
+                    Some(verifier::Verifier::new(self.batch_manager.taiko.clone()).await?);
+            }
         }
 
         if current_status.is_preconfer() {
@@ -298,6 +302,7 @@ impl Node {
                     .trigger_l2_reorg(taiko_inbox_height)
                     .await?;
             }
+            self.verifier = None;
         }
 
         if !current_status.is_submitter()

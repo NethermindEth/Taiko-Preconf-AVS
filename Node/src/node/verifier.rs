@@ -16,15 +16,19 @@ pub struct Verifier {
 impl Verifier {
     pub async fn new(taiko: Arc<Taiko>) -> Result<Self, Error> {
         let taiko_geth_height = taiko.get_latest_l2_block_id().await?;
+        Ok(Self::with_taiko_height(taiko_geth_height, taiko))
+    }
+
+    pub fn with_taiko_height(taiko_geth_height: u64, taiko: Arc<Taiko>) -> Self {
         debug!(
             "Verifier created with taiko_geth_height: {}",
             taiko_geth_height
         );
-        Ok(Self {
+        Self {
             taiko,
             taiko_geth_height,
             verified_height: 0,
-        })
+        }
     }
 
     pub async fn verify_submitted_blocks(

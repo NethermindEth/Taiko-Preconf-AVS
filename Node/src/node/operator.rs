@@ -47,8 +47,6 @@ impl Status {
     }
 }
 
-const OPERATOR_TRANSITION_SLOTS: u64 = 2;
-// Should be less than OPERATOR_TRANSITION_SLOTS
 const SUBMITTED_BATCHES_VERIFICATION_SLOT: u64 = 1;
 
 impl std::fmt::Display for Status {
@@ -102,7 +100,7 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
 
         // For the first N slots of the new epoch, use the next operator from the previous epoch
         // it's because of the delay that L1 updates the current operator after the epoch has changed.
-        let current_operator = if l1_slot < OPERATOR_TRANSITION_SLOTS {
+        let current_operator = if l1_slot < SUBMITTED_BATCHES_VERIFICATION_SLOT {
             self.next_operator
         } else {
             self.next_operator = match self.execution_layer.is_operator_for_next_epoch().await {
@@ -145,7 +143,7 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
     }
 
     fn is_submitter(&self, l1_slot: u64, current_operator: bool, handover_window: bool) -> bool {
-        if l1_slot < OPERATOR_TRANSITION_SLOTS && !self.continuing_role {
+        if l1_slot < SUBMITTED_BATCHES_VERIFICATION_SLOT && !self.continuing_role {
             return false; // do not summit here, it's for verification
         }
 
@@ -157,7 +155,7 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
     }
 
     fn is_verifier(&self, l1_slot: u64, current_operator: bool) -> bool {
-        current_operator && l1_slot == SUBMITTED_BATCHES_VERIFICATION_SLOT && !self.continuing_role
+        current_operator && l1_slot < SUBMITTED_BATCHES_VERIFICATION_SLOT && !self.continuing_role
     }
 
     fn is_preconfirmation_start_l2_slot(&self, preconfer: bool) -> bool {
