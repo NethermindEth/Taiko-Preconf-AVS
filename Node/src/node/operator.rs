@@ -47,9 +47,7 @@ impl Status {
     }
 }
 
-const OPERATOR_TRANSITION_SLOTS: u64 = 2;
-// Should be less than OPERATOR_TRANSITION_SLOTS
-const SUBMITTED_BATCHES_VERIFICATION_SLOT: u64 = 1;
+const OPERATOR_TRANSITION_SLOTS: u64 = 1;
 
 impl std::fmt::Display for Status {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -157,7 +155,7 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
     }
 
     fn is_verifier(&self, l1_slot: u64, current_operator: bool) -> bool {
-        current_operator && l1_slot == SUBMITTED_BATCHES_VERIFICATION_SLOT && !self.continuing_role
+        current_operator && l1_slot < OPERATOR_TRANSITION_SLOTS && !self.continuing_role
     }
 
     fn is_preconfirmation_start_l2_slot(&self, preconfer: bool) -> bool {
