@@ -15,8 +15,6 @@ pub struct Config {
     pub preconf_heartbeat_ms: u64,
     pub msg_expiry_sec: u64,
     pub contract_addresses: L1ContractAddresses,
-    pub validator_index: u64,
-    pub enable_preconfirmation: bool,
     pub jwt_secret_file_path: String,
     pub rpc_client_timeout: Duration,
     pub taiko_anchor_address: String,
@@ -138,16 +136,6 @@ impl Config {
             .parse::<u64>()
             .expect("MSG_EXPIRY_SEC must be a number");
 
-        let validator_index = std::env::var("VALIDATOR_INDEX")
-            .expect("VALIDATOR_INDEX env variable must be set")
-            .parse::<u64>()
-            .expect("VALIDATOR_INDEX must be a number");
-
-        let enable_preconfirmation = std::env::var("ENABLE_PRECONFIRMATION")
-            .unwrap_or("true".to_string())
-            .parse::<bool>()
-            .expect("ENABLE_PRECONFIRMATION must be a boolean");
-
         let jwt_secret_file_path = std::env::var("JWT_SECRET_FILE_PATH").unwrap_or_else(|_| {
             warn!(
                 "No JWT secret file path found in {} env var, using default",
@@ -265,8 +253,6 @@ impl Config {
             preconf_heartbeat_ms,
             msg_expiry_sec,
             contract_addresses,
-            validator_index,
-            enable_preconfirmation,
             jwt_secret_file_path,
             rpc_client_timeout,
             taiko_anchor_address,
@@ -300,8 +286,6 @@ L1 slots per epoch: {}
 L2 slot duration (heart beat): {}
 Preconf registry expiry: {}s
 Contract addresses: {:#?}
-validator index: {}
-enable preconfirmation: {}
 jwt secret file path: {}
 rpc client timeout: {}s
 taiko anchor address: {}
@@ -331,8 +315,6 @@ simulate not submitting at the end of epoch: {}
             config.preconf_heartbeat_ms,
             config.msg_expiry_sec,
             config.contract_addresses,
-            config.validator_index,
-            config.enable_preconfirmation,
             config.jwt_secret_file_path,
             config.rpc_client_timeout.as_secs(),
             config.taiko_anchor_address,
