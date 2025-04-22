@@ -98,7 +98,8 @@ async fn main() -> Result<(), Error> {
         config.simulate_not_submitting_at_the_end_of_epoch,
     )
     .await?;
-    node.entrypoint();
+
+    node.entrypoint().await?;
 
     let metrics = Arc::new(Metrics::new());
     tokio::spawn(update_metrics_loop(ethereum_l1.clone(), metrics.clone()));
