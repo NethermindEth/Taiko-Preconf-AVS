@@ -80,19 +80,17 @@ impl Node {
         })
     }
 
-    /// Consumes the Node and starts two loops:
-    /// one for handling incoming messages and one for the block preconfirmation
     pub async fn entrypoint(mut self) -> Result<(), Error> {
         info!("Starting node");
-        match self.warmup().await {
-            Ok(()) => {
-                info!("Node warmup successful");
-            }
-            Err(err) => {
-                error!("Failed to warmup node: {}", err);
-                return Err(anyhow::anyhow!("Failed to warmup node: {}", err));
-            }
+
+        if let Err(err) = self.warmup().await {
+            error!("Failed to warm up node: {}", err);
+            return Err(anyhow::anyhow!(err));
         }
+
+        info!("Node warmup successful");
+
+        // Run preconfirmation loop in background
         tokio::spawn(async move {
             self.preconfirmation_loop().await;
         });
