@@ -228,7 +228,7 @@ impl Node {
             debug!("Nonce Latest: {nonce_latest}, Nonce Pending: {nonce_pending}");
             if nonce_latest == nonce_pending {
                 let mut verifier = verifier::Verifier::with_taiko_height(
-                    taiko_inbox_height,
+                    taiko_geth_height,
                     self.batch_manager.taiko.clone(),
                 );
                 if let Err(e) = verifier
