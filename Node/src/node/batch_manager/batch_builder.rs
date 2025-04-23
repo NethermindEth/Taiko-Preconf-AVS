@@ -22,7 +22,11 @@ pub struct BatchBuilder {
 
 impl Drop for BatchBuilder {
     fn drop(&mut self) {
-        debug!("BatchBuilder dropped!");
+        debug!(
+            "BatchBuilder dropped! current_batch is none: {}, batches_to_send len: {}",
+            self.current_batch.is_none(),
+            self.batches_to_send.len()
+        );
     }
 }
 
