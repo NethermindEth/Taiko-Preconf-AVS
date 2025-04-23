@@ -114,15 +114,10 @@ impl TransactionMonitor {
             );
         }
 
-        let pending_tx = match self.provider.send_transaction(tx).await {
-            Ok(tx) => tx,
-            Err(e) => {
-                error!("Failed to send transaction: {}", e);
-                return Err(e.into());
-            }
-        };
-
-        Ok(pending_tx)
+        self.provider
+            .send_transaction(tx)
+            .await
+            .map_err(|e| Error::msg(format!("Failed to send transaction: {}", e)))
     }
 }
 
@@ -158,14 +153,12 @@ impl TransactionMonitorThread {
 
             for attempt in 1..self.config.max_attempts_to_send_tx {
                 let mut tx_clone = tx.clone();
-                if attempt > 0 {
-                    // replacement requires 100% more for penalty
-                    max_fee_per_gas += max_fee_per_gas;
-                    max_priority_fee_per_gas += max_priority_fee_per_gas;
-                    if let Some(max_fee_per_blob_gas) = &mut max_fee_per_blob_gas {
-                        *max_fee_per_blob_gas += *max_fee_per_blob_gas;
-                    }
-                } else {
+
+                // replacement requires 100% more for penalty
+                max_fee_per_gas += max_fee_per_gas;
+                max_priority_fee_per_gas += max_priority_fee_per_gas;
+                if let Some(max_fee_per_blob_gas) = &mut max_fee_per_blob_gas {
+                    *max_fee_per_blob_gas += *max_fee_per_blob_gas;
                 }
 
                 set_tx_parameters(
