@@ -1,20 +1,31 @@
 use discv5::{enr, enr::CombinedKey, ConfigBuilder, Discv5, Event, ListenConfig};
-use std::fs::File;
-use std::io::{self, Write};
-use std::net::Ipv4Addr;
-use tracing::{error, info};
+use jsonrpc_core::{IoHandler, Params, Result, Value};
+use jsonrpc_http_server::ServerBuilder;
+use std::{net::Ipv4Addr, sync::Arc};
+use tracing::info;
 
-const BOOT_NODE_PATH: &str = "/shared/enr.txt";
+// This is the handler for the JSON-RPC methods.
+fn create_rpc_handler(enr: Arc<String>) -> IoHandler {
+    let mut io = IoHandler::new();
 
-fn write_boot_node(enr: &str) -> Result<(), io::Error> {
-    info!("Writing boot node to {} end {}", BOOT_NODE_PATH, enr);
-    let mut file = File::create(BOOT_NODE_PATH)?;
-    file.write_all(enr.as_bytes())?;
-    Ok(())
+    io.add_method("p2p_getENR", move |_params: Params| {
+        let s = enr.to_string();
+        async move { Ok(Value::String(s)) }
+    });
+
+    // Add a health check method
+    io.add_method("health", |_params: Params| {
+        async move {
+            // Return a simple response indicating the service is healthy
+            Ok(Value::String("Ok".to_string()))
+        }
+    });
+
+    io
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<()> {
     // Setup tracing
     let filter_layer = tracing_subscriber::EnvFilter::try_from_default_env()
         .or_else(|_| tracing_subscriber::EnvFilter::try_new("debug"))
@@ -80,15 +91,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // construct the discv5 server
     let mut discv5: Discv5 = Discv5::new(enr, enr_key, config).unwrap();
 
-    if let Err(e) = write_boot_node(&discv5.local_enr().to_base64()) {
-        error!("Failed to write boot node to file: {}", e);
-    }
+    // save base64 ENR
+    let enr_base64 = Arc::new(discv5.local_enr().to_base64());
 
-    // start the discv5 service
+    std::thread::spawn(move || {
+        let io_handler = create_rpc_handler(enr_base64);
+
+        let addr = "0.0.0.0:9001".to_string();
+
+        let server = ServerBuilder::new(io_handler)
+            //.cors(Method::POST)
+            .start_http(&addr.parse().unwrap())
+            .expect("Unable to start RPC server");
+
+        info!("RPC server started on port 9001");
+        server.wait();
+    });
+
+    // Start the discv5 service
     discv5.start().await.unwrap();
-    info!("Server started");
+    info!("Discv5 server started");
 
-    // get an event stream
+    // Start the event loop for discv5
     let mut event_stream = discv5.event_stream().await.unwrap();
 
     loop {

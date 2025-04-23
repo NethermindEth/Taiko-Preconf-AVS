@@ -10,3 +10,7 @@ tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 p2p-network ={ path = "../p2pNetwork" }
 rand = "0.8"
+jsonrpc-client-transports = "18.0.0"
+jsonrpc-core = "18.0"
+jsonrpc-core-client = "18.0"
+serde_json = "1.0.140"

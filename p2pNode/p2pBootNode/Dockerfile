@@ -1,4 +1,4 @@
-FROM rust:1.80 as builder
+FROM rust:1.84 as builder
 
 # Set the working directory inside the container
 WORKDIR /usr/src/p2p-boot-node
@@ -17,6 +17,7 @@ COPY --from=builder /usr/src/p2p-boot-node/target/release/p2p-boot-node /usr/loc
 
 # Expose the port that the server will run on
 EXPOSE 9000
+EXPOSE 8545
 
 # Run the binary
 # CMD in docker-compose
