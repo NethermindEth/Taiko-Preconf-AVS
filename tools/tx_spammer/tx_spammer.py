@@ -35,6 +35,8 @@ from dotenv import load_dotenv
 import argparse
 import requests
 import json
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 # Load environment variables from .env file
 load_dotenv()
@@ -65,6 +67,7 @@ parser.add_argument('--slots', nargs='+', type=int, default=[],
                     help='Slots to send transactions (0-31)')
 parser.add_argument('--beacon-rpc', type=str, help='Beacon RPC URL for the Taiko network')
 parser.add_argument('--sleep', type=float, default=2.0, help='Sleep time between transactions in seconds')
+parser.add_argument('--batch-size', type=int, default=100, help='Number of transactions to send in parallel')
 args = parser.parse_args()
 
 
@@ -89,6 +92,7 @@ if not w3.is_connected():
 # Get the account from the private key
 account = w3.eth.account.from_key(private_key)
 amount = w3.to_wei(args.amount, 'ether')
+print(f'Sending transactions from: {account.address}')
 
 def send_transaction(nonce : int):
     try:
@@ -117,17 +121,79 @@ def send_transaction(nonce : int):
         'chainId': w3.eth.chain_id,
         'type': 2  # EIP-1559 transaction type
     }
-    print(f'Sending EIP-1559 tx: {tx} from: {account.address}')
     signed_tx = w3.eth.account.sign_transaction(tx, private_key)
     tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-    print(f'Transaction sent: {tx_hash.hex()}')
+    return tx_hash.hex()
 
 def spam_transactions(count):
-    nonce = w3.eth.get_transaction_count(account.address)
-    for _ in range(count):
-        send_transaction(nonce)
-        nonce += 1
-        time.sleep(args.sleep)
+    start_nonce = w3.eth.get_transaction_count(account.address)
+
+    # Create batches of transactions
+    batch_size = min(args.batch_size, count)
+    print(f"Sending {count} transactions in batches of {batch_size}")
+
+    # Get gas parameters once per batch to reduce RPC calls
+    try:
+        estimated_gas = w3.eth.estimate_gas({
+            'to': recipient,
+            'value': amount,
+            'from': account.address
+        })
+        gas_limit = int(estimated_gas * 1.2)  # Add 20% buffer to avoid out-of-gas errors
+    except Exception as e:
+        print(f"Gas estimation failed: {e}")
+        gas_limit = 40000
+
+    sent_count = 0
+    while sent_count < count:
+        # Get latest gas parameters for this batch
+        base_fee = w3.eth.get_block('latest')['baseFeePerGas']
+        priority_fee = w3.eth.max_priority_fee
+        max_fee_per_gas = base_fee * 2 + priority_fee
+
+        # Sign all transactions in this batch at once
+        batch_count = min(batch_size, count - sent_count)
+        signed_txs = []
+
+        for i in range(batch_count):
+            nonce = start_nonce + sent_count + i
+            tx = {
+                'nonce': nonce,
+                'to': recipient,
+                'value': amount,
+                'gas': gas_limit,
+                'maxFeePerGas': max_fee_per_gas,
+                'maxPriorityFeePerGas': priority_fee,
+                'chainId': w3.eth.chain_id,
+                'type': 2  # EIP-1559 transaction type
+            }
+            signed_tx = w3.eth.account.sign_transaction(tx, private_key)
+            signed_txs.append(signed_tx)
+
+        # Send all signed transactions in parallel
+        with ThreadPoolExecutor(max_workers=batch_count) as executor:
+            def send_raw_tx(signed_tx):
+                try:
+                    tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                    return tx_hash.hex()
+                except Exception as e:
+                    print(f"Error sending transaction: {e}")
+                    return None
+
+            futures = [executor.submit(send_raw_tx, signed_tx) for signed_tx in signed_txs]
+
+            for i, future in enumerate(futures):
+                try:
+                    future.result()
+                except Exception as e:
+                    print(f"Error processing transaction result: {e}")
+
+        sent_count += batch_count
+        print(f"Sent {sent_count}/{count} transactions")
+
+        # Sleep between batches if there are more to send
+        if sent_count < count:
+            time.sleep(args.sleep)
 
 
 if len(args.slots) > 0:
