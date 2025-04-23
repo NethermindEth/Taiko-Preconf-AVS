@@ -204,6 +204,44 @@ mod tests {
     #[tokio::test]
     async fn test_get_preconfer_and_verifier_status() {
         let mut operator = create_operator(
+            32 * 12 + 2, // first l1 slot, second l2 slot
+            true,
+            false,
+        );
+        operator.next_operator = true;
+        operator.was_preconfer = true;
+        operator.continuing_role = false;
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: true,
+                submitter: false,
+                verifier: true,
+                preconfirmation_started: false,
+            }
+        );
+
+        let mut operator = create_operator(
+            32 * 12 + 2, // first l1 slot, second l2 slot
+            false,
+            false,
+        );
+        operator.was_preconfer = true;
+        operator.continuing_role = true;
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: false,
+                submitter: false,
+                verifier: false,
+                preconfirmation_started: false,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_second_slot_status() {
+        let mut operator = create_operator(
             32 * 12 + 12 + 2, // second l1 slot, second l2 slot
             true,
             false,
