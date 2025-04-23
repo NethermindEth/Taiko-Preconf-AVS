@@ -203,10 +203,10 @@ impl ExecutionLayer {
 
         let pending_nonce = self.get_preconfer_nonce_pending().await?;
         // Spawn a monitor for this transaction
-        let _ = self
-            .transaction_monitor
+        self.transaction_monitor
             .monitor_new_transaction(tx, pending_nonce)
-            .await;
+            .await
+            .map_err(|e| Error::msg(format!("Sending batch to L1 failed: {}", e)))?;
 
         Ok(())
     }
