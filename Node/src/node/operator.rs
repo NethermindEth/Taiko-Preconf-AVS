@@ -214,8 +214,8 @@ mod tests {
             operator.get_status().await.unwrap(),
             Status {
                 preconfer: true,
-                submitter: false,
-                verifier: true,
+                submitter: true,
+                verifier: false,
                 preconfirmation_started: false,
             }
         );
@@ -261,11 +261,30 @@ mod tests {
         );
         operator.next_operator = true;
         operator.was_preconfer = true;
+        operator.continuing_role = false;
         assert_eq!(
             operator.get_status().await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: false,
+                verifier: true,
+                preconfirmation_started: false,
+            }
+        );
+
+        let mut operator = create_operator(
+            32 * 12, // first slot of next epoch
+            true,
+            false,
+        );
+        operator.next_operator = true;
+        operator.was_preconfer = true;
+        operator.continuing_role = true;
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: true,
+                submitter: true,
                 verifier: false,
                 preconfirmation_started: false,
             }
