@@ -229,21 +229,21 @@ impl BatchManager {
         Ok(std::cmp::max(height_from_last_batch, l1_height_with_lag))
     }
 
-    pub async fn try_submit_batches(
+    pub async fn try_submit_oldest_batch(
         &mut self,
         submit_only_full_batches: bool,
     ) -> Result<(), Error> {
         self.batch_builder
-            .try_submit_batches(self.ethereum_l1.clone(), submit_only_full_batches, None)
+            .try_submit_oldest_batch(self.ethereum_l1.clone(), submit_only_full_batches, None)
             .await
     }
 
-    pub async fn try_submit_batches_with_coinbase(
+    pub async fn try_submit_oldest_batch_with_coinbase(
         &mut self,
         coinbase: Address,
     ) -> Result<(), Error> {
         self.batch_builder
-            .try_submit_batches(self.ethereum_l1.clone(), false, Some(coinbase))
+            .try_submit_oldest_batch(self.ethereum_l1.clone(), false, Some(coinbase))
             .await
     }
 

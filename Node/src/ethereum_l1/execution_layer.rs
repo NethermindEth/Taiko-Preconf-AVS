@@ -142,6 +142,10 @@ impl ExecutionLayer {
         Ok(operator)
     }
 
+    pub async fn is_transaction_in_progress(&self) -> Result<bool, Error> {
+        self.transaction_monitor.is_transaction_in_progress().await
+    }
+
     pub async fn send_batch_to_l1(
         &self,
         l2_blocks: Vec<L2Block>,

@@ -11,6 +11,7 @@ use alloy::{
 use alloy_json_rpc::RpcError;
 use anyhow::Error;
 use std::{sync::Arc, time::Duration};
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
@@ -40,6 +41,7 @@ pub struct TransactionMonitorThread {
 pub struct TransactionMonitor {
     provider: Arc<WsProvider>,
     config: TransactionMonitorConfig,
+    join_handle: Mutex<Option<JoinHandle<TxStatus>>>,
 }
 
 impl TransactionMonitor {
@@ -58,6 +60,7 @@ impl TransactionMonitor {
                 max_attempts_to_send_tx,
                 delay_between_tx_attempts: Duration::from_secs(delay_between_tx_attempts_sec),
             },
+            join_handle: Mutex::new(None),
         })
     }
 
@@ -67,57 +70,29 @@ impl TransactionMonitor {
         &self,
         tx: TransactionRequest,
         nonce: u64,
-    ) -> Result<JoinHandle<TxStatus>, Error> {
-        let tx_clone = tx.clone();
-        let pending_tx = self.create_initial_pending_tx(tx, nonce).await?;
+    ) -> Result<(), Error> {
+        let mut guard = self.join_handle.lock().await;
+        if let Some(join_handle) = guard.as_ref() {
+            if !join_handle.is_finished() {
+                return Err(Error::msg(
+                    "Cannot monitor new transaction, previous transaction is in progress",
+                ));
+            }
+        }
 
         let monitor_thread =
             TransactionMonitorThread::new(self.provider.clone(), self.config.clone(), nonce);
-        Ok(monitor_thread.spawn_monitoring_task(tx_clone, pending_tx))
+        let join_handle = monitor_thread.spawn_monitoring_task(tx);
+        *guard = Some(join_handle);
+        Ok(())
     }
 
-    async fn create_initial_pending_tx(
-        &self,
-        mut tx: TransactionRequest,
-        nonce: u64,
-    ) -> Result<PendingTransactionBuilder<Ethereum>, Error> {
-        if tx.max_fee_per_gas.is_none() || tx.max_priority_fee_per_gas.is_none() {
-            warn!("Cannot modify fees of legacy transaction");
-            tx.set_nonce(nonce.into());
-        } else {
-            // gas fees are some
-            let mut max_priority_fee_per_gas = tx.max_priority_fee_per_gas.unwrap();
-            let mut max_fee_per_gas = tx.max_fee_per_gas.unwrap();
-            let mut max_fee_per_blob_gas = tx.max_fee_per_blob_gas;
-
-            // increase fees by percentage
-            max_fee_per_gas += max_fee_per_gas * self.config.tx_fees_increase_percentage / 100;
-            max_priority_fee_per_gas +=
-                max_priority_fee_per_gas * self.config.tx_fees_increase_percentage / 100;
-            if let Some(max_fee_per_blob_gas) = &mut max_fee_per_blob_gas {
-                *max_fee_per_blob_gas +=
-                    *max_fee_per_blob_gas * self.config.tx_fees_increase_percentage / 100;
-            }
-
-            if max_priority_fee_per_gas < self.config.min_priority_fee_per_gas_wei {
-                let diff = self.config.min_priority_fee_per_gas_wei - max_priority_fee_per_gas;
-                max_fee_per_gas += diff;
-                max_priority_fee_per_gas += diff;
-            }
-
-            set_tx_parameters(
-                &mut tx,
-                max_fee_per_gas,
-                max_priority_fee_per_gas,
-                max_fee_per_blob_gas,
-                nonce,
-            );
+    pub async fn is_transaction_in_progress(&self) -> Result<bool, Error> {
+        let guard = self.join_handle.lock().await;
+        if let Some(join_handle) = guard.as_ref() {
+            return Ok(!join_handle.is_finished());
         }
-
-        self.provider
-            .send_transaction(tx)
-            .await
-            .map_err(|e| Error::msg(format!("Failed to send transaction: {}", e)))
+        Ok(false)
     }
 }
 
@@ -130,12 +105,17 @@ impl TransactionMonitorThread {
         }
     }
 
-    pub fn spawn_monitoring_task(
-        self,
-        tx: TransactionRequest,
-        pending_tx: PendingTransactionBuilder<Ethereum>,
-    ) -> JoinHandle<TxStatus> {
+    pub fn spawn_monitoring_task(self, tx: TransactionRequest) -> JoinHandle<TxStatus> {
         tokio::spawn(async move {
+            let pending_tx = match self.create_initial_pending_tx(tx.clone()).await {
+                Ok(tx) => tx,
+                Err(e) => {
+                    // TODO: send signal to reorg
+                    error!("Failed to send transaction: {}", e);
+                    return TxStatus::Failed(e.to_string());
+                }
+            };
+
             let mut tx_hash = *pending_tx.tx_hash();
             debug!("Sent tx: {}", tx_hash);
 
@@ -215,6 +195,49 @@ impl TransactionMonitorThread {
             error!("{}", error_msg);
             TxStatus::Failed(error_msg)
         })
+    }
+
+    async fn create_initial_pending_tx(
+        &self,
+        mut tx: TransactionRequest,
+    ) -> Result<PendingTransactionBuilder<Ethereum>, Error> {
+        if tx.max_fee_per_gas.is_none() || tx.max_priority_fee_per_gas.is_none() {
+            warn!("Cannot modify fees of legacy transaction");
+            tx.set_nonce(self.nonce.into());
+        } else {
+            // gas fees are some
+            let mut max_priority_fee_per_gas = tx.max_priority_fee_per_gas.unwrap();
+            let mut max_fee_per_gas = tx.max_fee_per_gas.unwrap();
+            let mut max_fee_per_blob_gas = tx.max_fee_per_blob_gas;
+
+            // increase fees by percentage
+            max_fee_per_gas += max_fee_per_gas * self.config.tx_fees_increase_percentage / 100;
+            max_priority_fee_per_gas +=
+                max_priority_fee_per_gas * self.config.tx_fees_increase_percentage / 100;
+            if let Some(max_fee_per_blob_gas) = &mut max_fee_per_blob_gas {
+                *max_fee_per_blob_gas +=
+                    *max_fee_per_blob_gas * self.config.tx_fees_increase_percentage / 100;
+            }
+
+            if max_priority_fee_per_gas < self.config.min_priority_fee_per_gas_wei {
+                let diff = self.config.min_priority_fee_per_gas_wei - max_priority_fee_per_gas;
+                max_fee_per_gas += diff;
+                max_priority_fee_per_gas += diff;
+            }
+
+            set_tx_parameters(
+                &mut tx,
+                max_fee_per_gas,
+                max_priority_fee_per_gas,
+                max_fee_per_blob_gas,
+                self.nonce,
+            );
+        }
+
+        self.provider
+            .send_transaction(tx)
+            .await
+            .map_err(|e| Error::msg(format!("Failed to send transaction: {}", e)))
     }
 
     async fn verify_tx_included(&self, tx_hash: B256) -> TxStatus {

@@ -62,6 +62,11 @@ impl Verifier {
 
         Ok(())
     }
+
+    pub async fn submit_batch_if_present(&self) -> Result<bool, Error> {
+        //TODO  if batch_manager.has_batches() {
+        Ok(false)
+    }
 }
 
 pub async fn handle_unprocessed_blocks(
@@ -93,9 +98,9 @@ pub async fn handle_unprocessed_blocks(
         // TODO calculate batch params and decide is it possible to continue with it, be careful with timeShift
         // Sould be fixed with https://github.com/NethermindEth/Taiko-Preconf-AVS/issues/303
         // Now just submit all the batches
-        info!("Submit batches");
+        info!("Submit batch");
         batch_manager
-            .try_submit_batches_with_coinbase(coinbase)
+            .try_submit_oldest_batch_with_coinbase(coinbase)
             .await?;
     } else {
         // The first block anchor id is not valid

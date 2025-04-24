@@ -164,12 +164,21 @@ impl BatchBuilder {
         self.current_batch.is_none() && self.batches_to_send.is_empty()
     }
 
-    pub async fn try_submit_batches(
+    pub async fn try_submit_oldest_batch(
         &mut self,
         ethereum_l1: Arc<EthereumL1>,
         submit_only_full_batches: bool,
         coinbase: Option<Address>,
     ) -> Result<(), Error> {
+        if ethereum_l1
+            .execution_layer
+            .is_transaction_in_progress()
+            .await?
+        {
+            debug!("Cannot submit batch, transaction is in progress");
+            return Ok(());
+        }
+
         if self.current_batch.is_some()
             && (!submit_only_full_batches
                 || !self.config.is_within_block_limit(
@@ -183,7 +192,7 @@ impl BatchBuilder {
             debug!("Submitting {} batches", self.batches_to_send.len());
         }
 
-        while let Some(batch) = self.batches_to_send.front() {
+        if let Some(batch) = self.batches_to_send.front() {
             ethereum_l1
                 .execution_layer
                 .send_batch_to_l1(batch.l2_blocks.clone(), batch.anchor_block_id, coinbase)

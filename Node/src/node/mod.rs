@@ -193,7 +193,7 @@ impl Node {
             interval.tick().await;
             if self.cancel_token.is_cancelled() {
                 info!("Shutdown signal received, exiting main loop...");
-                if let Err(err) = self.batch_manager.try_submit_batches(false).await {
+                if let Err(err) = self.batch_manager.try_submit_oldest_batch(false).await {
                     error!("Failed to submit batches at the application shut down: {err}");
                 }
                 return;
@@ -276,8 +276,12 @@ impl Node {
         }
 
         if current_status.is_submitter() {
+            // first submit verification batches
+            if let Some(verifier) = self.verifier.as_mut() {
+                verifier.submit_batch_if_present().await?;
+            }
             self.batch_manager
-                .try_submit_batches(current_status.is_preconfer())
+                .try_submit_oldest_batch(current_status.is_preconfer())
                 .await?;
         }
 
