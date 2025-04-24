@@ -228,19 +228,19 @@ impl ProposeBatchBuilder {
                 anyhow::Error::msg("Failed to get base_fee_per_blob_gas from fee history")
             })?;
 
-        let eip1599_estimation = self.provider_ws.estimate_eip1559_fees().await?;
+        let eip1559_estimation = self.provider_ws.estimate_eip1559_fees().await?;
 
         tracing::info!(
             ">max_fee_per_gas: {} base fee + priority fee: {}",
-            eip1599_estimation.max_fee_per_gas,
-            base_fee_per_gas + eip1599_estimation.max_priority_fee_per_gas
+            eip1559_estimation.max_fee_per_gas,
+            base_fee_per_gas + eip1559_estimation.max_priority_fee_per_gas
         );
 
         Ok(FeesPerGas {
             base_fee_per_gas,
             base_fee_per_blob_gas,
-            max_fee_per_gas: eip1599_estimation.max_fee_per_gas,
-            max_priority_fee_per_gas: eip1599_estimation.max_priority_fee_per_gas,
+            max_fee_per_gas: eip1559_estimation.max_fee_per_gas,
+            max_priority_fee_per_gas: eip1559_estimation.max_priority_fee_per_gas,
         })
     }
 
