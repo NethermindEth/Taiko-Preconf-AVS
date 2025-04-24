@@ -28,7 +28,8 @@ pub struct Node {
     operator: Operator,
     batch_manager: BatchManager,
     thresholds: Thresholds,
-    verifier: Option<verifier::Verifier>,
+    verifier: Box<verifier::Verifier>,
+    taiko: Arc<Taiko>,
 }
 
 impl Node {
@@ -64,19 +65,23 @@ impl Node {
             handover_start_buffer_ms,
             simulate_not_submitting_at_the_end_of_epoch,
         )?;
+        let batch_manager = BatchManager::new(
+            l1_height_lag,
+            batch_builder_config,
+            ethereum_l1.clone(),
+            taiko.clone(),
+        );
+        let verifier =
+            verifier::Verifier::new(taiko.clone(), batch_manager.clone_without_batches()).await?;
         Ok(Self {
             cancel_token,
-            batch_manager: BatchManager::new(
-                l1_height_lag,
-                batch_builder_config,
-                ethereum_l1.clone(),
-                taiko,
-            ),
+            batch_manager: batch_manager,
             ethereum_l1,
             preconf_heartbeat_ms,
             operator,
             thresholds,
-            verifier: None,
+            verifier: Box::new(verifier),
+            taiko,
         })
     }
 
@@ -105,7 +110,7 @@ impl Node {
             .get_l2_height_from_taiko_inbox()
             .await?;
 
-        let taiko_geth_height = self.batch_manager.taiko.get_latest_l2_block_id().await?;
+        let taiko_geth_height = self.taiko.get_latest_l2_block_id().await?;
 
         Ok((taiko_inbox_height, taiko_geth_height))
     }
@@ -227,17 +232,12 @@ impl Node {
                 .await?;
             debug!("Nonce Latest: {nonce_latest}, Nonce Pending: {nonce_pending}");
             if nonce_latest == nonce_pending {
-                let mut verifier = verifier::Verifier::with_taiko_height(
+                let mut verifier = verifier::Verifier::new_with_taiko_height(
                     taiko_geth_height,
-                    self.batch_manager.taiko.clone(),
+                    self.taiko.clone(),
+                    self.batch_manager.clone_without_batches(),
                 );
-                if let Err(e) = verifier
-                    .verify_submitted_blocks(
-                        self.batch_manager.clone_without_batches(),
-                        taiko_inbox_height,
-                    )
-                    .await
-                {
+                if let Err(e) = verifier.verify_submitted_blocks(taiko_inbox_height).await {
                     warn!("Force Reorg: Verifier return an error: {}", e);
                     self.batch_manager
                         .trigger_l2_reorg(taiko_inbox_height)
@@ -250,7 +250,7 @@ impl Node {
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
-        let l2_slot_info = self.batch_manager.taiko.get_l2_slot_info().await?;
+        let l2_slot_info = self.taiko.get_l2_slot_info().await?;
         let current_status = self.operator.get_status().await?;
         let pending_tx_list = self
             .batch_manager
@@ -266,8 +266,13 @@ impl Node {
                 self.verify_proposed_batches().await?;
             } else {
                 // Expected behaviour
-                self.verifier =
-                    Some(verifier::Verifier::new(self.batch_manager.taiko.clone()).await?);
+                self.verifier = Box::new(
+                    verifier::Verifier::new(
+                        self.taiko.clone(),
+                        self.batch_manager.clone_without_batches(),
+                    )
+                    .await?,
+                );
             }
         }
 
@@ -275,17 +280,7 @@ impl Node {
             self.preconfirm_block(pending_tx_list, l2_slot_info).await?;
         }
 
-        if current_status.is_submitter() {
-            // first submit verification batches
-            if let Some(verifier) = self.verifier.as_mut() {
-                verifier.submit_batch_if_present().await?;
-            }
-            self.batch_manager
-                .try_submit_oldest_batch(current_status.is_preconfer())
-                .await?;
-        }
-
-        if current_status.is_verifier() && self.verifier.is_some() {
+        if current_status.is_verifier() {
             let taiko_inbox_height = self
                 .ethereum_l1
                 .execution_layer
@@ -293,12 +288,7 @@ impl Node {
                 .await?;
             if let Err(e) = self
                 .verifier
-                .as_mut()
-                .unwrap()
-                .verify_submitted_blocks(
-                    self.batch_manager.clone_without_batches(),
-                    taiko_inbox_height,
-                )
+                .verify_submitted_blocks(taiko_inbox_height)
                 .await
             {
                 warn!("Force Reorg: Verifier return an error: {}", e);
@@ -306,7 +296,17 @@ impl Node {
                     .trigger_l2_reorg(taiko_inbox_height)
                     .await?;
             }
-            self.verifier = None;
+        }
+
+        if current_status.is_submitter() {
+            // first submit verification batches
+            if self.verifier.has_batches_to_submit() {
+                self.verifier.submit_oldest_batch().await?;
+            } else {
+                self.batch_manager
+                    .try_submit_oldest_batch(current_status.is_preconfer())
+                    .await?;
+            }
         }
 
         if !current_status.is_submitter()
