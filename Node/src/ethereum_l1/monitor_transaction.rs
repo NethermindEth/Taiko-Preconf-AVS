@@ -241,13 +241,12 @@ impl TransactionMonitorThread {
             let mut max_fee_per_gas = tx.max_fee_per_gas.unwrap();
             let mut max_fee_per_blob_gas = tx.max_fee_per_blob_gas;
 
-            // increase fees by percentage
-            max_fee_per_gas += max_fee_per_gas * self.config.tx_fees_increase_percentage / 100;
+            // increase priority fee by percentage, rest double
+            max_fee_per_gas *= 2;
             max_priority_fee_per_gas +=
                 max_priority_fee_per_gas * self.config.tx_fees_increase_percentage / 100;
             if let Some(max_fee_per_blob_gas) = &mut max_fee_per_blob_gas {
-                *max_fee_per_blob_gas +=
-                    *max_fee_per_blob_gas * self.config.tx_fees_increase_percentage / 100;
+                *max_fee_per_blob_gas *= 2;
             }
 
             if max_priority_fee_per_gas < self.config.min_priority_fee_per_gas_wei {
