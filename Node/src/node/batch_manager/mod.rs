@@ -91,10 +91,6 @@ impl BatchManager {
             .recover_from(txs.to_vec(), anchor_block_id, block.header.timestamp)
     }
 
-    pub fn get_config(&self) -> &BatchBuilderConfig {
-        self.batch_builder.get_config()
-    }
-
     pub async fn get_anchor_block_offset(&self, block_height: u64) -> Result<u64, Error> {
         debug!(
             "get_anchor_block_offset: Checking L2 block {}",
@@ -229,21 +225,21 @@ impl BatchManager {
         Ok(std::cmp::max(height_from_last_batch, l1_height_with_lag))
     }
 
-    pub async fn try_submit_batches(
+    pub async fn try_submit_oldest_batch(
         &mut self,
         submit_only_full_batches: bool,
     ) -> Result<(), Error> {
         self.batch_builder
-            .try_submit_batches(self.ethereum_l1.clone(), submit_only_full_batches, None)
+            .try_submit_oldest_batch(self.ethereum_l1.clone(), submit_only_full_batches, None)
             .await
     }
 
-    pub async fn try_submit_batches_with_coinbase(
+    pub async fn try_submit_oldest_batch_with_coinbase(
         &mut self,
         coinbase: Address,
     ) -> Result<(), Error> {
         self.batch_builder
-            .try_submit_batches(self.ethereum_l1.clone(), false, Some(coinbase))
+            .try_submit_oldest_batch(self.ethereum_l1.clone(), false, Some(coinbase))
             .await
     }
 
@@ -254,6 +250,10 @@ impl BatchManager {
 
     pub fn has_batches(&self) -> bool {
         !self.batch_builder.is_empty()
+    }
+
+    pub fn get_number_of_batches(&self) -> u64 {
+        self.batch_builder.get_number_of_batches()
     }
 
     pub fn reset_builder(&mut self) {

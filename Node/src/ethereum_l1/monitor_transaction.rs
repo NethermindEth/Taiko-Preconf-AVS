@@ -1,7 +1,7 @@
-use crate::ethereum_l1::ws_provider::WsProvider;
+use super::{transaction_error::TransactionError, ws_provider::WsProvider};
 use alloy::{
     consensus::{TxEip4844Variant, TxEnvelope},
-    network::{Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
+    network::{Ethereum, Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
     primitives::{Address, TxKind, B256},
     providers::{
         ext::DebugApi, PendingTransactionBuilder, PendingTransactionError, Provider, WatchTxError,
@@ -11,6 +11,8 @@ use alloy::{
 use alloy_json_rpc::RpcError;
 use anyhow::Error;
 use std::{sync::Arc, time::Duration};
+use tokio::sync::mpsc::Sender;
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
@@ -34,12 +36,15 @@ pub struct TransactionMonitorThread {
     provider: Arc<WsProvider>,
     config: TransactionMonitorConfig,
     nonce: u64,
+    error_notification_channel: Sender<TransactionError>,
 }
 
 #[derive(Debug)]
 pub struct TransactionMonitor {
     provider: Arc<WsProvider>,
     config: TransactionMonitorConfig,
+    join_handle: Mutex<Option<JoinHandle<()>>>,
+    error_notification_channel: Sender<TransactionError>,
 }
 
 impl TransactionMonitor {
@@ -49,6 +54,7 @@ impl TransactionMonitor {
         tx_fees_increase_percentage: u64,
         max_attempts_to_send_tx: u64,
         delay_between_tx_attempts_sec: u64,
+        error_notification_channel: Sender<TransactionError>,
     ) -> Result<Self, Error> {
         Ok(Self {
             provider,
@@ -58,6 +64,8 @@ impl TransactionMonitor {
                 max_attempts_to_send_tx,
                 delay_between_tx_attempts: Duration::from_secs(delay_between_tx_attempts_sec),
             },
+            join_handle: Mutex::new(None),
+            error_notification_channel,
         })
     }
 
@@ -67,37 +75,75 @@ impl TransactionMonitor {
         &self,
         tx: TransactionRequest,
         nonce: u64,
-    ) -> JoinHandle<TxStatus> {
-        let monitor_thread =
-            TransactionMonitorThread::new(self.provider.clone(), self.config.clone(), nonce);
-        monitor_thread.spawn_monitoring_task(tx)
+    ) -> Result<(), Error> {
+        let mut guard = self.join_handle.lock().await;
+        if let Some(join_handle) = guard.as_ref() {
+            if !join_handle.is_finished() {
+                return Err(Error::msg(
+                    "Cannot monitor new transaction, previous transaction is in progress",
+                ));
+            }
+        }
+
+        let monitor_thread = TransactionMonitorThread::new(
+            self.provider.clone(),
+            self.config.clone(),
+            nonce,
+            self.error_notification_channel.clone(),
+        );
+        let join_handle = monitor_thread.spawn_monitoring_task(tx);
+        *guard = Some(join_handle);
+        Ok(())
+    }
+
+    pub async fn is_transaction_in_progress(&self) -> Result<bool, Error> {
+        let guard = self.join_handle.lock().await;
+        if let Some(join_handle) = guard.as_ref() {
+            return Ok(!join_handle.is_finished());
+        }
+        Ok(false)
     }
 }
 
 impl TransactionMonitorThread {
-    pub fn new(provider: Arc<WsProvider>, config: TransactionMonitorConfig, nonce: u64) -> Self {
+    pub fn new(
+        provider: Arc<WsProvider>,
+        config: TransactionMonitorConfig,
+        nonce: u64,
+        error_notification_channel: Sender<TransactionError>,
+    ) -> Self {
         Self {
             provider,
             config,
             nonce,
+            error_notification_channel,
         }
     }
 
-    pub fn spawn_monitoring_task(self, tx: TransactionRequest) -> JoinHandle<TxStatus> {
+    pub fn spawn_monitoring_task(self, tx: TransactionRequest) -> JoinHandle<()> {
         tokio::spawn(async move {
-            let mut tx_hash = B256::ZERO;
-
-            if tx.max_fee_per_gas.is_none() || tx.max_priority_fee_per_gas.is_none() {
-                warn!("Cannot modify fees of legacy transaction");
-                match self.provider.send_transaction(tx).await {
-                    Ok(pending_tx) => {
-                        return self.check_tx_receipt(pending_tx).await;
-                    }
-                    Err(e) => {
-                        error!("Failed to send transaction: {:?}", e);
-                        return TxStatus::Failed(e.to_string());
-                    }
+            let pending_tx = match self.create_initial_pending_tx(tx.clone()).await {
+                Ok(tx) => tx,
+                Err(e) => {
+                    error!("Failed to send transaction: {}", e);
+                    self.send_error_signal(TransactionError::TransactionReverted)
+                        .await;
+                    return;
                 }
+            };
+
+            let mut tx_hash = *pending_tx.tx_hash();
+            debug!("Sent tx: {}", tx_hash);
+
+            let tx_status = self.check_tx_receipt(pending_tx).await;
+            match tx_status {
+                TxStatus::Confirmed(_) => return,
+                TxStatus::Failed(_) => {
+                    self.send_error_signal(TransactionError::TransactionReverted)
+                        .await;
+                    return;
+                }
+                TxStatus::Pending => {} // Continue with retry attempts
             }
 
             // gas fees are some
@@ -105,51 +151,30 @@ impl TransactionMonitorThread {
             let mut max_fee_per_gas = tx.max_fee_per_gas.unwrap();
             let mut max_fee_per_blob_gas = tx.max_fee_per_blob_gas;
 
-            for attempt in 0..self.config.max_attempts_to_send_tx {
+            for attempt in 1..self.config.max_attempts_to_send_tx {
                 let mut tx_clone = tx.clone();
-                if attempt > 0 {
-                    // replacement requires 100% more for penalty
-                    max_fee_per_gas += max_fee_per_gas;
-                    max_priority_fee_per_gas += max_priority_fee_per_gas;
-                    if let Some(max_fee_per_blob_gas) = &mut max_fee_per_blob_gas {
-                        *max_fee_per_blob_gas += *max_fee_per_blob_gas;
-                    }
-                } else {
-                    // increase fees by percentage
-                    max_fee_per_gas +=
-                        max_fee_per_gas * self.config.tx_fees_increase_percentage / 100;
-                    max_priority_fee_per_gas +=
-                        max_priority_fee_per_gas * self.config.tx_fees_increase_percentage / 100;
-                    if let Some(max_fee_per_blob_gas) = &mut max_fee_per_blob_gas {
-                        *max_fee_per_blob_gas +=
-                            *max_fee_per_blob_gas * self.config.tx_fees_increase_percentage / 100;
-                    }
 
-                    if max_priority_fee_per_gas < self.config.min_priority_fee_per_gas_wei {
-                        max_fee_per_gas +=
-                            self.config.min_priority_fee_per_gas_wei - max_priority_fee_per_gas;
-                        max_priority_fee_per_gas = self.config.min_priority_fee_per_gas_wei;
-                    }
+                // replacement requires 100% more for penalty
+                max_fee_per_gas += max_fee_per_gas;
+                max_priority_fee_per_gas += max_priority_fee_per_gas;
+                if let Some(max_fee_per_blob_gas) = &mut max_fee_per_blob_gas {
+                    *max_fee_per_blob_gas += *max_fee_per_blob_gas;
                 }
 
-                tx_clone.set_max_priority_fee_per_gas(max_priority_fee_per_gas);
-                tx_clone.set_max_fee_per_gas(max_fee_per_gas);
-                if let Some(max_fee_per_blob_gas) = max_fee_per_blob_gas {
-                    tx_clone.set_max_fee_per_blob_gas(max_fee_per_blob_gas);
-                }
-                tx_clone.set_nonce(self.nonce.into());
-
-                debug!(
-                    "Sending tx, attempt: {attempt}, max_fee_per_gas: {:?}, max_priority_fee_per_gas: {:?}, max_fee_per_blob_gas: {:?}, gas limit: {:?}, nonce: {:?}.{}", tx_clone.max_fee_per_gas, tx_clone.max_priority_fee_per_gas, tx_clone.max_fee_per_blob_gas, tx_clone.gas, tx_clone.nonce,
-                    if attempt > 0 { format!(" Replacing {}", tx_hash) } else { "".to_string() }
+                self.set_tx_parameters(
+                    &mut tx_clone,
+                    max_fee_per_gas,
+                    max_priority_fee_per_gas,
+                    max_fee_per_blob_gas,
                 );
+
+                debug!("Replacing tx {tx_hash} attempt {attempt}");
 
                 let pending_tx = match self.provider.send_transaction(tx_clone).await {
                     Ok(tx) => tx,
                     Err(e) => {
                         if let RpcError::ErrorResp(err) = &e {
                             if err.message.contains("nonce too low") {
-                                // the message is probably already included
                                 let status = self.verify_tx_included(tx_hash).await;
                                 match status {
                                     TxStatus::Pending => {
@@ -160,23 +185,31 @@ impl TransactionMonitorThread {
                                         continue;
                                     }
                                     _ => {
-                                        return status;
+                                        // the message is probably already included in previous attempts
+                                        return;
                                     }
                                 }
                             }
                         }
                         error!("Failed to send transaction: {}", e);
-                        return TxStatus::Failed(e.to_string());
+                        self.send_error_signal(TransactionError::TransactionReverted)
+                            .await;
+                        return;
                     }
                 };
 
                 tx_hash = *pending_tx.tx_hash();
-                debug!("Transaction hash: {}", tx_hash);
+                debug!("Sent tx: {}", tx_hash);
 
                 let tx_status = self.check_tx_receipt(pending_tx).await;
                 match tx_status {
-                    TxStatus::Pending => continue,
-                    _ => return tx_status,
+                    TxStatus::Confirmed(_) => return,
+                    TxStatus::Failed(_) => {
+                        self.send_error_signal(TransactionError::TransactionReverted)
+                            .await;
+                        return;
+                    }
+                    TxStatus::Pending => {} // Continue with retry attempts
                 }
             }
 
@@ -185,8 +218,56 @@ impl TransactionMonitorThread {
                 tx_hash, self.config.max_attempts_to_send_tx
             );
             error!("{}", error_msg);
-            TxStatus::Failed(error_msg)
+            self.send_error_signal(TransactionError::NotConfirmed).await;
         })
+    }
+
+    async fn send_error_signal(&self, error: TransactionError) {
+        if let Err(e) = self.error_notification_channel.send(error).await {
+            error!("Failed to send transaction error signal: {}", e);
+        }
+    }
+
+    async fn create_initial_pending_tx(
+        &self,
+        mut tx: TransactionRequest,
+    ) -> Result<PendingTransactionBuilder<Ethereum>, Error> {
+        if tx.max_fee_per_gas.is_none() || tx.max_priority_fee_per_gas.is_none() {
+            warn!("Cannot modify fees of legacy transaction");
+            tx.set_nonce(self.nonce.into());
+        } else {
+            // gas fees are some
+            let mut max_priority_fee_per_gas = tx.max_priority_fee_per_gas.unwrap();
+            let mut max_fee_per_gas = tx.max_fee_per_gas.unwrap();
+            let mut max_fee_per_blob_gas = tx.max_fee_per_blob_gas;
+
+            // increase fees by percentage
+            max_fee_per_gas += max_fee_per_gas * self.config.tx_fees_increase_percentage / 100;
+            max_priority_fee_per_gas +=
+                max_priority_fee_per_gas * self.config.tx_fees_increase_percentage / 100;
+            if let Some(max_fee_per_blob_gas) = &mut max_fee_per_blob_gas {
+                *max_fee_per_blob_gas +=
+                    *max_fee_per_blob_gas * self.config.tx_fees_increase_percentage / 100;
+            }
+
+            if max_priority_fee_per_gas < self.config.min_priority_fee_per_gas_wei {
+                let diff = self.config.min_priority_fee_per_gas_wei - max_priority_fee_per_gas;
+                max_fee_per_gas += diff;
+                max_priority_fee_per_gas += diff;
+            }
+
+            self.set_tx_parameters(
+                &mut tx,
+                max_fee_per_gas,
+                max_priority_fee_per_gas,
+                max_fee_per_blob_gas,
+            );
+        }
+
+        self.provider
+            .send_transaction(tx)
+            .await
+            .map_err(|e| Error::msg(format!("Failed to send transaction: {}", e)))
     }
 
     async fn verify_tx_included(&self, tx_hash: B256) -> TxStatus {
@@ -204,12 +285,12 @@ impl TransactionMonitorThread {
                 }
             }
             _ => {
-                let error_msg = format!(
+                let warning = format!(
                     "Transaction {} not found, probably already included, check previous hashes",
                     tx_hash
                 );
-                warn!("{}", error_msg);
-                TxStatus::Failed(error_msg)
+                warn!("{}", warning);
+                TxStatus::Failed(warning)
             }
         }
     }
@@ -385,5 +466,24 @@ impl TransactionMonitorThread {
             }
             _ => TransactionRequest::default(),
         }
+    }
+
+    fn set_tx_parameters(
+        &self,
+        tx: &mut TransactionRequest,
+        max_fee_per_gas: u128,
+        max_priority_fee_per_gas: u128,
+        max_fee_per_blob_gas: Option<u128>,
+    ) {
+        tx.set_max_priority_fee_per_gas(max_priority_fee_per_gas);
+        tx.set_max_fee_per_gas(max_fee_per_gas);
+        if let Some(max_fee_per_blob_gas) = max_fee_per_blob_gas {
+            tx.set_max_fee_per_blob_gas(max_fee_per_blob_gas);
+        }
+        tx.set_nonce(self.nonce.into());
+
+        debug!(
+            "Tx params, max_fee_per_gas: {:?}, max_priority_fee_per_gas: {:?}, max_fee_per_blob_gas: {:?}, gas limit: {:?}, nonce: {:?}", tx.max_fee_per_gas, tx.max_priority_fee_per_gas, tx.max_fee_per_blob_gas, tx.gas, tx.nonce,
+        );
     }
 }

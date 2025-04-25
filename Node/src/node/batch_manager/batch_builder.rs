@@ -164,7 +164,7 @@ impl BatchBuilder {
         self.current_batch.is_none() && self.batches_to_send.is_empty()
     }
 
-    pub async fn try_submit_batches(
+    pub async fn try_submit_oldest_batch(
         &mut self,
         ethereum_l1: Arc<EthereumL1>,
         submit_only_full_batches: bool,
@@ -179,11 +179,20 @@ impl BatchBuilder {
             self.finalize_current_batch();
         }
 
-        if self.batches_to_send.len() > 0 {
-            debug!("Submitting {} batches", self.batches_to_send.len());
-        }
+        if let Some(batch) = self.batches_to_send.front() {
+            if ethereum_l1
+                .execution_layer
+                .is_transaction_in_progress()
+                .await?
+            {
+                debug!("Cannot submit batch, transaction is in progress");
+                return Ok(());
+            }
 
-        while let Some(batch) = self.batches_to_send.front() {
+            debug!(
+                "Submitting batch with anchor block id: {}",
+                batch.anchor_block_id
+            );
             ethereum_l1
                 .execution_layer
                 .send_batch_to_l1(batch.l2_blocks.clone(), batch.anchor_block_id, coinbase)
@@ -246,6 +255,10 @@ impl BatchBuilder {
             batches_to_send: VecDeque::new(),
             current_batch: None,
         }
+    }
+
+    pub fn get_number_of_batches(&self) -> u64 {
+        self.batches_to_send.len() as u64 + if self.current_batch.is_some() { 1 } else { 0 }
     }
 }
 

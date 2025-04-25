@@ -14,12 +14,13 @@ use alloy::{
 };
 use anyhow::Error;
 use std::{str::FromStr, sync::Arc};
+use tokio::sync::mpsc::Sender;
 
 use tracing::debug;
 
 use crate::ethereum_l1::propose_batch_builder::ProposeBatchBuilder;
 
-use super::config::EthereumL1Config;
+use super::{config::EthereumL1Config, transaction_error::TransactionError};
 
 pub struct ExecutionLayer {
     provider_ws: Arc<WsProvider>,
@@ -39,7 +40,10 @@ pub struct ContractAddresses {
 }
 
 impl ExecutionLayer {
-    pub async fn new(config: EthereumL1Config) -> Result<Self, Error> {
+    pub async fn new(
+        config: EthereumL1Config,
+        transaction_error_channel: Sender<TransactionError>,
+    ) -> Result<Self, Error> {
         tracing::debug!(
             "Creating ExecutionLayer with WS URL: {}",
             config.execution_ws_rpc_url
@@ -75,6 +79,7 @@ impl ExecutionLayer {
             config.tx_fees_increase_percentage,
             config.max_attempts_to_send_tx,
             config.delay_between_tx_attempts_sec,
+            transaction_error_channel,
         )
         .await?;
 
@@ -142,6 +147,10 @@ impl ExecutionLayer {
         Ok(operator)
     }
 
+    pub async fn is_transaction_in_progress(&self) -> Result<bool, Error> {
+        self.transaction_monitor.is_transaction_in_progress().await
+    }
+
     pub async fn send_batch_to_l1(
         &self,
         l2_blocks: Vec<L2Block>,
@@ -203,10 +212,10 @@ impl ExecutionLayer {
 
         let pending_nonce = self.get_preconfer_nonce_pending().await?;
         // Spawn a monitor for this transaction
-        let _ = self
-            .transaction_monitor
+        self.transaction_monitor
             .monitor_new_transaction(tx, pending_nonce)
-            .await;
+            .await
+            .map_err(|e| Error::msg(format!("Sending batch to L1 failed: {}", e)))?;
 
         Ok(())
     }
@@ -306,6 +315,8 @@ impl ExecutionLayer {
         let preconfer_address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
             .parse()?;
 
+        let (tx_error_sender, _) = tokio::sync::mpsc::channel(1);
+
         Ok(Self {
             provider_ws: provider_ws.clone(),
             preconfer_address,
@@ -351,6 +362,7 @@ impl ExecutionLayer {
                 5,
                 4,
                 15,
+                tx_error_sender,
             )
             .await
             .unwrap(),
