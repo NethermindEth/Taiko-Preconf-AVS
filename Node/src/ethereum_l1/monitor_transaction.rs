@@ -125,7 +125,6 @@ impl TransactionMonitorThread {
             let pending_tx = match self.create_initial_pending_tx(tx.clone()).await {
                 Ok(tx) => tx,
                 Err(e) => {
-                    // TODO: send signal to reorg
                     error!("Failed to send transaction: {}", e);
                     self.send_error_signal(TransactionError::TransactionReverted)
                         .await;
