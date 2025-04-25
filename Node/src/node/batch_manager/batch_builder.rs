@@ -170,15 +170,6 @@ impl BatchBuilder {
         submit_only_full_batches: bool,
         coinbase: Option<Address>,
     ) -> Result<(), Error> {
-        if ethereum_l1
-            .execution_layer
-            .is_transaction_in_progress()
-            .await?
-        {
-            debug!("Cannot submit batch, transaction is in progress");
-            return Ok(());
-        }
-
         if self.current_batch.is_some()
             && (!submit_only_full_batches
                 || !self.config.is_within_block_limit(
@@ -189,6 +180,15 @@ impl BatchBuilder {
         }
 
         if let Some(batch) = self.batches_to_send.front() {
+            if ethereum_l1
+                .execution_layer
+                .is_transaction_in_progress()
+                .await?
+            {
+                debug!("Cannot submit batch, transaction is in progress");
+                return Ok(());
+            }
+
             debug!(
                 "Submitting batch with anchor block id: {}",
                 batch.anchor_block_id
@@ -255,6 +255,10 @@ impl BatchBuilder {
             batches_to_send: VecDeque::new(),
             current_batch: None,
         }
+    }
+
+    pub fn get_number_of_batches(&self) -> u64 {
+        self.batches_to_send.len() as u64 + if self.current_batch.is_some() { 1 } else { 0 }
     }
 }
 

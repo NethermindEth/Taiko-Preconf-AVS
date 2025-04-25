@@ -263,7 +263,12 @@ impl Node {
             .taiko
             .get_pending_l2_tx_list_from_taiko_geth(l2_slot_info.base_fee())
             .await?;
-        self.print_current_slots_info(&current_status, &pending_tx_list, l2_slot_info.base_fee())?;
+        self.print_current_slots_info(
+            &current_status,
+            &pending_tx_list,
+            l2_slot_info.base_fee(),
+            self.batch_manager.get_number_of_batches(),
+        )?;
 
         match self.transaction_error_channel.try_recv() {
             Ok(error) => match error {
@@ -334,7 +339,7 @@ impl Node {
         if current_status.is_submitter() {
             // first submit verification batches
             if self.verifier.has_batches_to_submit() {
-                self.verifier.submit_oldest_batch().await?;
+                self.verifier.try_submit_oldest_batch().await?;
             } else {
                 self.batch_manager
                     .try_submit_oldest_batch(current_status.is_preconfer())
@@ -370,10 +375,11 @@ impl Node {
         current_status: &OperatorStatus,
         pending_tx_list: &Option<PreBuiltTxList>,
         base_fee: u64,
+        batches_number: u64,
     ) -> Result<(), Error> {
         let l1_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
         info!(
-            "| Epoch: {:<6} | Slot: {:<2} | L2 Slot: {:<2} | Pending txs: {:<4} | b. fee: {:<7} | {current_status} |",
+            "| Epoch: {:<6} | Slot: {:<2} | L2 Slot: {:<2} | Pending txs: {:<4} | b. fee: {:<7} | Batches: {batches_number} | {current_status} |",
             self.ethereum_l1.slot_clock.get_epoch_from_slot(l1_slot),
             self.ethereum_l1.slot_clock.slot_of_epoch(l1_slot),
             self.ethereum_l1

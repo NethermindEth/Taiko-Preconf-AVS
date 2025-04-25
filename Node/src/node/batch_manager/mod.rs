@@ -252,6 +252,10 @@ impl BatchManager {
         !self.batch_builder.is_empty()
     }
 
+    pub fn get_number_of_batches(&self) -> u64 {
+        self.batch_builder.get_number_of_batches()
+    }
+
     pub fn reset_builder(&mut self) {
         warn!("Resetting batch builder");
         self.batch_builder =
