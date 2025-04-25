@@ -99,10 +99,7 @@ impl Verifier {
         Ok(())
     }
 
-    pub async fn submit_oldest_batch(&mut self) -> Result<(), Error> {
-        // TODO calculate batch params and decide is it possible to continue with it, be careful with timeShift
-        // Sould be fixed with https://github.com/NethermindEth/Taiko-Preconf-AVS/issues/303
-        // Now just submit all the batches
+    pub async fn try_submit_oldest_batch(&mut self) -> Result<(), Error> {
         self.batch_manager
             .try_submit_oldest_batch_with_coinbase(self.coinbase)
             .await
