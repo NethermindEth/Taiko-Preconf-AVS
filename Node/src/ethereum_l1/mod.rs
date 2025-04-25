@@ -5,6 +5,7 @@ mod l1_contracts_bindings;
 mod monitor_transaction;
 mod propose_batch_builder;
 pub mod slot_clock;
+pub mod transaction_error;
 mod ws_provider;
 
 use anyhow::Error;
@@ -13,6 +14,8 @@ use consensus_layer::ConsensusLayer;
 use execution_layer::ExecutionLayer;
 use slot_clock::SlotClock;
 use std::sync::Arc;
+use tokio::sync::mpsc::Sender;
+use transaction_error::TransactionError;
 
 pub struct EthereumL1 {
     pub slot_clock: Arc<SlotClock>,
@@ -22,7 +25,10 @@ pub struct EthereumL1 {
 
 impl EthereumL1 {
     #[allow(clippy::too_many_arguments)]
-    pub async fn new(config: EthereumL1Config) -> Result<Self, Error> {
+    pub async fn new(
+        config: EthereumL1Config,
+        transaction_error_channel: Sender<TransactionError>,
+    ) -> Result<Self, Error> {
         tracing::info!("Creating EthereumL1 instance");
         let consensus_layer = ConsensusLayer::new(&config.consensus_rpc_url)?;
         let genesis_details = consensus_layer.get_genesis_details().await?;
@@ -34,7 +40,7 @@ impl EthereumL1 {
             config.preconf_heartbeat_ms,
         ));
 
-        let execution_layer = ExecutionLayer::new(config).await?;
+        let execution_layer = ExecutionLayer::new(config, transaction_error_channel).await?;
 
         Ok(Self {
             slot_clock,

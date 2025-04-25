@@ -9,8 +9,11 @@ use anyhow::Error;
 use metrics::Metrics;
 use node::Thresholds;
 use std::sync::Arc;
-use tokio::signal::unix::{signal, SignalKind};
-use tokio::time::{sleep, Duration};
+use tokio::{
+    signal::unix::{signal, SignalKind},
+    sync::mpsc,
+    time::{sleep, Duration},
+};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use warp::Filter;
@@ -24,19 +27,23 @@ async fn main() -> Result<(), Error> {
     let config = utils::config::Config::read_env_variables();
     let cancel_token = CancellationToken::new();
 
-    let ethereum_l1 = ethereum_l1::EthereumL1::new(ethereum_l1::config::EthereumL1Config {
-        execution_ws_rpc_url: config.l1_ws_rpc_url,
-        avs_node_ecdsa_private_key: config.avs_node_ecdsa_private_key,
-        contract_addresses: config.contract_addresses,
-        consensus_rpc_url: config.l1_beacon_url,
-        slot_duration_sec: config.l1_slot_duration_sec,
-        slots_per_epoch: config.l1_slots_per_epoch,
-        preconf_heartbeat_ms: config.preconf_heartbeat_ms,
-        min_priority_fee_per_gas_wei: config.min_priority_fee_per_gas_wei,
-        tx_fees_increase_percentage: config.tx_fees_increase_percentage,
-        max_attempts_to_send_tx: config.max_attempts_to_send_tx,
-        delay_between_tx_attempts_sec: config.delay_between_tx_attempts_sec,
-    })
+    let (transaction_error_sender, transaction_error_receiver) = mpsc::channel(100);
+    let ethereum_l1 = ethereum_l1::EthereumL1::new(
+        ethereum_l1::config::EthereumL1Config {
+            execution_ws_rpc_url: config.l1_ws_rpc_url,
+            avs_node_ecdsa_private_key: config.avs_node_ecdsa_private_key,
+            contract_addresses: config.contract_addresses,
+            consensus_rpc_url: config.l1_beacon_url,
+            slot_duration_sec: config.l1_slot_duration_sec,
+            slots_per_epoch: config.l1_slots_per_epoch,
+            preconf_heartbeat_ms: config.preconf_heartbeat_ms,
+            min_priority_fee_per_gas_wei: config.min_priority_fee_per_gas_wei,
+            tx_fees_increase_percentage: config.tx_fees_increase_percentage,
+            max_attempts_to_send_tx: config.max_attempts_to_send_tx,
+            delay_between_tx_attempts_sec: config.delay_between_tx_attempts_sec,
+        },
+        transaction_error_sender,
+    )
     .await?;
 
     let ethereum_l1 = Arc::new(ethereum_l1);
@@ -96,6 +103,7 @@ async fn main() -> Result<(), Error> {
             taiko: config.threshold_taiko,
         },
         config.simulate_not_submitting_at_the_end_of_epoch,
+        transaction_error_receiver,
     )
     .await?;
 

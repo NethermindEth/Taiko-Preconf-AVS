@@ -159,7 +159,7 @@ impl Config {
             .expect("HANDOVER_WINDOW_SLOTS must be a number");
 
         let handover_start_buffer_ms = std::env::var("HANDOVER_START_BUFFER_MS")
-            .unwrap_or("500".to_string())
+            .unwrap_or("6000".to_string())
             .parse::<u64>()
             .expect("HANDOVER_START_BUFFER_MS must be a number");
 

@@ -1,4 +1,4 @@
-use crate::ethereum_l1::ws_provider::WsProvider;
+use super::{transaction_error::TransactionError, ws_provider::WsProvider};
 use alloy::{
     consensus::{TxEip4844Variant, TxEnvelope},
     network::{Ethereum, Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
@@ -11,6 +11,7 @@ use alloy::{
 use alloy_json_rpc::RpcError;
 use anyhow::Error;
 use std::{sync::Arc, time::Duration};
+use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
@@ -35,13 +36,15 @@ pub struct TransactionMonitorThread {
     provider: Arc<WsProvider>,
     config: TransactionMonitorConfig,
     nonce: u64,
+    error_notification_channel: Sender<TransactionError>,
 }
 
 #[derive(Debug)]
 pub struct TransactionMonitor {
     provider: Arc<WsProvider>,
     config: TransactionMonitorConfig,
-    join_handle: Mutex<Option<JoinHandle<TxStatus>>>,
+    join_handle: Mutex<Option<JoinHandle<()>>>,
+    error_notification_channel: Sender<TransactionError>,
 }
 
 impl TransactionMonitor {
@@ -51,6 +54,7 @@ impl TransactionMonitor {
         tx_fees_increase_percentage: u64,
         max_attempts_to_send_tx: u64,
         delay_between_tx_attempts_sec: u64,
+        error_notification_channel: Sender<TransactionError>,
     ) -> Result<Self, Error> {
         Ok(Self {
             provider,
@@ -61,6 +65,7 @@ impl TransactionMonitor {
                 delay_between_tx_attempts: Duration::from_secs(delay_between_tx_attempts_sec),
             },
             join_handle: Mutex::new(None),
+            error_notification_channel,
         })
     }
 
@@ -80,8 +85,12 @@ impl TransactionMonitor {
             }
         }
 
-        let monitor_thread =
-            TransactionMonitorThread::new(self.provider.clone(), self.config.clone(), nonce);
+        let monitor_thread = TransactionMonitorThread::new(
+            self.provider.clone(),
+            self.config.clone(),
+            nonce,
+            self.error_notification_channel.clone(),
+        );
         let join_handle = monitor_thread.spawn_monitoring_task(tx);
         *guard = Some(join_handle);
         Ok(())
@@ -97,22 +106,30 @@ impl TransactionMonitor {
 }
 
 impl TransactionMonitorThread {
-    pub fn new(provider: Arc<WsProvider>, config: TransactionMonitorConfig, nonce: u64) -> Self {
+    pub fn new(
+        provider: Arc<WsProvider>,
+        config: TransactionMonitorConfig,
+        nonce: u64,
+        error_notification_channel: Sender<TransactionError>,
+    ) -> Self {
         Self {
             provider,
             config,
             nonce,
+            error_notification_channel,
         }
     }
 
-    pub fn spawn_monitoring_task(self, tx: TransactionRequest) -> JoinHandle<TxStatus> {
+    pub fn spawn_monitoring_task(self, tx: TransactionRequest) -> JoinHandle<()> {
         tokio::spawn(async move {
             let pending_tx = match self.create_initial_pending_tx(tx.clone()).await {
                 Ok(tx) => tx,
                 Err(e) => {
                     // TODO: send signal to reorg
                     error!("Failed to send transaction: {}", e);
-                    return TxStatus::Failed(e.to_string());
+                    self.send_error_signal(TransactionError::TransactionReverted)
+                        .await;
+                    return;
                 }
             };
 
@@ -121,8 +138,12 @@ impl TransactionMonitorThread {
 
             let tx_status = self.check_tx_receipt(pending_tx).await;
             match tx_status {
-                TxStatus::Confirmed(_) => return tx_status,
-                TxStatus::Failed(_) => return tx_status,
+                TxStatus::Confirmed(_) => return,
+                TxStatus::Failed(_) => {
+                    self.send_error_signal(TransactionError::TransactionReverted)
+                        .await;
+                    return;
+                }
                 TxStatus::Pending => {} // Continue with retry attempts
             }
 
@@ -141,22 +162,20 @@ impl TransactionMonitorThread {
                     *max_fee_per_blob_gas += *max_fee_per_blob_gas;
                 }
 
-                set_tx_parameters(
+                self.set_tx_parameters(
                     &mut tx_clone,
                     max_fee_per_gas,
                     max_priority_fee_per_gas,
                     max_fee_per_blob_gas,
-                    self.nonce,
                 );
 
-                debug!("Sending tx, attempt: {attempt}. Replacing {tx_hash}");
+                debug!("Replacing tx {tx_hash} attempt {attempt}");
 
                 let pending_tx = match self.provider.send_transaction(tx_clone).await {
                     Ok(tx) => tx,
                     Err(e) => {
                         if let RpcError::ErrorResp(err) = &e {
                             if err.message.contains("nonce too low") {
-                                // the message is probably already included
                                 let status = self.verify_tx_included(tx_hash).await;
                                 match status {
                                     TxStatus::Pending => {
@@ -167,13 +186,16 @@ impl TransactionMonitorThread {
                                         continue;
                                     }
                                     _ => {
-                                        return status;
+                                        // the message is probably already included in previous attempts
+                                        return;
                                     }
                                 }
                             }
                         }
                         error!("Failed to send transaction: {}", e);
-                        return TxStatus::Failed(e.to_string());
+                        self.send_error_signal(TransactionError::TransactionReverted)
+                            .await;
+                        return;
                     }
                 };
 
@@ -182,9 +204,13 @@ impl TransactionMonitorThread {
 
                 let tx_status = self.check_tx_receipt(pending_tx).await;
                 match tx_status {
-                    TxStatus::Confirmed(_) => return tx_status,
-                    TxStatus::Failed(_) => return tx_status,
-                    TxStatus::Pending => continue,
+                    TxStatus::Confirmed(_) => return,
+                    TxStatus::Failed(_) => {
+                        self.send_error_signal(TransactionError::TransactionReverted)
+                            .await;
+                        return;
+                    }
+                    TxStatus::Pending => {} // Continue with retry attempts
                 }
             }
 
@@ -193,8 +219,14 @@ impl TransactionMonitorThread {
                 tx_hash, self.config.max_attempts_to_send_tx
             );
             error!("{}", error_msg);
-            TxStatus::Failed(error_msg)
+            self.send_error_signal(TransactionError::NotConfirmed).await;
         })
+    }
+
+    async fn send_error_signal(&self, error: TransactionError) {
+        if let Err(e) = self.error_notification_channel.send(error).await {
+            error!("Failed to send transaction error signal: {}", e);
+        }
     }
 
     async fn create_initial_pending_tx(
@@ -225,12 +257,11 @@ impl TransactionMonitorThread {
                 max_priority_fee_per_gas += diff;
             }
 
-            set_tx_parameters(
+            self.set_tx_parameters(
                 &mut tx,
                 max_fee_per_gas,
                 max_priority_fee_per_gas,
                 max_fee_per_blob_gas,
-                self.nonce,
             );
         }
 
@@ -255,12 +286,12 @@ impl TransactionMonitorThread {
                 }
             }
             _ => {
-                let error_msg = format!(
+                let warning = format!(
                     "Transaction {} not found, probably already included, check previous hashes",
                     tx_hash
                 );
-                warn!("{}", error_msg);
-                TxStatus::Failed(error_msg)
+                warn!("{}", warning);
+                TxStatus::Failed(warning)
             }
         }
     }
@@ -437,23 +468,23 @@ impl TransactionMonitorThread {
             _ => TransactionRequest::default(),
         }
     }
-}
 
-fn set_tx_parameters(
-    tx: &mut TransactionRequest,
-    max_fee_per_gas: u128,
-    max_priority_fee_per_gas: u128,
-    max_fee_per_blob_gas: Option<u128>,
-    nonce: u64,
-) {
-    tx.set_max_priority_fee_per_gas(max_priority_fee_per_gas);
-    tx.set_max_fee_per_gas(max_fee_per_gas);
-    if let Some(max_fee_per_blob_gas) = max_fee_per_blob_gas {
-        tx.set_max_fee_per_blob_gas(max_fee_per_blob_gas);
+    fn set_tx_parameters(
+        &self,
+        tx: &mut TransactionRequest,
+        max_fee_per_gas: u128,
+        max_priority_fee_per_gas: u128,
+        max_fee_per_blob_gas: Option<u128>,
+    ) {
+        tx.set_max_priority_fee_per_gas(max_priority_fee_per_gas);
+        tx.set_max_fee_per_gas(max_fee_per_gas);
+        if let Some(max_fee_per_blob_gas) = max_fee_per_blob_gas {
+            tx.set_max_fee_per_blob_gas(max_fee_per_blob_gas);
+        }
+        tx.set_nonce(self.nonce.into());
+
+        debug!(
+            "Tx params, max_fee_per_gas: {:?}, max_priority_fee_per_gas: {:?}, max_fee_per_blob_gas: {:?}, gas limit: {:?}, nonce: {:?}", tx.max_fee_per_gas, tx.max_priority_fee_per_gas, tx.max_fee_per_blob_gas, tx.gas, tx.nonce,
+        );
     }
-    tx.set_nonce(nonce.into());
-
-    debug!(
-        "Tx params, max_fee_per_gas: {:?}, max_priority_fee_per_gas: {:?}, max_fee_per_blob_gas: {:?}, gas limit: {:?}, nonce: {:?}", tx.max_fee_per_gas, tx.max_priority_fee_per_gas, tx.max_fee_per_blob_gas, tx.gas, tx.nonce,
-    );
 }

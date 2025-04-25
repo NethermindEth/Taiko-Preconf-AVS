@@ -91,10 +91,6 @@ impl BatchManager {
             .recover_from(txs.to_vec(), anchor_block_id, block.header.timestamp)
     }
 
-    pub fn get_config(&self) -> &BatchBuilderConfig {
-        self.batch_builder.get_config()
-    }
-
     pub async fn get_anchor_block_offset(&self, block_height: u64) -> Result<u64, Error> {
         debug!(
             "get_anchor_block_offset: Checking L2 block {}",

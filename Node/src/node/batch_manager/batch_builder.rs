@@ -188,11 +188,11 @@ impl BatchBuilder {
             self.finalize_current_batch();
         }
 
-        if self.batches_to_send.len() > 0 {
-            debug!("Submitting {} batches", self.batches_to_send.len());
-        }
-
         if let Some(batch) = self.batches_to_send.front() {
+            debug!(
+                "Submitting batch with anchor block id: {}",
+                batch.anchor_block_id
+            );
             ethereum_l1
                 .execution_layer
                 .send_batch_to_l1(batch.l2_blocks.clone(), batch.anchor_block_id, coinbase)

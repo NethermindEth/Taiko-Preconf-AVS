@@ -1,7 +1,7 @@
 use alloy::{consensus::BlockHeader, primitives::Address};
 use anyhow::Error;
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::taiko::Taiko;
 
@@ -48,7 +48,7 @@ impl Verifier {
             && self.taiko_geth_height > self.verified_height
         {
             info!(
-                "Taiko geth has {} blocks more than Taiko Inbox. Trying to submit these blocks.",
+                "Taiko geth has {} blocks more than Taiko Inbox. Preparing batch for submission.",
                 self.taiko_geth_height - taiko_inbox_height
             );
 
@@ -79,7 +79,6 @@ impl Verifier {
             .batch_manager
             .get_anchor_block_offset(taiko_inbox_height + 1)
             .await?;
-        let mut extra_slots: u64 = 0;
         // The first block anchor id is valid, so we can continue.
         if self
             .batch_manager
@@ -94,23 +93,7 @@ impl Verifier {
                     .await?;
             }
             let elapsed = start.elapsed().as_secs();
-            extra_slots = elapsed / self.batch_manager.get_config().l1_slot_duration_sec;
-            info!(
-                "Recovered in {} seconds (extra_slots = {})",
-                elapsed, extra_slots
-            );
-        }
-
-        if !self
-            .batch_manager
-            .is_anchor_block_offset_valid(anchor_offset + extra_slots)
-        {
-            // The first block anchor id is not valid
-            // Just do force reorg
-            warn!("Triggering L2 reorg");
-            return Err(anyhow::anyhow!(
-                "Error: L2 chain state may be inconsistent."
-            ));
+            info!("Recovered in {} seconds", elapsed);
         }
 
         Ok(())

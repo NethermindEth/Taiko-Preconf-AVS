@@ -3,7 +3,7 @@ mod operator;
 mod verifier;
 
 use crate::{
-    ethereum_l1::EthereumL1,
+    ethereum_l1::{transaction_error::TransactionError, EthereumL1},
     shared::{l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
     taiko::Taiko,
 };
@@ -12,7 +12,10 @@ use anyhow::Error;
 use batch_manager::{BatchBuilderConfig, BatchManager};
 use operator::{Operator, Status as OperatorStatus};
 use std::sync::Arc;
-use tokio::time::{sleep, Duration};
+use tokio::{
+    sync::mpsc::{error::TryRecvError, Receiver},
+    time::{sleep, Duration},
+};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
@@ -30,6 +33,7 @@ pub struct Node {
     thresholds: Thresholds,
     verifier: Box<verifier::Verifier>,
     taiko: Arc<Taiko>,
+    transaction_error_channel: Receiver<TransactionError>,
 }
 
 impl Node {
@@ -45,6 +49,7 @@ impl Node {
         batch_builder_config: BatchBuilderConfig,
         thresholds: Thresholds,
         simulate_not_submitting_at_the_end_of_epoch: bool,
+        transaction_error_channel: Receiver<TransactionError>,
     ) -> Result<Self, Error> {
         info!(
             "Batch builder config:\n\
@@ -82,6 +87,7 @@ impl Node {
             thresholds,
             verifier: Box::new(verifier),
             taiko,
+            transaction_error_channel,
         })
     }
 
@@ -258,6 +264,33 @@ impl Node {
             .get_pending_l2_tx_list_from_taiko_geth(l2_slot_info.base_fee())
             .await?;
         self.print_current_slots_info(&current_status, &pending_tx_list, l2_slot_info.base_fee())?;
+
+        match self.transaction_error_channel.try_recv() {
+            Ok(error) => match error {
+                TransactionError::TransactionReverted => {
+                    let taiko_inbox_height = self
+                        .ethereum_l1
+                        .execution_layer
+                        .get_l2_height_from_taiko_inbox()
+                        .await?;
+                    warn!("Force Reorg: Transaction reverted");
+                    self.batch_manager
+                        .trigger_l2_reorg(taiko_inbox_height)
+                        .await?;
+                }
+                TransactionError::NotConfirmed => {
+                    panic!("Transaction not confirmed for a long time, exiting");
+                }
+            },
+            Err(err) => match err {
+                TryRecvError::Empty => {
+                    // no errors, proceed with preconfirmation
+                }
+                TryRecvError::Disconnected => {
+                    panic!("Transaction error channel disconnected");
+                }
+            },
+        }
 
         if current_status.is_preconfirmation_start_slot() {
             if current_status.is_submitter() {
