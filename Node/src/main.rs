@@ -21,7 +21,6 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use warp::Filter;
 
-use shared::l2_tx_lists::encode_and_compress;
 use shared::l2_tx_lists::PreBuiltTxList;
 
 #[derive(Parser, Debug)]
@@ -69,6 +68,7 @@ async fn main() -> Result<(), Error> {
             gas,
             config.l1_height_lag,
             config.max_bytes_size_of_batch,
+            transaction_error_receiver,
         )
         .await?;
         return Ok(());
@@ -151,6 +151,9 @@ async fn test_gas_params(
     blocks: u32,
     anchor_height_lag: u64,
     max_bytes_size_of_batch: u64,
+    mut transaction_error_receiver: tokio::sync::mpsc::Receiver<
+        ethereum_l1::transaction_error::TransactionError,
+    >,
 ) -> Result<(), Error> {
     let timestamp_sec = std::time::SystemTime::now()
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
@@ -225,6 +228,20 @@ async fn test_gas_params(
     {
         info!("Sleeping for 20 seconds...");
         sleep(Duration::from_secs(20)).await;
+    }
+
+    match transaction_error_receiver.try_recv() {
+        Ok(error) => {
+            panic!("Received transaction error: {:#?}", error);
+        }
+        Err(err) => match err {
+            tokio::sync::mpsc::error::TryRecvError::Empty => {
+                // no errors, proceed with preconfirmation
+            }
+            tokio::sync::mpsc::error::TryRecvError::Disconnected => {
+                panic!("Transaction error channel disconnected");
+            }
+        },
     }
 
     info!("Done");

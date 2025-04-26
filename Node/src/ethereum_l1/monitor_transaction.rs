@@ -2,12 +2,13 @@ use super::{transaction_error::TransactionError, ws_provider::WsProvider};
 use alloy::{
     consensus::{TxEip4844Variant, TxEnvelope, TxType},
     network::{Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
-    primitives::{Address, TxKind, B256},
+    primitives::{Address, FixedBytes, TxKind, B256},
     providers::{
         ext::DebugApi, PendingTransactionBuilder, PendingTransactionError, Provider, WatchTxError,
     },
     rpc::types::{trace::geth::GethDebugTracingOptions, Transaction, TransactionRequest},
 };
+use alloy_json_rpc::RpcError;
 use anyhow::Error;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc::Sender;
@@ -118,8 +119,9 @@ impl TransactionMonitorThread {
             error_notification_channel,
         }
     }
-    pub fn spawn_monitoring_task(self, tx: TransactionRequest) -> JoinHandle<()> {
+    pub fn spawn_monitoring_task(self, mut tx: TransactionRequest) -> JoinHandle<()> {
         tokio::spawn(async move {
+            tx.set_nonce(self.nonce);
             if !matches!(tx.buildable_type(), Some(TxType::Eip1559 | TxType::Eip4844)) {
                 self.send_error_signal(TransactionError::UnsupportedTransactionType)
                     .await;
@@ -150,7 +152,7 @@ impl TransactionMonitorThread {
 
             // Sending attempts loop
             let mut sending_attempt: u64 = 0;
-            let mut tx_hash;
+            let mut tx_hash = FixedBytes::default();
             loop {
                 let mut tx_clone = tx.clone();
                 self.set_tx_parameters(
@@ -160,10 +162,35 @@ impl TransactionMonitorThread {
                     max_fee_per_blob_gas,
                 );
 
+                let l1_block_at_send = match self.provider.get_block_number().await {
+                    Ok(block_number) => block_number,
+                    Err(e) => {
+                        error!("Failed to get L1 block number: {}", e);
+                        self.send_error_signal(TransactionError::GetBlockNumberFailed)
+                            .await;
+                        return;
+                    }
+                };
+
                 let pending_tx = match self.provider.send_transaction(tx_clone).await {
                     Ok(tx) => tx,
                     Err(e) => {
-                        // TODO rebuild rpc client and retry on rpc error
+                        if let RpcError::ErrorResp(err) = &e {
+                            if err.message.contains("nonce too low") {
+                                let status = self.verify_tx_included(tx_hash).await;
+                                match status {
+                                    TxStatus::Confirmed(_) => return,
+                                    _ => {
+                                        self.send_error_signal(
+                                            TransactionError::TransactionReverted,
+                                        )
+                                        .await;
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                        // TODO if it is not revert then rebuild rpc client and retry on rpc error
                         error!("Failed to send transaction: {}", e);
                         self.send_error_signal(TransactionError::TransactionReverted)
                             .await;
@@ -173,25 +200,48 @@ impl TransactionMonitorThread {
 
                 tx_hash = *pending_tx.tx_hash();
 
-                debug!("{} tx nonce: {}, attempt: {}, hash: {},  max_fee_per_gas: {}, max_priority_fee_per_gas: {}, max_fee_per_blob_gas: {:?}",
+                debug!("{} tx nonce: {}, attempt: {}, l1_block: {}, hash: {},  max_fee_per_gas: {}, max_priority_fee_per_gas: {}, max_fee_per_blob_gas: {:?}",
                     if sending_attempt == 0 { "🟢 Send" } else { "🟡 Replace" },
                     self.nonce,
                     sending_attempt,
+                    l1_block_at_send,
                     tx_hash,
                     max_fee_per_gas,
                     max_priority_fee_per_gas,
                     max_fee_per_blob_gas
                 );
 
-                let tx_status = self.check_tx_receipt(pending_tx).await;
-                match tx_status {
-                    TxStatus::Confirmed(_) => return,
-                    TxStatus::Failed(_) => {
-                        self.send_error_signal(TransactionError::TransactionReverted)
-                            .await;
-                        return;
+                loop {
+                    let check_tx =
+                        PendingTransactionBuilder::new(pending_tx.provider().clone(), tx_hash);
+                    let tx_status = self.check_tx_receipt(check_tx).await;
+                    match tx_status {
+                        TxStatus::Confirmed(_) => return,
+                        TxStatus::Failed(_) => {
+                            self.send_error_signal(TransactionError::TransactionReverted)
+                                .await;
+                            return;
+                        }
+                        TxStatus::Pending => {} // Continue with retry attempts
                     }
-                    TxStatus::Pending => {} // Continue with retry attempts
+                    // Check if L1 block number has changed since sending the tx
+                    // If not, check tx again and wait more
+                    let current_l1_height = match self.provider.get_block_number().await {
+                        Ok(block_number) => block_number,
+                        Err(e) => {
+                            error!("Failed to get L1 block number: {}", e);
+                            self.send_error_signal(TransactionError::GetBlockNumberFailed)
+                                .await;
+                            return;
+                        }
+                    };
+                    if current_l1_height != l1_block_at_send {
+                        break;
+                    }
+                    debug!(
+                        "🟤 Missing block wait more for tx with nonce {}. Current L1 height: {}, L1 height at send: {}",
+                        self.nonce, current_l1_height, l1_block_at_send
+                    );
                 }
 
                 sending_attempt += 1;
@@ -220,6 +270,31 @@ impl TransactionMonitorThread {
     async fn send_error_signal(&self, error: TransactionError) {
         if let Err(e) = self.error_notification_channel.send(error).await {
             error!("Failed to send transaction error signal: {}", e);
+        }
+    }
+
+    async fn verify_tx_included(&self, tx_hash: B256) -> TxStatus {
+        let tx = self.provider.get_transaction_by_hash(tx_hash).await;
+        match tx {
+            Ok(Some(tx)) => {
+                if let Some(block_number) = tx.block_number {
+                    info!(
+                        "✅ Transaction {} confirmed in block {} after nonce too low error",
+                        tx_hash, block_number
+                    );
+                    TxStatus::Confirmed(block_number)
+                } else {
+                    TxStatus::Pending
+                }
+            }
+            _ => {
+                let warning = format!(
+                    "Transaction {} not found, probably already included, check previous hashes",
+                    tx_hash
+                );
+                warn!("{}", warning);
+                TxStatus::Failed(warning)
+            }
         }
     }
 
