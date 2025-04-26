@@ -286,6 +286,9 @@ impl Node {
                 TransactionError::NotConfirmed => {
                     panic!("Transaction not confirmed for a long time, exiting");
                 }
+                TransactionError::UnsupportedTransactionType => {
+                    panic!("Unsupported transaction type. You can send eip1559 or eip4844 transactions only");
+                }
             },
             Err(err) => match err {
                 TryRecvError::Empty => {

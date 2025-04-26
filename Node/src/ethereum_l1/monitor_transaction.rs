@@ -1,14 +1,13 @@
 use super::{transaction_error::TransactionError, ws_provider::WsProvider};
 use alloy::{
-    consensus::{TxEip4844Variant, TxEnvelope},
-    network::{Ethereum, Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
+    consensus::{TxEip4844Variant, TxEnvelope, TxType},
+    network::{Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
     primitives::{Address, TxKind, B256},
     providers::{
         ext::DebugApi, PendingTransactionBuilder, PendingTransactionError, Provider, WatchTxError,
     },
     rpc::types::{trace::geth::GethDebugTracingOptions, Transaction, TransactionRequest},
 };
-use alloy_json_rpc::RpcError;
 use anyhow::Error;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc::Sender;
@@ -119,124 +118,17 @@ impl TransactionMonitorThread {
             error_notification_channel,
         }
     }
-
     pub fn spawn_monitoring_task(self, tx: TransactionRequest) -> JoinHandle<()> {
         tokio::spawn(async move {
-            let pending_tx = match self.create_initial_pending_tx(tx.clone()).await {
-                Ok(tx) => tx,
-                Err(e) => {
-                    error!("Failed to send transaction: {}", e);
-                    self.send_error_signal(TransactionError::TransactionReverted)
-                        .await;
-                    return;
-                }
-            };
-
-            let mut tx_hash = *pending_tx.tx_hash();
-            debug!("Sent tx: {}", tx_hash);
-
-            let tx_status = self.check_tx_receipt(pending_tx).await;
-            match tx_status {
-                TxStatus::Confirmed(_) => return,
-                TxStatus::Failed(_) => {
-                    self.send_error_signal(TransactionError::TransactionReverted)
-                        .await;
-                    return;
-                }
-                TxStatus::Pending => {} // Continue with retry attempts
+            if !matches!(tx.buildable_type(), Some(TxType::Eip1559 | TxType::Eip4844)) {
+                self.send_error_signal(TransactionError::UnsupportedTransactionType)
+                    .await;
+                return;
             }
 
-            // gas fees are some
-            let mut max_priority_fee_per_gas = tx.max_priority_fee_per_gas.unwrap();
-            let mut max_fee_per_gas = tx.max_fee_per_gas.unwrap();
-            let mut max_fee_per_blob_gas = tx.max_fee_per_blob_gas;
+            debug!("Monitoring tx with nonce: {}  max_fee_per_gas: {:?}, max_priority_fee_per_gas: {:?}, max_fee_per_blob_gas: {:?}", self.nonce, tx.max_fee_per_gas, tx.max_priority_fee_per_gas, tx.max_fee_per_blob_gas);
 
-            for attempt in 1..self.config.max_attempts_to_send_tx {
-                let mut tx_clone = tx.clone();
-
-                // replacement requires 100% more for penalty
-                max_fee_per_gas += max_fee_per_gas;
-                max_priority_fee_per_gas += max_priority_fee_per_gas;
-                if let Some(max_fee_per_blob_gas) = &mut max_fee_per_blob_gas {
-                    *max_fee_per_blob_gas += *max_fee_per_blob_gas;
-                }
-
-                self.set_tx_parameters(
-                    &mut tx_clone,
-                    max_fee_per_gas,
-                    max_priority_fee_per_gas,
-                    max_fee_per_blob_gas,
-                );
-
-                debug!("Replacing tx {tx_hash} attempt {attempt}");
-
-                let pending_tx = match self.provider.send_transaction(tx_clone).await {
-                    Ok(tx) => tx,
-                    Err(e) => {
-                        if let RpcError::ErrorResp(err) = &e {
-                            if err.message.contains("nonce too low") {
-                                let status = self.verify_tx_included(tx_hash).await;
-                                match status {
-                                    TxStatus::Pending => {
-                                        warn!(
-                                            "Transaction {} is pending, got error: {}",
-                                            tx_hash, err
-                                        );
-                                        continue;
-                                    }
-                                    _ => {
-                                        // the message is probably already included in previous attempts
-                                        return;
-                                    }
-                                }
-                            }
-                        }
-                        error!("Failed to send transaction: {}", e);
-                        self.send_error_signal(TransactionError::TransactionReverted)
-                            .await;
-                        return;
-                    }
-                };
-
-                tx_hash = *pending_tx.tx_hash();
-                debug!("Sent tx: {}", tx_hash);
-
-                let tx_status = self.check_tx_receipt(pending_tx).await;
-                match tx_status {
-                    TxStatus::Confirmed(_) => return,
-                    TxStatus::Failed(_) => {
-                        self.send_error_signal(TransactionError::TransactionReverted)
-                            .await;
-                        return;
-                    }
-                    TxStatus::Pending => {} // Continue with retry attempts
-                }
-            }
-
-            let error_msg = format!(
-                "Transaction {} not confirmed after {} attempts",
-                tx_hash, self.config.max_attempts_to_send_tx
-            );
-            error!("{}", error_msg);
-            self.send_error_signal(TransactionError::NotConfirmed).await;
-        })
-    }
-
-    async fn send_error_signal(&self, error: TransactionError) {
-        if let Err(e) = self.error_notification_channel.send(error).await {
-            error!("Failed to send transaction error signal: {}", e);
-        }
-    }
-
-    async fn create_initial_pending_tx(
-        &self,
-        mut tx: TransactionRequest,
-    ) -> Result<PendingTransactionBuilder<Ethereum>, Error> {
-        if tx.max_fee_per_gas.is_none() || tx.max_priority_fee_per_gas.is_none() {
-            warn!("Cannot modify fees of legacy transaction");
-            tx.set_nonce(self.nonce.into());
-        } else {
-            // gas fees are some
+            // Initial gas tuning
             let mut max_priority_fee_per_gas = tx.max_priority_fee_per_gas.unwrap();
             let mut max_fee_per_gas = tx.max_fee_per_gas.unwrap();
             let mut max_fee_per_blob_gas = tx.max_fee_per_blob_gas;
@@ -256,42 +148,78 @@ impl TransactionMonitorThread {
                 max_priority_fee_per_gas += diff;
             }
 
-            self.set_tx_parameters(
-                &mut tx,
-                max_fee_per_gas,
-                max_priority_fee_per_gas,
-                max_fee_per_blob_gas,
-            );
-        }
+            // Sending attempts loop
+            let mut sending_attempt: u64 = 0;
+            let mut tx_hash;
+            loop {
+                let mut tx_clone = tx.clone();
+                self.set_tx_parameters(
+                    &mut tx_clone,
+                    max_fee_per_gas,
+                    max_priority_fee_per_gas,
+                    max_fee_per_blob_gas,
+                );
 
-        self.provider
-            .send_transaction(tx)
-            .await
-            .map_err(|e| Error::msg(format!("Failed to send transaction: {}", e)))
-    }
+                let pending_tx = match self.provider.send_transaction(tx_clone).await {
+                    Ok(tx) => tx,
+                    Err(e) => {
+                        // TODO rebuild rpc client and retry on rpc error
+                        error!("Failed to send transaction: {}", e);
+                        self.send_error_signal(TransactionError::TransactionReverted)
+                            .await;
+                        return;
+                    }
+                };
 
-    async fn verify_tx_included(&self, tx_hash: B256) -> TxStatus {
-        let tx = self.provider.get_transaction_by_hash(tx_hash).await;
-        match tx {
-            Ok(Some(tx)) => {
-                if let Some(block_number) = tx.block_number {
-                    info!(
-                        "✅ Transaction {} confirmed in block {}",
-                        tx_hash, block_number
-                    );
-                    TxStatus::Confirmed(block_number)
-                } else {
-                    TxStatus::Pending
+                tx_hash = *pending_tx.tx_hash();
+
+                debug!("{} tx nonce: {}, attempt: {}, hash: {},  max_fee_per_gas: {}, max_priority_fee_per_gas: {}, max_fee_per_blob_gas: {:?}",
+                    if sending_attempt == 0 { "🟢 Send" } else { "🟡 Replace" },
+                    self.nonce,
+                    sending_attempt,
+                    tx_hash,
+                    max_fee_per_gas,
+                    max_priority_fee_per_gas,
+                    max_fee_per_blob_gas
+                );
+
+                let tx_status = self.check_tx_receipt(pending_tx).await;
+                match tx_status {
+                    TxStatus::Confirmed(_) => return,
+                    TxStatus::Failed(_) => {
+                        self.send_error_signal(TransactionError::TransactionReverted)
+                            .await;
+                        return;
+                    }
+                    TxStatus::Pending => {} // Continue with retry attempts
+                }
+
+                sending_attempt += 1;
+                if sending_attempt > self.config.max_attempts_to_send_tx {
+                    break;
+                }
+
+                // increase fees for next attempt
+                // replacement requires 100% more for penalty
+                max_fee_per_gas += max_fee_per_gas;
+                max_priority_fee_per_gas += max_priority_fee_per_gas;
+                if let Some(max_fee_per_blob_gas) = &mut max_fee_per_blob_gas {
+                    *max_fee_per_blob_gas += *max_fee_per_blob_gas;
                 }
             }
-            _ => {
-                let warning = format!(
-                    "Transaction {} not found, probably already included, check previous hashes",
-                    tx_hash
-                );
-                warn!("{}", warning);
-                TxStatus::Failed(warning)
-            }
+
+            let error_msg = format!(
+                "Transaction {} with nonce {} not confirmed after {} attempts",
+                tx_hash, self.nonce, self.config.max_attempts_to_send_tx
+            );
+            error!("{}", error_msg);
+            self.send_error_signal(TransactionError::NotConfirmed).await;
+        })
+    }
+
+    async fn send_error_signal(&self, error: TransactionError) {
+        if let Err(e) = self.error_notification_channel.send(error).await {
+            error!("Failed to send transaction error signal: {}", e);
         }
     }
 
