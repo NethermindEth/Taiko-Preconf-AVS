@@ -6,11 +6,8 @@ mod taiko;
 mod utils;
 
 use anyhow::Error;
-use clap::Parser;
 use metrics::Metrics;
 use node::Thresholds;
-use shared::l2_block::L2Block;
-use std::str::FromStr;
 use std::sync::Arc;
 use tokio::{
     signal::unix::{signal, SignalKind},
@@ -21,8 +18,16 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use warp::Filter;
 
+#[cfg(feature = "test-gas")]
+use clap::Parser;
+#[cfg(feature = "test-gas")]
+use shared::l2_block::L2Block;
+#[cfg(feature = "test-gas")]
 use shared::l2_tx_lists::PreBuiltTxList;
+#[cfg(feature = "test-gas")]
+use std::str::FromStr;
 
+#[cfg(feature = "test-gas")]
 #[derive(Parser, Debug)]
 struct Args {
     #[arg(long = "test-gas", value_name = "BLOCK_COUNT")]
@@ -59,8 +64,9 @@ async fn main() -> Result<(), Error> {
 
     let ethereum_l1 = Arc::new(ethereum_l1);
 
+    #[cfg(feature = "test-gas")]
     let args = Args::parse();
-
+    #[cfg(feature = "test-gas")]
     if let Some(gas) = args.test_gas {
         println!("Test gas block count: {}", gas);
         test_gas_params(
@@ -146,6 +152,7 @@ async fn main() -> Result<(), Error> {
     Ok(())
 }
 
+#[cfg(feature = "test-gas")]
 async fn test_gas_params(
     ethereum_l1: Arc<ethereum_l1::EthereumL1>,
     blocks: u32,
