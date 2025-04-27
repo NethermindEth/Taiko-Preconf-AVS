@@ -45,6 +45,6 @@ clap = { version = "4.4", features = ["derive"], optional = true  }
 mockito = "1.4"
 
 [features]
-default = ["extra_gas_percentage"]
-extra_gas_percentage = []
+default = ["extra-gas-percentage"]
+extra-gas-percentage = []
 test-gas = ["clap"]

@@ -39,7 +39,7 @@ pub struct L1ContractAddresses {
     pub taiko_inbox: String,
     pub preconf_whitelist: String,
     pub preconf_router: String,
-    #[cfg(feature = "extra_gas_percentage")]
+    #[cfg(feature = "extra-gas-percentage")]
     pub extra_gas_percentage: u64,
 }
 
@@ -87,7 +87,7 @@ impl Config {
             default_empty_address.clone()
         });
 
-        #[cfg(feature = "extra_gas_percentage")]
+        #[cfg(feature = "extra-gas-percentage")]
         let extra_gas_percentage = std::env::var("EXTRA_GAS_PERCENTAGE")
             .unwrap_or("5".to_string())
             .parse::<u64>()
@@ -97,7 +97,7 @@ impl Config {
             taiko_inbox,
             preconf_whitelist,
             preconf_router,
-            #[cfg(feature = "extra_gas_percentage")]
+            #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage,
         };
 
