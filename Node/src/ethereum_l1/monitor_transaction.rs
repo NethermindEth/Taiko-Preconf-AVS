@@ -4,7 +4,8 @@ use alloy::{
     network::{Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
     primitives::{Address, FixedBytes, TxKind, B256},
     providers::{
-        ext::DebugApi, PendingTransactionBuilder, PendingTransactionError, Provider, WatchTxError,
+        ext::DebugApi, PendingTransactionBuilder, PendingTransactionError, Provider, RootProvider,
+        WatchTxError,
     },
     rpc::types::{trace::geth::GethDebugTracingOptions, Transaction, TransactionRequest},
 };
@@ -151,9 +152,8 @@ impl TransactionMonitorThread {
             }
 
             // Sending attempts loop
-            let mut sending_attempt: u64 = 0;
             let mut tx_hash = FixedBytes::default();
-            loop {
+            for sending_attempt in 0..self.config.max_attempts_to_send_tx {
                 let mut tx_clone = tx.clone();
                 self.set_tx_parameters(
                     &mut tx_clone,
@@ -172,30 +172,9 @@ impl TransactionMonitorThread {
                     }
                 };
 
-                let pending_tx = match self.provider.send_transaction(tx_clone).await {
-                    Ok(tx) => tx,
-                    Err(e) => {
-                        if let RpcError::ErrorResp(err) = &e {
-                            if err.message.contains("nonce too low") {
-                                let status = self.verify_tx_included(tx_hash).await;
-                                match status {
-                                    TxStatus::Confirmed(_) => return,
-                                    _ => {
-                                        self.send_error_signal(
-                                            TransactionError::TransactionReverted,
-                                        )
-                                        .await;
-                                        return;
-                                    }
-                                }
-                            }
-                        }
-                        // TODO if it is not revert then rebuild rpc client and retry on rpc error
-                        error!("Failed to send transaction: {}", e);
-                        self.send_error_signal(TransactionError::TransactionReverted)
-                            .await;
-                        return;
-                    }
+                let pending_tx = match self.handle_transaction_send(tx_clone, tx_hash).await {
+                    Some(pending_tx) => pending_tx,
+                    None => return,
                 };
 
                 tx_hash = *pending_tx.tx_hash();
@@ -211,42 +190,15 @@ impl TransactionMonitorThread {
                     max_fee_per_blob_gas
                 );
 
-                loop {
-                    let check_tx =
-                        PendingTransactionBuilder::new(pending_tx.provider().clone(), tx_hash);
-                    let tx_status = self.check_tx_receipt(check_tx).await;
-                    match tx_status {
-                        TxStatus::Confirmed(_) => return,
-                        TxStatus::Failed(_) => {
-                            self.send_error_signal(TransactionError::TransactionReverted)
-                                .await;
-                            return;
-                        }
-                        TxStatus::Pending => {} // Continue with retry attempts
-                    }
-                    // Check if L1 block number has changed since sending the tx
-                    // If not, check tx again and wait more
-                    let current_l1_height = match self.provider.get_block_number().await {
-                        Ok(block_number) => block_number,
-                        Err(e) => {
-                            error!("Failed to get L1 block number: {}", e);
-                            self.send_error_signal(TransactionError::GetBlockNumberFailed)
-                                .await;
-                            return;
-                        }
-                    };
-                    if current_l1_height != l1_block_at_send {
-                        break;
-                    }
-                    debug!(
-                        "🟤 Missing block wait more for tx with nonce {}. Current L1 height: {}, L1 height at send: {}",
-                        self.nonce, current_l1_height, l1_block_at_send
-                    );
-                }
-
-                sending_attempt += 1;
-                if sending_attempt > self.config.max_attempts_to_send_tx {
-                    break;
+                if self
+                    .is_transaction_handled_by_builder(
+                        pending_tx.provider().clone(),
+                        tx_hash,
+                        l1_block_at_send,
+                    )
+                    .await
+                {
+                    return;
                 }
 
                 // increase fees for next attempt
@@ -265,6 +217,78 @@ impl TransactionMonitorThread {
             error!("{}", error_msg);
             self.send_error_signal(TransactionError::NotConfirmed).await;
         })
+    }
+
+    /// Returns true if transaction removed from mempool for any reason
+    async fn is_transaction_handled_by_builder(
+        &self,
+        root_provider: RootProvider<alloy::network::Ethereum>,
+        tx_hash: B256,
+        l1_block_at_send: u64,
+    ) -> bool {
+        loop {
+            let check_tx = PendingTransactionBuilder::new(root_provider.clone(), tx_hash);
+            let tx_status = self.check_tx_receipt(check_tx).await;
+            match tx_status {
+                TxStatus::Confirmed(_) => return true,
+                TxStatus::Failed(_) => {
+                    self.send_error_signal(TransactionError::TransactionReverted)
+                        .await;
+                    return true;
+                }
+                TxStatus::Pending => {} // Continue with retry attempts
+            }
+            // Check if L1 block number has changed since sending the tx
+            // If not, check tx again and wait more
+            let current_l1_height = match self.provider.get_block_number().await {
+                Ok(block_number) => block_number,
+                Err(e) => {
+                    error!("Failed to get L1 block number: {}", e);
+                    self.send_error_signal(TransactionError::GetBlockNumberFailed)
+                        .await;
+                    return true;
+                }
+            };
+            if current_l1_height != l1_block_at_send {
+                break;
+            }
+            debug!(
+                "🟤 Missing block wait more for tx with nonce {}. Current L1 height: {}, L1 height at send: {}",
+                self.nonce, current_l1_height, l1_block_at_send
+            );
+        }
+
+        false
+    }
+
+    async fn handle_transaction_send(
+        &self,
+        tx: TransactionRequest,
+        previous_tx_hash: B256,
+    ) -> Option<PendingTransactionBuilder<alloy::network::Ethereum>> {
+        match self.provider.send_transaction(tx).await {
+            Ok(tx) => Some(tx),
+            Err(e) => {
+                if let RpcError::ErrorResp(err) = &e {
+                    if err.message.contains("nonce too low") {
+                        let status = self.verify_tx_included(previous_tx_hash).await;
+                        match status {
+                            TxStatus::Confirmed(_) => return None,
+                            _ => {
+                                self.send_error_signal(TransactionError::TransactionReverted)
+                                    .await;
+                                return None;
+                            }
+                        }
+                    }
+                }
+                // TODO if it is not revert then rebuild rpc client and retry on rpc error
+                error!("Failed to send transaction: {}", e);
+                self.send_error_signal(TransactionError::TransactionReverted)
+                    .await;
+                return None;
+            }
+        }
     }
 
     async fn send_error_signal(&self, error: TransactionError) {

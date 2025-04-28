@@ -1,13 +1,11 @@
+use crate::ethereum_l1;
 use crate::shared::l2_block::L2Block;
 use crate::shared::l2_tx_lists::PreBuiltTxList;
-use crate::ethereum_l1;
-use std::str::FromStr;
 use anyhow::Error;
+use std::str::FromStr;
 use std::sync::Arc;
-use tokio::{
-    time::{sleep, Duration},
-};
-use tracing::{info};
+use tokio::time::{sleep, Duration};
+use tracing::info;
 
 pub async fn test_gas_params(
     ethereum_l1: Arc<ethereum_l1::EthereumL1>,
