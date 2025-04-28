@@ -425,10 +425,13 @@ impl Taiko {
     where
         T: serde::Serialize,
     {
-        // infinity retry
-        let mut response;
-        for _ in 0..10 {
-            response = self
+        let heartbeat_ms = self.ethereum_l1.slot_clock.get_preconf_heartbeat_ms();
+        let start_time = std::time::Instant::now();
+        let max_duration = Duration::from_millis(heartbeat_ms / 2); // half of the heartbeat duration, leave time for other operations
+
+        // Try until we exceed the heartbeat duration
+        while start_time.elapsed() < max_duration {
+            let response = self
                 .driver_rpc
                 .request_json(method.clone(), endpoint, payload)
                 .await;
@@ -438,19 +441,27 @@ impl Taiko {
                     return Ok(data.clone());
                 }
                 Err(ref e) => {
+                    let elapsed = start_time.elapsed();
+                    let remaining = max_duration.checked_sub(elapsed).unwrap_or_default();
+
                     tracing::error!(
-                        "Failed to call driver RPC for API '{}': {}. Retrying...",
+                        "Failed to call driver RPC for API '{}': {}. Retrying... ({}ms elapsed, {}ms remaining)",
                         endpoint,
-                        e
+                        e,
+                        elapsed.as_millis(),
+                        remaining.as_millis()
                     );
+
                     tokio::time::sleep(Duration::from_millis(10)).await;
                     self.driver_rpc.recreate_client().await?;
                 }
             }
         }
+
         Err(anyhow::anyhow!(
-            "Failed to call driver RPC for API '{}'",
-            endpoint
+            "Failed to call driver RPC for API '{}' within the duration ({}ms)",
+            endpoint,
+            max_duration.as_millis()
         ))
     }
 

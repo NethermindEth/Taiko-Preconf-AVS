@@ -75,6 +75,10 @@ impl<T: Clock> SlotClock<T> {
         self.slot_of(now)
     }
 
+    pub fn get_preconf_heartbeat_ms(&self) -> u64 {
+        self.preconf_heartbeat_ms
+    }
+
     /// Returns the duration between `now` and the start of the next slot.
     pub fn duration_to_next_slot_from(&self, now: Duration) -> Result<Duration, Error> {
         if now < self.genesis_duration {
