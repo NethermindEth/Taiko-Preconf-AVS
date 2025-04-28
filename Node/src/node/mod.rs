@@ -286,6 +286,13 @@ impl Node {
                 TransactionError::NotConfirmed => {
                     panic!("Transaction not confirmed for a long time, exiting");
                 }
+                TransactionError::UnsupportedTransactionType => {
+                    panic!("Unsupported transaction type. You can send eip1559 or eip4844 transactions only");
+                }
+                TransactionError::GetBlockNumberFailed => {
+                    // TODO recreate L1 provider
+                    panic!("Failed to get block number from L1");
+                }
             },
             Err(err) => match err {
                 TryRecvError::Empty => {

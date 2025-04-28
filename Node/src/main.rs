@@ -18,6 +18,20 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use warp::Filter;
 
+#[cfg(feature = "test-gas")]
+mod test_gas;
+#[cfg(feature = "test-gas")]
+use clap::Parser;
+#[cfg(feature = "test-gas")]
+use test_gas::test_gas_params;
+
+#[cfg(feature = "test-gas")]
+#[derive(Parser, Debug)]
+struct Args {
+    #[arg(long = "test-gas", value_name = "BLOCK_COUNT")]
+    test_gas: Option<u32>,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     init_logging();
@@ -47,6 +61,24 @@ async fn main() -> Result<(), Error> {
     .await?;
 
     let ethereum_l1 = Arc::new(ethereum_l1);
+
+    #[cfg(feature = "test-gas")]
+    let args = Args::parse();
+    #[cfg(feature = "test-gas")]
+    if let Some(gas) = args.test_gas {
+        info!("Test gas block count: {}", gas);
+        test_gas_params(
+            ethereum_l1.clone(),
+            gas,
+            config.l1_height_lag,
+            config.max_bytes_size_of_batch,
+            transaction_error_receiver,
+        )
+        .await?;
+        return Ok(());
+    } else {
+        tracing::error!("No test gas block count provided.");
+    }
 
     let jwt_secret_bytes = utils::file_operations::read_jwt_secret(&config.jwt_secret_file_path)?;
     let taiko = Arc::new(

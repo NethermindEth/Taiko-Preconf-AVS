@@ -27,7 +27,7 @@ pub struct ExecutionLayer {
     preconfer_address: Address,
     contract_addresses: ContractAddresses,
     pacaya_config: taiko_inbox::ITaikoInbox::Config,
-    #[cfg(feature = "extra_gas_percentage")]
+    #[cfg(feature = "extra-gas-percentage")]
     extra_gas_percentage: u64,
     transaction_monitor: TransactionMonitor,
 }
@@ -55,7 +55,7 @@ impl ExecutionLayer {
 
         let wallet = EthereumWallet::from(signer);
 
-        #[cfg(feature = "extra_gas_percentage")]
+        #[cfg(feature = "extra-gas-percentage")]
         let extra_gas_percentage = config.contract_addresses.extra_gas_percentage;
 
         let ws = WsConnect::new(config.execution_ws_rpc_url.to_string());
@@ -91,7 +91,7 @@ impl ExecutionLayer {
             preconfer_address,
             contract_addresses,
             pacaya_config,
-            #[cfg(feature = "extra_gas_percentage")]
+            #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage,
             transaction_monitor,
         })
@@ -194,9 +194,9 @@ impl ExecutionLayer {
             .timestamp_sec;
 
         // Build proposeBatch transaction
-        #[cfg(not(feature = "extra_gas_percentage"))]
+        #[cfg(not(feature = "extra-gas-percentage"))]
         let builder = ProposeBatchBuilder::new(self.provider_ws.clone());
-        #[cfg(feature = "extra_gas_percentage")]
+        #[cfg(feature = "extra-gas-percentage")]
         let builder = ProposeBatchBuilder::new(self.provider_ws.clone(), self.extra_gas_percentage);
         let tx = builder
             .build_propose_batch_tx(
@@ -354,7 +354,7 @@ impl ExecutionLayer {
                     unzen: 0,
                 },
             },
-            #[cfg(feature = "extra_gas_percentage")]
+            #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage: 5,
             transaction_monitor: TransactionMonitor::new(
                 provider_ws.clone(),
