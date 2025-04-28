@@ -279,9 +279,13 @@ impl Node {
                         .get_l2_height_from_taiko_inbox()
                         .await?;
                     warn!("Force Reorg: Transaction reverted");
-                    self.batch_manager
+                    if let Err(e) = self
+                        .batch_manager
                         .trigger_l2_reorg(taiko_inbox_height)
-                        .await?;
+                        .await
+                    {
+                        panic!("Failed to trigger L2 reorg: {}", e);
+                    }
                 }
                 TransactionError::NotConfirmed => {
                     panic!("Transaction not confirmed for a long time, exiting");
