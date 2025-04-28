@@ -284,11 +284,15 @@ impl Node {
                         .trigger_l2_reorg(taiko_inbox_height)
                         .await
                     {
-                        panic!("Failed to trigger L2 reorg: {}", e);
+                        self.cancel_token.cancel();
+                        return Err(anyhow::anyhow!("Failed to trigger L2 reorg: {}", e));
                     }
                 }
                 TransactionError::NotConfirmed => {
-                    panic!("Transaction not confirmed for a long time, exiting");
+                    self.cancel_token.cancel();
+                    return Err(anyhow::anyhow!(
+                        "Transaction not confirmed for a long time, exiting"
+                    ));
                 }
             },
             Err(err) => match err {
@@ -296,7 +300,8 @@ impl Node {
                     // no errors, proceed with preconfirmation
                 }
                 TryRecvError::Disconnected => {
-                    panic!("Transaction error channel disconnected");
+                    self.cancel_token.cancel();
+                    return Err(anyhow::anyhow!("Transaction error channel disconnected"));
                 }
             },
         }

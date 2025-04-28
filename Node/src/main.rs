@@ -110,17 +110,24 @@ async fn main() -> Result<(), Error> {
     node.entrypoint().await?;
 
     let metrics = Arc::new(Metrics::new());
-    tokio::spawn(update_metrics_loop(ethereum_l1.clone(), metrics.clone()));
-    serve_metrics(metrics.clone()).await;
+    tokio::spawn(update_metrics_loop(
+        ethereum_l1.clone(),
+        metrics.clone(),
+        cancel_token.clone(),
+    ));
+    serve_metrics(metrics.clone(), cancel_token.clone()).await;
 
     wait_for_the_termination(cancel_token, config.l1_slot_duration_sec).await;
 
     Ok(())
 }
 
-async fn update_metrics_loop(ethereum_l1: Arc<ethereum_l1::EthereumL1>, metrics: Arc<Metrics>) {
+async fn update_metrics_loop(
+    ethereum_l1: Arc<ethereum_l1::EthereumL1>,
+    metrics: Arc<Metrics>,
+    cancel_token: CancellationToken,
+) {
     loop {
-        //metrics.update().await;
         let eth_balance = ethereum_l1.execution_layer.get_preconfer_wallet_eth().await;
         let taiko_balance = ethereum_l1
             .execution_layer
@@ -151,16 +158,30 @@ async fn update_metrics_loop(ethereum_l1: Arc<ethereum_l1::EthereumL1>, metrics:
             }
         }
 
-        sleep(Duration::from_secs(60)).await;
+        tokio::select! {
+            _ = sleep(Duration::from_secs(60)) => {},
+            _ = cancel_token.cancelled() => {
+                info!("Shutdown signal received, exiting metrics loop...");
+                return;
+            }
+        }
     }
 }
-async fn serve_metrics(metrics: Arc<Metrics>) {
+
+async fn serve_metrics(metrics: Arc<Metrics>, cancel_token: CancellationToken) {
     let route = warp::path!("metrics").map(move || {
         let output = metrics.gather();
         warp::reply::with_header(output, "Content-Type", "text/plain; version=0.0.4")
     });
 
-    warp::serve(route).run(([0, 0, 0, 0], 9898)).await;
+    let (addr, server) =
+        warp::serve(route).bind_with_graceful_shutdown(([0, 0, 0, 0], 9898), async move {
+            cancel_token.cancelled().await;
+            info!("Shutdown signal received, stopping metrics server...");
+        });
+
+    info!("Metrics server listening on {}", addr);
+    server.await;
 }
 
 async fn wait_for_the_termination(cancel_token: CancellationToken, shutdown_delay_secs: u64) {
@@ -177,6 +198,10 @@ async fn wait_for_the_termination(cancel_token: CancellationToken, shutdown_dela
             info!("Received Ctrl+C, shutting down...");
             cancel_token.cancel();
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+        _ = cancel_token.cancelled() => {
+            info!("Shutdown signal received, exiting avs node...");
+            return;
         }
     }
 }
