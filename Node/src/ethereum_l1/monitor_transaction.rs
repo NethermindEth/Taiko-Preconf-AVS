@@ -279,7 +279,7 @@ impl TransactionMonitorThread {
             Ok(Some(tx)) => {
                 if let Some(block_number) = tx.block_number {
                     info!(
-                        "✅ Transaction {} confirmed in block {} after nonce too low error",
+                        "✅ Transaction {} confirmed in block {} while trying to replace it",
                         tx_hash, block_number
                     );
                     TxStatus::Confirmed(block_number)
