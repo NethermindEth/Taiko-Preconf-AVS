@@ -5106,6 +5106,7 @@ dependencies = [
  "anyhow",
  "beacon-api-client",
  "chrono",
+ "clap",
  "dotenv",
  "ecdsa 0.16.9",
  "elliptic-curve 0.13.8",
