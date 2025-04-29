@@ -28,6 +28,7 @@ pub struct ExecutionLayer {
     #[cfg(feature = "extra-gas-percentage")]
     extra_gas_percentage: u64,
     transaction_monitor: TransactionMonitor,
+    metrics: Arc<metrics::Metrics>,
 }
 
 pub struct ContractAddresses {
@@ -79,7 +80,7 @@ impl ExecutionLayer {
             config.max_attempts_to_send_tx,
             config.delay_between_tx_attempts_sec,
             transaction_error_channel,
-            metrics,
+            metrics.clone(),
         )
         .await?;
 
@@ -94,6 +95,7 @@ impl ExecutionLayer {
             #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage,
             transaction_monitor,
+            metrics,
         })
     }
 
@@ -187,6 +189,8 @@ impl ExecutionLayer {
             blocks.len(),
             tx_lists_bytes.len(),
         );
+
+        self.metrics.observe_batch_info(blocks.len() as u64, tx_lists_bytes.len() as u64);
 
         let last_block_timestamp = l2_blocks
             .last()
