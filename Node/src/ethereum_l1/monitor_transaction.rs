@@ -4,7 +4,7 @@ use super::{transaction_error::TransactionError, ws_provider::WsProvider};
 use alloy::{
     consensus::{TxEip4844Variant, TxEnvelope, TxType},
     network::{Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
-    primitives::{Address, FixedBytes, TxKind, B256},
+    primitives::{Address, TxKind, B256},
     providers::{
         ext::DebugApi, PendingTransactionBuilder, PendingTransactionError, Provider, RootProvider,
         WatchTxError,
@@ -161,7 +161,7 @@ impl TransactionMonitorThread {
 
             self.metrics.inc_batch_sent();
             // Sending attempts loop
-            let mut tx_hash = FixedBytes::default();
+            let mut tx_hashes = Vec::new();
             for sending_attempt in 0..self.config.max_attempts_to_send_tx {
                 let mut tx_clone = tx.clone();
                 self.set_tx_parameters(
@@ -181,12 +181,13 @@ impl TransactionMonitorThread {
                     }
                 };
 
-                let pending_tx = match self.handle_transaction_send(tx_clone, tx_hash, sending_attempt as u64).await {
+                let pending_tx = match self.handle_transaction_send(tx_clone, &tx_hashes, sending_attempt as u64).await {
                     Some(pending_tx) => pending_tx,
                     None => return,
                 };
 
-                tx_hash = *pending_tx.tx_hash();
+                let tx_hash = *pending_tx.tx_hash();
+                tx_hashes.push(tx_hash);
 
                 debug!("{} tx nonce: {}, attempt: {}, l1_block: {}, hash: {},  max_fee_per_gas: {}, max_priority_fee_per_gas: {}, max_fee_per_blob_gas: {:?}",
                     if sending_attempt == 0 { "🟢 Send" } else { "🟡 Replace" },
@@ -220,11 +221,17 @@ impl TransactionMonitorThread {
                 }
             }
 
-            let error_msg = format!(
+            error!(
                 "Transaction {} with nonce {} not confirmed after {} attempts",
-                tx_hash, self.nonce, self.config.max_attempts_to_send_tx
+                if let Some(tx_hash) = tx_hashes.last() {
+                    tx_hash.to_string()
+                } else {
+                    "unknown".to_string()
+                },
+                self.nonce,
+                self.config.max_attempts_to_send_tx
             );
-            error!("{}", error_msg);
+
             self.send_error_signal(TransactionError::NotConfirmed).await;
         })
     }
@@ -275,7 +282,7 @@ impl TransactionMonitorThread {
     async fn handle_transaction_send(
         &self,
         tx: TransactionRequest,
-        previous_tx_hash: B256,
+        previous_tx_hashes: &Vec<B256>,
         sending_attempt: u64,
     ) -> Option<PendingTransactionBuilder<alloy::network::Ethereum>> {
         match self.provider.send_transaction(tx).await {
@@ -283,7 +290,7 @@ impl TransactionMonitorThread {
             Err(e) => {
                 if let RpcError::ErrorResp(err) = &e {
                     if err.message.contains("nonce too low") {
-                        let status = self.verify_tx_included(previous_tx_hash, sending_attempt).await;
+                        let status = self.verify_tx_included(previous_tx_hashes, sending_attempt).await;
                         match status {
                             TxStatus::Confirmed(_) => return None,
                             _ => {
@@ -309,10 +316,10 @@ impl TransactionMonitorThread {
         }
     }
 
-    async fn verify_tx_included(&self, tx_hash: B256, sending_attempt: u64) -> TxStatus {
-        let tx = self.provider.get_transaction_by_hash(tx_hash).await;
-        match tx {
-            Ok(Some(tx)) => {
+    async fn verify_tx_included(&self, tx_hashes: &Vec<B256>, sending_attempt: u64) -> TxStatus {
+        for tx_hash in tx_hashes {
+            let tx = self.provider.get_transaction_by_hash(*tx_hash).await;
+            if let Ok(Some(tx)) = tx {
                 if let Some(block_number) = tx.block_number {
                     info!(
                         "✅ Transaction {} confirmed in block {} while trying to replace it",
@@ -320,20 +327,14 @@ impl TransactionMonitorThread {
                     );
                     self.metrics.observe_batch_propose_tries(sending_attempt - 1);
                     self.metrics.inc_batch_confirmed();
-                    TxStatus::Confirmed(block_number)
-                } else {
-                    TxStatus::Pending
+                    return TxStatus::Confirmed(block_number);
                 }
             }
-            _ => {
-                let warning = format!(
-                    "Transaction {} not found, probably already included, check previous hashes",
-                    tx_hash
-                );
-                warn!("{}", warning);
-                TxStatus::Failed(warning)
-            }
         }
+
+        let warning = format!("Transaction not found, checked hashes: {:?}", tx_hashes);
+        warn!("{}", warning);
+        TxStatus::Failed(warning)
     }
 
     async fn check_tx_receipt<N: Network>(
