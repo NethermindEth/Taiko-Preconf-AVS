@@ -116,7 +116,7 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
         };
 
         let handover_window = self.is_handover_window(l1_slot);
-        let preconfer = self.is_preconfer(current_operator, handover_window)?;
+        let preconfer = self.is_preconfer(current_operator, handover_window, l1_slot)?;
         let preconfirmation_started = self.is_preconfirmation_start_l2_slot(preconfer);
         self.was_preconfer = preconfer;
 
@@ -128,18 +128,23 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
         })
     }
 
-    fn is_preconfer(&self, current_operator: bool, handover_window: bool) -> Result<bool, Error> {
+    fn is_preconfer(
+        &self,
+        current_operator: bool,
+        handover_window: bool,
+        l1_slot: Slot,
+    ) -> Result<bool, Error> {
         if handover_window {
             return Ok(self.next_operator
                 && (current_operator // an operator for current and next epoch, handover buffer doesn't matter
-                || !self.is_handover_buffer()?));
+                || !self.is_handover_buffer(l1_slot)?));
         }
 
         Ok(current_operator)
     }
 
-    fn is_handover_buffer(&self) -> Result<bool, Error> {
-        Ok(self.get_ms_from_handover_window_start()? <= self.handover_start_buffer_ms)
+    fn is_handover_buffer(&self, l1_slot: Slot) -> Result<bool, Error> {
+        Ok(self.get_ms_from_handover_window_start(l1_slot)? <= self.handover_start_buffer_ms)
     }
 
     fn is_submitter(&self, l1_slot: u64, current_operator: bool, handover_window: bool) -> bool {
@@ -167,11 +172,10 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
             .is_slot_in_last_n_slots_of_epoch(slot, self.handover_window_slots)
     }
 
-    fn get_ms_from_handover_window_start(&self) -> Result<u64, Error> {
+    fn get_ms_from_handover_window_start(&self, l1_slot: Slot) -> Result<u64, Error> {
         let result: u64 = self
             .slot_clock
-            .time_from_n_last_slots_of_epoch(self.handover_window_slots)
-            .unwrap()
+            .time_from_n_last_slots_of_epoch(l1_slot, self.handover_window_slots)?
             .as_millis()
             .try_into()
             .map_err(|err| {

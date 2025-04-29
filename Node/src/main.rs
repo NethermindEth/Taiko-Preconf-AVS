@@ -15,7 +15,7 @@ use tokio::{
     time::{sleep, Duration},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use warp::Filter;
 
 #[cfg(feature = "test-gas")]
@@ -40,6 +40,14 @@ async fn main() -> Result<(), Error> {
 
     let config = utils::config::Config::read_env_variables();
     let cancel_token = CancellationToken::new();
+
+    // Set up panic hook to cancel token on panic
+    let panic_cancel_token = cancel_token.clone();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        error!("Panic occurred: {:?}", panic_info);
+        panic_cancel_token.cancel();
+        info!("Cancellation token triggered, initiating shutdown...");
+    }));
 
     let (transaction_error_sender, transaction_error_receiver) = mpsc::channel(100);
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
@@ -142,81 +150,82 @@ async fn main() -> Result<(), Error> {
     node.entrypoint().await?;
 
     let metrics = Arc::new(Metrics::new());
-    tokio::spawn(update_metrics_loop(
-        ethereum_l1.clone(),
-        metrics.clone(),
-        cancel_token.clone(),
-    ));
-    serve_metrics(metrics.clone(), cancel_token.clone()).await;
+    update_metrics_loop(ethereum_l1.clone(), metrics.clone(), cancel_token.clone());
+    serve_metrics(metrics.clone(), cancel_token.clone());
 
     wait_for_the_termination(cancel_token, config.l1_slot_duration_sec).await;
 
     Ok(())
 }
 
-async fn update_metrics_loop(
+fn update_metrics_loop(
     ethereum_l1: Arc<ethereum_l1::EthereumL1>,
     metrics: Arc<Metrics>,
     cancel_token: CancellationToken,
 ) {
-    loop {
-        let eth_balance = ethereum_l1.execution_layer.get_preconfer_wallet_eth().await;
-        let taiko_balance = ethereum_l1
-            .execution_layer
-            .get_preconfer_total_bonds()
-            .await;
+    tokio::spawn(async move {
+        loop {
+            let eth_balance = ethereum_l1.execution_layer.get_preconfer_wallet_eth().await;
+            let taiko_balance = ethereum_l1
+                .execution_layer
+                .get_preconfer_total_bonds()
+                .await;
 
-        match (eth_balance, taiko_balance) {
-            (Ok(eth), Ok(taiko)) => {
-                info!("Balances - ETH: {}, TAIKO: {}", eth, taiko);
-                metrics.set_preconfer_eth_balance(eth);
-                metrics.set_preconfer_taiko_balance(taiko);
+            match (eth_balance, taiko_balance) {
+                (Ok(eth), Ok(taiko)) => {
+                    info!("Balances - ETH: {}, TAIKO: {}", eth, taiko);
+                    metrics.set_preconfer_eth_balance(eth);
+                    metrics.set_preconfer_taiko_balance(taiko);
+                }
+                (Ok(eth), Err(e)) => {
+                    info!("ETH Balance {}", eth);
+                    metrics.set_preconfer_eth_balance(eth);
+                    warn!("Failed to get preconfer taiko balance: {}", e);
+                }
+                (Err(e), Ok(taiko)) => {
+                    warn!("Failed to get preconfer eth balance: {}", e);
+                    info!("TAIKO Balance {}", taiko);
+                    metrics.set_preconfer_taiko_balance(taiko);
+                }
+                (Err(e), Err(e2)) => {
+                    warn!(
+                        "Failed to get preconfer eth and taiko balances: {} {}",
+                        e, e2
+                    );
+                }
             }
-            (Ok(eth), Err(e)) => {
-                info!("ETH Balance {}", eth);
-                metrics.set_preconfer_eth_balance(eth);
-                warn!("Failed to get preconfer taiko balance: {}", e);
-            }
-            (Err(e), Ok(taiko)) => {
-                warn!("Failed to get preconfer eth balance: {}", e);
-                info!("TAIKO Balance {}", taiko);
-                metrics.set_preconfer_taiko_balance(taiko);
-            }
-            (Err(e), Err(e2)) => {
-                warn!(
-                    "Failed to get preconfer eth and taiko balances: {} {}",
-                    e, e2
-                );
+
+            tokio::select! {
+                _ = sleep(Duration::from_secs(60)) => {},
+                _ = cancel_token.cancelled() => {
+                    info!("Shutdown signal received, exiting metrics loop...");
+                    return;
+                }
             }
         }
-
-        tokio::select! {
-            _ = sleep(Duration::from_secs(60)) => {},
-            _ = cancel_token.cancelled() => {
-                info!("Shutdown signal received, exiting metrics loop...");
-                return;
-            }
-        }
-    }
+    });
 }
 
-async fn serve_metrics(metrics: Arc<Metrics>, cancel_token: CancellationToken) {
-    let route = warp::path!("metrics").map(move || {
-        let output = metrics.gather();
-        warp::reply::with_header(output, "Content-Type", "text/plain; version=0.0.4")
-    });
-
-    let (addr, server) =
-        warp::serve(route).bind_with_graceful_shutdown(([0, 0, 0, 0], 9898), async move {
-            cancel_token.cancelled().await;
-            info!("Shutdown signal received, stopping metrics server...");
+fn serve_metrics(metrics: Arc<Metrics>, cancel_token: CancellationToken) {
+    tokio::spawn(async move {
+        let route = warp::path!("metrics").map(move || {
+            let output = metrics.gather();
+            warp::reply::with_header(output, "Content-Type", "text/plain; version=0.0.4")
         });
 
-    info!("Metrics server listening on {}", addr);
-    server.await;
+        let (addr, server) =
+            warp::serve(route).bind_with_graceful_shutdown(([0, 0, 0, 0], 9898), async move {
+                cancel_token.cancelled().await;
+                info!("Shutdown signal received, stopping metrics server...");
+            });
+
+        info!("Metrics server listening on {}", addr);
+        server.await;
+    });
 }
 
 async fn wait_for_the_termination(cancel_token: CancellationToken, shutdown_delay_secs: u64) {
+    info!("Starting signal handler...");
     let mut sigterm = signal(SignalKind::terminate()).expect("Failed to set up SIGTERM handler");
     tokio::select! {
         _ = sigterm.recv() => {
@@ -229,7 +238,7 @@ async fn wait_for_the_termination(cancel_token: CancellationToken, shutdown_dela
         _ = tokio::signal::ctrl_c() => {
             info!("Received Ctrl+C, shutting down...");
             cancel_token.cancel();
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         }
         _ = cancel_token.cancelled() => {
             info!("Shutdown signal received, exiting avs node...");

@@ -142,7 +142,11 @@ impl<T: Clock> SlotClock<T> {
     pub fn get_current_epoch(&self) -> Result<Epoch, Error> {
         let now = self.clock.now().duration_since(UNIX_EPOCH)?;
         let slot = self.slot_of(now)?;
-        Ok(slot / self.slots_per_epoch)
+        Ok(self.get_epoch_for_slot(slot))
+    }
+
+    fn get_epoch_for_slot(&self, slot: Slot) -> Epoch {
+        slot / self.slots_per_epoch
     }
 
     pub fn get_epoch_begin_timestamp(&self, epoch: Epoch) -> Result<u64, Error> {
@@ -179,14 +183,19 @@ impl<T: Clock> SlotClock<T> {
         slot >= self.slots_per_epoch - n && slot < self.slots_per_epoch
     }
 
-    pub fn time_from_n_last_slots_of_epoch(&self, n: Slot) -> Result<Duration, Error> {
-        let slot = self.get_current_slot()?;
-        let boundary_slot =
-            self.get_current_epoch()? * self.slots_per_epoch + self.slots_per_epoch - n;
-        if slot < boundary_slot {
+    pub fn time_from_n_last_slots_of_epoch(
+        &self,
+        current_l1_slot: Slot,
+        n: Slot,
+    ) -> Result<Duration, Error> {
+        let boundary_slot = self.get_epoch_for_slot(current_l1_slot) * self.slots_per_epoch
+            + self.slots_per_epoch
+            - n;
+
+        if current_l1_slot < boundary_slot {
             return Err(anyhow::anyhow!(
                 "time_from_n_last_slots_of_epoch: too early, slot {} is less than boundary slot {}",
-                slot,
+                current_l1_slot,
                 boundary_slot
             ));
         }
@@ -303,6 +312,17 @@ mod tests {
     }
 
     #[test]
+    fn test_get_epoch_for_slot() {
+        let slot_clock: SlotClock =
+            SlotClock::new(0u64, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
+        let epoch = slot_clock.get_epoch_for_slot(Slot::from(3u64));
+        assert_eq!(epoch, Epoch::from(0u64));
+
+        let epoch = slot_clock.get_epoch_for_slot(Slot::from(234u64));
+        assert_eq!(epoch, Epoch::from(7u64));
+    }
+
+    #[test]
     fn test_get_current_epoch() {
         let genesis_slot = Slot::from(0u64);
         let slot_clock: SlotClock = SlotClock::new(
@@ -373,10 +393,7 @@ mod tests {
         let slot_clock =
             SlotClock::<MockClock>::new(0u64, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
 
-        let current_slot = slot_clock.get_current_slot().unwrap();
-        let current_epoch = slot_clock.get_current_epoch().unwrap();
-
-        let duration = slot_clock.time_from_n_last_slots_of_epoch(3).unwrap();
+        let duration = slot_clock.time_from_n_last_slots_of_epoch(29, 3).unwrap();
         assert_eq!(duration, Duration::from_secs(5));
     }
 

@@ -64,8 +64,7 @@ impl ExecutionLayer {
             ProviderBuilder::new()
                 .wallet(wallet)
                 .on_ws(ws.clone())
-                .await
-                .unwrap(),
+                .await?,
         );
 
         let contract_addresses =
