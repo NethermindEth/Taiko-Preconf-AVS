@@ -1,6 +1,6 @@
 [package]
 name = "taiko_preconf_avs_node"
-version = "0.2.39"
+version = "0.2.40"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -39,7 +39,7 @@ flate2 = "1.1"
 alloy-json-rpc = "0.12"
 prometheus = "0.14"
 warp = "0.3"
-clap = { version = "4.4", features = ["derive"], optional = true  }
+clap = { version = "4.4", features = ["derive"], optional = true }
 
 [dev-dependencies]
 mockito = "1.4"
