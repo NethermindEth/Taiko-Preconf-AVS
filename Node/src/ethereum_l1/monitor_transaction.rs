@@ -2,7 +2,7 @@ use super::{transaction_error::TransactionError, ws_provider::WsProvider};
 use alloy::{
     consensus::{TxEip4844Variant, TxEnvelope, TxType},
     network::{Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
-    primitives::{Address, FixedBytes, TxKind, B256},
+    primitives::{Address, TxKind, B256},
     providers::{
         ext::DebugApi, PendingTransactionBuilder, PendingTransactionError, Provider, RootProvider,
         WatchTxError,
@@ -233,17 +233,6 @@ impl TransactionMonitorThread {
         l1_block_at_send: u64,
     ) -> bool {
         loop {
-            let check_tx = PendingTransactionBuilder::new(root_provider.clone(), tx_hash);
-            let tx_status = self.check_tx_receipt(check_tx).await;
-            match tx_status {
-                TxStatus::Confirmed(_) => return true,
-                TxStatus::Failed(_) => {
-                    self.send_error_signal(TransactionError::TransactionReverted)
-                        .await;
-                    return true;
-                }
-                TxStatus::Pending => {} // Continue with retry attempts
-            }
             // Check if L1 block number has changed since sending the tx
             // If not, check tx again and wait more
             let current_l1_height = match self.provider.get_block_number().await {
@@ -256,15 +245,25 @@ impl TransactionMonitorThread {
                 }
             };
             if current_l1_height != l1_block_at_send {
-                break;
+                // Check tx status
+                let check_tx = PendingTransactionBuilder::new(root_provider.clone(), tx_hash);
+                let tx_status = self.check_tx_receipt(check_tx).await;
+                match tx_status {
+                    TxStatus::Confirmed(_) => return true,
+                    TxStatus::Failed(_) => {
+                        self.send_error_signal(TransactionError::TransactionReverted)
+                            .await;
+                        return true;
+                    }
+                    TxStatus::Pending => return false,
+                }
             }
+
             debug!(
                 "🟤 Missing block wait more for tx with nonce {}. Current L1 height: {}, L1 height at send: {}",
                 self.nonce, current_l1_height, l1_block_at_send
             );
         }
-
-        false
     }
 
     async fn handle_transaction_send(
