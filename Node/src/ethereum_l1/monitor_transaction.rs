@@ -181,7 +181,10 @@ impl TransactionMonitorThread {
                     }
                 };
 
-                let pending_tx = match self.handle_transaction_send(tx_clone, &tx_hashes, sending_attempt as u64).await {
+                let pending_tx = match self
+                    .handle_transaction_send(tx_clone, &tx_hashes, sending_attempt as u64)
+                    .await
+                {
                     Some(pending_tx) => pending_tx,
                     None => return,
                 };
@@ -290,7 +293,9 @@ impl TransactionMonitorThread {
             Err(e) => {
                 if let RpcError::ErrorResp(err) = &e {
                     if err.message.contains("nonce too low") {
-                        let status = self.verify_tx_included(previous_tx_hashes, sending_attempt).await;
+                        let status = self
+                            .verify_tx_included(previous_tx_hashes, sending_attempt)
+                            .await;
                         match status {
                             TxStatus::Confirmed(_) => return None,
                             _ => {
@@ -325,7 +330,8 @@ impl TransactionMonitorThread {
                         "✅ Transaction {} confirmed in block {} while trying to replace it",
                         tx_hash, block_number
                     );
-                    self.metrics.observe_batch_propose_tries(sending_attempt - 1);
+                    self.metrics
+                        .observe_batch_propose_tries(sending_attempt - 1);
                     self.metrics.inc_batch_confirmed();
                     return TxStatus::Confirmed(block_number);
                 }

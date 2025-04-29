@@ -43,7 +43,8 @@ impl EthereumL1 {
             config.preconf_heartbeat_ms,
         ));
 
-        let execution_layer = ExecutionLayer::new(config, transaction_error_channel, metrics).await?;
+        let execution_layer =
+            ExecutionLayer::new(config, transaction_error_channel, metrics).await?;
 
         Ok(Self {
             slot_clock,

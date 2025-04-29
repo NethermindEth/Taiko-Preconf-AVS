@@ -1,12 +1,17 @@
 #![allow(unused)] // TODO: remove this once using new rpc functions
 
 use crate::{
-    ethereum_l1::EthereumL1, metrics::Metrics, shared::{
-        l2_block::L2Block, l2_slot_info::L2SlotInfo, l2_tx_lists::{self, PreBuiltTxList},
-    }, utils::{
+    ethereum_l1::EthereumL1,
+    metrics::Metrics,
+    shared::{
+        l2_block::L2Block,
+        l2_slot_info::L2SlotInfo,
+        l2_tx_lists::{self, PreBuiltTxList},
+    },
+    utils::{
         rpc_client::{HttpRPCClient, JSONRPCClient},
         types::*,
-    }
+    },
 };
 use alloy::{
     consensus::{

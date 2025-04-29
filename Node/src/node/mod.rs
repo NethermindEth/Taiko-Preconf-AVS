@@ -3,7 +3,10 @@ mod operator;
 mod verifier;
 
 use crate::{
-    ethereum_l1::{transaction_error::TransactionError, EthereumL1}, metrics::Metrics, shared::{l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList}, taiko::Taiko
+    ethereum_l1::{transaction_error::TransactionError, EthereumL1},
+    metrics::Metrics,
+    shared::{l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
+    taiko::Taiko,
 };
 use alloy::primitives::U256;
 use anyhow::Error;
@@ -311,7 +314,8 @@ impl Node {
                     .await?;
             }
 
-            self.metrics.inc_by_batch_recovered(self.batch_manager.get_number_of_batches());
+            self.metrics
+                .inc_by_batch_recovered(self.batch_manager.get_number_of_batches());
         }
 
         if current_status.is_submitter() {

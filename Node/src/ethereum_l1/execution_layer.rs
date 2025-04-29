@@ -1,7 +1,10 @@
 use crate::{
     ethereum_l1::{
         l1_contracts_bindings::*, monitor_transaction::TransactionMonitor, ws_provider::WsProvider,
-    }, metrics, shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress}, utils::{config, types::*}
+    },
+    metrics,
+    shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress},
+    utils::{config, types::*},
 };
 use alloy::{
     eips::BlockNumberOrTag,
@@ -189,7 +192,8 @@ impl ExecutionLayer {
             tx_lists_bytes.len(),
         );
 
-        self.metrics.observe_batch_info(blocks.len() as u64, tx_lists_bytes.len() as u64);
+        self.metrics
+            .observe_batch_info(blocks.len() as u64, tx_lists_bytes.len() as u64);
 
         let last_block_timestamp = l2_blocks
             .last()

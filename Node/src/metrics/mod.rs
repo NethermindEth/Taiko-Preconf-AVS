@@ -1,4 +1,4 @@
-use prometheus::{Counter, Encoder, Gauge, Registry, TextEncoder, Histogram, HistogramOpts,};
+use prometheus::{Counter, Encoder, Gauge, Histogram, HistogramOpts, Registry, TextEncoder};
 use tracing::error;
 
 pub struct Metrics {
@@ -49,41 +49,30 @@ impl Metrics {
             error!("Error: Failed to register blocks_preconfirmed: {}", err);
         }
 
-        let reorgs_executed = Counter::new(
-            "reorgs",
-            "Number of reorgs executed by the node",
-        )
-        .expect("Failed to create reorgs counter");
+        let reorgs_executed = Counter::new("reorgs", "Number of reorgs executed by the node")
+            .expect("Failed to create reorgs counter");
 
         if let Err(err) = registry.register(Box::new(reorgs_executed.clone())) {
             error!("Error: Failed to register reorgs: {}", err);
         }
 
-        let batch_recovered = Counter::new(
-            "batch_recovered",
-            "Number of batches recovered by the node",
-        )
-        .expect("Failed to create batch_recovered counter");
+        let batch_recovered =
+            Counter::new("batch_recovered", "Number of batches recovered by the node")
+                .expect("Failed to create batch_recovered counter");
 
         if let Err(err) = registry.register(Box::new(batch_recovered.clone())) {
             error!("Error: Failed to register batch_recovered: {}", err);
         }
 
-        let batch_sent = Counter::new(
-            "batch_proposed",
-            "Number of batches proposed by the node",
-        )
-        .expect("Failed to create batch_proposed counter");
+        let batch_sent = Counter::new("batch_proposed", "Number of batches proposed by the node")
+            .expect("Failed to create batch_proposed counter");
 
         if let Err(err) = registry.register(Box::new(batch_sent.clone())) {
             error!("Error: Failed to register batch_proposed: {}", err);
         }
 
-        let batch_confirmed = Counter::new(
-            "batch_confirmed",
-            "Number of batches landed on L1",
-        )
-        .expect("Failed to create batch_confirmed counter");
+        let batch_confirmed = Counter::new("batch_confirmed", "Number of batches landed on L1")
+            .expect("Failed to create batch_confirmed counter");
 
         if let Err(err) = registry.register(Box::new(batch_confirmed.clone())) {
             error!("Error: Failed to register batch_confirmed: {}", err);
@@ -100,18 +89,9 @@ impl Metrics {
             error!("Error: Failed to register batch_propose_tries: {}", err);
         }
 
-        let opts = HistogramOpts::new("batch_block_count", "Number of blocks in a batch")
-            .buckets(vec![
-                76.0,
-                152.0,
-                228.0,
-                304.0,
-                380.0,
-                456.0,
-                532.0,
-                608.0,
-                684.0,
-                768.0,
+        let opts =
+            HistogramOpts::new("batch_block_count", "Number of blocks in a batch").buckets(vec![
+                76.0, 152.0, 228.0, 304.0, 380.0, 456.0, 532.0, 608.0, 684.0, 768.0,
             ]);
         let batch_block_count = match Histogram::with_opts(opts) {
             Ok(histogram) => histogram,
@@ -124,15 +104,7 @@ impl Metrics {
 
         let opts = HistogramOpts::new("batch_blob_size", "Size of a batch's blob in bytes")
             .buckets(vec![
-                13004.0,
-                26008.0,
-                39012.0,
-                52016.0,
-                65020.0,
-                78024.0,
-                91028.0,
-                104032.0,
-                117036.0,
+                13004.0, 26008.0, 39012.0, 52016.0, 65020.0, 78024.0, 91028.0, 104032.0, 117036.0,
                 130044.0,
             ]);
         let batch_blob_size = match Histogram::with_opts(opts) {
