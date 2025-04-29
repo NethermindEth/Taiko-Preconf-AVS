@@ -263,6 +263,8 @@ impl TransactionMonitorThread {
                 "🟤 Missing block wait more for tx with nonce {}. Current L1 height: {}, L1 height at send: {}",
                 self.nonce, current_l1_height, l1_block_at_send
             );
+
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
