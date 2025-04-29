@@ -318,7 +318,7 @@ impl TransactionMonitorThread {
                         "✅ Transaction {} confirmed in block {} while trying to replace it",
                         tx_hash, block_number
                     );
-                    self.metrics.observe_batch_propose_tries(sending_attempt);
+                    self.metrics.observe_batch_propose_tries(sending_attempt - 1);
                     self.metrics.inc_batch_confirmed();
                     TxStatus::Confirmed(block_number)
                 } else {
