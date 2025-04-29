@@ -238,7 +238,7 @@ async fn wait_for_the_termination(cancel_token: CancellationToken, shutdown_dela
         _ = tokio::signal::ctrl_c() => {
             info!("Received Ctrl+C, shutting down...");
             cancel_token.cancel();
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
         _ = cancel_token.cancelled() => {
             info!("Shutdown signal received, exiting avs node...");
