@@ -151,7 +151,7 @@ impl TransactionMonitorThread {
             }
 
             // Sending attempts loop
-            let mut tx_hash = FixedBytes::default();
+            let mut tx_hashes = Vec::new();
             for sending_attempt in 0..self.config.max_attempts_to_send_tx {
                 let mut tx_clone = tx.clone();
                 self.set_tx_parameters(
@@ -171,12 +171,13 @@ impl TransactionMonitorThread {
                     }
                 };
 
-                let pending_tx = match self.handle_transaction_send(tx_clone, tx_hash).await {
+                let pending_tx = match self.handle_transaction_send(tx_clone, &tx_hashes).await {
                     Some(pending_tx) => pending_tx,
                     None => return,
                 };
 
-                tx_hash = *pending_tx.tx_hash();
+                let tx_hash = *pending_tx.tx_hash();
+                tx_hashes.push(tx_hash);
 
                 debug!("{} tx nonce: {}, attempt: {}, l1_block: {}, hash: {},  max_fee_per_gas: {}, max_priority_fee_per_gas: {}, max_fee_per_blob_gas: {:?}",
                     if sending_attempt == 0 { "🟢 Send" } else { "🟡 Replace" },
@@ -209,11 +210,17 @@ impl TransactionMonitorThread {
                 }
             }
 
-            let error_msg = format!(
+            error!(
                 "Transaction {} with nonce {} not confirmed after {} attempts",
-                tx_hash, self.nonce, self.config.max_attempts_to_send_tx
+                if let Some(tx_hash) = tx_hashes.last() {
+                    tx_hash.to_string()
+                } else {
+                    "unknown".to_string()
+                },
+                self.nonce,
+                self.config.max_attempts_to_send_tx
             );
-            error!("{}", error_msg);
+
             self.send_error_signal(TransactionError::NotConfirmed).await;
         })
     }
@@ -263,14 +270,14 @@ impl TransactionMonitorThread {
     async fn handle_transaction_send(
         &self,
         tx: TransactionRequest,
-        previous_tx_hash: B256,
+        previous_tx_hashes: &Vec<B256>,
     ) -> Option<PendingTransactionBuilder<alloy::network::Ethereum>> {
         match self.provider.send_transaction(tx).await {
             Ok(tx) => Some(tx),
             Err(e) => {
                 if let RpcError::ErrorResp(err) = &e {
                     if err.message.contains("nonce too low") {
-                        let status = self.verify_tx_included(previous_tx_hash).await;
+                        let status = self.verify_tx_included(previous_tx_hashes).await;
                         match status {
                             TxStatus::Confirmed(_) => return None,
                             _ => {
@@ -296,29 +303,26 @@ impl TransactionMonitorThread {
         }
     }
 
-    async fn verify_tx_included(&self, tx_hash: B256) -> TxStatus {
-        let tx = self.provider.get_transaction_by_hash(tx_hash).await;
-        match tx {
-            Ok(Some(tx)) => {
+    async fn verify_tx_included(&self, tx_hashes: &Vec<B256>) -> TxStatus {
+        for tx_hash in tx_hashes {
+            let tx = self.provider.get_transaction_by_hash(*tx_hash).await;
+            if let Ok(Some(tx)) = tx {
                 if let Some(block_number) = tx.block_number {
                     info!(
                         "✅ Transaction {} confirmed in block {} while trying to replace it",
                         tx_hash, block_number
                     );
-                    TxStatus::Confirmed(block_number)
-                } else {
-                    TxStatus::Pending
+                    return TxStatus::Confirmed(block_number);
                 }
             }
-            _ => {
-                let warning = format!(
-                    "Transaction {} not found, probably already included, check previous hashes",
-                    tx_hash
-                );
-                warn!("{}", warning);
-                TxStatus::Failed(warning)
-            }
         }
+
+        let warning = format!(
+            "Transaction not found, probably already included, check hashes: {:?}",
+            tx_hashes
+        );
+        warn!("{}", warning);
+        TxStatus::Failed(warning)
     }
 
     async fn check_tx_receipt<N: Network>(

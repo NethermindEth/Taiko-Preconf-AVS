@@ -244,7 +244,7 @@ impl Node {
                     self.batch_manager.clone_without_batches(),
                 );
                 if let Err(e) = verifier.verify_submitted_blocks(taiko_inbox_height).await {
-                    warn!("Force Reorg: Verifier return an error: {}", e);
+                    self.print_reorg_message(&format!("Verifier return an error: {}", e));
                     self.batch_manager
                         .trigger_l2_reorg(taiko_inbox_height)
                         .await?;
@@ -304,7 +304,7 @@ impl Node {
                 .verify_submitted_blocks(taiko_inbox_height)
                 .await
             {
-                warn!("Force Reorg: Verifier return an error: {}", e);
+                self.print_reorg_message(&format!("Verifier return an error: {}", e));
                 self.batch_manager
                     .trigger_l2_reorg(taiko_inbox_height)
                     .await?;
@@ -342,7 +342,7 @@ impl Node {
                         .execution_layer
                         .get_l2_height_from_taiko_inbox()
                         .await?;
-                    warn!("Force Reorg: Transaction reverted");
+                    self.print_reorg_message("Transaction reverted");
                     if let Err(e) = self
                         .batch_manager
                         .trigger_l2_reorg(taiko_inbox_height)
@@ -417,5 +417,9 @@ impl Node {
             base_fee
         );
         Ok(())
+    }
+
+    fn print_reorg_message(&self, message: &str) {
+        warn!("⛓️‍💥 Force Reorg: {}", message);
     }
 }
