@@ -41,6 +41,8 @@ async fn main() -> Result<(), Error> {
     let config = utils::config::Config::read_env_variables();
     let cancel_token = CancellationToken::new();
 
+    let metrics = Arc::new(Metrics::new());
+
     let (transaction_error_sender, transaction_error_receiver) = mpsc::channel(100);
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
         ethereum_l1::config::EthereumL1Config {
@@ -57,6 +59,7 @@ async fn main() -> Result<(), Error> {
             delay_between_tx_attempts_sec: config.delay_between_tx_attempts_sec,
         },
         transaction_error_sender,
+        metrics.clone(),
     )
     .await?;
 
@@ -91,6 +94,7 @@ async fn main() -> Result<(), Error> {
             ethereum_l1.execution_layer.get_preconfer_address(),
             ethereum_l1.clone(),
             config.taiko_anchor_address,
+            metrics.clone(),
         )
         .await?,
     );
@@ -136,12 +140,12 @@ async fn main() -> Result<(), Error> {
         },
         config.simulate_not_submitting_at_the_end_of_epoch,
         transaction_error_receiver,
+        metrics.clone(),
     )
     .await?;
 
     node.entrypoint().await?;
 
-    let metrics = Arc::new(Metrics::new());
     tokio::spawn(update_metrics_loop(
         ethereum_l1.clone(),
         metrics.clone(),
