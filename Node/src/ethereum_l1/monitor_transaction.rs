@@ -317,10 +317,7 @@ impl TransactionMonitorThread {
             }
         }
 
-        let warning = format!(
-            "Transaction not found, probably already included, check hashes: {:?}",
-            tx_hashes
-        );
+        let warning = format!("Transaction not found, checked hashes: {:?}", tx_hashes);
         warn!("{}", warning);
         TxStatus::Failed(warning)
     }
