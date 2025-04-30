@@ -419,7 +419,7 @@ impl Taiko {
             .call_driver_until_success(http::Method::DELETE, API_ENDPOINT, &request_body)
             .await?;
 
-        trace!("Response from deleting preconfBlocks: {:?}", response);
+        debug!("Response from deleting preconfBlocks: {:?}", response);
 
         self.metrics.inc_reorgs_executed();
 
