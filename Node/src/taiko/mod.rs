@@ -240,7 +240,7 @@ impl Taiko {
     }
 
     async fn get_latest_l2_block_id_hash_and_gas_used(&self) -> Result<(u64, B256, u64), Error> {
-        let block = self.get_latest_l2_block().await?;
+        let block = self.get_latest_l2_block_header().await?;
 
         Ok((
             block.header.number(),
@@ -249,12 +249,26 @@ impl Taiko {
         ))
     }
 
-    async fn get_latest_l2_block(&self) -> Result<RpcBlock, Error> {
+    async fn get_latest_l2_block_header(&self) -> Result<RpcBlock, Error> {
         let block_by_number = self
             .taiko_geth_provider_ws
             .read()
             .await
             .get_block_by_number(BlockNumberOrTag::Latest)
+            .await;
+
+        self.check_for_ws_provider_failure(block_by_number, "Failed to get latest L2 block")
+            .await?
+            .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))
+    }
+
+    async fn get_latest_l2_block_with_txs(&self) -> Result<RpcBlock, Error> {
+        let block_by_number = self
+            .taiko_geth_provider_ws
+            .read()
+            .await
+            .get_block_by_number(BlockNumberOrTag::Latest)
+            .full()
             .await;
 
         self.check_for_ws_provider_failure(block_by_number, "Failed to get latest L2 block")
@@ -596,7 +610,7 @@ impl Taiko {
     }
 
     pub async fn get_last_synced_anchor_block_id_from_geth(&self) -> Result<u64, Error> {
-        let block = self.get_latest_l2_block().await?;
+        let block = self.get_latest_l2_block_with_txs().await?;
         let (anchor_tx, txs) = match block.transactions.as_transactions() {
             Some(txs) => txs
                 .split_first()
