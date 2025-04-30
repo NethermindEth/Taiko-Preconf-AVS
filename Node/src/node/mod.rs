@@ -274,7 +274,7 @@ impl Node {
             self.batch_manager.get_number_of_batches(),
         )?;
 
-        self.handle_transaction_error().await?;
+        self.handle_transaction_error(&current_status).await?;
 
         if current_status.is_preconfirmation_start_slot() {
             if current_status.is_submitter() {
@@ -340,23 +340,32 @@ impl Node {
         Ok(())
     }
 
-    async fn handle_transaction_error(&mut self) -> Result<(), Error> {
+    async fn handle_transaction_error(
+        &mut self,
+        current_status: &OperatorStatus,
+    ) -> Result<(), Error> {
         match self.transaction_error_channel.try_recv() {
             Ok(error) => match error {
                 TransactionError::TransactionReverted => {
-                    let taiko_inbox_height = self
-                        .ethereum_l1
-                        .execution_layer
-                        .get_l2_height_from_taiko_inbox()
-                        .await?;
-                    self.print_reorg_message("Transaction reverted");
-                    if let Err(e) = self
-                        .batch_manager
-                        .trigger_l2_reorg(taiko_inbox_height)
-                        .await
+                    if current_status.is_preconfer()
+                        && (current_status.is_submitter() || current_status.is_verifier())
                     {
-                        self.cancel_token.cancel();
-                        return Err(anyhow::anyhow!("Failed to trigger L2 reorg: {}", e));
+                        let taiko_inbox_height = self
+                            .ethereum_l1
+                            .execution_layer
+                            .get_l2_height_from_taiko_inbox()
+                            .await?;
+                        self.print_reorg_message("Transaction reverted");
+                        if let Err(e) = self
+                            .batch_manager
+                            .trigger_l2_reorg(taiko_inbox_height)
+                            .await
+                        {
+                            self.cancel_token.cancel();
+                            return Err(anyhow::anyhow!("Failed to trigger L2 reorg: {}", e));
+                        }
+                    } else {
+                        warn!("Transaction reverted, not our epoch, skipping reorg");
                     }
                 }
                 TransactionError::NotConfirmed => {
