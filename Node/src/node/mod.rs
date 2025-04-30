@@ -368,6 +368,12 @@ impl Node {
                         warn!("Transaction reverted, not our epoch, skipping reorg");
                     }
                 }
+                TransactionError::NotConfirmed => {
+                    self.cancel_token.cancel();
+                    return Err(anyhow::anyhow!(
+                        "Transaction not confirmed for a long time, exiting"
+                    ));
+                }
                 TransactionError::UnsupportedTransactionType => {
                     self.cancel_token.cancel();
                     return Err(anyhow::anyhow!(

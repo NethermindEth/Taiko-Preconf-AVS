@@ -28,6 +28,7 @@ pub struct Config {
     pub min_priority_fee_per_gas_wei: u64,
     pub tx_fees_increase_percentage: u64,
     pub max_attempts_to_send_tx: u64,
+    pub max_attempts_to_wait_tx: u64,
     pub delay_between_tx_attempts_sec: u64,
     pub threshold_eth: U256,
     pub threshold_taiko: U256,
@@ -211,6 +212,11 @@ impl Config {
             .parse::<u64>()
             .expect("MAX_ATTEMPTS_TO_SEND_TX must be a number");
 
+        let max_attempts_to_wait_tx = std::env::var("MAX_ATTEMPTS_TO_WAIT_TX")
+            .unwrap_or("5".to_string())
+            .parse::<u64>()
+            .expect("MAX_ATTEMPTS_TO_WAIT_TX must be a number");
+
         let delay_between_tx_attempts_sec = std::env::var("DELAY_BETWEEN_TX_ATTEMPTS_SEC")
             .unwrap_or("15".to_string())
             .parse::<u64>()
@@ -266,6 +272,7 @@ impl Config {
             min_priority_fee_per_gas_wei,
             tx_fees_increase_percentage,
             max_attempts_to_send_tx,
+            max_attempts_to_wait_tx,
             delay_between_tx_attempts_sec,
             threshold_eth,
             threshold_taiko,
@@ -299,6 +306,7 @@ max anchor height offset reduction value: {}
 min priority fee per gas wei: {}
 tx fees increase percentage: {}
 max attempts to send tx: {}
+max attempts to wait tx: {}
 delay between tx attempts: {}s
 threshold_eth: {}
 threshold_taiko: {}
@@ -328,6 +336,7 @@ simulate not submitting at the end of epoch: {}
             config.min_priority_fee_per_gas_wei,
             config.tx_fees_increase_percentage,
             config.max_attempts_to_send_tx,
+            config.max_attempts_to_wait_tx,
             config.delay_between_tx_attempts_sec,
             threshold_eth,
             threshold_taiko,
