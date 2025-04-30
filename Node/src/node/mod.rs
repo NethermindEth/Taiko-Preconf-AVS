@@ -4,6 +4,7 @@ mod verifier;
 
 use crate::{
     ethereum_l1::{transaction_error::TransactionError, EthereumL1},
+    metrics::Metrics,
     shared::{l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
     taiko::Taiko,
 };
@@ -34,6 +35,7 @@ pub struct Node {
     verifier: Box<verifier::Verifier>,
     taiko: Arc<Taiko>,
     transaction_error_channel: Receiver<TransactionError>,
+    metrics: Arc<Metrics>,
 }
 
 impl Node {
@@ -50,6 +52,7 @@ impl Node {
         thresholds: Thresholds,
         simulate_not_submitting_at_the_end_of_epoch: bool,
         transaction_error_channel: Receiver<TransactionError>,
+        metrics: Arc<Metrics>,
     ) -> Result<Self, Error> {
         info!(
             "Batch builder config:\n\
@@ -88,6 +91,7 @@ impl Node {
             verifier: Box::new(verifier),
             taiko,
             transaction_error_channel,
+            metrics,
         })
     }
 
@@ -309,6 +313,9 @@ impl Node {
                     .trigger_l2_reorg(taiko_inbox_height)
                     .await?;
             }
+
+            self.metrics
+                .inc_by_batch_recovered(self.batch_manager.get_number_of_batches());
         }
 
         if current_status.is_submitter() {

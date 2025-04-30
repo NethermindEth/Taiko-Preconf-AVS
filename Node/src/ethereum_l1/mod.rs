@@ -17,6 +17,8 @@ use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use transaction_error::TransactionError;
 
+use crate::metrics::Metrics;
+
 pub struct EthereumL1 {
     pub slot_clock: Arc<SlotClock>,
     pub _consensus_layer: ConsensusLayer,
@@ -28,6 +30,7 @@ impl EthereumL1 {
     pub async fn new(
         config: EthereumL1Config,
         transaction_error_channel: Sender<TransactionError>,
+        metrics: Arc<Metrics>,
     ) -> Result<Self, Error> {
         tracing::info!("Creating EthereumL1 instance");
         let consensus_layer = ConsensusLayer::new(&config.consensus_rpc_url)?;
@@ -40,7 +43,8 @@ impl EthereumL1 {
             config.preconf_heartbeat_ms,
         ));
 
-        let execution_layer = ExecutionLayer::new(config, transaction_error_channel).await?;
+        let execution_layer =
+            ExecutionLayer::new(config, transaction_error_channel, metrics).await?;
 
         Ok(Self {
             slot_clock,

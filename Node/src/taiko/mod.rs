@@ -2,8 +2,11 @@
 
 use crate::{
     ethereum_l1::EthereumL1,
+    metrics::Metrics,
     shared::{
-        l2_block::L2Block, l2_slot_info::L2SlotInfo, l2_tx_lists, l2_tx_lists::PreBuiltTxList,
+        l2_block::L2Block,
+        l2_slot_info::L2SlotInfo,
+        l2_tx_lists::{self, PreBuiltTxList},
     },
     utils::{
         rpc_client::{HttpRPCClient, JSONRPCClient},
@@ -74,6 +77,7 @@ pub struct Taiko {
     ethereum_l1: Arc<EthereumL1>,
     taiko_anchor: RwLock<TaikoAnchor::TaikoAnchorInstance<(), WsProvider>>,
     taiko_anchor_address: Address,
+    metrics: Arc<Metrics>,
 }
 
 impl Taiko {
@@ -87,6 +91,7 @@ impl Taiko {
         preconfer_address: PreconferAddress,
         ethereum_l1: Arc<EthereumL1>,
         taiko_anchor_address: String,
+        metrics: Arc<Metrics>,
     ) -> Result<Self, Error> {
         let ws = WsConnect::new(taiko_geth_ws_url.to_string());
         let provider_ws = RwLock::new(ProviderBuilder::new().on_ws(ws.clone()).await.map_err(
@@ -120,6 +125,7 @@ impl Taiko {
             ethereum_l1,
             taiko_anchor,
             taiko_anchor_address,
+            metrics,
         })
     }
 
@@ -396,6 +402,8 @@ impl Taiko {
 
         trace!("Response from preconfBlocks: {}", response);
 
+        self.metrics.inc_blocks_preconfirmed();
+
         Ok(())
     }
 
@@ -412,6 +420,8 @@ impl Taiko {
             .await?;
 
         trace!("Response from deleting preconfBlocks: {:?}", response);
+
+        self.metrics.inc_reorgs_executed();
 
         Ok(())
     }
