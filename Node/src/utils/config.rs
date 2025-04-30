@@ -146,7 +146,7 @@ impl Config {
         });
 
         let rpc_client_timeout = std::env::var("RPC_CLIENT_TIMEOUT_MS")
-            .unwrap_or("500".to_string())
+            .unwrap_or("1000".to_string())
             .parse::<u64>()
             .expect("RPC_CLIENT_TIMEOUT_MS must be a number");
         let rpc_client_timeout = Duration::from_millis(rpc_client_timeout);
