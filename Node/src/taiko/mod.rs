@@ -26,7 +26,7 @@ use alloy::{
         fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
         Identity, Provider, ProviderBuilder, RootProvider, WsConnect,
     },
-    rpc::types::{BlockTransactionsKind, Transaction},
+    rpc::types::{Block as RpcBlock, BlockTransactionsKind, Transaction},
     signers::{
         local::{LocalSigner, PrivateKeySigner},
         Signature, SignerSync,
@@ -240,6 +240,16 @@ impl Taiko {
     }
 
     async fn get_latest_l2_block_id_hash_and_gas_used(&self) -> Result<(u64, B256, u64), Error> {
+        let block = self.get_latest_l2_block_header().await?;
+
+        Ok((
+            block.header.number(),
+            block.header.hash,
+            block.header.gas_used(),
+        ))
+    }
+
+    async fn get_latest_l2_block_header(&self) -> Result<RpcBlock, Error> {
         let block_by_number = self
             .taiko_geth_provider_ws
             .read()
@@ -247,16 +257,23 @@ impl Taiko {
             .get_block_by_number(BlockNumberOrTag::Latest)
             .await;
 
-        let block = self
-            .check_for_ws_provider_failure(block_by_number, "Failed to get latest L2 block")
+        self.check_for_ws_provider_failure(block_by_number, "Failed to get latest L2 block")
             .await?
-            .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))?;
+            .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))
+    }
 
-        Ok((
-            block.header.number(),
-            block.header.hash,
-            block.header.gas_used(),
-        ))
+    async fn get_latest_l2_block_with_txs(&self) -> Result<RpcBlock, Error> {
+        let block_by_number = self
+            .taiko_geth_provider_ws
+            .read()
+            .await
+            .get_block_by_number(BlockNumberOrTag::Latest)
+            .full()
+            .await;
+
+        self.check_for_ws_provider_failure(block_by_number, "Failed to get latest L2 block")
+            .await?
+            .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))
     }
 
     pub async fn get_l2_slot_info(&self) -> Result<L2SlotInfo, Error> {
@@ -578,7 +595,7 @@ impl Taiko {
             .map_err(|err| anyhow::anyhow!("Failed to convert base fee to u64: {}", err))
     }
 
-    pub async fn get_last_synced_anchor_block_id(&self) -> Result<u64, Error> {
+    pub async fn get_last_synced_anchor_block_id_from_taiko_anchor(&self) -> Result<u64, Error> {
         let last_synced_block = self
             .taiko_anchor
             .read()
@@ -590,6 +607,18 @@ impl Taiko {
             .check_for_contract_failure(last_synced_block, "Failed to get last synced block")
             .await?
             ._0)
+    }
+
+    pub async fn get_last_synced_anchor_block_id_from_geth(&self) -> Result<u64, Error> {
+        let block = self.get_latest_l2_block_with_txs().await?;
+        let (anchor_tx, txs) = match block.transactions.as_transactions() {
+            Some(txs) => txs
+                .split_first()
+                .ok_or_else(|| anyhow::anyhow!("Cannot get anchor transaction from block"))?,
+            None => return Err(anyhow::anyhow!("No transactions in block")),
+        };
+
+        Self::decode_anchor_tx_data(anchor_tx.input())
     }
 }
 
