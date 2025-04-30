@@ -11,5 +11,6 @@ pub struct EthereumL1Config {
     pub slots_per_epoch: u64,
     pub preconf_heartbeat_ms: u64,
     pub max_attempts_to_send_tx: u64,
+    pub max_attempts_to_wait_tx: u64,
     pub delay_between_tx_attempts_sec: u64,
 }

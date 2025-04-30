@@ -80,6 +80,7 @@ impl ExecutionLayer {
             config.min_priority_fee_per_gas_wei,
             config.tx_fees_increase_percentage,
             config.max_attempts_to_send_tx,
+            config.max_attempts_to_wait_tx,
             config.delay_between_tx_attempts_sec,
             transaction_error_channel,
             metrics.clone(),

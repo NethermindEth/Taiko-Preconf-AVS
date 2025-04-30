@@ -64,6 +64,7 @@ async fn main() -> Result<(), Error> {
             min_priority_fee_per_gas_wei: config.min_priority_fee_per_gas_wei,
             tx_fees_increase_percentage: config.tx_fees_increase_percentage,
             max_attempts_to_send_tx: config.max_attempts_to_send_tx,
+            max_attempts_to_wait_tx: config.max_attempts_to_wait_tx,
             delay_between_tx_attempts_sec: config.delay_between_tx_attempts_sec,
         },
         transaction_error_sender,
