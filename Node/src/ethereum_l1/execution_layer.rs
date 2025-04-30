@@ -2,6 +2,7 @@ use crate::{
     ethereum_l1::{
         l1_contracts_bindings::*, monitor_transaction::TransactionMonitor, ws_provider::WsProvider,
     },
+    metrics,
     shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress},
     utils::{config, types::*},
 };
@@ -30,6 +31,7 @@ pub struct ExecutionLayer {
     #[cfg(feature = "extra-gas-percentage")]
     extra_gas_percentage: u64,
     transaction_monitor: TransactionMonitor,
+    metrics: Arc<metrics::Metrics>,
 }
 
 pub struct ContractAddresses {
@@ -43,6 +45,7 @@ impl ExecutionLayer {
     pub async fn new(
         config: EthereumL1Config,
         transaction_error_channel: Sender<TransactionError>,
+        metrics: Arc<metrics::Metrics>,
     ) -> Result<Self, Error> {
         tracing::debug!(
             "Creating ExecutionLayer with WS URL: {}",
@@ -79,6 +82,7 @@ impl ExecutionLayer {
             config.max_attempts_to_send_tx,
             config.delay_between_tx_attempts_sec,
             transaction_error_channel,
+            metrics.clone(),
         )
         .await?;
 
@@ -93,6 +97,7 @@ impl ExecutionLayer {
             #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage,
             transaction_monitor,
+            metrics,
         })
     }
 
@@ -186,6 +191,9 @@ impl ExecutionLayer {
             blocks.len(),
             tx_lists_bytes.len(),
         );
+
+        self.metrics
+            .observe_batch_info(blocks.len() as u64, tx_lists_bytes.len() as u64);
 
         let last_block_timestamp = l2_blocks
             .last()
@@ -296,6 +304,8 @@ impl ExecutionLayer {
         ws_rpc_url: String,
         private_key: elliptic_curve::SecretKey<k256::Secp256k1>,
     ) -> Result<Self, Error> {
+        use crate::metrics::Metrics;
+
         use super::l1_contracts_bindings::taiko_inbox::ITaikoInbox::ForkHeights;
 
         let signer = PrivateKeySigner::from_signing_key(private_key.into());
@@ -315,6 +325,8 @@ impl ExecutionLayer {
             .parse()?;
 
         let (tx_error_sender, _) = tokio::sync::mpsc::channel(1);
+
+        let metrics = Arc::new(Metrics::new());
 
         Ok(Self {
             provider_ws: provider_ws.clone(),
@@ -362,6 +374,7 @@ impl ExecutionLayer {
                 4,
                 15,
                 tx_error_sender,
+                metrics.clone(),
             )
             .await
             .unwrap(),

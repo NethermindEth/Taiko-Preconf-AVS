@@ -41,6 +41,8 @@ async fn main() -> Result<(), Error> {
     let config = utils::config::Config::read_env_variables();
     let cancel_token = CancellationToken::new();
 
+    let metrics = Arc::new(Metrics::new());
+
     // Set up panic hook to cancel token on panic
     let panic_cancel_token = cancel_token.clone();
     std::panic::set_hook(Box::new(move |panic_info| {
@@ -65,6 +67,7 @@ async fn main() -> Result<(), Error> {
             delay_between_tx_attempts_sec: config.delay_between_tx_attempts_sec,
         },
         transaction_error_sender,
+        metrics.clone(),
     )
     .await?;
 
@@ -99,6 +102,7 @@ async fn main() -> Result<(), Error> {
             ethereum_l1.execution_layer.get_preconfer_address(),
             ethereum_l1.clone(),
             config.taiko_anchor_address,
+            metrics.clone(),
         )
         .await?,
     );
@@ -144,12 +148,12 @@ async fn main() -> Result<(), Error> {
         },
         config.simulate_not_submitting_at_the_end_of_epoch,
         transaction_error_receiver,
+        metrics.clone(),
     )
     .await?;
 
     node.entrypoint().await?;
 
-    let metrics = Arc::new(Metrics::new());
     update_metrics_loop(ethereum_l1.clone(), metrics.clone(), cancel_token.clone());
     serve_metrics(metrics.clone(), cancel_token.clone());
 
