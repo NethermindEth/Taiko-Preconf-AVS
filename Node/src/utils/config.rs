@@ -144,11 +144,11 @@ impl Config {
             "/tmp/jwtsecret".to_string()
         });
 
-        let rpc_client_timeout = std::env::var("RPC_CLIENT_TIMEOUT_SEC")
-            .unwrap_or("10".to_string())
+        let rpc_client_timeout = std::env::var("RPC_CLIENT_TIMEOUT_MS")
+            .unwrap_or("500".to_string())
             .parse::<u64>()
-            .expect("RPC_CLIENT_TIMEOUT_SEC must be a number");
-        let rpc_client_timeout = Duration::from_secs(rpc_client_timeout);
+            .expect("RPC_CLIENT_TIMEOUT_MS must be a number");
+        let rpc_client_timeout = Duration::from_millis(rpc_client_timeout);
 
         let taiko_anchor_address = std::env::var("TAIKO_ANCHOR_ADDRESS")
             .unwrap_or("0x1670010000000000000000000000000000010001".to_string());
