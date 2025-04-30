@@ -159,6 +159,9 @@ impl TransactionMonitorThread {
                 max_priority_fee_per_gas += diff;
             }
 
+            let mut root_provider: Option<RootProvider<alloy::network::Ethereum>> = None;
+            let mut l1_block_at_send = 0;
+
             self.metrics.inc_batch_sent();
             // Sending attempts loop
             let mut tx_hashes = Vec::new();
@@ -171,7 +174,7 @@ impl TransactionMonitorThread {
                     max_fee_per_blob_gas,
                 );
 
-                let l1_block_at_send = match self.provider.get_block_number().await {
+                l1_block_at_send = match self.provider.get_block_number().await {
                     Ok(block_number) => block_number,
                     Err(e) => {
                         error!("Failed to get L1 block number: {}", e);
@@ -192,6 +195,10 @@ impl TransactionMonitorThread {
                 let tx_hash = *pending_tx.tx_hash();
                 tx_hashes.push(tx_hash);
 
+                if root_provider.is_none() {
+                    root_provider = Some(pending_tx.provider().clone());
+                }
+
                 debug!("{} tx nonce: {}, attempt: {}, l1_block: {}, hash: {},  max_fee_per_gas: {}, max_priority_fee_per_gas: {}, max_fee_per_blob_gas: {:?}",
                     if sending_attempt == 0 { "🟢 Send" } else { "🟡 Replace" },
                     self.nonce,
@@ -207,7 +214,7 @@ impl TransactionMonitorThread {
                     .is_transaction_handled_by_builder(
                         pending_tx.provider().clone(),
                         tx_hash,
-                        l1_block_at_send,
+                        0,
                         sending_attempt as u64,
                     )
                     .await
@@ -224,18 +231,22 @@ impl TransactionMonitorThread {
                 }
             }
 
-            error!(
-                "Transaction {} with nonce {} not confirmed after {} attempts",
-                if let Some(tx_hash) = tx_hashes.last() {
-                    tx_hash.to_string()
-                } else {
-                    "unknown".to_string()
-                },
-                self.nonce,
-                self.config.max_attempts_to_send_tx
-            );
-
-            self.send_error_signal(TransactionError::NotConfirmed).await;
+            //Wait for transaction result
+            if let Some(root_provider) = root_provider {
+                // We can use unwrap since tx_hashes is updated before root_provider
+                let tx_hash = tx_hashes.last().unwrap();
+                while !self
+                        .is_transaction_handled_by_builder(
+                            root_provider.clone(),
+                            *tx_hash,
+                            l1_block_at_send,
+                            (self.config.max_attempts_to_send_tx - 1) as u64,
+                        )
+                        .await
+                {
+                    warn!("🟣 Transaction watcher timed out without a result. Waiting...")
+                }
+            }
         })
     }
 
