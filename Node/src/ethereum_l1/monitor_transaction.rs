@@ -214,7 +214,7 @@ impl TransactionMonitorThread {
                     .is_transaction_handled_by_builder(
                         pending_tx.provider().clone(),
                         tx_hash,
-                        0,
+                        l1_block_at_send,
                         sending_attempt as u64,
                     )
                     .await
