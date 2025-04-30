@@ -347,7 +347,9 @@ impl Node {
         match self.transaction_error_channel.try_recv() {
             Ok(error) => match error {
                 TransactionError::TransactionReverted => {
-                    if current_status.is_preconfer() && (current_status.is_submitter() || current_status.is_verifier()) {
+                    if current_status.is_preconfer()
+                        && (current_status.is_submitter() || current_status.is_verifier())
+                    {
                         let taiko_inbox_height = self
                             .ethereum_l1
                             .execution_layer
