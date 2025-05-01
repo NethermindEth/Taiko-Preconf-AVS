@@ -34,6 +34,7 @@ As `Preconfer X`, who is assigned the epoch containing slots `N` through `N+31`:
 1. During slot `N - HANDOFF_WINDOW_SLOTS - 1`, `Preconfer X` calls `getOperatorForNextEpoch` in `PreconfWhitelist.sol` ([code](https://github.com/taikoxyz/taiko-mono/blob/b22ed04f6f5c91165e169c7acd18188985a908aa/packages/protocol/contracts/layer1/preconf/impl/PreconfWhitelist.sol#L84)) and verifies that the returned operator is itself.
 2. At the start of slot `N - HANDOFF_WINDOW_SLOTS`
     1. Poll `/status` from Taiko client until both:
+       - `status.highestUnsafeL2PayloadBlockID` is in sync with Taiko geth chain tip.
        - `status.endOfSequencingMarkerReceived` is `true` OR `HANDOVER_START_BUFFER_MS` passes since the start of handover.
     3. After the above checks, `Preconfer X` will start preconfing based on its latest-seen preconfed block from the previous preconfer.
     4. There is a further edge case where the previous preconfer does not propagate the preconfed L2 block on time but still includes them into the L1, reorging the preconfs by `Preconfer X`—more on handling this in the “Edge Case” section.
