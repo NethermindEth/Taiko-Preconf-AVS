@@ -224,14 +224,21 @@ impl BatchManager {
             .await?;
         let l1_height = self.ethereum_l1.execution_layer.get_l1_height().await?;
         let l1_height_with_lag = l1_height - self.l1_height_lag;
-        let height_from_last_synced_l2_block = self
-            .taiko
-            .get_last_synced_anchor_block_id_from_geth()
-            .await?;
+        let anchor_id_from_last_l2_block =
+            match self.taiko.get_last_synced_anchor_block_id_from_geth().await {
+                Ok(height) => height,
+                Err(err) => {
+                    warn!(
+                        "Failed to get last anchor block ID from Taiko Geth: {:?}",
+                        err
+                    );
+                    0
+                }
+            };
 
         Ok(std::cmp::max(
             std::cmp::max(height_from_last_batch, l1_height_with_lag),
-            height_from_last_synced_l2_block,
+            anchor_id_from_last_l2_block,
         ))
     }
 
