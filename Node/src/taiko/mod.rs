@@ -209,10 +209,10 @@ impl Taiko {
         let block = self
             .check_for_ws_provider_failure(
                 block_by_number.await,
-                "Failed to get L2 block by number",
+                format!("Failed to get L2 block {} by number", number),
             )
             .await?
-            .ok_or(anyhow::anyhow!("Failed to get L2 block: value is None"))?;
+            .ok_or(anyhow::anyhow!("Failed to get L2 block {}: value was None", number)?;
         Ok(block)
     }
 
