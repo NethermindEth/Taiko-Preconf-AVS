@@ -4,7 +4,7 @@
 
 - **`L2_BLOCK_TIME_MS`** (in ms): The expected time between one preconfirmation publication to another.
 - **`HANDOVER_WINDOW_SLOTS`** (in slots)**:** The timeframe during which the current preconfer transfers preconf responsibilities to the next preconfer. This window ensures that preconfed blocks are properly included before the transition.
-- **`HANDOVER_START_BUFFER_MS`** (in ms)**:** The waiting period at the beginning of the `HANDOVER_WINDOW_SLOTS` that allows the previous preconfer sufficient time to propagate its preconfed blocks to the next preconfer.
+- **`HANDOVER_START_BUFFER_MS`** (in ms)**:** The maximum wait time at the beginning of the `HANDOVER_WINDOW_SLOTS` for the previous preconfer's final preconfed L2 block.
 
 ### Current Values
 
@@ -33,8 +33,8 @@ As `Preconfer X`, who is assigned the epoch containing slots `N` through `N+31`:
 
 1. During slot `N - HANDOFF_WINDOW_SLOTS - 1`, `Preconfer X` calls `getOperatorForNextEpoch` in `PreconfWhitelist.sol` ([code](https://github.com/taikoxyz/taiko-mono/blob/b22ed04f6f5c91165e169c7acd18188985a908aa/packages/protocol/contracts/layer1/preconf/impl/PreconfWhitelist.sol#L84)) and verifies that the returned operator is itself.
 2. At the start of slot `N - HANDOFF_WINDOW_SLOTS`
-    1. Wait for `HANDOVER_START_BUFFER_MS` to give the previous preconfer sufficient time to propagate its preconfed blocks.
-    2. Call `/status` from Taiko client and check if `status.highestUnsafeL2PayloadBlockID` is in sync with Taiko geth chain tip.
+    1. Poll `/status` from Taiko client until both:
+       - `status.endOfSequencingMarkerReceived` is `true` OR `HANDOVER_START_BUFFER_MS` passes since the start of handover.
     3. After the above checks, `Preconfer X` will start preconfing based on its latest-seen preconfed block from the previous preconfer.
     4. There is a further edge case where the previous preconfer does not propagate the preconfed L2 block on time but still includes them into the L1, reorging the preconfs by `Preconfer X`—more on handling this in the “Edge Case” section.
 3. For slots `N - HANDOFF_WINDOW_SLOTS` to `N + 32 - HANDOFF_WINDOW_SLOTS`, for every `L2_BLOCK_TIME_MS` interval (see [Preconfing Timestamps](## Preconfing Timestamps) section for more details on the interval) `Preconfer X` should produce valid L2 blocks. The exact process is up to the implementation, but the process expected by Taiko client is:
@@ -60,7 +60,8 @@ As `Preconfer X`, who is assigned the epoch containing slots `N` through `N+31`:
         - Reach `N + 32 - HANDOFF_WINDOW_SLOTS`
         - Reach `maxBlocksPerBatch` for your batch.
         - Filled some configured number of blobs (e.g., 3 blobs).
-- From slot `N + 32 - HANDOFF_WINDOW_SLOTS` to slot `N + 31`, `Preconfer X` should stop preconfing and focus on L1 submission of its preconfed blocks. The next preconfer `Preconfer X + 1` should start preconfing at this point.
+7. For the final L2 block that the operator preconfs, when calling the `/preconfBlocks` RPC, set `BuildPreconfBlockRequestBody.EndOfSequencing` to true. 
+8. From slot `N + 32 - HANDOFF_WINDOW_SLOTS` to slot `N + 31`, `Preconfer X` should stop preconfing and focus on L1 submission of its preconfed blocks. The next preconfer `Preconfer X + 1` should start preconfing at this point.
 
 ## Preconfing Timestamps
 
