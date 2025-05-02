@@ -92,8 +92,15 @@ impl Verifier {
                     .recover_from_l2_block(current_height)
                     .await?;
             }
-            let elapsed = start.elapsed().as_secs();
-            info!("Recovered in {} seconds", elapsed);
+            let elapsed = start.elapsed().as_millis();
+            info!("Recovered in {} milliseconds", elapsed);
+        } else {
+            // Error will lead to a reorg
+            return Err(anyhow::anyhow!(
+                "Anchor offset exceeded during recovery: block {}, anchor_offset {}",
+                taiko_inbox_height + 1,
+                anchor_offset
+            ));
         }
 
         Ok(())
