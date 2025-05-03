@@ -29,7 +29,7 @@ pub struct RemovePreconfBlockRequestBody {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct TaikoStatus {
+    #[serde(rename = "highestUnsafeL2PayloadBlockID")]
     pub highest_unsafe_l2_payload_block_id: u64,
 }

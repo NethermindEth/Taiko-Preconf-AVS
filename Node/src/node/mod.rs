@@ -20,6 +20,10 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
+// TODO move to config
+const TAIKO_DRIVER_SYNC_INTERVAL_MS: u64 = 100;
+const TAIKO_DRIVER_SYNC_RETRIES_VALID: u32 = 10;
+
 pub struct Thresholds {
     pub eth: U256,
     pub taiko: U256,
@@ -282,28 +286,43 @@ impl Node {
                 // Need to check for unproposed L2 blocks.
                 self.verify_proposed_batches().await?;
             } else {
-                // status.highestUnsafeL2PayloadBlockID is in sync with Taiko geth chain tip.
-                match self.taiko.get_status().await {
-                    Ok(status) => {
-                        let taiko_geth_height = self.taiko.get_latest_l2_block_id().await?;
-                        info!(
-                            "🌀 Taiko status highestUnsafeL2PayloadBlockID: {}, Taiko Geth Height: {}",
-                            status.highest_unsafe_l2_payload_block_id,
-                            taiko_geth_height
-                        )
+                // It is for handover window
+                let mut taiko_geth_height;
+                let mut retries = 0u32;
+                // Check that status.highestUnsafeL2PayloadBlockID is in sync with Taiko geth chain tip.
+                loop {
+                    taiko_geth_height = self.taiko.get_latest_l2_block_id().await?;
+                    match self.taiko.get_status().await {
+                        Ok(status) => {
+                            info!(
+                                "🌀 Taiko status highestUnsafeL2PayloadBlockID: {}, Taiko Geth Height: {}",
+                                status.highest_unsafe_l2_payload_block_id,
+                                taiko_geth_height
+                            );
+                            if taiko_geth_height == status.highest_unsafe_l2_payload_block_id {
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to get status from taiko driver: {}", e);
+                        }
                     }
-                    Err(e) => {
-                        error!("Failed to get status from taiko driver: {}", e);
-                    }
+                    retries += 1;
+                    sleep(Duration::from_millis(TAIKO_DRIVER_SYNC_INTERVAL_MS)).await;
                 }
-                // Expected behaviour
+
                 self.verifier = Box::new(
-                    verifier::Verifier::new(
+                    verifier::Verifier::new_with_taiko_height(
+                        taiko_geth_height,
                         self.taiko.clone(),
                         self.batch_manager.clone_without_batches(),
                     )
-                    .await?,
                 );
+
+                if retries > TAIKO_DRIVER_SYNC_RETRIES_VALID {
+                    // Spent too much time, let's continue in the next slot
+                    return Err(anyhow::anyhow!("⭕ Driver sync took too long: retries {}, retry delay {}", retries, TAIKO_DRIVER_SYNC_INTERVAL_MS));
+                };
             }
         }
 
