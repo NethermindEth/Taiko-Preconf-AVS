@@ -185,6 +185,9 @@ impl Node {
             );
         }
 
+        // Wait for Taiko Driver to synchronize with Taiko Geth
+        self.wait_for_taiko_driver_sync_with_geth().await;
+
         Ok(())
     }
 
@@ -263,6 +266,34 @@ impl Node {
         Ok(())
     }
 
+    /// Check that driver.status.highestUnsafeL2PayloadBlockID is in sync with Taiko geth chain tip.
+    async fn wait_for_taiko_driver_sync_with_geth(&self) -> (u64, u32) {
+        let mut taiko_geth_height;
+        let mut retries = 0;
+        loop {
+            // panic in case of an error
+            taiko_geth_height = self.taiko.get_latest_l2_block_id().await.unwrap();
+            match self.taiko.get_status().await {
+                Ok(status) => {
+                    info!(
+                        "🌀 Taiko status highestUnsafeL2PayloadBlockID: {}, Taiko Geth Height: {}",
+                        status.highest_unsafe_l2_payload_block_id, taiko_geth_height
+                    );
+                    if taiko_geth_height == status.highest_unsafe_l2_payload_block_id {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to get status from taiko driver: {}", e);
+                }
+            }
+            retries += 1;
+            sleep(Duration::from_millis(TAIKO_DRIVER_SYNC_INTERVAL_MS)).await;
+        }
+
+        return (taiko_geth_height, retries);
+    }
+
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
         let l2_slot_info = self.taiko.get_l2_slot_info().await?;
         let current_status = self.operator.get_status().await?;
@@ -287,41 +318,22 @@ impl Node {
                 self.verify_proposed_batches().await?;
             } else {
                 // It is for handover window
-                let mut taiko_geth_height;
-                let mut retries = 0u32;
-                // Check that status.highestUnsafeL2PayloadBlockID is in sync with Taiko geth chain tip.
-                loop {
-                    taiko_geth_height = self.taiko.get_latest_l2_block_id().await?;
-                    match self.taiko.get_status().await {
-                        Ok(status) => {
-                            info!(
-                                "🌀 Taiko status highestUnsafeL2PayloadBlockID: {}, Taiko Geth Height: {}",
-                                status.highest_unsafe_l2_payload_block_id,
-                                taiko_geth_height
-                            );
-                            if taiko_geth_height == status.highest_unsafe_l2_payload_block_id {
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            error!("Failed to get status from taiko driver: {}", e);
-                        }
-                    }
-                    retries += 1;
-                    sleep(Duration::from_millis(TAIKO_DRIVER_SYNC_INTERVAL_MS)).await;
-                }
+                let (taiko_geth_height, retries) =
+                    self.wait_for_taiko_driver_sync_with_geth().await;
 
-                self.verifier = Box::new(
-                    verifier::Verifier::new_with_taiko_height(
-                        taiko_geth_height,
-                        self.taiko.clone(),
-                        self.batch_manager.clone_without_batches(),
-                    )
-                );
+                self.verifier = Box::new(verifier::Verifier::new_with_taiko_height(
+                    taiko_geth_height,
+                    self.taiko.clone(),
+                    self.batch_manager.clone_without_batches(),
+                ));
 
                 if retries > TAIKO_DRIVER_SYNC_RETRIES_VALID {
                     // Spent too much time, let's continue in the next slot
-                    return Err(anyhow::anyhow!("⭕ Driver sync took too long: retries {}, retry delay {}", retries, TAIKO_DRIVER_SYNC_INTERVAL_MS));
+                    return Err(anyhow::anyhow!(
+                        "⭕ Driver sync took too long: retries {}, retry delay {}",
+                        retries,
+                        TAIKO_DRIVER_SYNC_INTERVAL_MS
+                    ));
                 };
             }
         }
