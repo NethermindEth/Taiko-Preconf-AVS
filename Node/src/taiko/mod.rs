@@ -443,6 +443,24 @@ impl Taiko {
         Ok(())
     }
 
+    pub async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {
+        debug!("Get status form taiko driver");
+
+        // Use the DirectHttpClient to send the request directly
+        const API_ENDPOINT: &str = "status";
+        let request_body = serde_json::json!({});
+
+        let response = self
+            .call_driver_until_success(http::Method::GET, API_ENDPOINT, &request_body)
+            .await?;
+
+        debug!("Response from taiko status: {:?}", response);
+
+        let status: preconf_blocks::TaikoStatus = serde_json::from_value(response)?;
+
+        Ok(status)
+    }
+
     async fn call_driver_until_success<T>(
         &self,
         method: http::Method,

@@ -282,6 +282,20 @@ impl Node {
                 // Need to check for unproposed L2 blocks.
                 self.verify_proposed_batches().await?;
             } else {
+                // status.highestUnsafeL2PayloadBlockID is in sync with Taiko geth chain tip.
+                match self.taiko.get_status().await {
+                    Ok(status) => {
+                        let taiko_geth_height = self.taiko.get_latest_l2_block_id().await?;
+                        info!(
+                            "🌀 Taiko status highestUnsafeL2PayloadBlockID: {}, Taiko Geth Height: {}",
+                            status.highest_unsafe_l2_payload_block_id,
+                            taiko_geth_height
+                        )
+                    }
+                    Err(e) => {
+                        error!("Failed to get status from taiko driver: {}", e);
+                    }
+                }
                 // Expected behaviour
                 self.verifier = Box::new(
                     verifier::Verifier::new(

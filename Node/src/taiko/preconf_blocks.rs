@@ -27,3 +27,9 @@ pub struct ExecutableData {
 pub struct RemovePreconfBlockRequestBody {
     pub new_last_block_id: u64,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaikoStatus {
+    pub highest_unsafe_l2_payload_block_id: u64,
+}
