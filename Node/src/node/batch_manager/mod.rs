@@ -142,6 +142,7 @@ impl BatchManager {
         &mut self,
         pending_tx_list: Option<PreBuiltTxList>,
         l2_slot_info: L2SlotInfo,
+        end_of_sequencing: bool,
     ) -> Result<(), Error> {
         if let Some(pending_tx_list) = pending_tx_list {
             // Handle the pending tx list from taiko geth
@@ -151,13 +152,17 @@ impl BatchManager {
                 pending_tx_list.bytes_length
             );
             let l2_block = L2Block::new_from(pending_tx_list, l2_slot_info.slot_timestamp());
-            self.add_new_l2_block(l2_block, l2_slot_info).await?;
+            self.add_new_l2_block(l2_block, l2_slot_info, end_of_sequencing).await?;
         } else if self.is_empty_block_required(l2_slot_info.slot_timestamp()) {
             // Handle time shift between blocks exceeded
             debug!("No pending txs, proposing empty block");
             let empty_block = L2Block::new_empty(l2_slot_info.slot_timestamp());
-            self.add_new_l2_block(empty_block, l2_slot_info).await?;
-        } else {
+            self.add_new_l2_block(empty_block, l2_slot_info, end_of_sequencing).await?;
+        } else if end_of_sequencing {
+            debug!("No txs, but end of sequencing, proposing empty block");
+            let empty_block = L2Block::new_empty(l2_slot_info.slot_timestamp());
+            self.add_new_l2_block(empty_block, l2_slot_info, end_of_sequencing).await?;
+        }else {
             trace!("No pending txs, skipping preconfirmation");
         }
 
@@ -176,6 +181,7 @@ impl BatchManager {
         &mut self,
         l2_block: L2Block,
         l2_slot_info: L2SlotInfo,
+        end_of_sequencing: bool,
     ) -> Result<(), Error> {
         info!(
             "Adding new L2 block to the batch, id: {}, timestamp: {}, parent gas used: {}",
@@ -187,7 +193,7 @@ impl BatchManager {
 
         if let Err(err) = self
             .taiko
-            .advance_head_to_new_l2_block(l2_block, anchor_block_id, l2_slot_info)
+            .advance_head_to_new_l2_block(l2_block, anchor_block_id, l2_slot_info, end_of_sequencing)
             .await
         {
             error!("Failed to advance head to new L2 block: {}", err);

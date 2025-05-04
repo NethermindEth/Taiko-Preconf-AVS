@@ -359,7 +359,7 @@ impl Node {
         }
 
         if current_status.is_preconfer() {
-            self.preconfirm_block(pending_tx_list, l2_slot_info).await?;
+            self.preconfirm_block(pending_tx_list, l2_slot_info, current_status.is_end_of_sequencing()).await?;
         }
 
         if current_status.is_verifier() {
@@ -469,11 +469,12 @@ impl Node {
         &mut self,
         pending_tx_list: Option<PreBuiltTxList>,
         l2_slot_info: L2SlotInfo,
+        end_of_sequencing: bool,
     ) -> Result<(), Error> {
         trace!("preconfirm_block");
 
         self.batch_manager
-            .preconfirm_block(pending_tx_list, l2_slot_info)
+            .preconfirm_block(pending_tx_list, l2_slot_info, end_of_sequencing)
             .await
     }
 

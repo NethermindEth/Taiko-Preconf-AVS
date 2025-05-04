@@ -27,7 +27,7 @@ pub struct Status {
     submitter: bool,
     verifier: bool,
     preconfirmation_started: bool,
-    last_slot: bool,
+    end_of_sequencing: bool,
 }
 
 impl Status {
@@ -47,8 +47,8 @@ impl Status {
         self.preconfirmation_started
     }
 
-    pub fn is_last_slot(&self) -> bool {
-        self.last_slot
+    pub fn is_end_of_sequencing(&self) -> bool {
+        self.end_of_sequencing
     }
 }
 
@@ -70,8 +70,8 @@ impl std::fmt::Display for Status {
             roles.push("Verify");
         }
 
-        if self.last_slot {
-            roles.push("LastSlot");
+        if self.end_of_sequencing {
+            roles.push("EndOfSequencing");
         }
 
         if roles.is_empty() {
@@ -128,18 +128,18 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
         let preconfer = self.is_preconfer(current_operator, handover_window, l1_slot)?;
         let preconfirmation_started = self.is_preconfirmation_start_l2_slot(preconfer);
         self.was_preconfer = preconfer;
-        let last_slot = self.is_last_slot(l1_slot)?;
+        let end_of_sequencing = self.is_end_of_sequencing(l1_slot)?;
 
         Ok(Status {
             preconfer,
             submitter: self.is_submitter(l1_slot, current_operator, handover_window),
             verifier: self.is_verifier(l1_slot, current_operator),
             preconfirmation_started,
-            last_slot,
+            end_of_sequencing,
         })
     }
 
-    fn is_last_slot(&self, l1_slot: Slot) -> Result<bool, Error> {
+    fn is_end_of_sequencing(&self, l1_slot: Slot) -> Result<bool, Error> {
         if l1_slot + 1 == self.slot_clock.get_slots_per_epoch() {
             let l2_slot = self.slot_clock.get_current_l2_slot_within_l1_slot()?;
             Ok(l2_slot + 1 == self.slot_clock.get_l2_slots_capacity())
