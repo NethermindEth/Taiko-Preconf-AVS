@@ -140,7 +140,12 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
         })
     }
 
-    fn is_end_of_sequencing(&self, preconfer: bool, submitter:bool, l1_slot: Slot) -> Result<bool, Error> {
+    fn is_end_of_sequencing(
+        &self,
+        preconfer: bool,
+        submitter: bool,
+        l1_slot: Slot,
+    ) -> Result<bool, Error> {
         let slot_before_handover_window = self.is_l2_slot_before_handover_window(l1_slot)?;
         Ok(!self.continuing_role && preconfer && submitter && slot_before_handover_window)
     }
