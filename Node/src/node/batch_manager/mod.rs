@@ -152,17 +152,20 @@ impl BatchManager {
                 pending_tx_list.bytes_length
             );
             let l2_block = L2Block::new_from(pending_tx_list, l2_slot_info.slot_timestamp());
-            self.add_new_l2_block(l2_block, l2_slot_info, end_of_sequencing).await?;
+            self.add_new_l2_block(l2_block, l2_slot_info, end_of_sequencing)
+                .await?;
         } else if self.is_empty_block_required(l2_slot_info.slot_timestamp()) {
             // Handle time shift between blocks exceeded
             debug!("No pending txs, proposing empty block");
             let empty_block = L2Block::new_empty(l2_slot_info.slot_timestamp());
-            self.add_new_l2_block(empty_block, l2_slot_info, end_of_sequencing).await?;
+            self.add_new_l2_block(empty_block, l2_slot_info, end_of_sequencing)
+                .await?;
         } else if end_of_sequencing {
             debug!("No pending txs, but reached end of sequencing, proposing empty block.");
             let empty_block = L2Block::new_empty(l2_slot_info.slot_timestamp());
-            self.add_new_l2_block(empty_block, l2_slot_info, end_of_sequencing).await?;
-        }else {
+            self.add_new_l2_block(empty_block, l2_slot_info, end_of_sequencing)
+                .await?;
+        } else {
             trace!("No pending txs, skipping preconfirmation");
         }
 
@@ -193,7 +196,12 @@ impl BatchManager {
 
         if let Err(err) = self
             .taiko
-            .advance_head_to_new_l2_block(l2_block, anchor_block_id, l2_slot_info, end_of_sequencing)
+            .advance_head_to_new_l2_block(
+                l2_block,
+                anchor_block_id,
+                l2_slot_info,
+                end_of_sequencing,
+            )
             .await
         {
             error!("Failed to advance head to new L2 block: {}", err);

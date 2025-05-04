@@ -128,7 +128,7 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
         let preconfer = self.is_preconfer(current_operator, handover_window, l1_slot)?;
         let preconfirmation_started = self.is_preconfirmation_start_l2_slot(preconfer);
         self.was_preconfer = preconfer;
-        let end_of_sequencing = self.is_end_of_sequencing(l1_slot)?;
+        let end_of_sequencing = self.is_end_of_sequencing(preconfer, submitter, l1_slot)?;
 
         Ok(Status {
             preconfer,
@@ -139,8 +139,14 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
         })
     }
 
-    fn is_end_of_sequencing(&self, l1_slot: Slot) -> Result<bool, Error> {
-        if l1_slot + 1 == self.slot_clock.get_slots_per_epoch() {
+    fn is_end_of_sequencing(&self, preconfer: bool, submitter:bool, l1_slot: Slot) -> Result<bool, Error> {
+        let slot_before_handover_window = self.is_l2_slot_before_handover_window(l1_slot);
+        Ok(!self.continuing_role && preconfer && submitter && slot_before_handover_window);
+    }
+
+    fn is_l2_slot_before_handover_window(&self, l1_slot: Slot) -> Result<bool, Error> {
+        let end_l1_slot = self.slot_clock.get_slots_per_epoch() - self.handover_window_slots - 1;
+        if l1_slot == end_l1_slot {
             let l2_slot = self.slot_clock.get_current_l2_slot_within_l1_slot()?;
             Ok(l2_slot + 1 == self.slot_clock.get_l2_slots_capacity())
         } else {

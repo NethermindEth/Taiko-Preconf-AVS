@@ -359,7 +359,12 @@ impl Node {
         }
 
         if current_status.is_preconfer() {
-            self.preconfirm_block(pending_tx_list, l2_slot_info, current_status.is_end_of_sequencing()).await?;
+            self.preconfirm_block(
+                pending_tx_list,
+                l2_slot_info,
+                current_status.is_end_of_sequencing(),
+            )
+            .await?;
         }
 
         if current_status.is_verifier() {
