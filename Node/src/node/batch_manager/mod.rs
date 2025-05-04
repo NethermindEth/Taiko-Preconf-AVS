@@ -159,7 +159,7 @@ impl BatchManager {
             let empty_block = L2Block::new_empty(l2_slot_info.slot_timestamp());
             self.add_new_l2_block(empty_block, l2_slot_info, end_of_sequencing).await?;
         } else if end_of_sequencing {
-            debug!("No txs, but reached end of sequencing, proposing empty block.");
+            debug!("No pending txs, but reached end of sequencing, proposing empty block.");
             let empty_block = L2Block::new_empty(l2_slot_info.slot_timestamp());
             self.add_new_l2_block(empty_block, l2_slot_info, end_of_sequencing).await?;
         }else {
