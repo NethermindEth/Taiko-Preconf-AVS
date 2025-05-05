@@ -222,6 +222,7 @@ mod tests {
     use super::*;
     use crate::ethereum_l1::slot_clock::mock::*;
 
+    const HANDOVER_WINDOW_SLOTS: i64 = 6;
     struct ExecutionLayerMock {
         current_operator: bool,
         next_operator: bool,
@@ -235,6 +236,86 @@ mod tests {
         async fn is_operator_for_next_epoch(&self) -> Result<bool, Error> {
             Ok(self.next_operator)
         }
+    }
+
+    #[tokio::test]
+    async fn test_end_of_sequencing() {
+        // End of sequencing
+        let mut operator = create_operator(
+            (31 - HANDOVER_WINDOW_SLOTS) * 12 + 5 * 2, // l1 slot before handover window, 5th l2 slot
+            true,
+            false,
+        );
+        operator.next_operator = false;
+        operator.was_preconfer = true;
+        operator.continuing_role = false;
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: true,
+                submitter: true,
+                verifier: false,
+                preconfirmation_started: false,
+                end_of_sequencing: true,
+            }
+        );
+        // Not a preconfer and submiter
+        let mut operator = create_operator(
+            (31 - HANDOVER_WINDOW_SLOTS) * 12 + 5 * 2, // l1 slot before handover window, 5th l2 slot
+            false,
+            false,
+        );
+        operator.next_operator = false;
+        operator.was_preconfer = false;
+        operator.continuing_role = false;
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: false,
+                submitter: false,
+                verifier: false,
+                preconfirmation_started: false,
+                end_of_sequencing: false,
+            }
+        );
+        // Continuing role
+        let mut operator = create_operator(
+            (31 - HANDOVER_WINDOW_SLOTS) * 12 + 5 * 2, // l1 slot before handover window, 5th l2 slot
+            true,
+            true,
+        );
+        operator.next_operator = true;
+        operator.was_preconfer = true;
+        operator.continuing_role = true;
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: true,
+                submitter: true,
+                verifier: false,
+                preconfirmation_started: false,
+                end_of_sequencing: false,
+            }
+        );
+        // Not correct l2 slot
+        let mut operator = create_operator(
+            (31 - HANDOVER_WINDOW_SLOTS) * 12 + 4 * 2, // l1 slot before handover window, 5th l2 slot
+            true,
+            false,
+        );
+        operator.next_operator = false;
+        operator.was_preconfer = true;
+        operator.continuing_role = false;
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: true,
+                submitter: true,
+                verifier: false,
+                preconfirmation_started: false,
+                end_of_sequencing: false,
+            }
+        );
     }
 
     #[tokio::test]
@@ -607,7 +688,7 @@ mod tests {
                 next_operator,
             }),
             slot_clock: Arc::new(slot_clock),
-            handover_window_slots: 6,
+            handover_window_slots: HANDOVER_WINDOW_SLOTS as u64,
             handover_start_buffer_ms: 1000,
             next_operator: false,
             continuing_role: false,
