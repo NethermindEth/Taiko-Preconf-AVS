@@ -27,6 +27,7 @@ pub struct Status {
     submitter: bool,
     verifier: bool,
     preconfirmation_started: bool,
+    end_of_sequencing: bool,
 }
 
 impl Status {
@@ -44,6 +45,10 @@ impl Status {
 
     pub fn is_preconfirmation_start_slot(&self) -> bool {
         self.preconfirmation_started
+    }
+
+    pub fn is_end_of_sequencing(&self) -> bool {
+        self.end_of_sequencing
     }
 }
 
@@ -63,6 +68,10 @@ impl std::fmt::Display for Status {
 
         if self.verifier {
             roles.push("Verify");
+        }
+
+        if self.end_of_sequencing {
+            roles.push("EndOfSequencing");
         }
 
         if roles.is_empty() {
@@ -119,13 +128,36 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
         let preconfer = self.is_preconfer(current_operator, handover_window, l1_slot)?;
         let preconfirmation_started = self.is_preconfirmation_start_l2_slot(preconfer);
         self.was_preconfer = preconfer;
+        let submitter = self.is_submitter(l1_slot, current_operator, handover_window);
+        let end_of_sequencing = self.is_end_of_sequencing(preconfer, submitter, l1_slot)?;
 
         Ok(Status {
             preconfer,
-            submitter: self.is_submitter(l1_slot, current_operator, handover_window),
+            submitter,
             verifier: self.is_verifier(l1_slot, current_operator),
             preconfirmation_started,
+            end_of_sequencing,
         })
+    }
+
+    fn is_end_of_sequencing(
+        &self,
+        preconfer: bool,
+        submitter: bool,
+        l1_slot: Slot,
+    ) -> Result<bool, Error> {
+        let slot_before_handover_window = self.is_l2_slot_before_handover_window(l1_slot)?;
+        Ok(!self.continuing_role && preconfer && submitter && slot_before_handover_window)
+    }
+
+    fn is_l2_slot_before_handover_window(&self, l1_slot: Slot) -> Result<bool, Error> {
+        let end_l1_slot = self.slot_clock.get_slots_per_epoch() - self.handover_window_slots - 1;
+        if l1_slot == end_l1_slot {
+            let l2_slot = self.slot_clock.get_current_l2_slot_within_l1_slot()?;
+            Ok(l2_slot + 1 == self.slot_clock.get_number_of_l2_slots_per_l1())
+        } else {
+            Ok(false)
+        }
     }
 
     fn is_preconfer(
@@ -190,6 +222,7 @@ mod tests {
     use super::*;
     use crate::ethereum_l1::slot_clock::mock::*;
 
+    const HANDOVER_WINDOW_SLOTS: i64 = 6;
     struct ExecutionLayerMock {
         current_operator: bool,
         next_operator: bool,
@@ -203,6 +236,86 @@ mod tests {
         async fn is_operator_for_next_epoch(&self) -> Result<bool, Error> {
             Ok(self.next_operator)
         }
+    }
+
+    #[tokio::test]
+    async fn test_end_of_sequencing() {
+        // End of sequencing
+        let mut operator = create_operator(
+            (31 - HANDOVER_WINDOW_SLOTS) * 12 + 5 * 2, // l1 slot before handover window, 5th l2 slot
+            true,
+            false,
+        );
+        operator.next_operator = false;
+        operator.was_preconfer = true;
+        operator.continuing_role = false;
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: true,
+                submitter: true,
+                verifier: false,
+                preconfirmation_started: false,
+                end_of_sequencing: true,
+            }
+        );
+        // Not a preconfer and submiter
+        let mut operator = create_operator(
+            (31 - HANDOVER_WINDOW_SLOTS) * 12 + 5 * 2, // l1 slot before handover window, 5th l2 slot
+            false,
+            false,
+        );
+        operator.next_operator = false;
+        operator.was_preconfer = false;
+        operator.continuing_role = false;
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: false,
+                submitter: false,
+                verifier: false,
+                preconfirmation_started: false,
+                end_of_sequencing: false,
+            }
+        );
+        // Continuing role
+        let mut operator = create_operator(
+            (31 - HANDOVER_WINDOW_SLOTS) * 12 + 5 * 2, // l1 slot before handover window, 5th l2 slot
+            true,
+            true,
+        );
+        operator.next_operator = true;
+        operator.was_preconfer = true;
+        operator.continuing_role = true;
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: true,
+                submitter: true,
+                verifier: false,
+                preconfirmation_started: false,
+                end_of_sequencing: false,
+            }
+        );
+        // Not correct l2 slot
+        let mut operator = create_operator(
+            (31 - HANDOVER_WINDOW_SLOTS) * 12 + 4 * 2, // l1 slot before handover window, 4th l2 slot
+            true,
+            false,
+        );
+        operator.next_operator = false;
+        operator.was_preconfer = true;
+        operator.continuing_role = false;
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: true,
+                submitter: true,
+                verifier: false,
+                preconfirmation_started: false,
+                end_of_sequencing: false,
+            }
+        );
     }
 
     #[tokio::test]
@@ -222,6 +335,7 @@ mod tests {
                 submitter: false,
                 verifier: true,
                 preconfirmation_started: false,
+                end_of_sequencing: false,
             }
         );
 
@@ -239,6 +353,7 @@ mod tests {
                 submitter: false,
                 verifier: false,
                 preconfirmation_started: false,
+                end_of_sequencing: false,
             }
         );
     }
@@ -259,6 +374,7 @@ mod tests {
                 submitter: true,
                 verifier: false,
                 preconfirmation_started: false,
+                end_of_sequencing: false,
             }
         );
 
@@ -275,6 +391,7 @@ mod tests {
                 submitter: false,
                 verifier: false,
                 preconfirmation_started: false,
+                end_of_sequencing: false,
             }
         );
     }
@@ -293,6 +410,7 @@ mod tests {
                 submitter: false,
                 verifier: false,
                 preconfirmation_started: true,
+                end_of_sequencing: false,
             }
         );
 
@@ -311,6 +429,7 @@ mod tests {
                 submitter: false,
                 verifier: true,
                 preconfirmation_started: false,
+                end_of_sequencing: false,
             }
         );
 
@@ -329,6 +448,7 @@ mod tests {
                 submitter: true,
                 verifier: false,
                 preconfirmation_started: false,
+                end_of_sequencing: false,
             }
         );
     }
@@ -348,6 +468,7 @@ mod tests {
                 submitter: false,
                 verifier: false,
                 preconfirmation_started: false,
+                end_of_sequencing: false,
             }
         );
 
@@ -364,6 +485,7 @@ mod tests {
                 submitter: false,
                 verifier: false,
                 preconfirmation_started: false,
+                end_of_sequencing: false,
             }
         );
 
@@ -379,6 +501,7 @@ mod tests {
                 submitter: false,
                 verifier: false,
                 preconfirmation_started: false,
+                end_of_sequencing: false,
             }
         );
     }
@@ -399,6 +522,7 @@ mod tests {
                 submitter: false,
                 verifier: false,
                 preconfirmation_started: false,
+                end_of_sequencing: false,
             }
         );
     }
@@ -418,6 +542,7 @@ mod tests {
                 submitter: true,
                 verifier: false,
                 preconfirmation_started: true,
+                end_of_sequencing: false,
             }
         );
 
@@ -434,6 +559,7 @@ mod tests {
                 submitter: true,
                 verifier: false,
                 preconfirmation_started: true,
+                end_of_sequencing: false,
             }
         );
     }
@@ -453,6 +579,7 @@ mod tests {
                 submitter: true,
                 verifier: false,
                 preconfirmation_started: false,
+                end_of_sequencing: false,
             }
         );
     }
@@ -474,6 +601,7 @@ mod tests {
                 submitter: true,
                 verifier: false,
                 preconfirmation_started: false,
+                end_of_sequencing: false,
             }
         );
 
@@ -492,6 +620,7 @@ mod tests {
                 submitter: true,
                 verifier: false,
                 preconfirmation_started: false,
+                end_of_sequencing: false,
             }
         );
 
@@ -509,6 +638,7 @@ mod tests {
                 submitter: true,
                 verifier: false,
                 preconfirmation_started: false,
+                end_of_sequencing: false,
             }
         );
     }
@@ -528,6 +658,7 @@ mod tests {
                 submitter: false,
                 verifier: false,
                 preconfirmation_started: true,
+                end_of_sequencing: false,
             }
         );
 
@@ -539,6 +670,7 @@ mod tests {
                 submitter: false,
                 verifier: false,
                 preconfirmation_started: false,
+                end_of_sequencing: false,
             }
         );
     }
@@ -556,7 +688,7 @@ mod tests {
                 next_operator,
             }),
             slot_clock: Arc::new(slot_clock),
-            handover_window_slots: 6,
+            handover_window_slots: HANDOVER_WINDOW_SLOTS as u64,
             handover_start_buffer_ms: 1000,
             next_operator: false,
             continuing_role: false,

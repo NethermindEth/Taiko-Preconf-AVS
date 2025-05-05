@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct BuildPreconfBlockRequestBody {
     pub executable_data: ExecutableData,
-    pub signature: String, // TODO remove, seems we don't need it anymore
+    pub end_of_sequencing: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
