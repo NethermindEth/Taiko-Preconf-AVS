@@ -37,7 +37,7 @@ pub struct Node {
     operator: Operator,
     batch_manager: BatchManager,
     thresholds: Thresholds,
-    verifier: Box<verifier::Verifier>,
+    verifier: Option<verifier::Verifier>,
     taiko: Arc<Taiko>,
     transaction_error_channel: Receiver<TransactionError>,
     metrics: Arc<Metrics>,
@@ -84,8 +84,6 @@ impl Node {
             ethereum_l1.clone(),
             taiko.clone(),
         );
-        let verifier =
-            verifier::Verifier::new(taiko.clone(), batch_manager.clone_without_batches()).await?;
         Ok(Self {
             cancel_token,
             batch_manager: batch_manager,
@@ -93,7 +91,7 @@ impl Node {
             preconf_heartbeat_ms,
             operator,
             thresholds,
-            verifier: Box::new(verifier),
+            verifier: None,
             taiko,
             transaction_error_channel,
             metrics,
@@ -249,18 +247,14 @@ impl Node {
                 .get_preconfer_nonce_pending()
                 .await?;
             debug!("Nonce Latest: {nonce_latest}, Nonce Pending: {nonce_pending}");
+            // TODO handle when not equal
             if nonce_latest == nonce_pending {
-                let mut verifier = verifier::Verifier::new_with_taiko_height(
+                // Just create a new verifier, we will check it in preconfirmation loop
+                self.verifier = Some(verifier::Verifier::new_with_taiko_height(
                     taiko_geth_height,
                     self.taiko.clone(),
                     self.batch_manager.clone_without_batches(),
-                );
-                if let Err(e) = verifier.verify_submitted_blocks(taiko_inbox_height).await {
-                    self.print_reorg_message(&format!("Verifier return an error: {}", e));
-                    self.batch_manager
-                        .trigger_l2_reorg(taiko_inbox_height)
-                        .await?;
-                }
+                ));
             }
         }
 
@@ -346,7 +340,7 @@ impl Node {
                 let (taiko_geth_height, slot_should_be_skipped) =
                     self.wait_for_taiko_driver_sync_with_geth().await;
 
-                self.verifier = Box::new(verifier::Verifier::new_with_taiko_height(
+                self.verifier = Some(verifier::Verifier::new_with_taiko_height(
                     taiko_geth_height,
                     self.taiko.clone(),
                     self.batch_manager.clone_without_batches(),
@@ -367,31 +361,55 @@ impl Node {
             .await?;
         }
 
-        if current_status.is_verifier() {
-            let taiko_inbox_height = self
-                .ethereum_l1
-                .execution_layer
-                .get_l2_height_from_taiko_inbox()
-                .await?;
-            if let Err(e) = self
-                .verifier
-                .verify_submitted_blocks(taiko_inbox_height)
-                .await
-            {
-                self.print_reorg_message(&format!("Verifier return an error: {}", e));
-                self.batch_manager
-                    .trigger_l2_reorg(taiko_inbox_height)
-                    .await?;
-            }
-
-            self.metrics
-                .inc_by_batch_recovered(self.batch_manager.get_number_of_batches());
-        }
-
         if current_status.is_submitter() {
             // first submit verification batches
-            if self.verifier.has_batches_to_submit() {
-                self.verifier.try_submit_oldest_batch().await?;
+            if let Some(mut verifier) = self.verifier.take() {
+                // TODO
+                // Add check that we have a propper slot of the submitting epoch start in the beacon chain
+                // posibly we can.get_l2_height_from_taiko_inbox() with pending flag
+                // Check the hash of taiko_inbox_height block
+                let taiko_inbox_height = match self
+                    .ethereum_l1
+                    .execution_layer
+                    .get_l2_height_from_taiko_inbox()
+                    .await
+                {
+                    Ok(height) => height,
+                    Err(e) => {
+                        self.verifier = Some(verifier);
+                        return Err(e);
+                    }
+                };
+                if let Err(e) = verifier.verify_submitted_blocks(taiko_inbox_height).await {
+                    match self
+                        .trigger_l2_reorg(
+                            taiko_inbox_height,
+                            &format!("Verifier return an error: {}", e),
+                        )
+                        .await
+                    {
+                        Ok(_) => (),
+                        Err(e) => {
+                            self.verifier = Some(verifier);
+                            return Err(e);
+                        }
+                    }
+                }
+
+                self.metrics
+                    .inc_by_batch_recovered(verifier.get_number_of_batches());
+
+                if verifier.has_batches_to_submit() {
+                    match verifier.try_submit_oldest_batch().await {
+                        Ok(_) => (),
+                        Err(e) => {
+                            self.verifier = Some(verifier);
+                            return Err(e);
+                        }
+                    }
+                }
+
+                self.verifier = None;
             } else {
                 self.batch_manager
                     .try_submit_oldest_batch(current_status.is_preconfer())
@@ -425,10 +443,8 @@ impl Node {
                             .execution_layer
                             .get_l2_height_from_taiko_inbox()
                             .await?;
-                        self.print_reorg_message("Transaction reverted");
                         if let Err(e) = self
-                            .batch_manager
-                            .trigger_l2_reorg(taiko_inbox_height)
+                            .trigger_l2_reorg(taiko_inbox_height, "Transaction reverted")
                             .await
                         {
                             self.cancel_token.cancel();
@@ -506,7 +522,16 @@ impl Node {
         Ok(())
     }
 
-    fn print_reorg_message(&self, message: &str) {
+    async fn trigger_l2_reorg(
+        &mut self,
+        new_last_block_id: u64,
+        message: &str,
+    ) -> Result<(), Error> {
         warn!("⛓️‍💥 Force Reorg: {}", message);
+        self.batch_manager
+            .trigger_l2_reorg(new_last_block_id)
+            .await?;
+        self.verifier = None;
+        Ok(())
     }
 }

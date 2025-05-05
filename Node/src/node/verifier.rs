@@ -70,6 +70,10 @@ impl Verifier {
         self.batch_manager.has_batches()
     }
 
+    pub fn get_number_of_batches(&self) -> u64 {
+        self.batch_manager.get_number_of_batches()
+    }
+
     pub async fn handle_unprocessed_blocks(
         &mut self,
         taiko_inbox_height: u64,
