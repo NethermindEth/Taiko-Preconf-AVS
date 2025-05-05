@@ -373,12 +373,14 @@ impl ExecutionLayer {
                 1000000000000000000,
                 5,
                 4,
+                4,
                 15,
                 tx_error_sender,
                 metrics.clone(),
             )
             .await
             .unwrap(),
+            metrics,
         })
     }
 

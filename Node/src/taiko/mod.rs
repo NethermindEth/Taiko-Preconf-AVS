@@ -364,6 +364,7 @@ impl Taiko {
         l2_block: L2Block,
         anchor_origin_height: u64,
         l2_slot_info: L2SlotInfo,
+        end_of_sequencing: bool,
     ) -> Result<(), Error> {
         tracing::debug!("Submitting new L2 blocks to the Taiko driver");
 
@@ -407,10 +408,9 @@ impl Taiko {
 
         let request_body = preconf_blocks::BuildPreconfBlockRequestBody {
             executable_data,
-            signature: "".to_string(),
+            end_of_sequencing,
         };
 
-        // Use the DirectHttpClient to send the request directly
         const API_ENDPOINT: &str = "preconfBlocks";
 
         let response = self
@@ -429,7 +429,6 @@ impl Taiko {
 
         let request_body = preconf_blocks::RemovePreconfBlockRequestBody { new_last_block_id };
 
-        // Use the DirectHttpClient to send the request directly
         const API_ENDPOINT: &str = "preconfBlocks";
 
         let response = self
@@ -441,6 +440,23 @@ impl Taiko {
         self.metrics.inc_reorgs_executed();
 
         Ok(())
+    }
+
+    pub async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {
+        debug!("Get status form taiko driver");
+
+        const API_ENDPOINT: &str = "status";
+        let request_body = serde_json::json!({});
+
+        let response = self
+            .call_driver_until_success(http::Method::GET, API_ENDPOINT, &request_body)
+            .await?;
+
+        debug!("Response from taiko status: {:?}", response);
+
+        let status: preconf_blocks::TaikoStatus = serde_json::from_value(response)?;
+
+        Ok(status)
     }
 
     async fn call_driver_until_success<T>(

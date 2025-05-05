@@ -20,6 +20,11 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
+// TODO move to config
+const TAIKO_DRIVER_SYNC_INTERVAL_MS: u64 = 100;
+const TAIKO_DRIVER_SYNC_RETRIES_VALID: u32 = 10;
+const TAIKO_DRIVER_SYNC_RETRIES_BEFORE_PANIC: u32 = 6000; // 10 mins
+
 pub struct Thresholds {
     pub eth: U256,
     pub taiko: U256,
@@ -181,6 +186,9 @@ impl Node {
             );
         }
 
+        // Wait for Taiko Driver to synchronize with Taiko Geth
+        self.wait_for_taiko_driver_sync_with_geth().await;
+
         Ok(())
     }
 
@@ -259,6 +267,58 @@ impl Node {
         Ok(())
     }
 
+    /// Wait for Taiko Driver to synchronize with Taiko Geth chain tip.
+    /// Returns a tuple:
+    /// - `taiko_geth_height`: The current Taiko Geth chain tip.
+    /// - `slot_should_be_skipped`: A boolean indicating whether the current slot should be skipped.
+    ///   This is `true` if the number of retries exceeded `TAIKO_DRIVER_SYNC_RETRIES_VALID`.
+    async fn wait_for_taiko_driver_sync_with_geth(&self) -> (u64, bool) {
+        let mut taiko_geth_height;
+        let mut retries = 0;
+        loop {
+            // panic in case of an error
+            // TODO can we move this outside the loop?
+            taiko_geth_height = self.taiko.get_latest_l2_block_id().await.unwrap();
+            match self.taiko.get_status().await {
+                Ok(status) => {
+                    info!(
+                        "🌀 Taiko status highestUnsafeL2PayloadBlockID: {}, Taiko Geth Height: {}",
+                        status.highest_unsafe_l2_payload_block_id, taiko_geth_height
+                    );
+                    if taiko_geth_height == status.highest_unsafe_l2_payload_block_id {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to get status from taiko driver: {}", e);
+                }
+            }
+            retries += 1;
+
+            if retries > TAIKO_DRIVER_SYNC_RETRIES_BEFORE_PANIC {
+                error!(
+                    "Driver sync exceeded max retries: retries {}, retry delay {} retries before panic {}. Shutting down...",
+                    retries,
+                    TAIKO_DRIVER_SYNC_INTERVAL_MS,
+                    TAIKO_DRIVER_SYNC_RETRIES_BEFORE_PANIC
+                );
+                self.cancel_token.cancel();
+            }
+            sleep(Duration::from_millis(TAIKO_DRIVER_SYNC_INTERVAL_MS)).await;
+        }
+
+        if retries > TAIKO_DRIVER_SYNC_RETRIES_VALID {
+            // Spent too much time, let's continue in the next slot
+            warn!(
+                "⭕ Driver sync took too long: retries {}, retry delay {}. Skipping slot...",
+                retries, TAIKO_DRIVER_SYNC_INTERVAL_MS
+            );
+            return (taiko_geth_height, true);
+        };
+
+        return (taiko_geth_height, false);
+    }
+
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
         let l2_slot_info = self.taiko.get_l2_slot_info().await?;
         let current_status = self.operator.get_status().await?;
@@ -282,19 +342,29 @@ impl Node {
                 // Need to check for unproposed L2 blocks.
                 self.verify_proposed_batches().await?;
             } else {
-                // Expected behaviour
-                self.verifier = Box::new(
-                    verifier::Verifier::new(
-                        self.taiko.clone(),
-                        self.batch_manager.clone_without_batches(),
-                    )
-                    .await?,
-                );
+                // It is for handover window
+                let (taiko_geth_height, slot_should_be_skipped) =
+                    self.wait_for_taiko_driver_sync_with_geth().await;
+
+                self.verifier = Box::new(verifier::Verifier::new_with_taiko_height(
+                    taiko_geth_height,
+                    self.taiko.clone(),
+                    self.batch_manager.clone_without_batches(),
+                ));
+
+                if slot_should_be_skipped {
+                    return Ok(());
+                }
             }
         }
 
         if current_status.is_preconfer() {
-            self.preconfirm_block(pending_tx_list, l2_slot_info).await?;
+            self.preconfirm_block(
+                pending_tx_list,
+                l2_slot_info,
+                current_status.is_end_of_sequencing(),
+            )
+            .await?;
         }
 
         if current_status.is_verifier() {
@@ -404,11 +474,12 @@ impl Node {
         &mut self,
         pending_tx_list: Option<PreBuiltTxList>,
         l2_slot_info: L2SlotInfo,
+        end_of_sequencing: bool,
     ) -> Result<(), Error> {
         trace!("preconfirm_block");
 
         self.batch_manager
-            .preconfirm_block(pending_tx_list, l2_slot_info)
+            .preconfirm_block(pending_tx_list, l2_slot_info, end_of_sequencing)
             .await
     }
 

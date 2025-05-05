@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct BuildPreconfBlockRequestBody {
     pub executable_data: ExecutableData,
-    pub signature: String, // TODO remove, seems we don't need it anymore
+    pub end_of_sequencing: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -26,4 +26,10 @@ pub struct ExecutableData {
 #[serde(rename_all = "camelCase")]
 pub struct RemovePreconfBlockRequestBody {
     pub new_last_block_id: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TaikoStatus {
+    #[serde(rename = "highestUnsafeL2PayloadBlockID")]
+    pub highest_unsafe_l2_payload_block_id: u64,
 }
