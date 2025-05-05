@@ -28,7 +28,7 @@ pub struct SlotClock<T: Clock = RealClock> {
     /// The length of each slot.
     slot_duration: Duration,
     slots_per_epoch: u64,
-    l2_slots_capacity: u64,
+    l2_slots_per_l1: u64,
     preconf_heartbeat_ms: u64,
     pub clock: T,
 }
@@ -48,20 +48,20 @@ impl<T: Clock> SlotClock<T> {
         );
 
         let slot_duration = Duration::from_secs(slot_duration_sec);
-        let l2_slots_capacity = slot_duration_sec * 1000 / preconf_heartbeat_ms;
+        let l2_slots_per_l1 = slot_duration_sec * 1000 / preconf_heartbeat_ms;
         Self {
             genesis_slot,
             genesis_duration: Duration::from_secs(genesis_timestamp_sec),
             slot_duration,
             slots_per_epoch,
-            l2_slots_capacity,
+            l2_slots_per_l1,
             preconf_heartbeat_ms,
             clock: T::default(),
         }
     }
 
-    pub fn get_l2_slots_capacity(&self) -> u64 {
-        self.l2_slots_capacity
+    pub fn get_number_of_l2_slots_per_l1(&self) -> u64 {
+        self.l2_slots_per_l1
     }
 
     pub fn get_slot_duration(&self) -> Duration {

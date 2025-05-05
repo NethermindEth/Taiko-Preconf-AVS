@@ -154,7 +154,7 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
         let end_l1_slot = self.slot_clock.get_slots_per_epoch() - self.handover_window_slots - 1;
         if l1_slot == end_l1_slot {
             let l2_slot = self.slot_clock.get_current_l2_slot_within_l1_slot()?;
-            Ok(l2_slot + 1 == self.slot_clock.get_l2_slots_capacity())
+            Ok(l2_slot + 1 == self.slot_clock.get_number_of_l2_slots_per_l1())
         } else {
             Ok(false)
         }
