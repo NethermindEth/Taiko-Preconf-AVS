@@ -388,7 +388,7 @@ impl Node {
                         )
                         .await
                     {
-                        Ok(_) => (),
+                        Ok(_) => return Ok(()),
                         Err(e) => {
                             self.verifier = Some(verifier);
                             return Err(e);
@@ -423,6 +423,10 @@ impl Node {
         {
             self.batch_manager.reset_builder();
             error!("Some batches were not successfully sent in the submitter window. Resetting batch builder.");
+            if self.verifier.is_some() {
+                error!("Verifier is not None after submitter window.");
+                self.verifier = None;
+            }
         }
 
         Ok(())
@@ -436,7 +440,7 @@ impl Node {
             Ok(error) => match error {
                 TransactionError::TransactionReverted => {
                     if current_status.is_preconfer()
-                        && (current_status.is_submitter() || current_status.is_verifier())
+                        && current_status.is_submitter()
                     {
                         let taiko_inbox_height = self
                             .ethereum_l1
