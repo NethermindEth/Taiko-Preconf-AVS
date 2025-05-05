@@ -258,10 +258,12 @@ impl TransactionMonitorThread {
                         (self.config.max_attempts_to_send_tx - 1) as u64,
                     )
                     .await
-               && !self.verify_tx_included(
-                   &tx_hashes, 
-                   wait_attempt + self.config.max_attempts_to_send_tx,
-               )
+                && !self
+                    .verify_tx_included(
+                        &tx_hashes,
+                        wait_attempt + self.config.max_attempts_to_send_tx,
+                    )
+                    .await
             {
                 warn!("🟣 Transaction watcher timed out without a result. Waiting...");
                 wait_attempt += 1;
