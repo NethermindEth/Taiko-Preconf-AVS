@@ -644,7 +644,7 @@ pub trait PreconfDriver {
 
 impl PreconfDriver for Taiko {
     async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {
-        self.get_status().await
+        Taiko::get_status(self).await
     }
 }
 
