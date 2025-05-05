@@ -23,6 +23,7 @@ use tracing::{debug, error, info, trace, warn};
 // TODO move to config
 const TAIKO_DRIVER_SYNC_INTERVAL_MS: u64 = 100;
 const TAIKO_DRIVER_SYNC_RETRIES_VALID: u32 = 10;
+const TAIKO_DRIVER_SYNC_RETRIES_BEFORE_PANIC: u32 = 6000; // 10 mins
 
 pub struct Thresholds {
     pub eth: U256,
@@ -266,12 +267,17 @@ impl Node {
         Ok(())
     }
 
-    /// Check that driver.status.highestUnsafeL2PayloadBlockID is in sync with Taiko geth chain tip.
-    async fn wait_for_taiko_driver_sync_with_geth(&self) -> (u64, u32) {
+    /// Wait for Taiko Driver to synchronize with Taiko Geth chain tip.
+    /// Returns a tuple:
+    /// - `taiko_geth_height`: The current Taiko Geth chain tip.
+    /// - `slot_should_be_skipped`: A boolean indicating whether the current slot should be skipped.
+    ///   This is `true` if the number of retries exceeded `TAIKO_DRIVER_SYNC_RETRIES_VALID`.
+    async fn wait_for_taiko_driver_sync_with_geth(&self) -> (u64, bool) {
         let mut taiko_geth_height;
         let mut retries = 0;
         loop {
             // panic in case of an error
+            // TODO can we move this outside the loop?
             taiko_geth_height = self.taiko.get_latest_l2_block_id().await.unwrap();
             match self.taiko.get_status().await {
                 Ok(status) => {
@@ -288,10 +294,29 @@ impl Node {
                 }
             }
             retries += 1;
+
+            if retries > TAIKO_DRIVER_SYNC_RETRIES_BEFORE_PANIC {
+                error!(
+                    "Driver sync exceeded max retries: retries {}, retry delay {} retries before panic {}. Shutting down...",
+                    retries,
+                    TAIKO_DRIVER_SYNC_INTERVAL_MS,
+                    TAIKO_DRIVER_SYNC_RETRIES_BEFORE_PANIC
+                );
+                self.cancel_token.cancel();
+            }
             sleep(Duration::from_millis(TAIKO_DRIVER_SYNC_INTERVAL_MS)).await;
         }
 
-        return (taiko_geth_height, retries);
+        if retries > TAIKO_DRIVER_SYNC_RETRIES_VALID {
+            // Spent too much time, let's continue in the next slot
+            warn!(
+                "⭕ Driver sync took too long: retries {}, retry delay {}. Skipping slot...",
+                retries, TAIKO_DRIVER_SYNC_INTERVAL_MS
+            );
+            return (taiko_geth_height, true);
+        };
+
+        return (taiko_geth_height, false);
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
@@ -318,7 +343,7 @@ impl Node {
                 self.verify_proposed_batches().await?;
             } else {
                 // It is for handover window
-                let (taiko_geth_height, retries) =
+                let (taiko_geth_height, slot_should_be_skipped) =
                     self.wait_for_taiko_driver_sync_with_geth().await;
 
                 self.verifier = Box::new(verifier::Verifier::new_with_taiko_height(
@@ -327,14 +352,9 @@ impl Node {
                     self.batch_manager.clone_without_batches(),
                 ));
 
-                if retries > TAIKO_DRIVER_SYNC_RETRIES_VALID {
-                    // Spent too much time, let's continue in the next slot
-                    return Err(anyhow::anyhow!(
-                        "⭕ Driver sync took too long: retries {}, retry delay {}",
-                        retries,
-                        TAIKO_DRIVER_SYNC_INTERVAL_MS
-                    ));
-                };
+                if slot_should_be_skipped {
+                    return Ok(());
+                }
             }
         }
 
