@@ -299,7 +299,7 @@ mod tests {
         );
         // Not correct l2 slot
         let mut operator = create_operator(
-            (31 - HANDOVER_WINDOW_SLOTS) * 12 + 4 * 2, // l1 slot before handover window, 5th l2 slot
+            (31 - HANDOVER_WINDOW_SLOTS) * 12 + 4 * 2, // l1 slot before handover window, 4th l2 slot
             true,
             false,
         );
