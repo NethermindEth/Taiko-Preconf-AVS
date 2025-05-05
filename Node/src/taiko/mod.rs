@@ -410,7 +410,6 @@ impl Taiko {
             signature: "".to_string(),
         };
 
-        // Use the DirectHttpClient to send the request directly
         const API_ENDPOINT: &str = "preconfBlocks";
 
         let response = self
@@ -429,7 +428,6 @@ impl Taiko {
 
         let request_body = preconf_blocks::RemovePreconfBlockRequestBody { new_last_block_id };
 
-        // Use the DirectHttpClient to send the request directly
         const API_ENDPOINT: &str = "preconfBlocks";
 
         let response = self
@@ -446,7 +444,6 @@ impl Taiko {
     pub async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {
         debug!("Get status form taiko driver");
 
-        // Use the DirectHttpClient to send the request directly
         const API_ENDPOINT: &str = "status";
         let request_body = serde_json::json!({});
 
