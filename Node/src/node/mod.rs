@@ -41,6 +41,7 @@ pub struct Node {
     taiko: Arc<Taiko>,
     transaction_error_channel: Receiver<TransactionError>,
     metrics: Arc<Metrics>,
+    epoch_sync_delay_ms: u64,
 }
 
 impl Node {
@@ -58,6 +59,7 @@ impl Node {
         simulate_not_submitting_at_the_end_of_epoch: bool,
         transaction_error_channel: Receiver<TransactionError>,
         metrics: Arc<Metrics>,
+        epoch_sync_delay_ms: u64,
     ) -> Result<Self, Error> {
         info!(
             "Batch builder config:\n\
@@ -95,6 +97,7 @@ impl Node {
             taiko,
             transaction_error_channel,
             metrics,
+            epoch_sync_delay_ms,
         })
     }
 
@@ -338,9 +341,15 @@ impl Node {
                 // We start preconfirmation in the middle of the epoch.
                 // Need to check for unproposed L2 blocks.
                 if let Err(e) = self.verify_proposed_batches().await {
-                    error!("Shutdown: Failed to verify proposed batches on startup: {}", e);
+                    error!(
+                        "Shutdown: Failed to verify proposed batches on startup: {}",
+                        e
+                    );
                     self.cancel_token.cancel();
-                    return Err(anyhow::anyhow!("Shutdown: Failed to verify proposed batches on startup: {}", e));
+                    return Err(anyhow::anyhow!(
+                        "Shutdown: Failed to verify proposed batches on startup: {}",
+                        e
+                    ));
                 }
             } else {
                 // It is for handover window
@@ -360,7 +369,10 @@ impl Node {
                     Err(e) => {
                         error!("Shutdown: Failed to create verifier: {}", e);
                         self.cancel_token.cancel();
-                        return Err(anyhow::anyhow!("Shutdown: Failed to create verifier on startup: {}", e));
+                        return Err(anyhow::anyhow!(
+                            "Shutdown: Failed to create verifier on startup: {}",
+                            e
+                        ));
                     }
                 }
 
@@ -382,9 +394,10 @@ impl Node {
         if current_status.is_submitter() {
             // first submit verification batches
             if let Some(mut verifier) = self.verifier.take() {
-                // TODO
-                // Add check that we have a propper slot of the submitting epoch start in the beacon chain
-                // posibly we can.get_l2_height_from_taiko_inbox() with pending flag
+                if self.ethereum_l1.slot_clock.get_current_slot_of_epoch()? == 0 {
+                    // Sleep to ensure the new epoch has started and the state is correct before validation
+                    sleep(Duration::from_millis(self.epoch_sync_delay_ms)).await;
+                }
                 let taiko_inbox_height = match self
                     .ethereum_l1
                     .execution_layer
