@@ -361,7 +361,7 @@ mod tests {
             operator.get_status().await.unwrap(),
             Status {
                 preconfer: true,
-                submitter: false,
+                submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }
