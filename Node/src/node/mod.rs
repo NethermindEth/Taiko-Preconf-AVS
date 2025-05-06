@@ -250,11 +250,14 @@ impl Node {
             // TODO handle when not equal
             if nonce_latest == nonce_pending {
                 // Just create a new verifier, we will check it in preconfirmation loop
-                self.verifier = Some(verifier::Verifier::new_with_taiko_height(
-                    taiko_geth_height,
-                    self.taiko.clone(),
-                    self.batch_manager.clone_without_batches(),
-                ));
+                self.verifier = Some(
+                    verifier::Verifier::new_with_taiko_height(
+                        taiko_geth_height,
+                        self.taiko.clone(),
+                        self.batch_manager.clone_without_batches(),
+                    )
+                    .await?,
+                );
             }
         }
 
@@ -334,17 +337,32 @@ impl Node {
             if current_status.is_submitter() {
                 // We start preconfirmation in the middle of the epoch.
                 // Need to check for unproposed L2 blocks.
-                self.verify_proposed_batches().await?;
+                if let Err(e) = self.verify_proposed_batches().await {
+                    error!("Shutdown: Failed to verify proposed batches on startup: {}", e);
+                    self.cancel_token.cancel();
+                    return Err(anyhow::anyhow!("Shutdown: Failed to verify proposed batches on startup: {}", e));
+                }
             } else {
                 // It is for handover window
                 let (taiko_geth_height, slot_should_be_skipped) =
                     self.wait_for_taiko_driver_sync_with_geth().await;
 
-                self.verifier = Some(verifier::Verifier::new_with_taiko_height(
+                let verifier_result = verifier::Verifier::new_with_taiko_height(
                     taiko_geth_height,
                     self.taiko.clone(),
                     self.batch_manager.clone_without_batches(),
-                ));
+                )
+                .await;
+                match verifier_result {
+                    Ok(verifier) => {
+                        self.verifier = Some(verifier);
+                    }
+                    Err(e) => {
+                        error!("Shutdown: Failed to create verifier: {}", e);
+                        self.cancel_token.cancel();
+                        return Err(anyhow::anyhow!("Shutdown: Failed to create verifier on startup: {}", e));
+                    }
+                }
 
                 if slot_should_be_skipped {
                     return Ok(());
@@ -367,7 +385,6 @@ impl Node {
                 // TODO
                 // Add check that we have a propper slot of the submitting epoch start in the beacon chain
                 // posibly we can.get_l2_height_from_taiko_inbox() with pending flag
-                // Check the hash of taiko_inbox_height block
                 let taiko_inbox_height = match self
                     .ethereum_l1
                     .execution_layer
@@ -417,12 +434,11 @@ impl Node {
             }
         }
 
-        if !current_status.is_submitter()
-            && !current_status.is_preconfer()
-            && self.batch_manager.has_batches()
-        {
-            self.batch_manager.reset_builder();
-            error!("Some batches were not successfully sent in the submitter window. Resetting batch builder.");
+        if !current_status.is_submitter() && !current_status.is_preconfer() {
+            if self.batch_manager.has_batches() {
+                self.batch_manager.reset_builder();
+                error!("Some batches were not successfully sent in the submitter window. Resetting batch builder.");
+            }
             if self.verifier.is_some() {
                 error!("Verifier is not None after submitter window.");
                 self.verifier = None;
@@ -439,9 +455,7 @@ impl Node {
         match self.transaction_error_channel.try_recv() {
             Ok(error) => match error {
                 TransactionError::TransactionReverted => {
-                    if current_status.is_preconfer()
-                        && current_status.is_submitter()
-                    {
+                    if current_status.is_preconfer() && current_status.is_submitter() {
                         let taiko_inbox_height = self
                             .ethereum_l1
                             .execution_layer

@@ -1,15 +1,23 @@
-use alloy::{consensus::BlockHeader, primitives::Address};
+use alloy::{
+    consensus::BlockHeader,
+    primitives::{Address, B256},
+};
 use anyhow::Error;
-use std::sync::Arc;
+use std::{cmp::Ordering, sync::Arc};
 use tracing::{debug, info};
 
 use crate::taiko::Taiko;
 
 use super::batch_manager::BatchManager;
 
+struct PreconfirmationRootBlock {
+    number: u64,
+    hash: B256,
+}
+
 pub struct Verifier {
     taiko: Arc<Taiko>,
-    taiko_geth_height: u64,
+    preconfirmation_root: PreconfirmationRootBlock,
     verified_height: u64,
     batch_manager: BatchManager,
     coinbase: Address,
@@ -17,50 +25,96 @@ pub struct Verifier {
 
 impl Verifier {
     pub async fn new(taiko: Arc<Taiko>, batch_manager: BatchManager) -> Result<Self, Error> {
-        let taiko_geth_height = taiko.get_latest_l2_block_id().await?;
-        Ok(Self::new_with_taiko_height(
-            taiko_geth_height,
-            taiko,
-            batch_manager,
-        ))
-    }
-
-    pub fn new_with_taiko_height(
-        taiko_geth_height: u64,
-        taiko: Arc<Taiko>,
-        batch_manager: BatchManager,
-    ) -> Self {
+        let (number, hash, _) = taiko.get_latest_l2_block_id_hash_and_gas_used().await?;
         debug!(
-            "Verifier created with taiko_geth_height: {}",
-            taiko_geth_height
+            "Verifier created with taiko_geth_height: {} and hash: {}",
+            number, hash,
         );
-        Self {
+        Ok(Self {
             taiko,
-            taiko_geth_height,
+            preconfirmation_root: PreconfirmationRootBlock { number, hash },
             verified_height: 0,
             batch_manager,
             coinbase: Address::ZERO,
-        }
+        })
+    }
+
+    pub async fn new_with_taiko_height(
+        taiko_geth_height: u64,
+        taiko: Arc<Taiko>,
+        batch_manager: BatchManager,
+    ) -> Result<Self, Error> {
+        let hash = taiko.get_l2_block_hash(taiko_geth_height).await?;
+        debug!(
+            "Verifier created with taiko_geth_height: {} and hash: {}",
+            taiko_geth_height, hash,
+        );
+        Ok(Self {
+            taiko,
+            preconfirmation_root: PreconfirmationRootBlock {
+                number: taiko_geth_height,
+                hash,
+            },
+            verified_height: 0,
+            batch_manager,
+            coinbase: Address::ZERO,
+        })
     }
 
     pub async fn verify_submitted_blocks(&mut self, taiko_inbox_height: u64) -> Result<(), Error> {
-        if self.taiko_geth_height > taiko_inbox_height
-            && self.taiko_geth_height > self.verified_height
-        {
-            info!(
-                "Taiko geth has {} blocks more than Taiko Inbox. Preparing batch for submission.",
-                self.taiko_geth_height - taiko_inbox_height
-            );
-
-            let first_block = self
+        if self.preconfirmation_root.number > self.verified_height {
+            // Compare block hashes to confirm that the block is still the same.
+            // If not, return an error that will trigger a reorg.
+            let current_hash = self
                 .taiko
-                .get_l2_block_by_number(taiko_inbox_height + 1, false)
+                .get_l2_block_hash(self.preconfirmation_root.number)
                 .await?;
-            self.coinbase = first_block.header.beneficiary();
+            if self.preconfirmation_root.hash != current_hash {
+                return Err(anyhow::anyhow!(
+                    "❌ Block {} hash mismatch: current: {}, expected: {}",
+                    self.preconfirmation_root.number,
+                    current_hash,
+                    self.preconfirmation_root.hash
+                ));
+            }
 
-            self.handle_unprocessed_blocks(taiko_inbox_height, self.taiko_geth_height)
-                .await?;
-            self.verified_height = self.taiko_geth_height;
+            match self.preconfirmation_root.number.cmp(&taiko_inbox_height) {
+                Ordering::Greater => {
+                    // preconfirmation_root.number > taiko_inbox_height
+                    // make batches from blocks unprocessed by previous preconfer
+                    info!(
+                        "Taiko geth has {} blocks more than Taiko Inbox. Preparing batch for submission.",
+                        self.preconfirmation_root.number - taiko_inbox_height
+                    );
+
+                    let first_block = self
+                        .taiko
+                        .get_l2_block_by_number(taiko_inbox_height + 1, false)
+                        .await?;
+                    self.coinbase = first_block.header.beneficiary();
+
+                    self.handle_unprocessed_blocks(
+                        taiko_inbox_height,
+                        self.preconfirmation_root.number,
+                    )
+                    .await?;
+                }
+                Ordering::Less => {
+                    // preconfirmation_root.number < taiko_inbox_height
+                    // extra block proposal was made by previous preconfer
+                    // return an error that will trigger a reorg.
+                    return Err(anyhow::anyhow!("❌ Unexpected block proposal was made by previous preconfer: preconfirming on {} but taiko_inbox_height is {}", self.preconfirmation_root.number, taiko_inbox_height));
+                }
+                Ordering::Equal => {
+                    // preconfirmation_root.number == taiko_inbox_height
+                    // all good
+                }
+            }
+            info!(
+                "🔍 Verified block successfully: preconfirmation_root {}, hash: {} ",
+                self.preconfirmation_root.number, self.preconfirmation_root.hash
+            );
+            self.verified_height = taiko_inbox_height;
         }
 
         Ok(())
