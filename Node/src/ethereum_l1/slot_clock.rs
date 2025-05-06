@@ -192,21 +192,20 @@ impl<T: Clock> SlotClock<T> {
 
     pub fn time_from_n_last_slots_of_epoch(
         &self,
-        current_l1_slot: Slot,
+        l1_slot_of_epoch: Slot,
         n: Slot,
     ) -> Result<Duration, Error> {
-        let boundary_slot = self.get_epoch_for_slot(current_l1_slot) * self.slots_per_epoch
-            + self.slots_per_epoch
-            - n;
-
-        if current_l1_slot < boundary_slot {
+        let boundary_slot = self.slots_per_epoch - n;
+        if l1_slot_of_epoch < boundary_slot {
             return Err(anyhow::anyhow!(
                 "time_from_n_last_slots_of_epoch: too early, slot {} is less than boundary slot {}",
-                current_l1_slot,
+                l1_slot_of_epoch,
                 boundary_slot
             ));
         }
-        let boundary_slot_begin = self.start_of(boundary_slot)?;
+
+        let epoch = self.get_current_epoch()?;
+        let boundary_slot_begin = self.start_of(boundary_slot + epoch * self.slots_per_epoch)?;
 
         Ok(self.clock.now().duration_since(UNIX_EPOCH)? - boundary_slot_begin)
     }
@@ -399,6 +398,20 @@ mod tests {
 
         let slot_clock =
             SlotClock::<MockClock>::new(0u64, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
+
+        let duration = slot_clock.time_from_n_last_slots_of_epoch(29, 3).unwrap();
+        assert_eq!(duration, Duration::from_secs(5));
+
+        #[derive(Default)]
+        pub struct MockClock2;
+        impl Clock for MockClock2 {
+            fn now(&self) -> SystemTime {
+                SystemTime::from(DateTime::from_timestamp(737, 0).unwrap())
+            }
+        }
+
+        let slot_clock =
+            SlotClock::<MockClock2>::new(0u64, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
 
         let duration = slot_clock.time_from_n_last_slots_of_epoch(29, 3).unwrap();
         assert_eq!(duration, Duration::from_secs(5));
