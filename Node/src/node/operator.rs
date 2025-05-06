@@ -263,13 +263,13 @@ mod tests {
     }
 
     struct TaikoMock {
-        end_of_sequencing_marker_received: bool,
+        end_of_sequencing_block_hash: String,
     }
 
     impl PreconfDriver for TaikoMock {
         async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {
             Ok(preconf_blocks::TaikoStatus {
-                end_of_sequencing_marker_received: self.end_of_sequencing_marker_received,
+                end_of_sequencing_block_hash: self.end_of_sequencing_block_hash.clone(),
                 highest_unsafe_l2_payload_block_id: 0,
             })
         }
@@ -759,7 +759,8 @@ mod tests {
         slot_clock.clock.timestamp = timestamp; // second l1 slot, second l2 slot
         Operator {
             taiko: Arc::new(TaikoMock {
-                end_of_sequencing_marker_received: false,
+                end_of_sequencing_block_hash:
+                    "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
             }),
             execution_layer: Arc::new(ExecutionLayerMock {
                 current_operator,
@@ -784,7 +785,8 @@ mod tests {
         slot_clock.clock.timestamp = timestamp; // second l1 slot, second l2 slot
         Operator {
             taiko: Arc::new(TaikoMock {
-                end_of_sequencing_marker_received: true,
+                end_of_sequencing_block_hash:
+                    "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
             }),
             execution_layer: Arc::new(ExecutionLayerMock {
                 current_operator,
