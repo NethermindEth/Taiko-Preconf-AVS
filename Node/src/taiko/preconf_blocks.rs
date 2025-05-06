@@ -32,4 +32,6 @@ pub struct RemovePreconfBlockRequestBody {
 pub struct TaikoStatus {
     #[serde(rename = "highestUnsafeL2PayloadBlockID")]
     pub highest_unsafe_l2_payload_block_id: u64,
+    #[serde(rename = "EndOfSequencingBlockHash")]
+    pub end_of_sequencing_block_hash: String,
 }

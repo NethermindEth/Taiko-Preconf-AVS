@@ -647,6 +647,16 @@ impl Taiko {
     }
 }
 
+pub trait PreconfDriver {
+    async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error>;
+}
+
+impl PreconfDriver for Taiko {
+    async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {
+        Taiko::get_status(self).await
+    }
+}
+
 // #[cfg(test)]
 // mod test {
 //     use super::*;

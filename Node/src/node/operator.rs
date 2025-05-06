@@ -4,15 +4,21 @@ use crate::{
         slot_clock::{Clock, RealClock, SlotClock},
         EthereumL1,
     },
+    taiko::{preconf_blocks::TaikoStatus, PreconfDriver, Taiko},
     utils::types::*,
 };
 use anyhow::Error;
 use std::sync::Arc;
 use tracing::warn;
 
-pub struct Operator<T: PreconfOperator = ExecutionLayer, U: Clock = RealClock> {
+pub struct Operator<
+    T: PreconfOperator = ExecutionLayer,
+    U: Clock = RealClock,
+    V: PreconfDriver = Taiko,
+> {
     execution_layer: Arc<T>,
     slot_clock: Arc<SlotClock<U>>,
+    taiko: Arc<V>,
     handover_window_slots: u64,
     handover_start_buffer_ms: u64,
     next_operator: bool,
@@ -76,6 +82,7 @@ impl std::fmt::Display for Status {
 impl Operator {
     pub fn new(
         ethereum_l1: &EthereumL1,
+        taiko: Arc<Taiko>,
         handover_window_slots: u64,
         handover_start_buffer_ms: u64,
         simulate_not_submitting_at_the_end_of_epoch: bool,
@@ -83,6 +90,7 @@ impl Operator {
         Ok(Self {
             execution_layer: ethereum_l1.execution_layer.clone(),
             slot_clock: ethereum_l1.slot_clock.clone(),
+            taiko,
             handover_window_slots,
             handover_start_buffer_ms,
             next_operator: false,
@@ -93,7 +101,7 @@ impl Operator {
     }
 }
 
-impl<T: PreconfOperator, U: Clock> Operator<T, U> {
+impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
     /// Get the current status of the operator based on the current L1 and L2 slots
     pub async fn get_status(&mut self) -> Result<Status, Error> {
         let l1_slot = self.slot_clock.get_current_slot_of_epoch()?;
@@ -116,7 +124,9 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
         };
 
         let handover_window = self.is_handover_window(l1_slot);
-        let preconfer = self.is_preconfer(current_operator, handover_window, l1_slot)?;
+        let preconfer = self
+            .is_preconfer(current_operator, handover_window, l1_slot)
+            .await?;
         let preconfirmation_started = self.is_preconfirmation_start_l2_slot(preconfer);
         self.was_preconfer = preconfer;
         let submitter = self.is_submitter(current_operator, handover_window);
@@ -150,7 +160,7 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
         }
     }
 
-    fn is_preconfer(
+    async fn is_preconfer(
         &self,
         current_operator: bool,
         handover_window: bool,
@@ -159,14 +169,28 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
         if handover_window {
             return Ok(self.next_operator
                 && (current_operator // an operator for current and next epoch, handover buffer doesn't matter
-                || !self.is_handover_buffer(l1_slot)?));
+                || !self.is_handover_buffer(l1_slot).await?));
         }
 
         Ok(current_operator)
     }
 
-    fn is_handover_buffer(&self, l1_slot: Slot) -> Result<bool, Error> {
-        Ok(self.get_ms_from_handover_window_start(l1_slot)? <= self.handover_start_buffer_ms)
+    async fn is_handover_buffer(&self, l1_slot: Slot) -> Result<bool, Error> {
+        if self.get_ms_from_handover_window_start(l1_slot)? <= self.handover_start_buffer_ms {
+            let driver_status = self.taiko.get_status().await?;
+            tracing::debug!(
+                "Is handover buffer, end_of_sequencing_block_hash: {}",
+                driver_status.end_of_sequencing_block_hash
+            );
+            return Ok(!self.end_of_sequencing_marker_received(&driver_status));
+        }
+
+        Ok(false)
+    }
+
+    fn end_of_sequencing_marker_received(&self, driver_status: &TaikoStatus) -> bool {
+        driver_status.end_of_sequencing_block_hash
+            != "0x0000000000000000000000000000000000000000000000000000000000000000"
     }
 
     fn is_submitter(&self, current_operator: bool, handover_window: bool) -> bool {
@@ -203,7 +227,7 @@ impl<T: PreconfOperator, U: Clock> Operator<T, U> {
 mod tests {
     use super::*;
     use crate::ethereum_l1::slot_clock::mock::*;
-
+    use crate::taiko::preconf_blocks;
     const HANDOVER_WINDOW_SLOTS: i64 = 6;
     struct ExecutionLayerMock {
         current_operator: bool,
@@ -217,6 +241,19 @@ mod tests {
 
         async fn is_operator_for_next_epoch(&self) -> Result<bool, Error> {
             Ok(self.next_operator)
+        }
+    }
+
+    struct TaikoMock {
+        end_of_sequencing_block_hash: String,
+    }
+
+    impl PreconfDriver for TaikoMock {
+        async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {
+            Ok(preconf_blocks::TaikoStatus {
+                end_of_sequencing_block_hash: self.end_of_sequencing_block_hash.clone(),
+                highest_unsafe_l2_payload_block_id: 0,
+            })
         }
     }
 
@@ -440,7 +477,7 @@ mod tests {
     async fn test_get_preconfer_handover_buffer_status() {
         // Next operator in handover window, but still in buffer period
         let mut operator = create_operator(
-            (32 - 6) * 12, // handover buffer
+            (32 - HANDOVER_WINDOW_SLOTS) * 12, // handover buffer
             false,
             true,
         );
@@ -451,6 +488,44 @@ mod tests {
                 preconfer: false,
                 submitter: false,
                 preconfirmation_started: false,
+                end_of_sequencing: false,
+            }
+        );
+
+        let mut operator = create_operator(
+            (32 - HANDOVER_WINDOW_SLOTS + 1) * 12, // handover window after the buffer
+            false,
+            true,
+        );
+        // Override the handover start buffer to be larger than the mock timestamp
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: true,
+                submitter: false,
+                verifier: false,
+                preconfirmation_started: true,
+                end_of_sequencing: false,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_preconfer_handover_buffer_status_with_end_of_sequencing_marker_received() {
+        // Next operator in handover window, but still in buffer period
+        let mut operator = create_operator_with_end_of_sequencing_marker_received(
+            (32 - HANDOVER_WINDOW_SLOTS) * 12, // handover buffer
+            false,
+            true,
+        );
+        // Override the handover start buffer to be larger than the mock timestamp
+        assert_eq!(
+            operator.get_status().await.unwrap(),
+            Status {
+                preconfer: true,
+                submitter: false,
+                verifier: false,
+                preconfirmation_started: true,
                 end_of_sequencing: false,
             }
         );
@@ -600,10 +675,40 @@ mod tests {
         timestamp: i64,
         current_operator: bool,
         next_operator: bool,
-    ) -> Operator<ExecutionLayerMock, MockClock> {
+    ) -> Operator<ExecutionLayerMock, MockClock, TaikoMock> {
         let mut slot_clock = SlotClock::<MockClock>::new(0, 0, 12, 32, 2000);
         slot_clock.clock.timestamp = timestamp; // second l1 slot, second l2 slot
         Operator {
+            taiko: Arc::new(TaikoMock {
+                end_of_sequencing_block_hash:
+                    "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+            }),
+            execution_layer: Arc::new(ExecutionLayerMock {
+                current_operator,
+                next_operator,
+            }),
+            slot_clock: Arc::new(slot_clock),
+            handover_window_slots: HANDOVER_WINDOW_SLOTS as u64,
+            handover_start_buffer_ms: 1000,
+            next_operator: false,
+            continuing_role: false,
+            simulate_not_submitting_at_the_end_of_epoch: false,
+            was_preconfer: false,
+        }
+    }
+
+    fn create_operator_with_end_of_sequencing_marker_received(
+        timestamp: i64,
+        current_operator: bool,
+        next_operator: bool,
+    ) -> Operator<ExecutionLayerMock, MockClock, TaikoMock> {
+        let mut slot_clock = SlotClock::<MockClock>::new(0, 0, 12, 32, 2000);
+        slot_clock.clock.timestamp = timestamp; // second l1 slot, second l2 slot
+        Operator {
+            taiko: Arc::new(TaikoMock {
+                end_of_sequencing_block_hash:
+                    "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
+            }),
             execution_layer: Arc::new(ExecutionLayerMock {
                 current_operator,
                 next_operator,
