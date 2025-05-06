@@ -204,7 +204,8 @@ impl<T: Clock> SlotClock<T> {
             ));
         }
 
-        let boundary_slot_begin = self.start_of(boundary_slot)?;
+        let epoch = self.get_current_epoch()?;
+        let boundary_slot_begin = self.start_of(boundary_slot + epoch * self.slots_per_epoch)?;
 
         Ok(self.clock.now().duration_since(UNIX_EPOCH)? - boundary_slot_begin)
     }
@@ -397,6 +398,20 @@ mod tests {
 
         let slot_clock =
             SlotClock::<MockClock>::new(0u64, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
+
+        let duration = slot_clock.time_from_n_last_slots_of_epoch(29, 3).unwrap();
+        assert_eq!(duration, Duration::from_secs(5));
+
+        #[derive(Default)]
+        pub struct MockClock2;
+        impl Clock for MockClock2 {
+            fn now(&self) -> SystemTime {
+                SystemTime::from(DateTime::from_timestamp(737, 0).unwrap())
+            }
+        }
+
+        let slot_clock =
+            SlotClock::<MockClock2>::new(0u64, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
 
         let duration = slot_clock.time_from_n_last_slots_of_epoch(29, 3).unwrap();
         assert_eq!(duration, Duration::from_secs(5));
