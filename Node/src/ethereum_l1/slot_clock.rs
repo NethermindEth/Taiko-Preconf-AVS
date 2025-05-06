@@ -192,20 +192,18 @@ impl<T: Clock> SlotClock<T> {
 
     pub fn time_from_n_last_slots_of_epoch(
         &self,
-        current_l1_slot: Slot,
+        l1_slot_of_epoch: Slot,
         n: Slot,
     ) -> Result<Duration, Error> {
-        let boundary_slot = self.get_epoch_for_slot(current_l1_slot) * self.slots_per_epoch
-            + self.slots_per_epoch
-            - n;
-
-        if current_l1_slot < boundary_slot {
+        let boundary_slot = self.slots_per_epoch - n;
+        if l1_slot_of_epoch < boundary_slot {
             return Err(anyhow::anyhow!(
                 "time_from_n_last_slots_of_epoch: too early, slot {} is less than boundary slot {}",
-                current_l1_slot,
+                l1_slot_of_epoch,
                 boundary_slot
             ));
         }
+
         let boundary_slot_begin = self.start_of(boundary_slot)?;
 
         Ok(self.clock.now().duration_since(UNIX_EPOCH)? - boundary_slot_begin)
