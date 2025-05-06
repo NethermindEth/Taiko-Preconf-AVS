@@ -187,8 +187,10 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
 
     async fn is_handover_buffer(&self, l1_slot: Slot) -> Result<bool, Error> {
         let driver_status = self.taiko.get_status().await?;
+        let ms_form_hadover = self.get_ms_from_handover_window_start(l1_slot)?
+         tracing::debug!("Is handover buffer: ms_form_handover: {}, end_of_sequencing_marker_received: {}", ms_form_hadover, driver_status.end_of_sequencing_marker_received);
         Ok(
-            self.get_ms_from_handover_window_start(l1_slot)? <= self.handover_start_buffer_ms
+             ms_form_hadover <= self.handover_start_buffer_ms
                 && !driver_status.end_of_sequencing_marker_received,
         )
     }
