@@ -4,7 +4,7 @@ use crate::{
         slot_clock::{Clock, RealClock, SlotClock},
         EthereumL1,
     },
-    taiko::{PreconfDriver, Taiko},
+    taiko::{preconf_blocks::TaikoStatus, PreconfDriver, Taiko},
     utils::types::*,
 };
 use anyhow::Error;
@@ -186,13 +186,21 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
     }
 
     async fn is_handover_buffer(&self, l1_slot: Slot) -> Result<bool, Error> {
-        let driver_status = self.taiko.get_status().await?;
-        let ms_form_hadover = self.get_ms_from_handover_window_start(l1_slot)?
-         tracing::debug!("Is handover buffer: ms_form_handover: {}, end_of_sequencing_marker_received: {}", ms_form_hadover, driver_status.end_of_sequencing_marker_received);
-        Ok(
-             ms_form_hadover <= self.handover_start_buffer_ms
-                && !driver_status.end_of_sequencing_marker_received,
-        )
+        if self.get_ms_from_handover_window_start(l1_slot)? <= self.handover_start_buffer_ms {
+            let driver_status = self.taiko.get_status().await?;
+            tracing::debug!(
+                "Is handover buffer, end_of_sequencing_block_hash: {}",
+                driver_status.end_of_sequencing_block_hash
+            );
+            return Ok(!self.end_of_sequencing_marker_received(&driver_status));
+        }
+
+        Ok(false)
+    }
+
+    fn end_of_sequencing_marker_received(&self, driver_status: &TaikoStatus) -> bool {
+        driver_status.end_of_sequencing_block_hash
+            != "0x0000000000000000000000000000000000000000000000000000000000000000"
     }
 
     fn is_submitter(&self, l1_slot: u64, current_operator: bool, handover_window: bool) -> bool {
