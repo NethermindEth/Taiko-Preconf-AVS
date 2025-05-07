@@ -24,21 +24,6 @@ pub struct Verifier {
 }
 
 impl Verifier {
-    pub async fn new(taiko: Arc<Taiko>, batch_manager: BatchManager) -> Result<Self, Error> {
-        let (number, hash, _) = taiko.get_latest_l2_block_id_hash_and_gas_used().await?;
-        debug!(
-            "Verifier created with taiko_geth_height: {} and hash: {}",
-            number, hash,
-        );
-        Ok(Self {
-            taiko,
-            preconfirmation_root: PreconfirmationRootBlock { number, hash },
-            verified_height: 0,
-            batch_manager,
-            coinbase: Address::ZERO,
-        })
-    }
-
     pub async fn new_with_taiko_height(
         taiko_geth_height: u64,
         taiko: Arc<Taiko>,

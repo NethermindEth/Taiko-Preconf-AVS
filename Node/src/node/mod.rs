@@ -2,6 +2,7 @@ pub(crate) mod batch_manager;
 mod operator;
 mod verifier;
 
+use crate::node::verifier::Verifier;
 use crate::{
     ethereum_l1::{transaction_error::TransactionError, EthereumL1},
     metrics::Metrics,
@@ -394,53 +395,9 @@ impl Node {
 
         if current_status.is_submitter() {
             // first submit verification batches
-            if let Some(mut verifier) = self.verifier.take() {
-                if self.ethereum_l1.slot_clock.get_current_slot_of_epoch()? == 0 {
-                    // Sleep to ensure the new epoch has started and the state is correct before validation
-                    sleep(Duration::from_millis(self.epoch_sync_delay_ms)).await;
-                }
-                let taiko_inbox_height = match self
-                    .ethereum_l1
-                    .execution_layer
-                    .get_l2_height_from_taiko_inbox()
-                    .await
-                {
-                    Ok(height) => height,
-                    Err(err) => {
-                        self.verifier = Some(verifier);
-                        return Err(err);
-                    }
-                };
-                if let Err(err) = verifier.verify_submitted_blocks(taiko_inbox_height).await {
-                    match self
-                        .trigger_l2_reorg(
-                            taiko_inbox_height,
-                            &format!("Verifier return an error: {}", err),
-                        )
-                        .await
-                    {
-                        Ok(_) => return Ok(()),
-                        Err(err) => {
-                            self.verifier = Some(verifier);
-                            return Err(err);
-                        }
-                    }
-                }
-
-                self.metrics
-                    .inc_by_batch_recovered(verifier.get_number_of_batches());
-
-                if verifier.has_batches_to_submit() {
-                    match verifier.try_submit_oldest_batch().await {
-                        Ok(_) => (),
-                        Err(err) => {
-                            self.verifier = Some(verifier);
-                            return Err(err);
-                        }
-                    }
-                }
-
-                self.verifier = None;
+            if let Some(verifier) = self.verifier.take() {
+                self.verify_proposed_but_not_submitted_batches(verifier)
+                    .await?;
             } else {
                 self.batch_manager
                     .try_submit_oldest_batch(current_status.is_preconfer())
@@ -460,6 +417,58 @@ impl Node {
         }
 
         Ok(())
+    }
+
+    async fn verify_proposed_but_not_submitted_batches(
+        &mut self,
+        mut verifier: Verifier,
+    ) -> Result<(), Error> {
+        if self.ethereum_l1.slot_clock.get_current_slot_of_epoch()? == 0 {
+            // Sleep to ensure the new epoch has started and the state is correct before validation
+            sleep(Duration::from_millis(self.epoch_sync_delay_ms)).await;
+        }
+        let taiko_inbox_height = match self
+            .ethereum_l1
+            .execution_layer
+            .get_l2_height_from_taiko_inbox()
+            .await
+        {
+            Ok(height) => height,
+            Err(err) => {
+                self.verifier = Some(verifier);
+                return Err(err);
+            }
+        };
+        if let Err(err) = verifier.verify_submitted_blocks(taiko_inbox_height).await {
+            match self
+                .trigger_l2_reorg(
+                    taiko_inbox_height,
+                    &format!("Verifier return an error: {}", err),
+                )
+                .await
+            {
+                Ok(_) => return Ok(()),
+                Err(err) => {
+                    self.verifier = Some(verifier);
+                    return Err(err);
+                }
+            }
+        }
+
+        self.metrics
+            .inc_by_batch_recovered(verifier.get_number_of_batches());
+
+        if verifier.has_batches_to_submit() {
+            match verifier.try_submit_oldest_batch().await {
+                Ok(_) => (),
+                Err(err) => {
+                    self.verifier = Some(verifier);
+                    return Err(err);
+                }
+            }
+        }
+
+        return Ok(());
     }
 
     async fn handle_transaction_error(
