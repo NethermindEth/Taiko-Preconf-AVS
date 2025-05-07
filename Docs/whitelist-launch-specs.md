@@ -36,7 +36,7 @@ As `Preconfer X`, who is assigned the epoch containing slots `N` through `N+31`:
     1. Poll `/status` from Taiko client until both:
        - `status.highestUnsafeL2PayloadBlockID` is in sync with Taiko geth chain tip.
        - `status.endOfSequencingMarkerReceived` is `true` OR `HANDOVER_START_BUFFER_MS` passes since the start of handover.
-    3. After the above checks, `Preconfer X` will start preconfing based on its latest-seen preconfed block from the previous preconfer.
+    2. After the above checks, `Preconfer X` will start preconfing based on its latest-seen preconfed block from the previous preconfer.
     4. There is a further edge case where the previous preconfer does not propagate the preconfed L2 block on time but still includes them into the L1, reorging the preconfs by `Preconfer X`—more on handling this in the “Edge Case” section.
 3. For slots `N - HANDOFF_WINDOW_SLOTS` to `N + 32 - HANDOFF_WINDOW_SLOTS`, for every `L2_BLOCK_TIME_MS` interval (see [Preconfing Timestamps](## Preconfing Timestamps) section for more details on the interval) `Preconfer X` should produce valid L2 blocks. The exact process is up to the implementation, but the process expected by Taiko client is:
     1. Calculate the `baseFee` by following the rules [here](https://github.com/taikoxyz/taiko-mono/blob/main/packages/protocol/contracts/layer2/based/TaikoAnchor.sol#L340).
