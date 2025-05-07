@@ -33,7 +33,6 @@ pub struct Config {
     pub threshold_eth: U256,
     pub threshold_taiko: U256,
     pub simulate_not_submitting_at_the_end_of_epoch: bool,
-    pub epoch_sync_delay_ms: u64,
 }
 
 #[derive(Debug)]
@@ -223,11 +222,6 @@ impl Config {
             .parse::<u64>()
             .expect("DELAY_BETWEEN_TX_ATTEMPTS_SEC must be a number");
 
-        let epoch_sync_delay_ms = std::env::var("EPOCH_SYNC_DELAY_MS")
-            .unwrap_or("300".to_string())
-            .parse::<u64>()
-            .expect("EPOCH_SYNC_DELAY_MS must be a number");
-
         // 0.5 ETH
         let threshold_eth =
             std::env::var("THRESHOLD_ETH").unwrap_or("500000000000000000".to_string());
@@ -283,7 +277,6 @@ impl Config {
             threshold_eth,
             threshold_taiko,
             simulate_not_submitting_at_the_end_of_epoch,
-            epoch_sync_delay_ms,
         };
 
         info!(
@@ -318,7 +311,6 @@ delay between tx attempts: {}s
 threshold_eth: {}
 threshold_taiko: {}
 simulate not submitting at the end of epoch: {}
-epoch_sync_delay_ms: {}ms
 "#,
             config.taiko_geth_ws_rpc_url,
             config.taiko_geth_auth_rpc_url,
@@ -349,7 +341,6 @@ epoch_sync_delay_ms: {}ms
             threshold_eth,
             threshold_taiko,
             config.simulate_not_submitting_at_the_end_of_epoch,
-            epoch_sync_delay_ms
         );
 
         config

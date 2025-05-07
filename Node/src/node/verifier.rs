@@ -6,7 +6,7 @@ use anyhow::Error;
 use std::{cmp::Ordering, sync::Arc};
 use tracing::{debug, info};
 
-use crate::taiko::Taiko;
+use crate::{taiko::Taiko, utils::types::Slot};
 
 use super::batch_manager::BatchManager;
 
@@ -21,6 +21,7 @@ pub struct Verifier {
     verified_height: u64,
     batch_manager: BatchManager,
     coinbase: Address,
+    verification_slot: Slot,
 }
 
 impl Verifier {
@@ -28,11 +29,12 @@ impl Verifier {
         taiko_geth_height: u64,
         taiko: Arc<Taiko>,
         batch_manager: BatchManager,
+        verification_slot: Slot,
     ) -> Result<Self, Error> {
         let hash = taiko.get_l2_block_hash(taiko_geth_height).await?;
         debug!(
-            "Verifier created with taiko_geth_height: {} and hash: {}",
-            taiko_geth_height, hash,
+            "Verifier created with taiko_geth_height: {}, hash: {}, verification_slot: {}",
+            taiko_geth_height, hash, verification_slot
         );
         Ok(Self {
             taiko,
@@ -43,7 +45,16 @@ impl Verifier {
             verified_height: 0,
             batch_manager,
             coinbase: Address::ZERO,
+            verification_slot,
         })
+    }
+
+    pub fn is_slot_valid(&self, current_slot: Slot) -> bool {
+        current_slot >= self.verification_slot
+    }
+
+    pub fn get_verification_slot(&self) -> Slot {
+        self.verification_slot
     }
 
     pub async fn verify_submitted_blocks(&mut self, taiko_inbox_height: u64) -> Result<(), Error> {

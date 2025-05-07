@@ -42,7 +42,6 @@ pub struct Node {
     taiko: Arc<Taiko>,
     transaction_error_channel: Receiver<TransactionError>,
     metrics: Arc<Metrics>,
-    epoch_sync_delay_ms: u64,
 }
 
 impl Node {
@@ -60,7 +59,6 @@ impl Node {
         simulate_not_submitting_at_the_end_of_epoch: bool,
         transaction_error_channel: Receiver<TransactionError>,
         metrics: Arc<Metrics>,
-        epoch_sync_delay_ms: u64,
     ) -> Result<Self, Error> {
         info!(
             "Batch builder config:\n\
@@ -99,7 +97,6 @@ impl Node {
             taiko,
             transaction_error_channel,
             metrics,
-            epoch_sync_delay_ms,
         })
     }
 
@@ -260,6 +257,7 @@ impl Node {
                         taiko_geth_height,
                         self.taiko.clone(),
                         self.batch_manager.clone_without_batches(),
+                        0,
                     )
                     .await?,
                 );
@@ -357,11 +355,12 @@ impl Node {
                 // It is for handover window
                 let (taiko_geth_height, slot_should_be_skipped) =
                     self.wait_for_taiko_driver_sync_with_geth().await;
-
+                let verification_slot = self.ethereum_l1.slot_clock.get_next_epoch_start_slot()?;
                 let verifier_result = verifier::Verifier::new_with_taiko_height(
                     taiko_geth_height,
                     self.taiko.clone(),
                     self.batch_manager.clone_without_batches(),
+                    verification_slot,
                 )
                 .await;
                 match verifier_result {
@@ -423,10 +422,29 @@ impl Node {
         &mut self,
         mut verifier: Verifier,
     ) -> Result<(), Error> {
-        if self.ethereum_l1.slot_clock.get_current_slot_of_epoch()? == 0 {
-            // Sleep to ensure the new epoch has started and the state is correct before validation
-            sleep(Duration::from_millis(self.epoch_sync_delay_ms)).await;
+        let current_slot = match self
+            .ethereum_l1
+            ._consensus_layer
+            .get_current_slot_number()
+            .await
+        {
+            Ok(slot) => slot,
+            Err(err) => {
+                self.verifier = Some(verifier);
+                return Err(err);
+            }
+        };
+
+        if !verifier.is_slot_valid(current_slot) {
+            warn!(
+                "Slot {} is not valid for verification, target slot {}, skipping",
+                current_slot,
+                verifier.get_verification_slot()
+            );
+            self.verifier = Some(verifier);
+            return Ok(());
         }
+
         let taiko_inbox_height = match self
             .ethereum_l1
             .execution_layer
