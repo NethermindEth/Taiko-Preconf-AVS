@@ -188,6 +188,7 @@ impl Node {
         }
 
         // Wait for Taiko Driver to synchronize with Taiko Geth
+        #[cfg(feature = "sync-on-warmup")]
         self.wait_for_taiko_driver_sync_with_geth().await;
 
         Ok(())
