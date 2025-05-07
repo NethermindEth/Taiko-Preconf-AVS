@@ -21,9 +21,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
 // TODO move to config
-const TAIKO_DRIVER_SYNC_INTERVAL_MS: u64 = 100;
-const TAIKO_DRIVER_SYNC_RETRIES_VALID: u32 = 10;
-const TAIKO_DRIVER_SYNC_RETRIES_BEFORE_PANIC: u32 = 6000; // 10 mins
+const TAIKO_DRIVER_SYNC_RETRY_PERIOD_BEFORE_PANIC_SEC: u64 = 6000; // 10 mins
 
 pub struct Thresholds {
     pub eth: U256,
@@ -275,48 +273,48 @@ impl Node {
     /// - `slot_should_be_skipped`: A boolean indicating whether the current slot should be skipped.
     ///   This is `true` if the number of retries exceeded `TAIKO_DRIVER_SYNC_RETRIES_VALID`.
     async fn wait_for_taiko_driver_sync_with_geth(&self) -> (u64, bool) {
-        let mut taiko_geth_height;
-        let mut retries = 0;
-        loop {
-            // panic in case of an error
-            // TODO can we move this outside the loop?
-            taiko_geth_height = self.taiko.get_latest_l2_block_id().await.unwrap();
-            match self.taiko.get_status().await {
-                Ok(status) => {
-                    info!(
+        let sleep_duration = Duration::from_millis(self.preconf_heartbeat_ms / 4);
+        let start_time = std::time::SystemTime::now();
+        let taiko_geth_height = loop {
+            if let Ok(taiko_geth_height) = self.taiko.get_latest_l2_block_id().await {
+                match self.taiko.get_status().await {
+                    Ok(status) => {
+                        info!(
                         "🌀 Taiko status highestUnsafeL2PayloadBlockID: {}, Taiko Geth Height: {}",
                         status.highest_unsafe_l2_payload_block_id, taiko_geth_height
                     );
-                    if taiko_geth_height == status.highest_unsafe_l2_payload_block_id {
-                        break;
+                        if taiko_geth_height == status.highest_unsafe_l2_payload_block_id {
+                            break taiko_geth_height;
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to get status from taiko driver: {}", e);
                     }
                 }
-                Err(e) => {
-                    error!("Failed to get status from taiko driver: {}", e);
+            }
+
+            if let Ok(elapsed) = start_time.elapsed() {
+                if elapsed > Duration::from_secs(TAIKO_DRIVER_SYNC_RETRY_PERIOD_BEFORE_PANIC_SEC) {
+                    error!(
+                        "Driver sync exceeded max retry period before panic {}. Shutting down...",
+                        TAIKO_DRIVER_SYNC_RETRY_PERIOD_BEFORE_PANIC_SEC
+                    );
+                    self.cancel_token.cancel();
                 }
             }
-            retries += 1;
-
-            if retries > TAIKO_DRIVER_SYNC_RETRIES_BEFORE_PANIC {
-                error!(
-                    "Driver sync exceeded max retries: retries {}, retry delay {} retries before panic {}. Shutting down...",
-                    retries,
-                    TAIKO_DRIVER_SYNC_INTERVAL_MS,
-                    TAIKO_DRIVER_SYNC_RETRIES_BEFORE_PANIC
-                );
-                self.cancel_token.cancel();
-            }
-            sleep(Duration::from_millis(TAIKO_DRIVER_SYNC_INTERVAL_MS)).await;
-        }
-
-        if retries > TAIKO_DRIVER_SYNC_RETRIES_VALID {
-            // Spent too much time, let's continue in the next slot
-            warn!(
-                "⭕ Driver sync took too long: retries {}, retry delay {}. Skipping slot...",
-                retries, TAIKO_DRIVER_SYNC_INTERVAL_MS
-            );
-            return (taiko_geth_height, true);
+            sleep(sleep_duration).await;
         };
+
+        if let Ok(elapsed) = start_time.elapsed() {
+            if elapsed > Duration::from_millis(self.preconf_heartbeat_ms / 2) {
+                // Spent too much time, let's continue in the next slot
+                warn!(
+                    "⭕ Driver sync took too long: {} ms. Skipping slot...",
+                    elapsed.as_millis()
+                );
+                return (taiko_geth_height, true);
+            };
+        }
 
         return (taiko_geth_height, false);
     }
