@@ -21,7 +21,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
 // TODO move to config
-const TAIKO_DRIVER_SYNC_RETRY_PERIOD_BEFORE_PANIC_SEC: u64 = 6000; // 10 mins
+const TAIKO_DRIVER_SYNC_RETRY_PERIOD_BEFORE_PANIC_SEC: u64 = 600; // 10 mins
 
 pub struct Thresholds {
     pub eth: U256,
