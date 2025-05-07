@@ -271,7 +271,7 @@ impl Node {
     /// Returns a tuple:
     /// - `taiko_geth_height`: The current Taiko Geth chain tip.
     /// - `slot_should_be_skipped`: A boolean indicating whether the current slot should be skipped.
-    ///   This is `true` if the number of retries exceeded `TAIKO_DRIVER_SYNC_RETRIES_VALID`.
+    ///   This is `true` if the wait time exceeded `TAIKO_DRIVER_SYNC_RETRY_PERIOD_BEFORE_PANIC_SEC`.
     async fn wait_for_taiko_driver_sync_with_geth(&self) -> (u64, bool) {
         let sleep_duration = Duration::from_millis(self.preconf_heartbeat_ms / 4);
         let start_time = std::time::SystemTime::now();
