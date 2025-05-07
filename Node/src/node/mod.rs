@@ -230,7 +230,7 @@ impl Node {
         }
     }
 
-    async fn verify_proposed_batches(&mut self) -> Result<(), Error> {
+    async fn check_for_missing_proposed_batches(&mut self) -> Result<(), Error> {
         let (taiko_inbox_height, taiko_geth_height) = self.get_current_protocol_height().await?;
 
         info!(
@@ -290,8 +290,8 @@ impl Node {
                         break;
                     }
                 }
-                Err(e) => {
-                    error!("Failed to get status from taiko driver: {}", e);
+                Err(err) => {
+                    error!("Failed to get status from taiko driver: {}", err);
                 }
             }
             retries += 1;
@@ -341,15 +341,15 @@ impl Node {
             if current_status.is_submitter() {
                 // We start preconfirmation in the middle of the epoch.
                 // Need to check for unproposed L2 blocks.
-                if let Err(e) = self.verify_proposed_batches().await {
+                if let Err(err) = self.check_for_missing_proposed_batches().await {
                     error!(
                         "Shutdown: Failed to verify proposed batches on startup: {}",
-                        e
+                        err
                     );
                     self.cancel_token.cancel();
                     return Err(anyhow::anyhow!(
                         "Shutdown: Failed to verify proposed batches on startup: {}",
-                        e
+                        err
                     ));
                 }
             } else {
@@ -367,12 +367,12 @@ impl Node {
                     Ok(verifier) => {
                         self.verifier = Some(verifier);
                     }
-                    Err(e) => {
-                        error!("Shutdown: Failed to create verifier: {}", e);
+                    Err(err) => {
+                        error!("Shutdown: Failed to create verifier: {}", err);
                         self.cancel_token.cancel();
                         return Err(anyhow::anyhow!(
                             "Shutdown: Failed to create verifier on startup: {}",
-                            e
+                            err
                         ));
                     }
                 }
@@ -406,23 +406,23 @@ impl Node {
                     .await
                 {
                     Ok(height) => height,
-                    Err(e) => {
+                    Err(err) => {
                         self.verifier = Some(verifier);
-                        return Err(e);
+                        return Err(err);
                     }
                 };
-                if let Err(e) = verifier.verify_submitted_blocks(taiko_inbox_height).await {
+                if let Err(err) = verifier.verify_submitted_blocks(taiko_inbox_height).await {
                     match self
                         .trigger_l2_reorg(
                             taiko_inbox_height,
-                            &format!("Verifier return an error: {}", e),
+                            &format!("Verifier return an error: {}", err),
                         )
                         .await
                     {
                         Ok(_) => return Ok(()),
-                        Err(e) => {
+                        Err(err) => {
                             self.verifier = Some(verifier);
-                            return Err(e);
+                            return Err(err);
                         }
                     }
                 }
@@ -433,9 +433,9 @@ impl Node {
                 if verifier.has_batches_to_submit() {
                     match verifier.try_submit_oldest_batch().await {
                         Ok(_) => (),
-                        Err(e) => {
+                        Err(err) => {
                             self.verifier = Some(verifier);
-                            return Err(e);
+                            return Err(err);
                         }
                     }
                 }
@@ -475,12 +475,12 @@ impl Node {
                             .execution_layer
                             .get_l2_height_from_taiko_inbox()
                             .await?;
-                        if let Err(e) = self
+                        if let Err(err) = self
                             .trigger_l2_reorg(taiko_inbox_height, "Transaction reverted")
                             .await
                         {
                             self.cancel_token.cancel();
-                            return Err(anyhow::anyhow!("Failed to trigger L2 reorg: {}", e));
+                            return Err(anyhow::anyhow!("Failed to trigger L2 reorg: {}", err));
                         }
                     } else {
                         warn!("Transaction reverted, not our epoch, skipping reorg");
