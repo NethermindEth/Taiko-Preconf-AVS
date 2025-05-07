@@ -503,7 +503,6 @@ mod tests {
             Status {
                 preconfer: true,
                 submitter: false,
-                verifier: false,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
             }
@@ -524,7 +523,6 @@ mod tests {
             Status {
                 preconfer: true,
                 submitter: false,
-                verifier: false,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
             }
