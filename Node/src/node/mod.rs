@@ -394,9 +394,17 @@ impl Node {
 
         if current_status.is_submitter() {
             // first submit verification batches
-            if let Some(verifier) = self.verifier.take() {
-                self.verify_proposed_but_not_submitted_batches(verifier)
-                    .await?;
+            if let Some(mut verifier) = self.verifier.take() {
+                match self
+                    .verify_proposed_but_not_submitted_batches(&mut verifier)
+                    .await
+                {
+                    Ok(()) => (),
+                    Err(err) => {
+                        self.verifier = Some(verifier);
+                        return Err(err);
+                    }
+                };
             } else {
                 self.batch_manager
                     .try_submit_oldest_batch(current_status.is_preconfer())
@@ -420,20 +428,13 @@ impl Node {
 
     async fn verify_proposed_but_not_submitted_batches(
         &mut self,
-        mut verifier: Verifier,
+        verifier: &mut Verifier,
     ) -> Result<(), Error> {
-        let current_slot = match self
+        let current_slot = self
             .ethereum_l1
             ._consensus_layer
             .get_current_slot_number()
-            .await
-        {
-            Ok(slot) => slot,
-            Err(err) => {
-                self.verifier = Some(verifier);
-                return Err(err);
-            }
-        };
+            .await?;
 
         if !verifier.is_slot_valid(current_slot) {
             warn!(
@@ -441,49 +442,28 @@ impl Node {
                 current_slot,
                 verifier.get_verification_slot()
             );
-            self.verifier = Some(verifier);
-            return Ok(());
+            return Err(anyhow::anyhow!("Slot is not valid for verification"));
         }
 
-        let taiko_inbox_height = match self
+        let taiko_inbox_height = self
             .ethereum_l1
             .execution_layer
             .get_l2_height_from_taiko_inbox()
-            .await
-        {
-            Ok(height) => height,
-            Err(err) => {
-                self.verifier = Some(verifier);
-                return Err(err);
-            }
-        };
+            .await?;
         if let Err(err) = verifier.verify_submitted_blocks(taiko_inbox_height).await {
-            match self
-                .trigger_l2_reorg(
-                    taiko_inbox_height,
-                    &format!("Verifier return an error: {}", err),
-                )
-                .await
-            {
-                Ok(_) => return Ok(()),
-                Err(err) => {
-                    self.verifier = Some(verifier);
-                    return Err(err);
-                }
-            }
+            self.trigger_l2_reorg(
+                taiko_inbox_height,
+                &format!("Verifier return an error: {}", err),
+            )
+            .await?;
+            return Ok(());
         }
 
         self.metrics
             .inc_by_batch_recovered(verifier.get_number_of_batches());
 
         if verifier.has_batches_to_submit() {
-            match verifier.try_submit_oldest_batch().await {
-                Ok(_) => (),
-                Err(err) => {
-                    self.verifier = Some(verifier);
-                    return Err(err);
-                }
-            }
+            verifier.try_submit_oldest_batch().await?;
         }
 
         return Ok(());
