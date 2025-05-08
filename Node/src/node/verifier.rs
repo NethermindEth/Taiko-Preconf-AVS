@@ -54,12 +54,16 @@ impl Verifier {
         self.verification_slot
     }
 
+    pub fn has_blocks_to_verify(&self) -> bool {
+        self.preconfirmation_root.number > self.verified_height
+    }
+
     pub async fn verify_submitted_blocks(
         &mut self,
         taiko_inbox_height: u64,
         metrics: Arc<Metrics>,
     ) -> Result<(), Error> {
-        if self.preconfirmation_root.number > self.verified_height {
+        if self.has_blocks_to_verify() {
             // Compare block hashes to confirm that the block is still the same.
             // If not, return an error that will trigger a reorg.
             let current_hash = self

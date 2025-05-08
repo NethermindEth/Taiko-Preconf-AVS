@@ -428,36 +428,38 @@ impl Node {
         &mut self,
         verifier: &mut Verifier,
     ) -> Result<bool, Error> {
-        let head_slot = self
-            .ethereum_l1
-            ._consensus_layer
-            .get_head_slot_number()
-            .await?;
+        if verifier.has_blocks_to_verify() {
+            let head_slot = self
+                .ethereum_l1
+                ._consensus_layer
+                .get_head_slot_number()
+                .await?;
 
-        if !verifier.is_slot_valid(head_slot) {
-            info!(
-                "Slot {} is not valid for verification, target slot {}, skipping",
-                head_slot,
-                verifier.get_verification_slot()
-            );
-            return Ok(false);
-        }
+            if !verifier.is_slot_valid(head_slot) {
+                info!(
+                    "Slot {} is not valid for verification, target slot {}, skipping",
+                    head_slot,
+                    verifier.get_verification_slot()
+                );
+                return Ok(false);
+            }
 
-        let taiko_inbox_height = self
-            .ethereum_l1
-            .execution_layer
-            .get_l2_height_from_taiko_inbox()
-            .await?;
-        if let Err(err) = verifier
-            .verify_submitted_blocks(taiko_inbox_height, self.metrics.clone())
-            .await
-        {
-            self.trigger_l2_reorg(
-                taiko_inbox_height,
-                &format!("Verifier return an error: {}", err),
-            )
-            .await?;
-            return Ok(true);
+            let taiko_inbox_height = self
+                .ethereum_l1
+                .execution_layer
+                .get_l2_height_from_taiko_inbox()
+                .await?;
+            if let Err(err) = verifier
+                .verify_submitted_blocks(taiko_inbox_height, self.metrics.clone())
+                .await
+            {
+                self.trigger_l2_reorg(
+                    taiko_inbox_height,
+                    &format!("Verifier return an error: {}", err),
+                )
+                .await?;
+                return Ok(true);
+            }
         }
 
         if verifier.has_batches_to_submit() {
