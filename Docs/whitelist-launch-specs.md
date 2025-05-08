@@ -5,6 +5,7 @@
 - **`L2_BLOCK_TIME_MS`** (in ms): The expected time between one preconfirmation publication to another.
 - **`HANDOVER_WINDOW_SLOTS`** (in slots)**:** The timeframe during which the current preconfer transfers preconf responsibilities to the next preconfer. This window ensures that preconfed blocks are properly included before the transition.
 - **`HANDOVER_START_BUFFER_MS`** (in ms)**:** The maximum wait time at the beginning of the `HANDOVER_WINDOW_SLOTS` for the previous preconfer's final preconfed L2 block.
+- **`DEFAULT_ANCHOR_ID_LAG`** (in slots): The default number of L1 blocks to lag behind the current L1 when setting the anchor ID.
 
 ### Current Values
 
@@ -13,6 +14,7 @@ Based on what Gattaca is using, it can change based on experiments.
 - **`L2_BLOCK_TIME_MS` : 2000ms**
 - **`HANDOVER_WINDOW_SLOTS` : 4**
 - **`HANDOVER_START_BUFFER_MS` : 6000ms**
+- **`DEFAULT_ANCHOR_ID_LAG` : 4**
 
 ## Timeline Diagram
 
@@ -44,6 +46,7 @@ As `Preconfer X`, who is assigned the epoch containing slots `N` through `N+31`:
     3. Fetch the current L2 block height from taiko-geth.
     4. Based on the fetched L2 transactions, construct an L2 block (= list of L2 transactions + some additional metadata) to preconf.
     5. Calculate the anchor transaction and add it to the above L2 block.
+        - The anchor ID should be set as `DEFAULT_ANCHOR_ID_LAG` behind the current L1 block number.
     6. Calculate or fetch [other required fields](https://taikoxyz.github.io/taiko-mono/preconf_blocks_api/#/default/post_preconfBlocks) to advance the head, such as:
         1. `baseFeePerGas`: Base fee of the new L2 block.
         2. `extraData` in which should contain the `baseFeeConfig.sharingPctg` calculated like [this](https://github.com/taikoxyz/taiko-mono/blob/main/packages/protocol/contracts/layer1/based/TaikoInbox.sol#L156)
