@@ -268,28 +268,15 @@ impl Node {
     }
 
     /// Wait for Taiko Driver to synchronize with Taiko Geth chain tip.
-    /// Returns a tuple:
-    /// - `taiko_geth_height`: The current Taiko Geth chain tip.
-    /// - `slot_should_be_skipped`: A boolean indicating whether the current slot should be skipped.
-    ///   This is `true` if the Tiko Geth was not synced with the driver.
-    async fn wait_for_taiko_driver_sync_with_geth(&self) -> (u64, bool) {
-        if let Some(synced_block_height) = self
-            .get_last_synced_block_height_between_taiko_geth_and_the_driver()
-            .await
-        {
-            return (synced_block_height, false);
-        }
-
+    #[cfg(feature = "sync-on-warmup")]
+    async fn wait_for_taiko_driver_sync_with_geth(&self) {
         let sleep_duration = Duration::from_millis(self.preconf_heartbeat_ms / 2);
         let start_time = std::time::SystemTime::now();
-        let taiko_geth_height = loop {
-            if let Some(synced_block_height) = self
-                .get_last_synced_block_height_between_taiko_geth_and_the_driver()
-                .await
-            {
-                break synced_block_height;
-            }
-
+        while self
+            .get_last_synced_block_height_between_taiko_geth_and_the_driver()
+            .await
+            .is_none()
+        {
             if let Ok(elapsed) = start_time.elapsed() {
                 if elapsed > Duration::from_secs(TAIKO_DRIVER_SYNC_RETRY_PERIOD_BEFORE_PANIC_SEC) {
                     error!(
@@ -300,16 +287,11 @@ impl Node {
                 }
             }
             sleep(sleep_duration).await;
-        };
-
-        if let Ok(elapsed) = start_time.elapsed() {
-            warn!(
-                "⭕ Driver sync took: {} ms. Skipping slot...",
-                elapsed.as_millis()
-            );
         }
 
-        return (taiko_geth_height, true);
+        if let Ok(elapsed) = start_time.elapsed() {
+            warn!("⭕ Driver sync took: {} ms.", elapsed.as_millis());
+        }
     }
 
     async fn get_last_synced_block_height_between_taiko_geth_and_the_driver(&self) -> Option<u64> {
@@ -354,20 +336,20 @@ impl Node {
                 // We start preconfirmation in the middle of the epoch.
                 // Need to check for unproposed L2 blocks.
                 self.verify_proposed_batches().await?;
-            } else {
-                // It is for handover window
-                let (taiko_geth_height, slot_should_be_skipped) =
-                    self.wait_for_taiko_driver_sync_with_geth().await;
+            }
 
+            if let Some(taiko_geth_height) = self
+                .get_last_synced_block_height_between_taiko_geth_and_the_driver()
+                .await
+            {
                 self.verifier = Box::new(verifier::Verifier::new_with_taiko_height(
                     taiko_geth_height,
                     self.taiko.clone(),
                     self.batch_manager.clone_without_batches(),
                 ));
-
-                if slot_should_be_skipped {
-                    return Ok(());
-                }
+            } else {
+                // skip slot driver is not synced with geth
+                return Ok(());
             }
         }
 
