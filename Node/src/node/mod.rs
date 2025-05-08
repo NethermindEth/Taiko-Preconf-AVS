@@ -271,26 +271,23 @@ impl Node {
     /// Returns a tuple:
     /// - `taiko_geth_height`: The current Taiko Geth chain tip.
     /// - `slot_should_be_skipped`: A boolean indicating whether the current slot should be skipped.
-    ///   This is `true` if the wait time exceeded `TAIKO_DRIVER_SYNC_RETRY_PERIOD_BEFORE_PANIC_SEC`.
+    ///   This is `true` if the Tiko Geth was not synced with the driver.
     async fn wait_for_taiko_driver_sync_with_geth(&self) -> (u64, bool) {
-        let sleep_duration = Duration::from_millis(self.preconf_heartbeat_ms / 4);
+        if let Some(synced_block_height) = self
+            .get_last_synced_block_height_between_taiko_geth_and_the_driver()
+            .await
+        {
+            return (synced_block_height, false);
+        }
+
+        let sleep_duration = Duration::from_millis(self.preconf_heartbeat_ms / 2);
         let start_time = std::time::SystemTime::now();
         let taiko_geth_height = loop {
-            if let Ok(taiko_geth_height) = self.taiko.get_latest_l2_block_id().await {
-                match self.taiko.get_status().await {
-                    Ok(status) => {
-                        info!(
-                        "🌀 Taiko status highestUnsafeL2PayloadBlockID: {}, Taiko Geth Height: {}",
-                        status.highest_unsafe_l2_payload_block_id, taiko_geth_height
-                    );
-                        if taiko_geth_height == status.highest_unsafe_l2_payload_block_id {
-                            break taiko_geth_height;
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to get status from taiko driver: {}", e);
-                    }
-                }
+            if let Some(synced_block_height) = self
+                .get_last_synced_block_height_between_taiko_geth_and_the_driver()
+                .await
+            {
+                break synced_block_height;
             }
 
             if let Ok(elapsed) = start_time.elapsed() {
@@ -306,17 +303,33 @@ impl Node {
         };
 
         if let Ok(elapsed) = start_time.elapsed() {
-            if elapsed > Duration::from_millis(self.preconf_heartbeat_ms / 2) {
-                // Spent too much time, let's continue in the next slot
-                warn!(
-                    "⭕ Driver sync took too long: {} ms. Skipping slot...",
-                    elapsed.as_millis()
-                );
-                return (taiko_geth_height, true);
-            };
+            warn!(
+                "⭕ Driver sync took: {} ms. Skipping slot...",
+                elapsed.as_millis()
+            );
         }
 
-        return (taiko_geth_height, false);
+        return (taiko_geth_height, true);
+    }
+
+    async fn get_last_synced_block_height_between_taiko_geth_and_the_driver(&self) -> Option<u64> {
+        if let Ok(taiko_geth_height) = self.taiko.get_latest_l2_block_id().await {
+            match self.taiko.get_status().await {
+                Ok(status) => {
+                    info!(
+                        "🌀 Taiko status highestUnsafeL2PayloadBlockID: {}, Taiko Geth Height: {}",
+                        status.highest_unsafe_l2_payload_block_id, taiko_geth_height
+                    );
+                    if taiko_geth_height == status.highest_unsafe_l2_payload_block_id {
+                        return Some(taiko_geth_height);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to get status from taiko driver: {}", e);
+                }
+            }
+        }
+        None
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
