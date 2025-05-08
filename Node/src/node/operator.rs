@@ -32,7 +32,6 @@ pub struct Operator<
 pub struct Status {
     preconfer: bool,
     submitter: bool,
-    verifier: bool,
     preconfirmation_started: bool,
     end_of_sequencing: bool,
 }
@@ -44,10 +43,6 @@ impl Status {
 
     pub fn is_submitter(&self) -> bool {
         self.submitter
-    }
-
-    pub fn is_verifier(&self) -> bool {
-        self.verifier
     }
 
     pub fn is_preconfirmation_start_slot(&self) -> bool {
@@ -71,10 +66,6 @@ impl std::fmt::Display for Status {
 
         if self.submitter {
             roles.push("Submit");
-        }
-
-        if self.verifier {
-            roles.push("Verify");
         }
 
         if self.end_of_sequencing {
@@ -139,13 +130,12 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
             .await?;
         let preconfirmation_started = self.is_preconfirmation_start_l2_slot(preconfer);
         self.was_preconfer = preconfer;
-        let submitter = self.is_submitter(l1_slot, current_operator, handover_window);
+        let submitter = self.is_submitter(current_operator, handover_window);
         let end_of_sequencing = self.is_end_of_sequencing(preconfer, submitter, l1_slot)?;
 
         Ok(Status {
             preconfer,
             submitter,
-            verifier: self.is_verifier(l1_slot, current_operator),
             preconfirmation_started,
             end_of_sequencing,
         })
@@ -212,20 +202,12 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
         *l2_slot_info.parent_hash() == driver_status.end_of_sequencing_block_hash
     }
 
-    fn is_submitter(&self, l1_slot: u64, current_operator: bool, handover_window: bool) -> bool {
-        if l1_slot < OPERATOR_TRANSITION_SLOTS && !self.continuing_role {
-            return false; // do not summit here, it's for verification
-        }
-
+    fn is_submitter(&self, current_operator: bool, handover_window: bool) -> bool {
         if handover_window && self.simulate_not_submitting_at_the_end_of_epoch {
             return false;
         }
 
         current_operator
-    }
-
-    fn is_verifier(&self, l1_slot: u64, current_operator: bool) -> bool {
-        current_operator && l1_slot < OPERATOR_TRANSITION_SLOTS && !self.continuing_role
     }
 
     fn is_preconfirmation_start_l2_slot(&self, preconfer: bool) -> bool {
@@ -314,7 +296,6 @@ mod tests {
             Status {
                 preconfer: true,
                 submitter: true,
-                verifier: false,
                 preconfirmation_started: false,
                 end_of_sequencing: true,
             }
@@ -333,7 +314,6 @@ mod tests {
             Status {
                 preconfer: false,
                 submitter: false,
-                verifier: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }
@@ -352,7 +332,6 @@ mod tests {
             Status {
                 preconfer: true,
                 submitter: true,
-                verifier: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }
@@ -371,7 +350,6 @@ mod tests {
             Status {
                 preconfer: true,
                 submitter: true,
-                verifier: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }
@@ -393,7 +371,6 @@ mod tests {
             Status {
                 preconfer: true,
                 submitter: false,
-                verifier: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }
@@ -411,7 +388,6 @@ mod tests {
             Status {
                 preconfer: false,
                 submitter: false,
-                verifier: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }
@@ -432,7 +408,6 @@ mod tests {
             Status {
                 preconfer: true,
                 submitter: true,
-                verifier: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }
@@ -449,7 +424,6 @@ mod tests {
             Status {
                 preconfer: false,
                 submitter: false,
-                verifier: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }
@@ -468,7 +442,6 @@ mod tests {
             Status {
                 preconfer: true,
                 submitter: false,
-                verifier: false,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
             }
@@ -486,8 +459,7 @@ mod tests {
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: true,
-                submitter: false,
-                verifier: true,
+                submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }
@@ -506,7 +478,6 @@ mod tests {
             Status {
                 preconfer: true,
                 submitter: true,
-                verifier: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }
@@ -526,7 +497,6 @@ mod tests {
             Status {
                 preconfer: false,
                 submitter: false,
-                verifier: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }
@@ -543,7 +513,6 @@ mod tests {
             Status {
                 preconfer: false,
                 submitter: false,
-                verifier: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }
@@ -559,7 +528,6 @@ mod tests {
             Status {
                 preconfer: false,
                 submitter: false,
-                verifier: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }
@@ -580,7 +548,6 @@ mod tests {
             Status {
                 preconfer: false,
                 submitter: false,
-                verifier: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }
@@ -597,7 +564,6 @@ mod tests {
             Status {
                 preconfer: true,
                 submitter: false,
-                verifier: false,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
             }
@@ -621,7 +587,6 @@ mod tests {
             Status {
                 preconfer: true,
                 submitter: false,
-                verifier: false,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
             }
@@ -641,7 +606,6 @@ mod tests {
             Status {
                 preconfer: true,
                 submitter: true,
-                verifier: false,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
             }
@@ -658,7 +622,6 @@ mod tests {
             Status {
                 preconfer: true,
                 submitter: true,
-                verifier: false,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
             }
@@ -678,7 +641,6 @@ mod tests {
             Status {
                 preconfer: false,
                 submitter: true,
-                verifier: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }
@@ -700,7 +662,6 @@ mod tests {
             Status {
                 preconfer: true,
                 submitter: true,
-                verifier: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }
@@ -719,7 +680,6 @@ mod tests {
             Status {
                 preconfer: true,
                 submitter: true,
-                verifier: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }
@@ -737,7 +697,6 @@ mod tests {
             Status {
                 preconfer: true,
                 submitter: true,
-                verifier: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }
@@ -757,7 +716,6 @@ mod tests {
             Status {
                 preconfer: true,
                 submitter: false,
-                verifier: false,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
             }
@@ -769,7 +727,6 @@ mod tests {
             Status {
                 preconfer: true,
                 submitter: false,
-                verifier: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }

@@ -2,6 +2,7 @@ pub(crate) mod batch_manager;
 mod operator;
 mod verifier;
 
+use crate::node::verifier::Verifier;
 use crate::{
     ethereum_l1::{transaction_error::TransactionError, EthereumL1},
     metrics::Metrics,
@@ -32,7 +33,7 @@ pub struct Node {
     operator: Operator,
     batch_manager: BatchManager,
     thresholds: Thresholds,
-    verifier: Box<verifier::Verifier>,
+    verifier: Option<verifier::Verifier>,
     taiko: Arc<Taiko>,
     transaction_error_channel: Receiver<TransactionError>,
     metrics: Arc<Metrics>,
@@ -80,8 +81,6 @@ impl Node {
             ethereum_l1.clone(),
             taiko.clone(),
         );
-        let verifier =
-            verifier::Verifier::new(taiko.clone(), batch_manager.clone_without_batches()).await?;
         Ok(Self {
             cancel_token,
             batch_manager: batch_manager,
@@ -89,7 +88,7 @@ impl Node {
             preconf_heartbeat_ms,
             operator,
             thresholds,
-            verifier: Box::new(verifier),
+            verifier: None,
             taiko,
             transaction_error_channel,
             metrics,
@@ -225,7 +224,7 @@ impl Node {
         }
     }
 
-    async fn verify_proposed_batches(&mut self) -> Result<(), Error> {
+    async fn check_for_missing_proposed_batches(&mut self) -> Result<(), Error> {
         let (taiko_inbox_height, taiko_geth_height) = self.get_current_protocol_height().await?;
 
         info!(
@@ -246,18 +245,18 @@ impl Node {
                 .get_preconfer_nonce_pending()
                 .await?;
             debug!("Nonce Latest: {nonce_latest}, Nonce Pending: {nonce_pending}");
+            // TODO handle when not equal
             if nonce_latest == nonce_pending {
-                let mut verifier = verifier::Verifier::new_with_taiko_height(
-                    taiko_geth_height,
-                    self.taiko.clone(),
-                    self.batch_manager.clone_without_batches(),
+                // Just create a new verifier, we will check it in preconfirmation loop
+                self.verifier = Some(
+                    verifier::Verifier::new_with_taiko_height(
+                        taiko_geth_height,
+                        self.taiko.clone(),
+                        self.batch_manager.clone_without_batches(),
+                        0,
+                    )
+                    .await?,
                 );
-                if let Err(e) = verifier.verify_submitted_blocks(taiko_inbox_height).await {
-                    self.print_reorg_message(&format!("Verifier return an error: {}", e));
-                    self.batch_manager
-                        .trigger_l2_reorg(taiko_inbox_height)
-                        .await?;
-                }
             }
         }
 
@@ -306,8 +305,8 @@ impl Node {
                         return Some(taiko_geth_height);
                     }
                 }
-                Err(e) => {
-                    error!("Failed to get status from taiko driver: {}", e);
+                Err(err) => {
+                    error!("Failed to get status from taiko driver: {}", err);
                 }
             }
         }
@@ -335,21 +334,49 @@ impl Node {
             if current_status.is_submitter() {
                 // We start preconfirmation in the middle of the epoch.
                 // Need to check for unproposed L2 blocks.
-                self.verify_proposed_batches().await?;
-            }
-
-            if let Some(taiko_geth_height) = self
-                .get_last_synced_block_height_between_taiko_geth_and_the_driver()
-                .await
-            {
-                self.verifier = Box::new(verifier::Verifier::new_with_taiko_height(
-                    taiko_geth_height,
-                    self.taiko.clone(),
-                    self.batch_manager.clone_without_batches(),
-                ));
+                if let Err(err) = self.check_for_missing_proposed_batches().await {
+                    error!(
+                        "Shutdown: Failed to verify proposed batches on startup: {}",
+                        err
+                    );
+                    self.cancel_token.cancel();
+                    return Err(anyhow::anyhow!(
+                        "Shutdown: Failed to verify proposed batches on startup: {}",
+                        err
+                    ));
+                }
             } else {
-                // skip slot driver is not synced with geth
-                return Ok(());
+                // It is for handover window
+                if let Some(taiko_geth_height) = self
+                    .get_last_synced_block_height_between_taiko_geth_and_the_driver()
+                    .await
+                {
+                    let verification_slot =
+                        self.ethereum_l1.slot_clock.get_next_epoch_start_slot()?;
+                    let verifier_result = verifier::Verifier::new_with_taiko_height(
+                        taiko_geth_height,
+                        self.taiko.clone(),
+                        self.batch_manager.clone_without_batches(),
+                        verification_slot,
+                    )
+                    .await;
+                    match verifier_result {
+                        Ok(verifier) => {
+                            self.verifier = Some(verifier);
+                        }
+                        Err(err) => {
+                            error!("Shutdown: Failed to create verifier: {}", err);
+                            self.cancel_token.cancel();
+                            return Err(anyhow::anyhow!(
+                                "Shutdown: Failed to create verifier on startup: {}",
+                                err
+                            ));
+                        }
+                    }
+                } else {
+                    // skip slot driver is not synced with geth
+                    return Ok(());
+                }
             }
         }
 
@@ -362,31 +389,24 @@ impl Node {
             .await?;
         }
 
-        if current_status.is_verifier() {
-            let taiko_inbox_height = self
-                .ethereum_l1
-                .execution_layer
-                .get_l2_height_from_taiko_inbox()
-                .await?;
-            if let Err(e) = self
-                .verifier
-                .verify_submitted_blocks(taiko_inbox_height)
-                .await
-            {
-                self.print_reorg_message(&format!("Verifier return an error: {}", e));
-                self.batch_manager
-                    .trigger_l2_reorg(taiko_inbox_height)
-                    .await?;
-            }
-
-            self.metrics
-                .inc_by_batch_recovered(self.batch_manager.get_number_of_batches());
-        }
-
         if current_status.is_submitter() {
             // first submit verification batches
-            if self.verifier.has_batches_to_submit() {
-                self.verifier.try_submit_oldest_batch().await?;
+            if let Some(mut verifier) = self.verifier.take() {
+                match self
+                    .verify_proposed_but_not_submitted_batches(&mut verifier)
+                    .await
+                {
+                    Ok(success) => {
+                        if !success {
+                            self.verifier = Some(verifier);
+                            return Ok(());
+                        }
+                    }
+                    Err(err) => {
+                        self.verifier = Some(verifier);
+                        return Err(err);
+                    }
+                };
             } else {
                 self.batch_manager
                     .try_submit_oldest_batch(current_status.is_preconfer())
@@ -394,15 +414,62 @@ impl Node {
             }
         }
 
-        if !current_status.is_submitter()
-            && !current_status.is_preconfer()
-            && self.batch_manager.has_batches()
-        {
-            self.batch_manager.reset_builder();
-            error!("Some batches were not successfully sent in the submitter window. Resetting batch builder.");
+        if !current_status.is_submitter() && !current_status.is_preconfer() {
+            if self.batch_manager.has_batches() {
+                self.batch_manager.reset_builder();
+                error!("Some batches were not successfully sent in the submitter window. Resetting batch builder.");
+            }
+            if self.verifier.is_some() {
+                error!("Verifier is not None after submitter window.");
+                self.verifier = None;
+            }
         }
 
         Ok(())
+    }
+
+    /// Returns true if the operation succeeds
+    async fn verify_proposed_but_not_submitted_batches(
+        &mut self,
+        verifier: &mut Verifier,
+    ) -> Result<bool, Error> {
+        let head_slot = self
+            .ethereum_l1
+            ._consensus_layer
+            .get_head_slot_number()
+            .await?;
+
+        if !verifier.is_slot_valid(head_slot) {
+            info!(
+                "Slot {} is not valid for verification, target slot {}, skipping",
+                head_slot,
+                verifier.get_verification_slot()
+            );
+            return Ok(false);
+        }
+
+        let taiko_inbox_height = self
+            .ethereum_l1
+            .execution_layer
+            .get_l2_height_from_taiko_inbox()
+            .await?;
+        if let Err(err) = verifier
+            .verify_submitted_blocks(taiko_inbox_height, self.metrics.clone())
+            .await
+        {
+            self.trigger_l2_reorg(
+                taiko_inbox_height,
+                &format!("Verifier return an error: {}", err),
+            )
+            .await?;
+            return Ok(true);
+        }
+
+        if verifier.has_batches_to_submit() {
+            verifier.try_submit_oldest_batch().await?;
+        }
+
+        return Ok(true);
     }
 
     async fn handle_transaction_error(
@@ -412,22 +479,18 @@ impl Node {
         match self.transaction_error_channel.try_recv() {
             Ok(error) => match error {
                 TransactionError::TransactionReverted => {
-                    if current_status.is_preconfer()
-                        && (current_status.is_submitter() || current_status.is_verifier())
-                    {
+                    if current_status.is_preconfer() && current_status.is_submitter() {
                         let taiko_inbox_height = self
                             .ethereum_l1
                             .execution_layer
                             .get_l2_height_from_taiko_inbox()
                             .await?;
-                        self.print_reorg_message("Transaction reverted");
-                        if let Err(e) = self
-                            .batch_manager
-                            .trigger_l2_reorg(taiko_inbox_height)
+                        if let Err(err) = self
+                            .trigger_l2_reorg(taiko_inbox_height, "Transaction reverted")
                             .await
                         {
                             self.cancel_token.cancel();
-                            return Err(anyhow::anyhow!("Failed to trigger L2 reorg: {}", e));
+                            return Err(anyhow::anyhow!("Failed to trigger L2 reorg: {}", err));
                         }
                     } else {
                         warn!("Transaction reverted, not our epoch, skipping reorg");
@@ -501,7 +564,16 @@ impl Node {
         Ok(())
     }
 
-    fn print_reorg_message(&self, message: &str) {
+    async fn trigger_l2_reorg(
+        &mut self,
+        new_last_block_id: u64,
+        message: &str,
+    ) -> Result<(), Error> {
         warn!("⛓️‍💥 Force Reorg: {}", message);
+        self.batch_manager
+            .trigger_l2_reorg(new_last_block_id)
+            .await?;
+        self.verifier = None;
+        Ok(())
     }
 }
