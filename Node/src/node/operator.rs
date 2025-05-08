@@ -4,6 +4,7 @@ use crate::{
         slot_clock::{Clock, RealClock, SlotClock},
         EthereumL1,
     },
+    shared::l2_slot_info::L2SlotInfo,
     taiko::{preconf_blocks::TaikoStatus, PreconfDriver, Taiko},
     utils::types::*,
 };
@@ -112,7 +113,7 @@ impl Operator {
 
 impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
     /// Get the current status of the operator based on the current L1 and L2 slots
-    pub async fn get_status(&mut self) -> Result<Status, Error> {
+    pub async fn get_status(&mut self, l2_slot_info: &L2SlotInfo) -> Result<Status, Error> {
         let l1_slot = self.slot_clock.get_current_slot_of_epoch()?;
 
         // For the first N slots of the new epoch, use the next operator from the previous epoch
@@ -134,7 +135,7 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
 
         let handover_window = self.is_handover_window(l1_slot);
         let preconfer = self
-            .is_preconfer(current_operator, handover_window, l1_slot)
+            .is_preconfer(current_operator, handover_window, l1_slot, l2_slot_info)
             .await?;
         let preconfirmation_started = self.is_preconfirmation_start_l2_slot(preconfer);
         self.was_preconfer = preconfer;
@@ -175,32 +176,40 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
         current_operator: bool,
         handover_window: bool,
         l1_slot: Slot,
+        l2_slot_info: &L2SlotInfo,
     ) -> Result<bool, Error> {
         if handover_window {
             return Ok(self.next_operator
                 && (current_operator // an operator for current and next epoch, handover buffer doesn't matter
-                || !self.is_handover_buffer(l1_slot).await?));
+                || !self.is_handover_buffer(l1_slot, l2_slot_info).await?));
         }
 
         Ok(current_operator)
     }
 
-    async fn is_handover_buffer(&self, l1_slot: Slot) -> Result<bool, Error> {
+    async fn is_handover_buffer(
+        &self,
+        l1_slot: Slot,
+        l2_slot_info: &L2SlotInfo,
+    ) -> Result<bool, Error> {
         if self.get_ms_from_handover_window_start(l1_slot)? <= self.handover_start_buffer_ms {
             let driver_status = self.taiko.get_status().await?;
             tracing::debug!(
                 "Is handover buffer, end_of_sequencing_block_hash: {}",
                 driver_status.end_of_sequencing_block_hash
             );
-            return Ok(!self.end_of_sequencing_marker_received(&driver_status));
+            return Ok(!self.end_of_sequencing_marker_received(&driver_status, l2_slot_info));
         }
 
         Ok(false)
     }
 
-    fn end_of_sequencing_marker_received(&self, driver_status: &TaikoStatus) -> bool {
-        driver_status.end_of_sequencing_block_hash
-            != "0x0000000000000000000000000000000000000000000000000000000000000000"
+    fn end_of_sequencing_marker_received(
+        &self,
+        driver_status: &TaikoStatus,
+        l2_slot_info: &L2SlotInfo,
+    ) -> bool {
+        *l2_slot_info.parent_hash() == driver_status.end_of_sequencing_block_hash
     }
 
     fn is_submitter(&self, l1_slot: u64, current_operator: bool, handover_window: bool) -> bool {

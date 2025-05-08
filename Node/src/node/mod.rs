@@ -323,7 +323,7 @@ impl Node {
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
         let l2_slot_info = self.taiko.get_l2_slot_info().await?;
-        let current_status = self.operator.get_status().await?;
+        let current_status = self.operator.get_status(&l2_slot_info).await?;
         let pending_tx_list = self
             .batch_manager
             .taiko
