@@ -442,7 +442,7 @@ impl Node {
                 head_slot,
                 verifier.get_verification_slot()
             );
-            Err(anyhow::anyhow!("Slot is not valid for verification"));
+            return Err(anyhow::anyhow!("Slot is not valid for verification"));
         }
 
         let taiko_inbox_height = self
