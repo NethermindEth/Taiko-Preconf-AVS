@@ -20,9 +20,6 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
-// TODO move to config
-const TAIKO_DRIVER_SYNC_RETRY_PERIOD_BEFORE_PANIC_SEC: u64 = 600; // 10 mins
-
 pub struct Thresholds {
     pub eth: U256,
     pub taiko: U256,
@@ -270,6 +267,9 @@ impl Node {
     /// Wait for Taiko Driver to synchronize with Taiko Geth chain tip.
     #[cfg(feature = "sync-on-warmup")]
     async fn wait_for_taiko_driver_sync_with_geth(&self) {
+        // TODO move to config
+        const TAIKO_DRIVER_SYNC_RETRY_PERIOD_BEFORE_PANIC_SEC: u64 = 600; // 10 mins
+
         let sleep_duration = Duration::from_millis(self.preconf_heartbeat_ms / 2);
         let start_time = std::time::SystemTime::now();
         while self
