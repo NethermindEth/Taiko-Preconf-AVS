@@ -200,14 +200,24 @@ impl BatchBuilder {
                 .is_transaction_in_progress()
                 .await?
             {
-                debug!("Cannot submit batch, transaction is in progress");
+                debug!(
+                    batches_to_send = %self.batches_to_send.len(),
+                    current_batch = %self.current_batch.is_some(),
+                    "Cannot submit batch, transaction is in progress.",
+                );
                 return Ok(());
             }
 
             debug!(
-                "Submitting batch with anchor block id: {}",
-                batch.anchor_block_id
+                anchor_block_id = %batch.anchor_block_id,
+                coinbase = %batch.coinbase,
+                l2_blocks_len = %batch.l2_blocks.len(),
+                total_bytes = %batch.total_bytes,
+                batches_to_send = %self.batches_to_send.len(),
+                current_batch = %self.current_batch.is_some(),
+                "Submitting batch"
             );
+
             ethereum_l1
                 .execution_layer
                 .send_batch_to_l1(
