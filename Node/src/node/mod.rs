@@ -430,16 +430,16 @@ impl Node {
         &mut self,
         verifier: &mut Verifier,
     ) -> Result<(), Error> {
-        let current_slot = self
+        let head_slot = self
             .ethereum_l1
             ._consensus_layer
-            .get_current_slot_number()
+            .get_head_slot_number()
             .await?;
 
-        if !verifier.is_slot_valid(current_slot) {
+        if !verifier.is_slot_valid(head_slot) {
             warn!(
                 "Slot {} is not valid for verification, target slot {}, skipping",
-                current_slot,
+                head_slot,
                 verifier.get_verification_slot()
             );
             return Err(anyhow::anyhow!("Slot is not valid for verification"));

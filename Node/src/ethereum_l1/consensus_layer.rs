@@ -17,14 +17,14 @@ impl ConsensusLayer {
         self.client.get_genesis_details().await.map_err(Error::new)
     }
 
-    pub async fn get_current_slot_number(&self) -> Result<u64, Error> {
+    pub async fn get_head_slot_number(&self) -> Result<u64, Error> {
         let result = self
             .client
             .get_beacon_header_at_head()
             .await
             .map_err(Error::new)?;
         tracing::debug!(
-            "Current slot number from beacon: {}",
+            "Head slot number from beacon: {}",
             result.header.message.slot
         );
         Ok(result.header.message.slot)
