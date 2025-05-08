@@ -165,7 +165,7 @@ impl Config {
             .expect("HANDOVER_START_BUFFER_MS must be a number");
 
         let l1_height_lag = std::env::var("L1_HEIGHT_LAG")
-            .unwrap_or("5".to_string())
+            .unwrap_or("4".to_string())
             .parse::<u64>()
             .expect("L1_HEIGHT_LAG must be a number");
 
