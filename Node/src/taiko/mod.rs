@@ -301,6 +301,15 @@ impl Taiko {
             .get_base_fee(parent_gas_used_u32, base_fee_config, l2_slot_timestamp)
             .await?;
 
+        debug!(
+            base_fee = %base_fee,
+            timestamp = %l2_slot_timestamp,
+            parent_id = %parent_id,
+            parent_hash = %parent_hash,
+            parent_gas_used = %parent_gas_used_u32,
+            "Latest L2 slot info"
+        );
+
         Ok(L2SlotInfo::new(
             base_fee,
             l2_slot_timestamp,
