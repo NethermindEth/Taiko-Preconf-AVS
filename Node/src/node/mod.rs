@@ -469,7 +469,7 @@ impl Node {
             verifier.try_submit_oldest_batch().await?;
         }
 
-        return Ok(true);
+        return Ok(!verifier.has_batches_to_submit());
     }
 
     async fn handle_transaction_error(
