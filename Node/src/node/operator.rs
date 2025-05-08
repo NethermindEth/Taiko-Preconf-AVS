@@ -4,6 +4,7 @@ use crate::{
         slot_clock::{Clock, RealClock, SlotClock},
         EthereumL1,
     },
+    shared::l2_slot_info::L2SlotInfo,
     taiko::{preconf_blocks::TaikoStatus, PreconfDriver, Taiko},
     utils::types::*,
 };
@@ -112,7 +113,7 @@ impl Operator {
 
 impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
     /// Get the current status of the operator based on the current L1 and L2 slots
-    pub async fn get_status(&mut self) -> Result<Status, Error> {
+    pub async fn get_status(&mut self, l2_slot_info: &L2SlotInfo) -> Result<Status, Error> {
         let l1_slot = self.slot_clock.get_current_slot_of_epoch()?;
 
         // For the first N slots of the new epoch, use the next operator from the previous epoch
@@ -134,7 +135,7 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
 
         let handover_window = self.is_handover_window(l1_slot);
         let preconfer = self
-            .is_preconfer(current_operator, handover_window, l1_slot)
+            .is_preconfer(current_operator, handover_window, l1_slot, l2_slot_info)
             .await?;
         let preconfirmation_started = self.is_preconfirmation_start_l2_slot(preconfer);
         self.was_preconfer = preconfer;
@@ -175,32 +176,40 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
         current_operator: bool,
         handover_window: bool,
         l1_slot: Slot,
+        l2_slot_info: &L2SlotInfo,
     ) -> Result<bool, Error> {
         if handover_window {
             return Ok(self.next_operator
                 && (current_operator // an operator for current and next epoch, handover buffer doesn't matter
-                || !self.is_handover_buffer(l1_slot).await?));
+                || !self.is_handover_buffer(l1_slot, l2_slot_info).await?));
         }
 
         Ok(current_operator)
     }
 
-    async fn is_handover_buffer(&self, l1_slot: Slot) -> Result<bool, Error> {
+    async fn is_handover_buffer(
+        &self,
+        l1_slot: Slot,
+        l2_slot_info: &L2SlotInfo,
+    ) -> Result<bool, Error> {
         if self.get_ms_from_handover_window_start(l1_slot)? <= self.handover_start_buffer_ms {
             let driver_status = self.taiko.get_status().await?;
             tracing::debug!(
                 "Is handover buffer, end_of_sequencing_block_hash: {}",
                 driver_status.end_of_sequencing_block_hash
             );
-            return Ok(!self.end_of_sequencing_marker_received(&driver_status));
+            return Ok(!self.end_of_sequencing_marker_received(&driver_status, l2_slot_info));
         }
 
         Ok(false)
     }
 
-    fn end_of_sequencing_marker_received(&self, driver_status: &TaikoStatus) -> bool {
-        driver_status.end_of_sequencing_block_hash
-            != "0x0000000000000000000000000000000000000000000000000000000000000000"
+    fn end_of_sequencing_marker_received(
+        &self,
+        driver_status: &TaikoStatus,
+        l2_slot_info: &L2SlotInfo,
+    ) -> bool {
+        *l2_slot_info.parent_hash() == driver_status.end_of_sequencing_block_hash
     }
 
     fn is_submitter(&self, l1_slot: u64, current_operator: bool, handover_window: bool) -> bool {
@@ -247,6 +256,7 @@ mod tests {
     use crate::ethereum_l1::slot_clock::mock::*;
     use crate::taiko::preconf_blocks;
     const HANDOVER_WINDOW_SLOTS: i64 = 6;
+    use alloy::primitives::B256;
     struct ExecutionLayerMock {
         current_operator: bool,
         next_operator: bool,
@@ -263,7 +273,7 @@ mod tests {
     }
 
     struct TaikoMock {
-        end_of_sequencing_block_hash: String,
+        end_of_sequencing_block_hash: B256,
     }
 
     impl PreconfDriver for TaikoMock {
@@ -273,6 +283,19 @@ mod tests {
                 highest_unsafe_l2_payload_block_id: 0,
             })
         }
+    }
+
+    fn get_l2_slot_info() -> L2SlotInfo {
+        L2SlotInfo::new(
+            0,
+            0,
+            0,
+            B256::from([
+                0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1,
+                0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1,
+            ]),
+            0,
+        )
     }
 
     #[tokio::test]
@@ -287,7 +310,7 @@ mod tests {
         operator.was_preconfer = true;
         operator.continuing_role = false;
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: true,
@@ -306,7 +329,7 @@ mod tests {
         operator.was_preconfer = false;
         operator.continuing_role = false;
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: false,
                 submitter: false,
@@ -325,7 +348,7 @@ mod tests {
         operator.was_preconfer = true;
         operator.continuing_role = true;
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: true,
@@ -344,7 +367,7 @@ mod tests {
         operator.was_preconfer = true;
         operator.continuing_role = false;
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: true,
@@ -366,7 +389,7 @@ mod tests {
         operator.was_preconfer = true;
         operator.continuing_role = false;
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: false,
@@ -384,7 +407,7 @@ mod tests {
         operator.was_preconfer = true;
         operator.continuing_role = true;
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: false,
                 submitter: false,
@@ -405,7 +428,7 @@ mod tests {
         operator.next_operator = true;
         operator.was_preconfer = true;
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: true,
@@ -422,7 +445,7 @@ mod tests {
         );
         operator.was_preconfer = true;
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: false,
                 submitter: false,
@@ -441,7 +464,7 @@ mod tests {
             true,
         );
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: false,
@@ -460,7 +483,7 @@ mod tests {
         operator.was_preconfer = true;
         operator.continuing_role = false;
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: false,
@@ -479,7 +502,7 @@ mod tests {
         operator.was_preconfer = true;
         operator.continuing_role = true;
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: true,
@@ -499,7 +522,7 @@ mod tests {
             false,
         );
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: false,
                 submitter: false,
@@ -516,7 +539,7 @@ mod tests {
             false,
         );
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: false,
                 submitter: false,
@@ -532,7 +555,7 @@ mod tests {
             false,
         );
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: false,
                 submitter: false,
@@ -553,7 +576,7 @@ mod tests {
         );
         // Override the handover start buffer to be larger than the mock timestamp
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: false,
                 submitter: false,
@@ -570,7 +593,7 @@ mod tests {
         );
         // Override the handover start buffer to be larger than the mock timestamp
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: false,
@@ -591,7 +614,10 @@ mod tests {
         );
         // Override the handover start buffer to be larger than the mock timestamp
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator
+                .get_status(&L2SlotInfo::new(0, 0, 0, get_test_hash(), 0))
+                .await
+                .unwrap(),
             Status {
                 preconfer: true,
                 submitter: false,
@@ -611,7 +637,7 @@ mod tests {
             true,
         );
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: true,
@@ -628,7 +654,7 @@ mod tests {
             false,
         );
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: true,
@@ -648,7 +674,7 @@ mod tests {
             false,
         );
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: false,
                 submitter: true,
@@ -670,7 +696,7 @@ mod tests {
         operator.was_preconfer = true;
 
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: true,
@@ -689,7 +715,7 @@ mod tests {
         operator.continuing_role = true;
         operator.was_preconfer = true;
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: true,
@@ -707,7 +733,7 @@ mod tests {
         operator.continuing_role = true;
         operator.was_preconfer = true;
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: true,
@@ -727,7 +753,7 @@ mod tests {
         );
         operator.was_preconfer = false;
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: false,
@@ -739,7 +765,7 @@ mod tests {
 
         // second get_status call, preconfirmation_started should be false
         assert_eq!(
-            operator.get_status().await.unwrap(),
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: true,
                 submitter: false,
@@ -759,8 +785,7 @@ mod tests {
         slot_clock.clock.timestamp = timestamp; // second l1 slot, second l2 slot
         Operator {
             taiko: Arc::new(TaikoMock {
-                end_of_sequencing_block_hash:
-                    "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+                end_of_sequencing_block_hash: B256::ZERO,
             }),
             execution_layer: Arc::new(ExecutionLayerMock {
                 current_operator,
@@ -785,8 +810,7 @@ mod tests {
         slot_clock.clock.timestamp = timestamp; // second l1 slot, second l2 slot
         Operator {
             taiko: Arc::new(TaikoMock {
-                end_of_sequencing_block_hash:
-                    "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
+                end_of_sequencing_block_hash: get_test_hash(),
             }),
             execution_layer: Arc::new(ExecutionLayerMock {
                 current_operator,
@@ -800,5 +824,13 @@ mod tests {
             simulate_not_submitting_at_the_end_of_epoch: false,
             was_preconfer: false,
         }
+    }
+
+    fn get_test_hash() -> B256 {
+        B256::from([
+            0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab,
+            0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78,
+            0x90, 0xab, 0xcd, 0xef,
+        ])
     }
 }
