@@ -105,7 +105,7 @@ impl Verifier {
                 "🔍 Verified block successfully: preconfirmation_root {}, hash: {} ",
                 self.preconfirmation_root.number, self.preconfirmation_root.hash
             );
-            self.verified_height = taiko_inbox_height;
+            self.verified_height = self.preconfirmation_root.number;
 
             metrics.inc_by_batch_recovered(self.get_number_of_batches());
         }
