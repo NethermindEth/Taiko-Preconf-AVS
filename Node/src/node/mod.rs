@@ -399,7 +399,12 @@ impl Node {
                     .verify_proposed_but_not_submitted_batches(&mut verifier)
                     .await
                 {
-                    Ok(()) => (),
+                    Ok(success) => {
+                        if !success {
+                            self.verifier = Some(verifier);
+                            return Ok(());
+                        }
+                    }
                     Err(err) => {
                         self.verifier = Some(verifier);
                         return Err(err);
@@ -426,10 +431,11 @@ impl Node {
         Ok(())
     }
 
+    /// Returns true if the operation succeeds
     async fn verify_proposed_but_not_submitted_batches(
         &mut self,
         verifier: &mut Verifier,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         let head_slot = self
             .ethereum_l1
             ._consensus_layer
@@ -437,12 +443,12 @@ impl Node {
             .await?;
 
         if !verifier.is_slot_valid(head_slot) {
-            warn!(
+            info!(
                 "Slot {} is not valid for verification, target slot {}, skipping",
                 head_slot,
                 verifier.get_verification_slot()
             );
-            return Err(anyhow::anyhow!("Slot is not valid for verification"));
+            return Ok(false);
         }
 
         let taiko_inbox_height = self
@@ -459,14 +465,14 @@ impl Node {
                 &format!("Verifier return an error: {}", err),
             )
             .await?;
-            return Ok(());
+            return Ok(true);
         }
 
         if verifier.has_batches_to_submit() {
             verifier.try_submit_oldest_batch().await?;
         }
 
-        return Ok(());
+        return Ok(true);
     }
 
     async fn handle_transaction_error(
