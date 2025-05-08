@@ -10,6 +10,8 @@ use crate::{taiko::Taiko, utils::types::Slot};
 
 use super::batch_manager::BatchManager;
 
+use crate::Metrics;
+
 struct PreconfirmationRootBlock {
     number: u64,
     hash: B256,
@@ -57,7 +59,11 @@ impl Verifier {
         self.verification_slot
     }
 
-    pub async fn verify_submitted_blocks(&mut self, taiko_inbox_height: u64) -> Result<(), Error> {
+    pub async fn verify_submitted_blocks(
+        &mut self,
+        taiko_inbox_height: u64,
+        metrics: Arc<Metrics>,
+    ) -> Result<(), Error> {
         if self.preconfirmation_root.number > self.verified_height {
             // Compare block hashes to confirm that the block is still the same.
             // If not, return an error that will trigger a reorg.
@@ -111,6 +117,8 @@ impl Verifier {
                 self.preconfirmation_root.number, self.preconfirmation_root.hash
             );
             self.verified_height = taiko_inbox_height;
+
+            metrics.inc_by_batch_recovered(self.get_number_of_batches());
         }
 
         Ok(())

@@ -20,9 +20,9 @@ impl ConsensusLayer {
     pub async fn get_head_slot_number(&self) -> Result<u64, Error> {
         let result = self
             .client
-            .get_beacon_header_at_head()
+            .get_beacon_header(beacon_api_client::BlockId::Head)
             .await
-            .map_err(Error::new)?;
+            .map_err(|err| anyhow::anyhow!("get_head_slot_number error: {}", err))?;
         tracing::debug!(
             "Head slot number from beacon: {}",
             result.header.message.slot

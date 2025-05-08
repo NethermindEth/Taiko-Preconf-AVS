@@ -442,7 +442,7 @@ impl Node {
                 head_slot,
                 verifier.get_verification_slot()
             );
-            return Err(anyhow::anyhow!("Slot is not valid for verification"));
+            return Ok(());
         }
 
         let taiko_inbox_height = self
@@ -450,7 +450,10 @@ impl Node {
             .execution_layer
             .get_l2_height_from_taiko_inbox()
             .await?;
-        if let Err(err) = verifier.verify_submitted_blocks(taiko_inbox_height).await {
+        if let Err(err) = verifier
+            .verify_submitted_blocks(taiko_inbox_height, self.metrics.clone())
+            .await
+        {
             self.trigger_l2_reorg(
                 taiko_inbox_height,
                 &format!("Verifier return an error: {}", err),
@@ -458,9 +461,6 @@ impl Node {
             .await?;
             return Ok(());
         }
-
-        self.metrics
-            .inc_by_batch_recovered(verifier.get_number_of_batches());
 
         if verifier.has_batches_to_submit() {
             verifier.try_submit_oldest_batch().await?;
