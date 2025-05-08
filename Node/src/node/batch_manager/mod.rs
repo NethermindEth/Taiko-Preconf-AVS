@@ -5,7 +5,7 @@ use crate::{
     shared::{l2_block::L2Block, l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
     taiko::Taiko,
 };
-use alloy::{consensus::Transaction, primitives::Address};
+use alloy::{consensus::BlockHeader, consensus::Transaction, primitives::Address};
 use anyhow::Error;
 use batch_builder::BatchBuilder;
 use std::sync::Arc;
@@ -27,6 +27,8 @@ pub struct BatchBuilderConfig {
     pub max_time_shift_between_blocks_sec: u64,
     /// The max differences of the anchor height and the current block number
     pub max_anchor_height_offset: u64,
+    /// Default coinbase
+    pub default_coinbase: Address,
 }
 
 impl BatchBuilderConfig {
@@ -74,21 +76,20 @@ impl BatchManager {
             None => return Err(anyhow::anyhow!("No transactions in block")),
         };
 
+        let coinbase = block.header.beneficiary();
+
         let anchor_block_id = Taiko::decode_anchor_tx_data(anchor_tx.input())?;
         debug!(
-            "Recovering from L2 block {} with anchor block id {}",
-            block_height, anchor_block_id
+            "Recovering from L2 block {}, anchor block id {}, timestamp {}, coinbase {}, transactions {}",
+            block_height, anchor_block_id, block.header.timestamp, coinbase, txs.len()
         );
 
-        debug!(
-            "Recovering from L2 block {} with {} transactions and timestamp {}",
-            block_height,
-            txs.len(),
-            block.header.timestamp
-        );
-
-        self.batch_builder
-            .recover_from(txs.to_vec(), anchor_block_id, block.header.timestamp)
+        self.batch_builder.recover_from(
+            txs.to_vec(),
+            anchor_block_id,
+            block.header.timestamp,
+            coinbase,
+        )
     }
 
     pub async fn get_anchor_block_offset(&self, block_height: u64) -> Result<u64, Error> {
@@ -220,7 +221,7 @@ impl BatchManager {
             let anchor_block_id = self.calculate_anchor_block_id().await?;
             // Add the L2 block to the new batch
             self.batch_builder
-                .create_new_batch_and_add_l2_block(anchor_block_id, l2_block);
+                .create_new_batch_and_add_l2_block(anchor_block_id, l2_block, None);
             anchor_block_id
         };
         Ok(anchor_block_id)
@@ -261,16 +262,7 @@ impl BatchManager {
         submit_only_full_batches: bool,
     ) -> Result<(), Error> {
         self.batch_builder
-            .try_submit_oldest_batch(self.ethereum_l1.clone(), submit_only_full_batches, None)
-            .await
-    }
-
-    pub async fn try_submit_oldest_batch_with_coinbase(
-        &mut self,
-        coinbase: Address,
-    ) -> Result<(), Error> {
-        self.batch_builder
-            .try_submit_oldest_batch(self.ethereum_l1.clone(), false, Some(coinbase))
+            .try_submit_oldest_batch(self.ethereum_l1.clone(), submit_only_full_batches)
             .await
     }
 

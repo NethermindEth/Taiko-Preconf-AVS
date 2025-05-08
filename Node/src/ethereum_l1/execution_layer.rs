@@ -160,7 +160,7 @@ impl ExecutionLayer {
         &self,
         l2_blocks: Vec<L2Block>,
         last_anchor_origin_height: u64,
-        coinbase: Option<Address>,
+        coinbase: Address,
     ) -> Result<(), Error> {
         let mut tx_vec = Vec::new();
         let mut blocks = Vec::new();
@@ -214,7 +214,7 @@ impl ExecutionLayer {
                 blocks.clone(),
                 last_anchor_origin_height,
                 last_block_timestamp,
-                coinbase.unwrap_or(self.preconfer_address),
+                coinbase,
             )
             .await?;
 
@@ -430,6 +430,10 @@ impl ExecutionLayer {
 
     pub fn get_config_block_max_gas_limit(&self) -> u32 {
         self.pacaya_config.blockMaxGasLimit
+    }
+
+    pub fn get_preconfer_address_coinbase(&self) -> Address {
+        self.preconfer_address
     }
 
     pub fn get_preconfer_address(&self) -> PreconferAddress {

@@ -1,7 +1,4 @@
-use alloy::{
-    consensus::BlockHeader,
-    primitives::{Address, B256},
-};
+use alloy::primitives::B256;
 use anyhow::Error;
 use std::{cmp::Ordering, sync::Arc};
 use tracing::{debug, info};
@@ -22,7 +19,6 @@ pub struct Verifier {
     preconfirmation_root: PreconfirmationRootBlock,
     verified_height: u64,
     batch_manager: BatchManager,
-    coinbase: Address,
     verification_slot: Slot,
 }
 
@@ -46,7 +42,6 @@ impl Verifier {
             },
             verified_height: 0,
             batch_manager,
-            coinbase: Address::ZERO,
             verification_slot,
         })
     }
@@ -88,12 +83,6 @@ impl Verifier {
                         "Taiko geth has {} blocks more than Taiko Inbox. Preparing batch for submission.",
                         self.preconfirmation_root.number - taiko_inbox_height
                     );
-
-                    let first_block = self
-                        .taiko
-                        .get_l2_block_by_number(taiko_inbox_height + 1, false)
-                        .await?;
-                    self.coinbase = first_block.header.beneficiary();
 
                     self.handle_unprocessed_blocks(
                         taiko_inbox_height,
@@ -148,7 +137,6 @@ impl Verifier {
         {
             let start = std::time::Instant::now();
             // recover all missed l2 blocks
-            info!("Recovering from L2 blocks for coinbase: {}", self.coinbase);
             for current_height in taiko_inbox_height + 1..=taiko_geth_height {
                 self.batch_manager
                     .recover_from_l2_block(current_height)
@@ -169,8 +157,6 @@ impl Verifier {
     }
 
     pub async fn try_submit_oldest_batch(&mut self) -> Result<(), Error> {
-        self.batch_manager
-            .try_submit_oldest_batch_with_coinbase(self.coinbase)
-            .await
+        self.batch_manager.try_submit_oldest_batch(false).await
     }
 }
