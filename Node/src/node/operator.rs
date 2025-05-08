@@ -169,9 +169,12 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
         l2_slot_info: &L2SlotInfo,
     ) -> Result<bool, Error> {
         if handover_window {
-            return Ok(self.next_operator
-                && (current_operator // an operator for current and next epoch, handover buffer doesn't matter
-                || !self.is_handover_buffer(l1_slot, l2_slot_info).await?));
+            return Ok(
+                self.next_operator
+                && (self.was_preconfer // If we were the operator for the previous slot, the handover buffer doesn't matter.
+                    || !self.is_handover_buffer(l1_slot, l2_slot_info).await?
+                )
+            );
         }
 
         Ok(current_operator)
