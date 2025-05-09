@@ -54,7 +54,7 @@ impl Status {
     }
 }
 
-const OPERATOR_TRANSITION_SLOTS: u64 = 1;
+const OPERATOR_TRANSITION_SLOTS: u64 = 10;
 
 impl std::fmt::Display for Status {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -115,7 +115,7 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
             self.next_operator = match self.execution_layer.is_operator_for_next_epoch().await {
                 Ok(val) => val,
                 Err(e) => {
-                    warn!("Warning: failed to check next epoch operator: {:?}", e);
+                    warn!("Failed to check next epoch operator: {:?}", e);
                     false
                 }
             };
