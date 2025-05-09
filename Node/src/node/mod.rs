@@ -99,7 +99,8 @@ impl Node {
         info!("Starting node");
 
         if let Err(err) = self.warmup().await {
-            error!("Failed to warm up node: {}", err);
+            error!("Failed to warm up node: {}. Shutting down.", err);
+            self.cancel_token.cancel();
             return Err(anyhow::anyhow!(err));
         }
 
@@ -181,11 +182,36 @@ impl Node {
             );
         }
 
+        // Wait for the last sent transaction to be executed
+        self.wait_for_sent_transactions().await?;
+
         // Wait for Taiko Driver to synchronize with Taiko Geth
         #[cfg(feature = "sync-on-warmup")]
         self.wait_for_taiko_driver_sync_with_geth().await;
 
         Ok(())
+    }
+
+    async fn wait_for_sent_transactions(&self) -> Result<(), Error> {
+        loop {
+            let nonce_latest: u64 = self
+                .ethereum_l1
+                .execution_layer
+                .get_preconfer_nonce_latest()
+                .await?;
+            let nonce_pending: u64 = self
+                .ethereum_l1
+                .execution_layer
+                .get_preconfer_nonce_pending()
+                .await?;
+            if nonce_pending == nonce_latest {
+                break;
+            }
+            debug!("Waiting for sent transactions to be executed. Nonce Latest: {nonce_latest}, Nonce Pending: {nonce_pending}");
+            sleep(Duration::from_secs(6)).await;
+        }
+
+        return Ok(());
     }
 
     async fn preconfirmation_loop(&mut self) {
