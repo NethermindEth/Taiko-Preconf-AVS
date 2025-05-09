@@ -170,8 +170,8 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
     ) -> Result<bool, Error> {
         if handover_window {
             return Ok(self.next_operator
-                && (current_operator // an operator for current and next epoch, handover buffer doesn't matter
-                || !self.is_handover_buffer(l1_slot, l2_slot_info).await?));
+                && (self.was_preconfer // If we were the operator for the previous slot, the handover buffer doesn't matter.
+                    || !self.is_handover_buffer(l1_slot, l2_slot_info).await?));
         }
 
         Ok(current_operator)
@@ -370,7 +370,7 @@ mod tests {
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
                 preconfer: true,
-                submitter: false,
+                submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
             }

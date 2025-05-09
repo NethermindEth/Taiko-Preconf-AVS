@@ -12,6 +12,7 @@ pub struct Batch {
     pub l2_blocks: Vec<L2Block>,
     pub anchor_block_id: u64,
     pub total_bytes: u64,
+    pub coinbase: Address,
 }
 
 pub struct BatchBuilder {
@@ -65,12 +66,18 @@ impl BatchBuilder {
         }
     }
 
-    pub fn create_new_batch_and_add_l2_block(&mut self, anchor_block_id: u64, l2_block: L2Block) {
+    pub fn create_new_batch_and_add_l2_block(
+        &mut self,
+        anchor_block_id: u64,
+        l2_block: L2Block,
+        coinbase: Option<Address>,
+    ) {
         self.finalize_current_batch();
         self.current_batch = Some(Batch {
             total_bytes: l2_block.prebuilt_tx_list.bytes_length,
             l2_blocks: vec![l2_block],
             anchor_block_id,
+            coinbase: coinbase.unwrap_or(self.config.default_coinbase),
         });
     }
 
@@ -115,18 +122,21 @@ impl BatchBuilder {
         tx_list: Vec<alloy::rpc::types::Transaction>,
         anchor_block_id: u64,
         timestamp_sec: u64,
+        coinbase: Address,
     ) -> Result<(), Error> {
         // We have a new batch if any of the following is true:
         // 1. Anchor block IDs differ
         // 2. Time difference between two blocks exceeds u8
         if !self.is_same_anchor_block_id(anchor_block_id)
             || self.is_time_shift_expired(timestamp_sec)
+            || !self.is_same_coinbase(coinbase)
         {
             self.finalize_current_batch();
             self.current_batch = Some(Batch {
                 total_bytes: 0,
                 l2_blocks: vec![],
                 anchor_block_id,
+                coinbase,
             });
         }
 
@@ -143,7 +153,7 @@ impl BatchBuilder {
         if self.can_consume_l2_block(&l2_block) {
             self.add_l2_block_and_get_current_anchor_block_id(l2_block)?;
         } else {
-            self.create_new_batch_and_add_l2_block(anchor_block_id, l2_block);
+            self.create_new_batch_and_add_l2_block(anchor_block_id, l2_block, Some(coinbase));
         }
 
         Ok(())
@@ -153,6 +163,12 @@ impl BatchBuilder {
         self.current_batch
             .as_ref()
             .map_or(false, |batch| batch.anchor_block_id == anchor_block_id)
+    }
+
+    fn is_same_coinbase(&self, coinbase: Address) -> bool {
+        self.current_batch
+            .as_ref()
+            .map_or(false, |batch| batch.coinbase == coinbase)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -168,7 +184,6 @@ impl BatchBuilder {
         &mut self,
         ethereum_l1: Arc<EthereumL1>,
         submit_only_full_batches: bool,
-        coinbase: Option<Address>,
     ) -> Result<(), Error> {
         if self.current_batch.is_some()
             && (!submit_only_full_batches
@@ -185,17 +200,31 @@ impl BatchBuilder {
                 .is_transaction_in_progress()
                 .await?
             {
-                debug!("Cannot submit batch, transaction is in progress");
+                debug!(
+                    batches_to_send = %self.batches_to_send.len(),
+                    current_batch = %self.current_batch.is_some(),
+                    "Cannot submit batch, transaction is in progress.",
+                );
                 return Ok(());
             }
 
             debug!(
-                "Submitting batch with anchor block id: {}",
-                batch.anchor_block_id
+                anchor_block_id = %batch.anchor_block_id,
+                coinbase = %batch.coinbase,
+                l2_blocks_len = %batch.l2_blocks.len(),
+                total_bytes = %batch.total_bytes,
+                batches_to_send = %self.batches_to_send.len(),
+                current_batch = %self.current_batch.is_some(),
+                "Submitting batch"
             );
+
             ethereum_l1
                 .execution_layer
-                .send_batch_to_l1(batch.l2_blocks.clone(), batch.anchor_block_id, coinbase)
+                .send_batch_to_l1(
+                    batch.l2_blocks.clone(),
+                    batch.anchor_block_id,
+                    batch.coinbase,
+                )
                 .await?;
 
             self.batches_to_send.pop_front();
@@ -274,6 +303,7 @@ mod tests {
             l1_slot_duration_sec: 12,
             max_time_shift_between_blocks_sec: 255,
             max_anchor_height_offset: 10,
+            default_coinbase: Address::ZERO,
         });
 
         assert_eq!(

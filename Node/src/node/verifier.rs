@@ -1,7 +1,4 @@
-use alloy::{
-    consensus::BlockHeader,
-    primitives::{Address, B256},
-};
+use alloy::primitives::B256;
 use anyhow::Error;
 use std::{cmp::Ordering, sync::Arc};
 use tracing::{debug, info};
@@ -22,7 +19,6 @@ pub struct Verifier {
     preconfirmation_root: PreconfirmationRootBlock,
     verified_height: u64,
     batch_manager: BatchManager,
-    coinbase: Address,
     verification_slot: Slot,
 }
 
@@ -46,7 +42,6 @@ impl Verifier {
             },
             verified_height: 0,
             batch_manager,
-            coinbase: Address::ZERO,
             verification_slot,
         })
     }
@@ -59,12 +54,16 @@ impl Verifier {
         self.verification_slot
     }
 
+    pub fn has_blocks_to_verify(&self) -> bool {
+        self.preconfirmation_root.number > self.verified_height
+    }
+
     pub async fn verify_submitted_blocks(
         &mut self,
         taiko_inbox_height: u64,
         metrics: Arc<Metrics>,
     ) -> Result<(), Error> {
-        if self.preconfirmation_root.number > self.verified_height {
+        if self.has_blocks_to_verify() {
             // Compare block hashes to confirm that the block is still the same.
             // If not, return an error that will trigger a reorg.
             let current_hash = self
@@ -89,12 +88,6 @@ impl Verifier {
                         self.preconfirmation_root.number - taiko_inbox_height
                     );
 
-                    let first_block = self
-                        .taiko
-                        .get_l2_block_by_number(taiko_inbox_height + 1, false)
-                        .await?;
-                    self.coinbase = first_block.header.beneficiary();
-
                     self.handle_unprocessed_blocks(
                         taiko_inbox_height,
                         self.preconfirmation_root.number,
@@ -116,7 +109,7 @@ impl Verifier {
                 "🔍 Verified block successfully: preconfirmation_root {}, hash: {} ",
                 self.preconfirmation_root.number, self.preconfirmation_root.hash
             );
-            self.verified_height = taiko_inbox_height;
+            self.verified_height = self.preconfirmation_root.number;
 
             metrics.inc_by_batch_recovered(self.get_number_of_batches());
         }
@@ -148,7 +141,6 @@ impl Verifier {
         {
             let start = std::time::Instant::now();
             // recover all missed l2 blocks
-            info!("Recovering from L2 blocks for coinbase: {}", self.coinbase);
             for current_height in taiko_inbox_height + 1..=taiko_geth_height {
                 self.batch_manager
                     .recover_from_l2_block(current_height)
@@ -169,8 +161,6 @@ impl Verifier {
     }
 
     pub async fn try_submit_oldest_batch(&mut self) -> Result<(), Error> {
-        self.batch_manager
-            .try_submit_oldest_batch_with_coinbase(self.coinbase)
-            .await
+        self.batch_manager.try_submit_oldest_batch(false).await
     }
 }

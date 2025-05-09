@@ -142,6 +142,7 @@ async fn main() -> Result<(), Error> {
             max_time_shift_between_blocks_sec: config.max_time_shift_between_blocks_sec,
             max_anchor_height_offset: max_anchor_height_offset
                 - config.max_anchor_height_offset_reduction,
+            default_coinbase: ethereum_l1.execution_layer.get_preconfer_address_coinbase(),
         },
         Thresholds {
             eth: config.threshold_eth,
