@@ -341,19 +341,8 @@ impl Node {
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
-        let l2_slot_info = self.taiko.get_l2_slot_info().await?;
-        let current_status = self.operator.get_status(&l2_slot_info).await?;
-        let pending_tx_list = self
-            .batch_manager
-            .taiko
-            .get_pending_l2_tx_list_from_taiko_geth(l2_slot_info.base_fee())
-            .await?;
-        self.print_current_slots_info(
-            &current_status,
-            &pending_tx_list,
-            &l2_slot_info,
-            self.batch_manager.get_number_of_batches(),
-        )?;
+        let (l2_slot_info, current_status, pending_tx_list) =
+            self.get_slot_info_and_status().await?;
 
         self.handle_transaction_error(&current_status).await?;
 
@@ -453,6 +442,33 @@ impl Node {
         }
 
         Ok(())
+    }
+
+    async fn get_slot_info_and_status(
+        &mut self,
+    ) -> Result<(L2SlotInfo, OperatorStatus, Option<PreBuiltTxList>), Error> {
+        let l2_slot_info = self.taiko.get_l2_slot_info().await;
+        let current_status = match &l2_slot_info {
+            Ok(info) => self.operator.get_status(info).await,
+            Err(_) => Err(anyhow::anyhow!("Failed to get L2 slot info")),
+        };
+        let pending_tx_list = match &l2_slot_info {
+            Ok(info) => {
+                self.batch_manager
+                    .taiko
+                    .get_pending_l2_tx_list_from_taiko_geth(info.base_fee())
+                    .await
+            }
+            Err(_) => Err(anyhow::anyhow!("Failed to get L2 slot info")),
+        };
+        self.print_current_slots_info(
+            &current_status,
+            &pending_tx_list,
+            &l2_slot_info,
+            self.batch_manager.get_number_of_batches(),
+        )?;
+
+        Ok((l2_slot_info?, current_status?, pending_tx_list?))
     }
 
     /// Returns true if the operation succeeds
@@ -572,24 +588,43 @@ impl Node {
 
     fn print_current_slots_info(
         &self,
-        current_status: &OperatorStatus,
-        pending_tx_list: &Option<PreBuiltTxList>,
-        l2_slot_info: &L2SlotInfo,
+        current_status: &Result<OperatorStatus, Error>,
+        pending_tx_list: &Result<Option<PreBuiltTxList>, Error>,
+        l2_slot_info: &Result<L2SlotInfo, Error>,
         batches_number: u64,
     ) -> Result<(), Error> {
         let l1_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
         info!(
-            "| Epoch: {:<6} | Slot: {:<2} | L2 Slot: {:<2} | Txs: {:<4} | Fee: {:<7} | L2 height: {:<6} | Batches: {batches_number} | {current_status} |",
+            "| Epoch: {:<6} | Slot: {:<2} | L2 Slot: {:<2} | {}{} Batches: {batches_number} | {} |",
             self.ethereum_l1.slot_clock.get_epoch_from_slot(l1_slot),
             self.ethereum_l1.slot_clock.slot_of_epoch(l1_slot),
             self.ethereum_l1
                 .slot_clock
                 .get_current_l2_slot_within_l1_slot()?,
-            pending_tx_list
-                .as_ref()
-                .map_or(0, |tx_list| tx_list.tx_list.len()),
-            l2_slot_info.base_fee(),
-            l2_slot_info.parent_id(),
+            if let Ok(pending_tx_list) = pending_tx_list {
+                format!(
+                    "Txs: {:<4} |",
+                    pending_tx_list
+                        .as_ref()
+                        .map_or(0, |tx_list| tx_list.tx_list.len())
+                )
+            } else {
+                "Txs: unknown |".to_string()
+            },
+            if let Ok(l2_slot_info) = l2_slot_info {
+                format!(
+                    " Fee: {:<7} | L2 height: {:<6} |",
+                    l2_slot_info.base_fee(),
+                    l2_slot_info.parent_id()
+                )
+            } else {
+                " L2 slot info unknown |".to_string()
+            },
+            if let Ok(status) = current_status {
+                status.to_string()
+            } else {
+                "Unknown".to_string()
+            },
         );
         Ok(())
     }
