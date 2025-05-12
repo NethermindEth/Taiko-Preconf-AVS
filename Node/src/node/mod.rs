@@ -351,7 +351,7 @@ impl Node {
         self.print_current_slots_info(
             &current_status,
             &pending_tx_list,
-            l2_slot_info.base_fee(),
+            &l2_slot_info,
             self.batch_manager.get_number_of_batches(),
         )?;
 
@@ -574,12 +574,12 @@ impl Node {
         &self,
         current_status: &OperatorStatus,
         pending_tx_list: &Option<PreBuiltTxList>,
-        base_fee: u64,
+        l2_slot_info: &L2SlotInfo,
         batches_number: u64,
     ) -> Result<(), Error> {
         let l1_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
         info!(
-            "| Epoch: {:<6} | Slot: {:<2} | L2 Slot: {:<2} | Pending txs: {:<4} | b. fee: {:<7} | Batches: {batches_number} | {current_status} |",
+            "| Epoch: {:<6} | Slot: {:<2} | L2 Slot: {:<2} | Txs: {:<4} | Fee: {:<7} | L2 height: {:<6} | Batches: {batches_number} | {current_status} |",
             self.ethereum_l1.slot_clock.get_epoch_from_slot(l1_slot),
             self.ethereum_l1.slot_clock.slot_of_epoch(l1_slot),
             self.ethereum_l1
@@ -588,7 +588,8 @@ impl Node {
             pending_tx_list
                 .as_ref()
                 .map_or(0, |tx_list| tx_list.tx_list.len()),
-            base_fee
+            l2_slot_info.base_fee(),
+            l2_slot_info.parent_id(),
         );
         Ok(())
     }
