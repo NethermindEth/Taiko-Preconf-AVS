@@ -658,11 +658,16 @@ impl Taiko {
 
 pub trait PreconfDriver {
     async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error>;
+    async fn get_latest_l2_block_id(&self) -> Result<u64, Error>;
 }
 
 impl PreconfDriver for Taiko {
     async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {
         Taiko::get_status(self).await
+    }
+
+    async fn get_latest_l2_block_id(&self) -> Result<u64, Error> {
+        Taiko::get_latest_l2_block_id(self).await
     }
 }
 

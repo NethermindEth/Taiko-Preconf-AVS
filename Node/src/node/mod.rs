@@ -74,6 +74,7 @@ impl Node {
             handover_window_slots,
             handover_start_buffer_ms,
             simulate_not_submitting_at_the_end_of_epoch,
+            cancel_token.clone(),
         )?;
         let batch_manager = BatchManager::new(
             l1_height_lag,

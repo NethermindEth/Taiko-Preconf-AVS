@@ -10,6 +10,7 @@ use crate::{
 };
 use anyhow::Error;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 pub struct Operator<
@@ -26,6 +27,8 @@ pub struct Operator<
     continuing_role: bool,
     simulate_not_submitting_at_the_end_of_epoch: bool,
     was_preconfer: bool,
+    cancel_token: CancellationToken,
+    cancel_counter: u64,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -87,6 +90,7 @@ impl Operator {
         handover_window_slots: u64,
         handover_start_buffer_ms: u64,
         simulate_not_submitting_at_the_end_of_epoch: bool,
+        cancel_token: CancellationToken,
     ) -> Result<Self, Error> {
         Ok(Self {
             execution_layer: ethereum_l1.execution_layer.clone(),
@@ -98,6 +102,8 @@ impl Operator {
             continuing_role: false,
             simulate_not_submitting_at_the_end_of_epoch,
             was_preconfer: false,
+            cancel_token,
+            cancel_counter: 0,
         })
     }
 }
@@ -125,8 +131,15 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
         };
 
         let handover_window = self.is_handover_window(l1_slot);
+        let driver_status = self.taiko.get_status().await?;
         let preconfer = self
-            .is_preconfer(current_operator, handover_window, l1_slot, l2_slot_info)
+            .is_preconfer(
+                current_operator,
+                handover_window,
+                l1_slot,
+                l2_slot_info,
+                &driver_status,
+            )
             .await?;
         let preconfirmation_started = self.is_preconfirmation_start_l2_slot(preconfer);
         self.was_preconfer = preconfer;
@@ -162,28 +175,49 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
     }
 
     async fn is_preconfer(
-        &self,
+        &mut self,
         current_operator: bool,
         handover_window: bool,
         l1_slot: Slot,
         l2_slot_info: &L2SlotInfo,
+        driver_status: &TaikoStatus,
     ) -> Result<bool, Error> {
+        if !self
+            .is_block_height_synced_between_taiko_geth_and_the_driver(driver_status, l2_slot_info)
+            .await?
+        {
+            self.cancel_counter += 1;
+            self.cancel_if_not_synced_for_sufficient_long_time();
+            return Ok(false);
+        }
+        self.cancel_counter = 0;
+
         if handover_window {
             return Ok(self.next_operator
                 && (self.was_preconfer // If we were the operator for the previous slot, the handover buffer doesn't matter.
-                    || !self.is_handover_buffer(l1_slot, l2_slot_info).await?));
+                    || !self.is_handover_buffer(l1_slot, l2_slot_info, driver_status).await?));
         }
 
         Ok(current_operator)
+    }
+
+    fn cancel_if_not_synced_for_sufficient_long_time(&mut self) {
+        if self.cancel_counter > self.slot_clock.get_l2_slots_per_epoch() / 2 {
+            warn!(
+                "Not synchronized Geth driver count: {}, exiting...",
+                self.cancel_counter
+            );
+            self.cancel_token.cancel();
+        }
     }
 
     async fn is_handover_buffer(
         &self,
         l1_slot: Slot,
         l2_slot_info: &L2SlotInfo,
+        driver_status: &TaikoStatus,
     ) -> Result<bool, Error> {
         if self.get_ms_from_handover_window_start(l1_slot)? <= self.handover_start_buffer_ms {
-            let driver_status = self.taiko.get_status().await?;
             tracing::debug!(
                 "Is handover buffer, end_of_sequencing_block_hash: {}",
                 driver_status.end_of_sequencing_block_hash
@@ -230,6 +264,26 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
             })?;
         Ok(result)
     }
+
+    async fn is_block_height_synced_between_taiko_geth_and_the_driver(
+        &self,
+        status: &TaikoStatus,
+        l2_slot_info: &L2SlotInfo,
+    ) -> Result<bool, Error> {
+        if status.highest_unsafe_l2_payload_block_id == 0 {
+            return Ok(true);
+        }
+
+        let taiko_geth_height = l2_slot_info.parent_id();
+        if taiko_geth_height != status.highest_unsafe_l2_payload_block_id {
+            warn!(
+                "highestUnsafeL2PayloadBlockID: {}, different from Taiko Geth Height: {}",
+                status.highest_unsafe_l2_payload_block_id, taiko_geth_height
+            );
+        }
+
+        Ok(taiko_geth_height == status.highest_unsafe_l2_payload_block_id)
+    }
 }
 
 #[cfg(test)]
@@ -264,6 +318,10 @@ mod tests {
                 end_of_sequencing_block_hash: self.end_of_sequencing_block_hash.clone(),
                 highest_unsafe_l2_payload_block_id: 0,
             })
+        }
+
+        async fn get_latest_l2_block_id(&self) -> Result<u64, Error> {
+            Ok(0)
         }
     }
 
@@ -741,6 +799,8 @@ mod tests {
         let mut slot_clock = SlotClock::<MockClock>::new(0, 0, 12, 32, 2000);
         slot_clock.clock.timestamp = timestamp; // second l1 slot, second l2 slot
         Operator {
+            cancel_token: CancellationToken::new(),
+            cancel_counter: 0,
             taiko: Arc::new(TaikoMock {
                 end_of_sequencing_block_hash: B256::ZERO,
             }),
@@ -766,6 +826,7 @@ mod tests {
         let mut slot_clock = SlotClock::<MockClock>::new(0, 0, 12, 32, 2000);
         slot_clock.clock.timestamp = timestamp; // second l1 slot, second l2 slot
         Operator {
+            cancel_token: CancellationToken::new(),
             taiko: Arc::new(TaikoMock {
                 end_of_sequencing_block_hash: get_test_hash(),
             }),
@@ -780,6 +841,7 @@ mod tests {
             continuing_role: false,
             simulate_not_submitting_at_the_end_of_epoch: false,
             was_preconfer: false,
+            cancel_counter: 0,
         }
     }
 

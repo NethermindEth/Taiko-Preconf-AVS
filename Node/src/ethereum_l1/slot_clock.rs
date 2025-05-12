@@ -239,6 +239,10 @@ impl<T: Clock> SlotClock<T> {
     fn which_l2_slot_is_it(&self, ms_from_l1_slot_begin: u64) -> u64 {
         ms_from_l1_slot_begin / self.preconf_heartbeat_ms
     }
+
+    pub fn get_l2_slots_per_epoch(&self) -> u64 {
+        self.slots_per_epoch * self.l2_slots_per_l1
+    }
 }
 
 #[cfg(test)]
@@ -458,5 +462,11 @@ mod tests {
 
         slot_clock.clock.timestamp = 26;
         assert_eq!(slot_clock.get_l2_slot_begin_timestamp().unwrap(), 26);
+    }
+
+    #[test]
+    fn test_get_l2_slots_per_epoch() {
+        let slot_clock: SlotClock = SlotClock::new(0, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
+        assert_eq!(slot_clock.get_l2_slots_per_epoch(), 32 * 4);
     }
 }
