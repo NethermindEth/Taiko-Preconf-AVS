@@ -183,7 +183,7 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
         driver_status: &TaikoStatus,
     ) -> Result<bool, Error> {
         if !self
-            .is_block_height_synced_between_taiko_geth_and_the_driver(driver_status)
+            .is_block_height_synced_between_taiko_geth_and_the_driver(driver_status, l2_slot_info)
             .await?
         {
             self.cancel_counter += 1;
@@ -264,12 +264,13 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
     async fn is_block_height_synced_between_taiko_geth_and_the_driver(
         &self,
         status: &TaikoStatus,
+        l2_slot_info: &L2SlotInfo,
     ) -> Result<bool, Error> {
         if status.highest_unsafe_l2_payload_block_id == 0 {
             return Ok(true);
         }
 
-        let taiko_geth_height = self.taiko.get_latest_l2_block_id().await?;
+        let taiko_geth_height = l2_slot_info.parent_id();
         if taiko_geth_height != status.highest_unsafe_l2_payload_block_id {
             warn!(
                 "highestUnsafeL2PayloadBlockID: {}, different from Taiko Geth Height: {}",
