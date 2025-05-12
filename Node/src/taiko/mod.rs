@@ -302,12 +302,10 @@ impl Taiko {
             .await?;
 
         debug!(
-            base_fee = %base_fee,
             timestamp = %l2_slot_timestamp,
-            parent_id = %parent_id,
             parent_hash = %parent_hash,
             parent_gas_used = %parent_gas_used_u32,
-            "Latest L2 slot info"
+            "L2 slot info"
         );
 
         Ok(L2SlotInfo::new(
@@ -461,7 +459,7 @@ impl Taiko {
     }
 
     pub async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {
-        debug!("Get status form taiko driver");
+        trace!("Get status form taiko driver");
 
         const API_ENDPOINT: &str = "status";
         let request_body = serde_json::json!({});
@@ -470,7 +468,7 @@ impl Taiko {
             .call_driver_until_success(http::Method::GET, API_ENDPOINT, &request_body)
             .await?;
 
-        debug!("Response from taiko status: {:?}", response);
+        trace!("Response from taiko status: {:?}", response);
 
         let status: preconf_blocks::TaikoStatus = serde_json::from_value(response)?;
 
