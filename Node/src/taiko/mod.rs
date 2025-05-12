@@ -305,7 +305,7 @@ impl Taiko {
             timestamp = %l2_slot_timestamp,
             parent_hash = %parent_hash,
             parent_gas_used = %parent_gas_used_u32,
-            "Latest L2 slot info"
+            "L2 slot info"
         );
 
         Ok(L2SlotInfo::new(
@@ -468,7 +468,7 @@ impl Taiko {
             .call_driver_until_success(http::Method::GET, API_ENDPOINT, &request_body)
             .await?;
 
-        debug!("Response from taiko status: {:?}", response);
+        trace!("Response from taiko status: {:?}", response);
 
         let status: preconf_blocks::TaikoStatus = serde_json::from_value(response)?;
 
