@@ -187,13 +187,7 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
             .await?
         {
             self.cancel_counter += 1;
-            if self.cancel_counter > self.slot_clock.get_l2_slots_per_epoch() / 2 {
-                warn!(
-                    "Not synchronized Geth driver count: {}, exiting...",
-                    self.cancel_counter
-                );
-                self.cancel_token.cancel();
-            }
+            self.cancel_if_not_synced_for_sufficient_long_time();
             return Ok(false);
         }
         self.cancel_counter = 0;
@@ -205,6 +199,16 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
         }
 
         Ok(current_operator)
+    }
+
+    fn cancel_if_not_synced_for_sufficient_long_time(&mut self) {
+        if self.cancel_counter > self.slot_clock.get_l2_slots_per_epoch() / 2 {
+            warn!(
+                "Not synchronized Geth driver count: {}, exiting...",
+                self.cancel_counter
+            );
+            self.cancel_token.cancel();
+        }
     }
 
     async fn is_handover_buffer(
