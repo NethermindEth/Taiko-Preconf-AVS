@@ -1,6 +1,7 @@
 mod ethereum_l1;
 mod metrics;
 mod node;
+mod reorg_detector;
 mod shared;
 mod taiko;
 mod utils;
@@ -50,6 +51,12 @@ async fn main() -> Result<(), Error> {
         panic_cancel_token.cancel();
         info!("Cancellation token triggered, initiating shutdown...");
     }));
+
+    let reorg_detector = reorg_detector::ReorgDetector::new(
+        config.l1_ws_rpc_url.clone(),
+        config.contract_addresses.taiko_inbox.clone(),
+    )?;
+    reorg_detector.start().await.unwrap();
 
     let (transaction_error_sender, transaction_error_receiver) = mpsc::channel(100);
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
