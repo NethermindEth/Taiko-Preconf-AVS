@@ -239,9 +239,6 @@ impl Node {
             interval.tick().await;
             if self.cancel_token.is_cancelled() {
                 info!("Shutdown signal received, exiting main loop...");
-                if let Err(err) = self.batch_manager.try_submit_oldest_batch(false).await {
-                    error!("Failed to submit batches at the application shut down: {err}");
-                }
                 return;
             }
 
