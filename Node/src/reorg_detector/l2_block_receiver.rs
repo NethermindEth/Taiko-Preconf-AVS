@@ -40,6 +40,7 @@ impl L2BlockReceiver {
                 }
 
                 tracing::warn!("Subscription to new blocks closed, retrying...");
+                sleep(Duration::from_secs(5)).await;
             }
         });
 
