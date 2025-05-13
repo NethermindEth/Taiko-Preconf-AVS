@@ -1,33 +1,64 @@
+use std::time::Duration;
+
 use anyhow::Error;
-use beacon_api_client::{mainnet::MainnetClientTypes, Client, GenesisDetails};
 use reqwest;
 
 pub struct ConsensusLayer {
-    client: Client<MainnetClientTypes>,
+    client: reqwest::Client,
+    url: reqwest::Url,
 }
 
 impl ConsensusLayer {
-    pub fn new(rpc_url: &str) -> Result<Self, Error> {
-        let client = Client::new(reqwest::Url::parse(rpc_url)?);
-        Ok(Self { client })
+    pub fn new(rpc_url: &str, timeout: Duration) -> Result<Self, Error> {
+        let client = reqwest::Client::builder().timeout(timeout).build()?;
+        Ok(Self {
+            client,
+            url: reqwest::Url::parse(rpc_url)?,
+        })
     }
 
-    pub async fn get_genesis_details(&self) -> Result<GenesisDetails, Error> {
-        tracing::debug!("Getting genesis details");
-        self.client.get_genesis_details().await.map_err(Error::new)
+    pub async fn get_genesis_time(&self) -> Result<u64, Error> {
+        tracing::debug!("Getting genesis time");
+        let genesis = self.get("/eth/v1/beacon/genesis").await?;
+        let genesis_time = genesis["data"]["genesis_time"]
+            .as_str()
+            .ok_or(anyhow::anyhow!(
+                "get_genesis_time error: {}",
+                "genesis_time is not a string"
+            ))?
+            .parse::<u64>()
+            .map_err(|err| anyhow::anyhow!("get_genesis_time error: {}", err))?;
+        Ok(genesis_time)
     }
 
     pub async fn get_head_slot_number(&self) -> Result<u64, Error> {
-        let result = self
-            .client
-            .get_beacon_header(beacon_api_client::BlockId::Head)
-            .await
+        let headers = self.get("/eth/v1/beacon/headers").await?;
+
+        let slot = headers["data"]["header"]["message"]["slot"]
+            .as_str()
+            .ok_or(anyhow::anyhow!(
+                "get_head_slot_number error: {}",
+                "slot is not a string"
+            ))?
+            .parse::<u64>()
             .map_err(|err| anyhow::anyhow!("get_head_slot_number error: {}", err))?;
-        tracing::debug!(
-            "Head slot number from beacon: {}",
-            result.header.message.slot
-        );
-        Ok(result.header.message.slot)
+        Ok(slot)
+    }
+
+    async fn get(&self, path: &str) -> Result<serde_json::Value, Error> {
+        let response = self.client.get(self.url.join(path)?).send().await?;
+
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "Request ({}) failed with status: {}",
+                path,
+                response.status()
+            ));
+        }
+
+        let body = response.text().await?;
+        let v: serde_json::Value = serde_json::from_str(&body)?;
+        Ok(v)
     }
 }
 
@@ -39,15 +70,10 @@ pub mod tests {
     #[tokio::test]
     async fn test_get_genesis_data() {
         let server = setup_server().await;
-        let cl = ConsensusLayer::new(server.url().as_str()).unwrap();
-        let genesis_data = cl.get_genesis_details().await.unwrap();
+        let cl = ConsensusLayer::new(server.url().as_str(), Duration::from_secs(1)).unwrap();
+        let genesis_time = cl.get_genesis_time().await.unwrap();
 
-        assert_eq!(genesis_data.genesis_time, 1590832934);
-        assert_eq!(
-            genesis_data.genesis_validators_root.to_string(),
-            "0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2"
-        );
-        assert_eq!(genesis_data.genesis_fork_version, [0; 4]);
+        assert_eq!(genesis_time, 1590832934);
     }
 
     pub async fn setup_server() -> mockito::ServerGuard {

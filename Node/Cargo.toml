@@ -1,6 +1,6 @@
 [package]
 name = "taiko_preconf_avs_node"
-version = "0.2.57"
+version = "0.2.58"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -30,7 +30,6 @@ elliptic-curve = "0.13"
 reqwest = "0.12"
 hex = "0.4"
 ethereum-consensus = { git = "https://github.com/ralexstokes/ethereum-consensus", package = "ethereum-consensus", rev = "8fbd8a53dca0170bedeca40a92ee70fd48c4615b" }
-beacon-api-client = { git = "https://github.com/ralexstokes/ethereum-consensus", package = "beacon-api-client", rev = "8fbd8a53dca0170bedeca40a92ee70fd48c4615b" }
 dotenv = "0.15"
 chrono = "0.4"
 futures-util = "0.3"

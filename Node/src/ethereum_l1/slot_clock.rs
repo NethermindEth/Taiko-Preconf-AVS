@@ -266,9 +266,9 @@ mod tests {
     use super::mock::*;
     use super::*;
     use chrono::DateTime;
-    use ethereum_consensus::phase0::mainnet::SLOTS_PER_EPOCH;
     use k256::pkcs8::der::Decode;
 
+    const SLOTS_PER_EPOCH: u64 = 32;
     const SLOT_DURATION: u64 = 12;
     const PRECONF_HEART_BEAT_MS: u64 = 3000;
 
