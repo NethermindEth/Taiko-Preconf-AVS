@@ -20,11 +20,11 @@ impl ConsensusLayer {
     pub async fn get_genesis_time(&self) -> Result<u64, Error> {
         tracing::debug!("Getting genesis time");
         let genesis = self.get("/eth/v1/beacon/genesis").await?;
-        let genesis_time = genesis["data"]["genesis_time"]
-            .as_str()
-            .ok_or(anyhow::anyhow!(
-                "get_genesis_time error: {}",
-                "genesis_time is not a string"
+        let genesis_time = genesis.get("data")
+            .and_then(|data| data.get("genesis_time"))
+            .and_then(|genesis_time| genesis_time.as_str())
+            .ok_or_else(|| anyhow::anyhow!(
+                "get_genesis_time error: missing or invalid 'genesis_time' field"
             ))?
             .parse::<u64>()
             .map_err(|err| anyhow::anyhow!("get_genesis_time error: {}", err))?;
