@@ -37,6 +37,7 @@ pub struct Node {
     taiko: Arc<Taiko>,
     transaction_error_channel: Receiver<TransactionError>,
     metrics: Arc<Metrics>,
+    watchdog: u64,
 }
 
 impl Node {
@@ -93,6 +94,7 @@ impl Node {
             taiko,
             transaction_error_channel,
             metrics,
+            watchdog: 0,
         })
     }
 
@@ -243,7 +245,18 @@ impl Node {
             }
 
             if let Err(err) = self.main_block_preconfirmation_step().await {
+                self.watchdog += 1;
                 error!("Failed to execute main block preconfirmation step: {}", err);
+                if self.watchdog > self.ethereum_l1.slot_clock.get_l2_slots_per_epoch() / 2 {
+                    error!(
+                        "Watchdog triggered after {} heartbeats, shutting down...",
+                        self.watchdog
+                    );
+                    self.cancel_token.cancel();
+                    return;
+                }
+            } else {
+                self.watchdog = 0;
             }
         }
     }
