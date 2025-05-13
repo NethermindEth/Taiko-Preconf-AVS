@@ -20,22 +20,27 @@ impl ConsensusLayer {
     pub async fn get_genesis_time(&self) -> Result<u64, Error> {
         tracing::debug!("Getting genesis time");
         let genesis = self.get("/eth/v1/beacon/genesis").await?;
-        let genesis_time = genesis.get("data")
+        let genesis_time = genesis
+            .get("data")
             .and_then(|data| data.get("genesis_time"))
             .and_then(|genesis_time| genesis_time.as_str())
-            .ok_or_else(|| anyhow::anyhow!(
-                "get_genesis_time error: missing or invalid 'genesis_time' field"
-            ))?
+            .ok_or_else(|| {
+                anyhow::anyhow!("get_genesis_time error: missing or invalid 'genesis_time' field")
+            })?
             .parse::<u64>()
             .map_err(|err| anyhow::anyhow!("get_genesis_time error: {}", err))?;
         Ok(genesis_time)
     }
 
     pub async fn get_head_slot_number(&self) -> Result<u64, Error> {
-        let headers = self.get("/eth/v1/beacon/headers").await?;
+        let headers = self.get("/eth/v1/beacon/headers/head").await?;
 
-        let slot = headers["data"][0]["header"]["message"]["slot"]
-            .as_str()
+        let slot = headers
+            .get("data")
+            .and_then(|data| data.get("header"))
+            .and_then(|header| header.get("message"))
+            .and_then(|message| message.get("slot"))
+            .and_then(|slot| slot.as_str())
             .ok_or(anyhow::anyhow!(
                 "get_head_slot_number error: {}",
                 "slot is not a string"
@@ -82,7 +87,7 @@ pub mod tests {
         let cl = ConsensusLayer::new(server.url().as_str(), Duration::from_secs(1)).unwrap();
         let slot = cl.get_head_slot_number().await.unwrap();
 
-        assert_eq!(slot, 4269482);
+        assert_eq!(slot, 4269575);
     }
 
     pub async fn setup_server() -> mockito::ServerGuard {
@@ -103,9 +108,9 @@ pub mod tests {
             .create();
 
         server
-            .mock("GET", "/eth/v1/beacon/headers")
+            .mock("GET", "/eth/v1/beacon/headers/head")
             .with_body(r#"
-            {"execution_optimistic":false,"finalized":false,"data":[{"root":"0x1394fbcac1b01dc54bbd8ac0e450f9b4c9918aa58eb87a4cd0cd4f9ae454b7e0","canonical":true,"header":{"message":{"slot":"4269482","proposer_index":"589826","parent_root":"0x6dcf6c0fa0dd8e5e0fd50ecd1ccc70885a07d9fab9194043b52d92cce6810fb3","state_root":"0x7134c0ceae868d193ac3627d83a3a135f421377c0ef02bb9eeefe17c9ed5a37e","body_root":"0x3b98639b219e5c00bf0660699f8c6f35e4bf557ffec17ba5d26b3a4a4c1bc028"},"signature":"0x85295d327a6e04e1091475ebe61ed46d231fdb97f8048e305d38b0fd1c2db567b3a8d827e4408ed931518b19d8517eef079ae2c47781a1fbf5e422985f50b21c25ec459dea376703ef1fb0c40a85156c200d639301b27e49f1be377f8dac19e5"}}]}
+            {"execution_optimistic":false,"finalized":false,"data":{"root":"0xc6cab6f6378b6027b16230ef30e696e5c5784e25d2808f1a143e533af2fac604","canonical":true,"header":{"message":{"slot":"4269575","proposer_index":"1922844","parent_root":"0x9b742c3e4f1b7670b5b36c2739dea8823e547abcba8e84a84e9cfc75598eec88","state_root":"0x2be9f894881f8cf30db3aeacbff9ac4a1a17bd2045e9427b790a2d8ea6a2a884","body_root":"0xe3919dd62dca9c81e515c9f0c6b13210cf80cf02b1f1a0e54234e17571f20451"},"signature":"0xb2dd797184a46515266707cc01ee48a313d5d3723dc883d5d3a311a124f21a24a0920ed40fdfca854999de3fb01c26d80314f3100504ba11f388a112243bba5e3a40c0ec2b9bfb8e31a9933e1ffc5d05f25083aef6c497144a6cda90438a90c4"}}}
             "#)
             .create();
 
