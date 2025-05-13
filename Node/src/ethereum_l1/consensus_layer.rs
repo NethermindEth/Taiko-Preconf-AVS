@@ -51,11 +51,22 @@ impl ConsensusLayer {
     }
 
     async fn get(&self, path: &str) -> Result<serde_json::Value, Error> {
-        let response = self.client.get(self.url.join(path)?).send().await?;
+        let response = self
+            .client
+            .get(self.url.join(path)?)
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    anyhow::anyhow!("Consensus layer request timed out: {}", path)
+                } else {
+                    anyhow::anyhow!("Consensus layer request failed with error: {}", e)
+                }
+            })?;
 
         if !response.status().is_success() {
             return Err(anyhow::anyhow!(
-                "Request ({}) failed with status: {}",
+                "Consensus layer request ({}) failed with status: {}",
                 path,
                 response.status()
             ));
