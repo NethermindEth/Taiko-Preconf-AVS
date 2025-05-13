@@ -1,4 +1,4 @@
-use alloy::{contract::EventSubscription, sol};
+use alloy::sol;
 use anyhow::Error;
 
 sol!(
@@ -29,5 +29,3 @@ impl BatchProposed {
         &self.event_data
     }
 }
-
-pub struct EventSubscriptionBatchProposed(pub EventSubscription<TaikoEvents::BatchProposed>);

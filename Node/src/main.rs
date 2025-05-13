@@ -57,7 +57,7 @@ async fn main() -> Result<(), Error> {
         config.taiko_geth_ws_rpc_url.clone(),
         config.contract_addresses.taiko_inbox.clone(),
     )?;
-    reorg_detector.start().await.unwrap();
+    reorg_detector.start().await?;
 
     let (transaction_error_sender, transaction_error_receiver) = mpsc::channel(100);
     let ethereum_l1 = ethereum_l1::EthereumL1::new(

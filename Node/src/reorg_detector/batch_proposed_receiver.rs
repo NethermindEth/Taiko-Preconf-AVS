@@ -5,106 +5,114 @@ use alloy::{
 use anyhow::Error;
 use futures_util::StreamExt;
 //cd ..use std::sync::Arc;
+use tokio::{
+    sync::mpsc::Sender,
+    time::{sleep, Duration},
+};
 use tracing::{error, info};
-use tokio::time::{sleep, Duration};
 
 use crate::reorg_detector::batch_proposed::{BatchProposed, TaikoEvents};
 
-use super::batch_proposed::EventSubscriptionBatchProposed;
-
-const SLEEP_DURATION: u64 = 15;
+const SLEEP_DURATION: Duration = Duration::from_secs(15);
 
 pub struct BatchProposedEventReceiver {
     ws_rpc_url: String,
     taiko_inbox: Address,
-    //node_tx: Sender<BatchProposed>,
+    batch_proposed_tx: Sender<BatchProposed>,
 }
 
 impl BatchProposedEventReceiver {
-    pub async fn new(ws_rpc_url: String, taiko_inbox: Address) -> Result<Self, Error> {
+    pub async fn new(
+        ws_rpc_url: String,
+        taiko_inbox: Address,
+        batch_proposed_tx: Sender<BatchProposed>,
+    ) -> Result<Self, Error> {
         Ok(BatchProposedEventReceiver {
             ws_rpc_url,
             taiko_inbox,
+            batch_proposed_tx,
         })
     }
 
     pub fn start(&self) {
-        info!("Starting batch proposed event receiver");
+        info!("Starting BatchProposed event receiver");
         let ws_rpc_url = self.ws_rpc_url.clone();
         let taiko_inbox = self.taiko_inbox.clone();
+        let batch_proposed_tx = self.batch_proposed_tx.clone();
         tokio::spawn(async move {
-            BatchProposedEventReceiver::check_for_events(ws_rpc_url, taiko_inbox).await;
+            BatchProposedEventReceiver::check_for_events(
+                ws_rpc_url,
+                taiko_inbox,
+                batch_proposed_tx,
+            )
+            .await;
         });
     }
 
-    async fn check_for_events(ws_rpc_url: String, taiko_inbox: Address) {
+    async fn check_for_events(
+        ws_rpc_url: String,
+        taiko_inbox: Address,
+        batch_proposed_tx: Sender<BatchProposed>,
+    ) {
         loop {
-            let ws = WsConnect::new(ws_rpc_url.to_string());
+            let ws = WsConnect::new(ws_rpc_url.clone());
 
-            let Ok(provider_ws) = ProviderBuilder::new().on_ws(ws.clone()).await else {
-                tracing::error!("Failed to create WebSocket provider");
-                sleep(Duration::from_secs(SLEEP_DURATION)).await;
-                continue;
+            let provider_ws = match ProviderBuilder::new().on_ws(ws).await {
+                Ok(provider) => provider,
+                Err(e) => {
+                    error!("Failed to create WebSocket provider: {:?}", e);
+                    sleep(SLEEP_DURATION).await;
+                    continue;
+                }
             };
 
             let taiko_events = TaikoEvents::new(taiko_inbox, &provider_ws);
 
-            let Ok(batch_proposed_filter) = taiko_events.BatchProposed_filter().subscribe().await
-            else {
-                tracing::error!("Failed to create BatchProposed_filter");
-                sleep(Duration::from_secs(SLEEP_DURATION)).await;
-                continue;
+            let batch_proposed_filter = match taiko_events.BatchProposed_filter().subscribe().await
+            {
+                Ok(filter) => filter,
+                Err(e) => {
+                    error!("Failed to subscribe to BatchProposed_filter: {:?}", e);
+                    sleep(SLEEP_DURATION).await;
+                    continue;
+                }
             };
-            tracing::debug!("Subscribed to batch proposed event");
 
-            let event_subscription = EventSubscriptionBatchProposed(batch_proposed_filter);
+            tracing::debug!("Subscribed to BatchProposed event");
+            let mut stream = batch_proposed_filter.into_stream();
 
-            let mut stream = event_subscription.0.into_stream();
-
-            match stream.next().await {
-                Some(log) => match log {
+            while let Some(result) = stream.next().await {
+                match result {
                     Ok(log) => {
-                        let batch_proposed = log.0;
-                        info!(
-                            "Received batch proposed event for block: {}",
-                            batch_proposed.info.lastBlockId
-                        );
-                        match BatchProposed::new(batch_proposed) {
+                        let raw_event = log.0;
+                        match BatchProposed::new(raw_event) {
                             Ok(batch_proposed) => {
                                 info!(
-                                    "BatchProposed lastBlockId: {}, blocks len: {}",
+                                    "Parsed BatchProposed: lastBlockId = {}, blocks = {}",
                                     batch_proposed.event_data().info.lastBlockId,
                                     batch_proposed.event_data().info.blocks.len()
                                 );
-                                /*if let Err(e) = self.node_tx.send(batch_proposed).await {
-                                    error!(
-                                        "Error sending batch proposed event by channel: {:?}",
-                                        e
-                                    );
-                                }*/
+
+                                if let Err(e) = batch_proposed_tx.send(batch_proposed).await {
+                                    error!("Failed to send BatchProposed event: {:?}", e);
+                                    break;
+                                }
                             }
                             Err(e) => {
-                                error!("Error creating batch proposed event: {:?}", e);
-                                tokio::time::sleep(std::time::Duration::from_secs(SLEEP_DURATION))
-                                    .await;
-                                continue;
+                                error!("Failed to parse BatchProposed event: {:?}", e);
+                                break;
                             }
                         }
                     }
                     Err(e) => {
-                        error!("Error receiving batch proposed event: {:?}", e);
-                        tokio::time::sleep(std::time::Duration::from_secs(SLEEP_DURATION)).await;
-                        continue;
+                        error!("Error in BatchProposed event stream: {:?}", e);
+                        break;
                     }
-                },
-                None => {
-                    error!("No batch proposed event received, stream closed");
-                    // TODO: recreate a stream
-                    //return;
-                    sleep(Duration::from_secs(SLEEP_DURATION)).await;
-                    continue;
                 }
             }
+
+            error!("BatchProposed stream ended or errored; reconnecting...");
+            sleep(SLEEP_DURATION).await;
         }
     }
 }
