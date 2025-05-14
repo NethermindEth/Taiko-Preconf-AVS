@@ -56,6 +56,7 @@ async fn main() -> Result<(), Error> {
         config.l1_ws_rpc_url.clone(),
         config.taiko_geth_ws_rpc_url.clone(),
         config.contract_addresses.taiko_inbox.clone(),
+        cancel_token.clone(),
     )?;
     reorg_detector.start().await?;
 

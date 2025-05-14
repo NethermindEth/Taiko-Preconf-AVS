@@ -1,11 +1,12 @@
-use alloy::primitives::{B256, Address};
+use alloy::primitives::{Address, B256};
 use anyhow::{anyhow, Error};
 use batch_proposed::BatchProposed;
 use batch_proposed_receiver::BatchProposedEventReceiver;
 use l2_block_receiver::{L2BlockInfo, L2BlockReceiver};
 use std::{str::FromStr, sync::Arc};
-use tokio::sync::Mutex;
 use tokio::sync::mpsc::{self, Receiver};
+use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
 mod batch_proposed;
@@ -24,6 +25,7 @@ pub struct ReorgDetector {
     ws_l2_rpc_url: String,
     taiko_inbox: Address,
     taiko_geth_status: Arc<Mutex<TaikoGethStatus>>,
+    cancel_token: CancellationToken,
 }
 
 impl ReorgDetector {
@@ -31,8 +33,7 @@ impl ReorgDetector {
         ws_l1_rpc_url: String,
         ws_l2_rpc_url: String,
         taiko_inbox: String,
-        taiko_geth_height: u64,
-        taiko_geth_hash: B256,
+        cancel_token: CancellationToken,
     ) -> Result<Self, Error> {
         debug!(
             "Creating ReorgDetector (L1: {}, L2: {}, Inbox: {})",
@@ -43,14 +44,15 @@ impl ReorgDetector {
             .map_err(|e| anyhow!("Invalid Taiko inbox address: {:?}", e))?;
 
         let taiko_geth_status = Arc::new(Mutex::new(TaikoGethStatus {
-            height: taiko_geth_height,
-            hash: taiko_geth_hash,
+            height: 0,
+            hash: B256::ZERO,
         }));
         Ok(Self {
             ws_l1_rpc_url,
             ws_l2_rpc_url,
             taiko_inbox,
             taiko_geth_status,
+            cancel_token,
         })
     }
 
@@ -64,22 +66,29 @@ impl ReorgDetector {
             self.ws_l1_rpc_url.clone(),
             self.taiko_inbox,
             batch_proposed_tx,
+            self.cancel_token.clone(),
         )
         .await?;
         batch_receiver.start();
 
         //L2 block headers
         let (l2_block_tx, l2_block_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
-        let l2_receiver = L2BlockReceiver::new(self.ws_l2_rpc_url.clone(), l2_block_tx);
+        let l2_receiver = L2BlockReceiver::new(
+            self.ws_l2_rpc_url.clone(),
+            l2_block_tx,
+            self.cancel_token.clone(),
+        );
         l2_receiver.start()?;
 
         let taiko_geth_status = self.taiko_geth_status.clone();
+        let cancel_token = self.cancel_token.clone();
 
         //Message dispatcher
         tokio::spawn(Self::handle_incoming_messages(
             batch_proposed_rx,
             l2_block_rx,
             taiko_geth_status,
+            cancel_token,
         ));
 
         Ok(())
@@ -89,11 +98,16 @@ impl ReorgDetector {
         mut batch_proposed_rx: Receiver<BatchProposed>,
         mut l2_block_rx: Receiver<L2BlockInfo>,
         taiko_geth_status: Arc<Mutex<TaikoGethStatus>>,
+        cancel_token: CancellationToken,
     ) {
         info!("ReorgDetector message loop running");
 
         loop {
             tokio::select! {
+                _ = cancel_token.cancelled() => {
+                    info!("ReorgDetector: cancellation received, shutting down message loop");
+                    break;
+                }
                 Some(batch) = batch_proposed_rx.recv() => {
                     info!(
                         "BatchProposed event → lastBlockId = {}",
@@ -108,8 +122,11 @@ impl ReorgDetector {
                     {
                         let mut status = taiko_geth_status.lock().await;
 
-                        if block.block_number != status.height + 1 || block.parent_hash != status.hash {
+                        if status.height != 0 && (block.block_number != status.height + 1 || block.parent_hash != status.hash) {
                             tracing::warn!("⛔ Geth reorg detected: Received L2 block with unexpected number. Current state: block_jd {} hash {}", status.height, status.hash);
+                            //TODO uncomment
+                            //cancel_token.cancel();
+                            //break;
                         }
 
                         status.height = block.block_number;
