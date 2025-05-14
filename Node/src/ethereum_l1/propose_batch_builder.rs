@@ -137,8 +137,12 @@ impl ProposeBatchBuilder {
                     "Build proposeBatch: Failed to estimate gas for calldata transaction: {}",
                     e
                 );
-                // In case of error return eip4844 transaction
-                return Ok(tx_blob);
+                match e {
+                    RpcError::ErrorResp(_) => {
+                        return Err(anyhow!(TransactionError::EstimationFailed))
+                    }
+                    _ => return Ok(tx_blob), // In case of error return eip4844 transaction
+                }
             }
         };
         #[cfg(feature = "extra-gas-percentage")]
