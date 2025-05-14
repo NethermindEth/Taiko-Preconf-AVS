@@ -13,6 +13,7 @@ const SLEEP_DURATION: Duration = Duration::from_secs(15);
 pub struct L2BlockInfo {
     pub block_number: u64,
     pub block_hash: B256,
+    pub parent_hash: B256,
 }
 
 pub struct L2BlockReceiver {
@@ -66,6 +67,7 @@ impl L2BlockReceiver {
             let block_info = L2BlockInfo {
                 block_number: header.number,
                 block_hash: header.hash,
+                parent_hash: header.parent_hash,
             };
 
             info!(
