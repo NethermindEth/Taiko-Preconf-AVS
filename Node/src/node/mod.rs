@@ -3,6 +3,7 @@ mod operator;
 mod verifier;
 
 use crate::node::verifier::Verifier;
+use crate::reorg_detector;
 use crate::{
     ethereum_l1::{transaction_error::TransactionError, EthereumL1},
     metrics::Metrics,
@@ -13,6 +14,7 @@ use alloy::primitives::U256;
 use anyhow::Error;
 use batch_manager::{BatchBuilderConfig, BatchManager};
 use operator::{Operator, Status as OperatorStatus};
+use reorg_detector::ReorgDetector;
 use std::sync::Arc;
 use tokio::{
     sync::mpsc::{error::TryRecvError, Receiver},
@@ -29,6 +31,7 @@ pub struct Thresholds {
 pub struct Node {
     cancel_token: CancellationToken,
     ethereum_l1: Arc<EthereumL1>,
+    reorg_detector: Arc<ReorgDetector>,
     preconf_heartbeat_ms: u64,
     operator: Operator,
     batch_manager: BatchManager,
@@ -45,6 +48,7 @@ impl Node {
         cancel_token: CancellationToken,
         taiko: Arc<Taiko>,
         ethereum_l1: Arc<EthereumL1>,
+        reorg_detector: Arc<ReorgDetector>,
         preconf_heartbeat_ms: u64,
         handover_window_slots: u64,
         handover_start_buffer_ms: u64,
@@ -86,6 +90,7 @@ impl Node {
             cancel_token,
             batch_manager: batch_manager,
             ethereum_l1,
+            reorg_detector,
             preconf_heartbeat_ms,
             operator,
             thresholds,
@@ -632,10 +637,13 @@ impl Node {
         message: &str,
     ) -> Result<(), Error> {
         warn!("⛓️‍💥 Force Reorg: {}", message);
+        self.verifier = None;
+        self.reorg_detector
+            .set_expected_reorg(new_last_block_id)
+            .await;
         self.batch_manager
             .trigger_l2_reorg(new_last_block_id)
             .await?;
-        self.verifier = None;
         Ok(())
     }
 }

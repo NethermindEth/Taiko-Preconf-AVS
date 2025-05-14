@@ -75,7 +75,8 @@ impl BatchProposedEventReceiver {
 
             let taiko_events = TaikoEvents::new(taiko_inbox, &provider_ws);
 
-            let batch_proposed_filter = match taiko_events.BatchProposed_filter().subscribe().await {
+            let batch_proposed_filter = match taiko_events.BatchProposed_filter().subscribe().await
+            {
                 Ok(filter) => filter,
                 Err(e) => {
                     error!("Failed to subscribe to BatchProposed_filter: {:?}", e);

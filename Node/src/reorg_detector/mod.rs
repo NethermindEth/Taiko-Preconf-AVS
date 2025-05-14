@@ -18,6 +18,7 @@ const MESSAGE_QUEUE_SIZE: usize = 20;
 struct TaikoGethStatus {
     height: u64,
     hash: B256,
+    expected_reorg: Option<u64>,
 }
 
 pub struct ReorgDetector {
@@ -46,6 +47,7 @@ impl ReorgDetector {
         let taiko_geth_status = Arc::new(Mutex::new(TaikoGethStatus {
             height: 0,
             hash: B256::ZERO,
+            expected_reorg: None,
         }));
         Ok(Self {
             ws_l1_rpc_url,
@@ -54,6 +56,11 @@ impl ReorgDetector {
             taiko_geth_status,
             cancel_token,
         })
+    }
+
+    pub async fn set_expected_reorg(&self, expected_block_number: u64) {
+        let mut status = self.taiko_geth_status.lock().await;
+        status.expected_reorg = Some(expected_block_number);
     }
 
     /// Spawns the event listeners and the message handler.
@@ -123,10 +130,18 @@ impl ReorgDetector {
                         let mut status = taiko_geth_status.lock().await;
 
                         if status.height != 0 && (block.block_number != status.height + 1 || block.parent_hash != status.hash) {
-                            tracing::warn!("⛔ Geth reorg detected: Received L2 block with unexpected number. Current state: block_jd {} hash {}", status.height, status.hash);
-                            //TODO uncomment
-                            //cancel_token.cancel();
-                            //break;
+                            let reorg_expected = match status.expected_reorg {
+                                Some(expected) => block.block_number == expected,
+                                None => false,
+                            };
+                            if !reorg_expected {
+                                tracing::warn!("⛔ Geth reorg detected: Received L2 block with unexpected number. Current state: block_jd {} hash {}", status.height, status.hash);
+                                //TODO uncomment
+                                //cancel_token.cancel();
+                                //break;
+                            } else {
+                                tracing::debug!("Geth reorg detected: Received L2 block with expected number. Current state: block_jd {} hash {}", status.height, status.hash);
+                            }
                         }
 
                         status.height = block.block_number;

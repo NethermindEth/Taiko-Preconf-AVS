@@ -10,6 +10,7 @@ sol!(
 
 pub struct BatchProposed {
     event_data: TaikoEvents::BatchProposed,
+    #[allow(dead_code)]
     last_block_id: u64,
 }
 
@@ -22,6 +23,7 @@ impl BatchProposed {
         })
     }
 
+    #[allow(dead_code)]
     pub fn last_block_id(&self) -> u64 {
         self.last_block_id
     }
