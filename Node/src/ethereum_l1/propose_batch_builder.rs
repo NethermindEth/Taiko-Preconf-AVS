@@ -1,6 +1,4 @@
-use crate::ethereum_l1::{
-    l1_contracts_bindings::*, transaction_error::TransactionError, ws_provider::WsProvider,
-};
+use crate::ethereum_l1::{l1_contracts_bindings::*, ws_provider::WsProvider};
 use alloy::{
     network::{TransactionBuilder, TransactionBuilder4844},
     primitives::{Address, Bytes, FixedBytes},
@@ -8,8 +6,7 @@ use alloy::{
     rpc::types::TransactionRequest,
     sol_types::SolValue,
 };
-use alloy_json_rpc::RpcError;
-use anyhow::{anyhow, Error};
+use anyhow::Error;
 use std::sync::Arc;
 use tracing::warn;
 
@@ -83,12 +80,8 @@ impl ProposeBatchBuilder {
                     "Build proposeBatch: Failed to estimate gas for blob transaction: {}",
                     e
                 );
-                match e {
-                    RpcError::ErrorResp(_) => {
-                        return Err(anyhow!(TransactionError::EstimationFailed))
-                    }
-                    _ => return Ok(tx_blob),
-                }
+                // In case of error return eip4844 transaction
+                return Ok(tx_blob);
             }
         };
         #[cfg(feature = "extra-gas-percentage")]
