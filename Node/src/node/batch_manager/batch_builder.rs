@@ -231,6 +231,7 @@ impl BatchBuilder {
                 .await
             {
                 if err.downcast_ref::<TransactionError>().is_some() {
+                    debug!("BatchBuilder: Transaction error, removing last batch");
                     self.batches_to_send.pop_front(); // remove failed batch
                 }
                 return Err(err);
