@@ -56,7 +56,7 @@ impl BatchManager {
         taiko: Arc<Taiko>,
     ) -> Self {
         Self {
-            batch_builder: BatchBuilder::new(config),
+            batch_builder: BatchBuilder::new(config, ethereum_l1.slot_clock.clone()),
             ethereum_l1,
             taiko,
             l1_height_lag,
@@ -84,22 +84,32 @@ impl BatchManager {
             block_height, anchor_block_id, block.header.timestamp, coinbase, txs.len()
         );
 
+        let anchor_block_timestamp_sec = self
+            .ethereum_l1
+            .execution_layer
+            .get_block_timestamp_by_id(anchor_block_id)
+            .await?;
+
         self.batch_builder.recover_from(
             txs.to_vec(),
             anchor_block_id,
+            anchor_block_timestamp_sec,
             block.header.timestamp,
             coinbase,
         )
     }
 
-    pub async fn get_anchor_block_offset(&self, block_height: u64) -> Result<u64, Error> {
+    pub async fn get_l1_anchor_block_offset_for_l2_block(
+        &self,
+        l2_block_height: u64,
+    ) -> Result<u64, Error> {
         debug!(
             "get_anchor_block_offset: Checking L2 block {}",
-            block_height
+            l2_block_height
         );
         let block = self
             .taiko
-            .get_l2_block_by_number(block_height, false)
+            .get_l2_block_by_number(l2_block_height, false)
             .await?;
 
         let anchor_tx_hash = block
@@ -108,18 +118,19 @@ impl BatchManager {
             .and_then(|txs| txs.first())
             .ok_or_else(|| anyhow::anyhow!("get_anchor_block_offset: No transactions in block"))?;
 
-        let anchor_tx = self.taiko.get_transaction_by_hash(*anchor_tx_hash).await?;
-        let anchor_block_id = Taiko::decode_anchor_tx_data(anchor_tx.input())?;
+        let l2_anchor_tx = self.taiko.get_transaction_by_hash(*anchor_tx_hash).await?;
+        let l1_anchor_block_id = Taiko::decode_anchor_tx_data(l2_anchor_tx.input())?;
 
         debug!(
-            "get_anchor_block_offset: L2 block {} has anchor block id {}",
-            block_height, anchor_block_id
+            "get_l1_anchor_block_offset_for_l2_block: L2 block {l2_block_height} has L1 anchor block id {l1_anchor_block_id}"
         );
 
-        let l1_height = self.ethereum_l1.execution_layer.get_l1_height().await?;
-        let anchor_offset = l1_height - anchor_block_id;
-
-        Ok(anchor_offset)
+        self.ethereum_l1.slot_clock.slots_since_l1_block(
+            self.ethereum_l1
+                .execution_layer
+                .get_block_timestamp_by_id(l1_anchor_block_id)
+                .await?,
+        )
     }
 
     pub async fn trigger_l2_reorg(&mut self, new_last_block_id: u64) -> Result<(), Error> {
@@ -170,9 +181,10 @@ impl BatchManager {
             trace!("No pending txs, skipping preconfirmation");
         }
 
-        if self.batch_builder.is_grater_than_max_anchor_height_offset(
-            self.ethereum_l1.execution_layer.get_l1_height().await?,
-        ) {
+        if self
+            .batch_builder
+            .is_greater_than_max_anchor_height_offset()?
+        {
             // Handle max anchor height offset exceeded
             info!("📈 Maximum allowed anchor height offset exceeded, finalizing current batch.");
             self.batch_builder.finalize_current_batch();
@@ -219,9 +231,18 @@ impl BatchManager {
         } else {
             // Otherwise, calculate the anchor block ID and create a new batch
             let anchor_block_id = self.calculate_anchor_block_id().await?;
+            let anchor_block_timestamp_sec = self
+                .ethereum_l1
+                .execution_layer
+                .get_block_timestamp_by_id(anchor_block_id)
+                .await?;
             // Add the L2 block to the new batch
-            self.batch_builder
-                .create_new_batch_and_add_l2_block(anchor_block_id, l2_block, None);
+            self.batch_builder.create_new_batch_and_add_l2_block(
+                anchor_block_id,
+                anchor_block_timestamp_sec,
+                l2_block,
+                None,
+            );
             anchor_block_id
         };
         Ok(anchor_block_id)
@@ -281,8 +302,10 @@ impl BatchManager {
 
     pub fn reset_builder(&mut self) {
         warn!("Resetting batch builder");
-        self.batch_builder =
-            batch_builder::BatchBuilder::new(self.batch_builder.get_config().clone());
+        self.batch_builder = batch_builder::BatchBuilder::new(
+            self.batch_builder.get_config().clone(),
+            self.ethereum_l1.slot_clock.clone(),
+        );
     }
 
     pub fn clone_without_batches(&self) -> Self {
