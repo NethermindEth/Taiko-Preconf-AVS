@@ -505,7 +505,8 @@ impl ExecutionLayer {
             .get_block_by_number(BlockNumberOrTag::Number(block_id))
             .await?
             .ok_or(anyhow::anyhow!(
-                "Failed to get block by number ({block_id})"
+                "Failed to get block by number ({})",
+                block_id
             ))?;
         Ok(block.header.timestamp)
     }
