@@ -1,6 +1,9 @@
 use std::{collections::VecDeque, sync::Arc};
 
-use crate::{ethereum_l1::EthereumL1, shared::l2_block::L2Block};
+use crate::{
+    ethereum_l1::{slot_clock::SlotClock, EthereumL1},
+    shared::l2_block::L2Block,
+};
 use alloy::primitives::Address;
 use anyhow::Error;
 use tracing::{debug, trace, warn};
@@ -10,15 +13,17 @@ use super::BatchBuilderConfig;
 #[derive(Default)]
 pub struct Batch {
     pub l2_blocks: Vec<L2Block>,
-    pub anchor_block_id: u64,
     pub total_bytes: u64,
     pub coinbase: Address,
+    pub anchor_block_id: u64,
+    pub anchor_block_timestamp_sec: u64,
 }
 
 pub struct BatchBuilder {
     config: BatchBuilderConfig,
     batches_to_send: VecDeque<Batch>,
     current_batch: Option<Batch>,
+    slot_clock: Arc<SlotClock>,
 }
 
 impl Drop for BatchBuilder {
@@ -32,11 +37,12 @@ impl Drop for BatchBuilder {
 }
 
 impl BatchBuilder {
-    pub fn new(config: BatchBuilderConfig) -> Self {
+    pub fn new(config: BatchBuilderConfig, slot_clock: Arc<SlotClock>) -> Self {
         Self {
             config,
             batches_to_send: VecDeque::new(),
             current_batch: None,
+            slot_clock,
         }
     }
 
@@ -69,6 +75,7 @@ impl BatchBuilder {
     pub fn create_new_batch_and_add_l2_block(
         &mut self,
         anchor_block_id: u64,
+        anchor_block_timestamp_sec: u64,
         l2_block: L2Block,
         coinbase: Option<Address>,
     ) {
@@ -77,6 +84,7 @@ impl BatchBuilder {
             total_bytes: l2_block.prebuilt_tx_list.bytes_length,
             l2_blocks: vec![l2_block],
             anchor_block_id,
+            anchor_block_timestamp_sec,
             coinbase: coinbase.unwrap_or(self.config.default_coinbase),
         });
     }
@@ -121,14 +129,15 @@ impl BatchBuilder {
         &mut self,
         tx_list: Vec<alloy::rpc::types::Transaction>,
         anchor_block_id: u64,
-        timestamp_sec: u64,
+        anchor_block_timestamp_sec: u64,
+        l2_block_timestamp_sec: u64,
         coinbase: Address,
     ) -> Result<(), Error> {
         // We have a new batch if any of the following is true:
         // 1. Anchor block IDs differ
         // 2. Time difference between two blocks exceeds u8
         if !self.is_same_anchor_block_id(anchor_block_id)
-            || self.is_time_shift_expired(timestamp_sec)
+            || self.is_time_shift_expired(l2_block_timestamp_sec)
             || !self.is_same_coinbase(coinbase)
         {
             self.finalize_current_batch();
@@ -137,6 +146,7 @@ impl BatchBuilder {
                 l2_blocks: vec![],
                 anchor_block_id,
                 coinbase,
+                anchor_block_timestamp_sec,
             });
         }
 
@@ -147,13 +157,18 @@ impl BatchBuilder {
                 estimated_gas_used: 0,
                 bytes_length,
             },
-            timestamp_sec,
+            l2_block_timestamp_sec,
         );
 
         if self.can_consume_l2_block(&l2_block) {
             self.add_l2_block_and_get_current_anchor_block_id(l2_block)?;
         } else {
-            self.create_new_batch_and_add_l2_block(anchor_block_id, l2_block, Some(coinbase));
+            self.create_new_batch_and_add_l2_block(
+                anchor_block_id,
+                anchor_block_timestamp_sec,
+                l2_block,
+                Some(coinbase),
+            );
         }
 
         Ok(())
@@ -270,12 +285,14 @@ impl BatchBuilder {
             >= self.config.max_time_shift_between_blocks_sec - self.config.l1_slot_duration_sec
     }
 
-    pub fn is_grater_than_max_anchor_height_offset(&self, current_l1_block: u64) -> bool {
+    pub fn is_grater_than_max_anchor_height_offset(&self) -> Result<bool, Error> {
         if let Some(current_batch) = self.current_batch.as_ref() {
-            return current_batch.anchor_block_id + self.config.max_anchor_height_offset
-                < current_l1_block;
+            let slots_since_l1_block = self
+                .slot_clock
+                .slots_since_l1_block(current_batch.anchor_block_timestamp_sec)?;
+            return Ok(slots_since_l1_block > self.config.max_anchor_height_offset);
         }
-        false
+        Ok(false)
     }
 
     pub fn clone_without_batches(&self) -> Self {
@@ -283,6 +300,7 @@ impl BatchBuilder {
             config: self.config.clone(),
             batches_to_send: VecDeque::new(),
             current_batch: None,
+            slot_clock: self.slot_clock.clone(),
         }
     }
 
@@ -297,14 +315,17 @@ mod tests {
 
     #[test]
     fn test_is_the_last_l1_slot_to_add_an_empty_l2_block() {
-        let batch_builder = BatchBuilder::new(BatchBuilderConfig {
-            max_bytes_size_of_batch: 1000,
-            max_blocks_per_batch: 10,
-            l1_slot_duration_sec: 12,
-            max_time_shift_between_blocks_sec: 255,
-            max_anchor_height_offset: 10,
-            default_coinbase: Address::ZERO,
-        });
+        let batch_builder = BatchBuilder::new(
+            BatchBuilderConfig {
+                max_bytes_size_of_batch: 1000,
+                max_blocks_per_batch: 10,
+                l1_slot_duration_sec: 12,
+                max_time_shift_between_blocks_sec: 255,
+                max_anchor_height_offset: 10,
+                default_coinbase: Address::ZERO,
+            },
+            Arc::new(SlotClock::new(0, 5, 12, 32, 3000)),
+        );
 
         assert_eq!(
             batch_builder.is_the_last_l1_slot_to_add_an_empty_l2_block(100, 0),
