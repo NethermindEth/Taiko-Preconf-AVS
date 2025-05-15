@@ -1,6 +1,7 @@
 mod ethereum_l1;
 mod metrics;
 mod node;
+mod reorg_detector;
 mod shared;
 mod taiko;
 mod utils;
@@ -50,6 +51,14 @@ async fn main() -> Result<(), Error> {
         panic_cancel_token.cancel();
         info!("Cancellation token triggered, initiating shutdown...");
     }));
+
+    let reorg_detector = Arc::new(reorg_detector::ReorgDetector::new(
+        config.l1_ws_rpc_url.clone(),
+        config.taiko_geth_ws_rpc_url.clone(),
+        config.contract_addresses.taiko_inbox.clone(),
+        cancel_token.clone(),
+    )?);
+    reorg_detector.start().await?;
 
     let (transaction_error_sender, transaction_error_receiver) = mpsc::channel(100);
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
@@ -131,6 +140,7 @@ async fn main() -> Result<(), Error> {
         cancel_token.clone(),
         taiko.clone(),
         ethereum_l1.clone(),
+        reorg_detector.clone(),
         config.preconf_heartbeat_ms,
         config.handover_window_slots,
         config.handover_start_buffer_ms,
