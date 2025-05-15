@@ -7,7 +7,7 @@ use tokio::{
     time::{sleep, Duration},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{error, info, trace, warn};
 
 const SLEEP_DURATION: Duration = Duration::from_secs(15);
 
@@ -100,7 +100,7 @@ impl L2BlockReceiver {
                                 parent_hash: header.parent_hash,
                             };
 
-                            info!(
+                            trace!(
                                 "Received Taiko block number: {}, hash: {}",
                                 block_info.block_number, block_info.block_hash
                             );
