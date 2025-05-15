@@ -498,6 +498,18 @@ impl ExecutionLayer {
         u64::from_str_radix(nonce_str.trim_start_matches("0x"), 16)
             .map_err(|e| Error::msg(format!("Failed to convert nonce: {}", e)))
     }
+
+    pub async fn get_block_timestamp_by_id(&self, block_id: u64) -> Result<u64, Error> {
+        let block = self
+            .provider_ws
+            .get_block_by_number(BlockNumberOrTag::Number(block_id))
+            .await?
+            .ok_or(anyhow::anyhow!(
+                "Failed to get block by number ({})",
+                block_id
+            ))?;
+        Ok(block.header.timestamp)
+    }
 }
 
 pub trait PreconfOperator {

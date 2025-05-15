@@ -132,7 +132,7 @@ impl Verifier {
     ) -> Result<(), Error> {
         let anchor_offset = self
             .batch_manager
-            .get_anchor_block_offset(taiko_inbox_height + 1)
+            .get_l1_anchor_block_offset_for_l2_block(taiko_inbox_height + 1)
             .await?;
         // The first block anchor id is valid, so we can continue.
         if self

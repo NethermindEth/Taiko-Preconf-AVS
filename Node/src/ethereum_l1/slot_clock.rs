@@ -243,6 +243,25 @@ impl<T: Clock> SlotClock<T> {
     pub fn get_l2_slots_per_epoch(&self) -> u64 {
         self.slots_per_epoch * self.l2_slots_per_l1
     }
+
+    pub fn slots_since_l1_block(&self, l1_block_timestamp: u64) -> Result<u64, Error> {
+        let block_slot = self.slot_of(Duration::from_secs(l1_block_timestamp))?;
+        let current_slot = self.get_current_slot()?;
+
+        tracing::debug!(
+            "slots_since_l1_block: block slot {}, current slot {}",
+            block_slot,
+            current_slot
+        );
+
+        if current_slot < block_slot {
+            return Err(anyhow::anyhow!(
+                "slots_since_l1_block: Current slot is less than block slot"
+            ));
+        }
+
+        Ok(current_slot - block_slot)
+    }
 }
 
 #[cfg(test)]
@@ -468,5 +487,28 @@ mod tests {
     fn test_get_l2_slots_per_epoch() {
         let slot_clock: SlotClock = SlotClock::new(0, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
         assert_eq!(slot_clock.get_l2_slots_per_epoch(), 32 * 4);
+    }
+
+    #[test]
+    fn test_slots_since_l1_block() {
+        #[derive(Default)]
+        pub struct MockClock;
+        impl Clock for MockClock {
+            fn now(&self) -> SystemTime {
+                SystemTime::from(DateTime::from_timestamp(96, 0).unwrap()) // 8th slot
+            }
+        }
+
+        let slot_clock =
+            SlotClock::<MockClock>::new(0u64, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
+
+        // Test case 1: L1 block timestamp is at slot 6
+        assert_eq!(slot_clock.slots_since_l1_block(72).unwrap(), 2);
+
+        // Test case 2: L1 block timestamp is at slot 3
+        assert_eq!(slot_clock.slots_since_l1_block(36).unwrap(), 5);
+
+        // Test case 3: L1 block timestamp is at slot 8
+        assert_eq!(slot_clock.slots_since_l1_block(96).unwrap(), 0);
     }
 }

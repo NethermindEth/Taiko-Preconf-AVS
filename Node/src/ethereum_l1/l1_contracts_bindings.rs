@@ -1,13 +1,5 @@
 use alloy::sol;
 
-sol!(
-    #[allow(clippy::too_many_arguments)]
-    #[allow(missing_docs)]
-    #[sol(rpc)]
-    PreconfTaskManager,
-    "src/ethereum_l1/abi/PreconfTaskManager.json"
-);
-
 sol! {
     /// @dev Represents proposeBlock's _data input parameter
     struct BlockParamsV2 {
@@ -89,27 +81,6 @@ sol!(
     #[sol(rpc)]
     PreconfRouter,
     "src/ethereum_l1/abi/PreconfRouter.json"
-);
-
-sol!(
-    #[allow(missing_docs)]
-    #[sol(rpc)]
-    StrategyManager,
-    "src/ethereum_l1/abi/StrategyManager.json"
-);
-
-sol!(
-    #[allow(missing_docs)]
-    #[sol(rpc)]
-    Slasher,
-    "src/ethereum_l1/abi/Slasher.json"
-);
-
-sol!(
-    #[allow(missing_docs)]
-    #[sol(rpc)]
-    AVSDirectory,
-    "src/ethereum_l1/abi/AVSDirectory.json"
 );
 
 sol!(
