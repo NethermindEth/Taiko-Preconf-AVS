@@ -13,7 +13,7 @@ use config::EthereumL1Config;
 use consensus_layer::ConsensusLayer;
 use execution_layer::ExecutionLayer;
 use slot_clock::SlotClock;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc::Sender;
 use transaction_error::TransactionError;
 
@@ -33,11 +33,14 @@ impl EthereumL1 {
         metrics: Arc<Metrics>,
     ) -> Result<Self, Error> {
         tracing::info!("Creating EthereumL1 instance");
-        let consensus_layer = ConsensusLayer::new(&config.consensus_rpc_url)?;
-        let genesis_details = consensus_layer.get_genesis_details().await?;
+        let consensus_layer = ConsensusLayer::new(
+            &config.consensus_rpc_url,
+            Duration::from_millis(config.preconf_heartbeat_ms / 2),
+        )?;
+        let genesis_time = consensus_layer.get_genesis_time().await?;
         let slot_clock = Arc::new(SlotClock::new(
             0u64,
-            genesis_details.genesis_time,
+            genesis_time,
             config.slot_duration_sec,
             config.slots_per_epoch,
             config.preconf_heartbeat_ms,

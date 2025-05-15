@@ -260,7 +260,7 @@ impl TransactionMonitorThread {
                         root_provider.clone(),
                         *tx_hash,
                         l1_block_at_send,
-                        (self.config.max_attempts_to_send_tx - 1) as u64,
+                        (self.config.max_attempts_to_send_tx) as u64,
                     )
                     .await
                 && !self
@@ -381,7 +381,7 @@ impl TransactionMonitorThread {
                         tx_hash, block_number
                     );
                     self.metrics
-                        .observe_batch_propose_tries(sending_attempt - 1);
+                        .observe_batch_propose_tries(sending_attempt);
                     self.metrics.inc_batch_confirmed();
                     return true;
                 }

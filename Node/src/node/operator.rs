@@ -29,6 +29,7 @@ pub struct Operator<
     was_preconfer: bool,
     cancel_token: CancellationToken,
     cancel_counter: u64,
+    operator_transition_slots: u64,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -104,6 +105,7 @@ impl Operator {
             was_preconfer: false,
             cancel_token,
             cancel_counter: 0,
+            operator_transition_slots: OPERATOR_TRANSITION_SLOTS,
         })
     }
 }
@@ -115,7 +117,7 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
 
         // For the first N slots of the new epoch, use the next operator from the previous epoch
         // it's because of the delay that L1 updates the current operator after the epoch has changed.
-        let current_operator = if l1_slot < OPERATOR_TRANSITION_SLOTS {
+        let current_operator = if l1_slot < self.operator_transition_slots {
             self.next_operator
         } else {
             self.next_operator = match self.execution_layer.is_operator_for_next_epoch().await {
@@ -815,6 +817,7 @@ mod tests {
             continuing_role: false,
             simulate_not_submitting_at_the_end_of_epoch: false,
             was_preconfer: false,
+            operator_transition_slots: 1,
         }
     }
 
@@ -842,6 +845,7 @@ mod tests {
             simulate_not_submitting_at_the_end_of_epoch: false,
             was_preconfer: false,
             cancel_counter: 0,
+            operator_transition_slots: 1,
         }
     }
 
