@@ -38,6 +38,7 @@ pub struct Status {
     submitter: bool,
     preconfirmation_started: bool,
     end_of_sequencing: bool,
+    is_driver_synced: bool,
 }
 
 impl Status {
@@ -47,6 +48,10 @@ impl Status {
 
     pub fn is_submitter(&self) -> bool {
         self.submitter
+    }
+
+    pub fn is_driver_synced(&self) -> bool {
+        self.is_driver_synced
     }
 
     pub fn is_preconfirmation_start_slot(&self) -> bool {
@@ -70,6 +75,10 @@ impl std::fmt::Display for Status {
 
         if self.submitter {
             roles.push("Submit");
+        }
+
+        if self.preconfer && self.is_driver_synced {
+            roles.push("Synced");
         }
 
         if self.end_of_sequencing {
@@ -134,10 +143,12 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
 
         let handover_window = self.is_handover_window(l1_slot);
         let driver_status = self.taiko.get_status().await?;
+        let is_driver_synced = self.is_driver_synced(l2_slot_info, &driver_status).await?;
         let preconfer = self
             .is_preconfer(
                 current_operator,
                 handover_window,
+                is_driver_synced,
                 l1_slot,
                 l2_slot_info,
                 &driver_status,
@@ -153,6 +164,7 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
             submitter,
             preconfirmation_started,
             end_of_sequencing,
+            is_driver_synced,
         })
     }
 
@@ -176,11 +188,8 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
         }
     }
 
-    async fn is_preconfer(
+    async fn is_driver_synced(
         &mut self,
-        current_operator: bool,
-        handover_window: bool,
-        l1_slot: Slot,
         l2_slot_info: &L2SlotInfo,
         driver_status: &TaikoStatus,
     ) -> Result<bool, Error> {
@@ -193,11 +202,22 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
             return Ok(false);
         }
         self.cancel_counter = 0;
+        Ok(true)
+    }
 
+    async fn is_preconfer(
+        &mut self,
+        current_operator: bool,
+        handover_window: bool,
+        is_driver_synced: bool,
+        l1_slot: Slot,
+        l2_slot_info: &L2SlotInfo,
+        driver_status: &TaikoStatus,
+    ) -> Result<bool, Error> {
         if handover_window {
             return Ok(self.next_operator
                 && (self.was_preconfer // If we were the operator for the previous slot, the handover buffer doesn't matter.
-                    || !self.is_handover_buffer(l1_slot, l2_slot_info, driver_status).await?));
+                    || (is_driver_synced && !self.is_handover_buffer(l1_slot, l2_slot_info, driver_status).await?)));
         }
 
         Ok(current_operator)
@@ -358,6 +378,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: true,
+                is_driver_synced: true,
             }
         );
         // Not a preconfer and submiter
@@ -376,6 +397,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
         // Continuing role
@@ -394,6 +416,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
         // Not correct l2 slot
@@ -412,6 +435,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -433,6 +457,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -450,6 +475,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -470,6 +496,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -486,6 +513,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -504,6 +532,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -522,6 +551,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -540,6 +570,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -559,6 +590,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -575,6 +607,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -590,6 +623,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -610,6 +644,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -626,6 +661,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -649,6 +685,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -668,6 +705,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -684,6 +722,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -703,6 +742,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -724,6 +764,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -742,6 +783,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -759,6 +801,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -778,6 +821,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -789,6 +833,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }

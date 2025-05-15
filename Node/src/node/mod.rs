@@ -407,7 +407,7 @@ impl Node {
             }
         }
 
-        if current_status.is_preconfer() {
+        if current_status.is_preconfer() && current_status.is_driver_synced() {
             self.preconfirm_block(
                 pending_tx_list,
                 l2_slot_info,
