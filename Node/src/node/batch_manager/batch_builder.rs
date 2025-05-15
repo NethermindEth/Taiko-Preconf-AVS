@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use crate::{
-    ethereum_l1::{slot_clock::SlotClock, EthereumL1},
+    ethereum_l1::{slot_clock::SlotClock, transaction_error::TransactionError, EthereumL1},
     shared::l2_block::L2Block,
 };
 use alloy::primitives::Address;
@@ -233,14 +233,21 @@ impl BatchBuilder {
                 "Submitting batch"
             );
 
-            ethereum_l1
+            if let Err(err) = ethereum_l1
                 .execution_layer
                 .send_batch_to_l1(
                     batch.l2_blocks.clone(),
                     batch.anchor_block_id,
                     batch.coinbase,
                 )
-                .await?;
+                .await
+            {
+                if err.downcast_ref::<TransactionError>().is_some() {
+                    debug!("BatchBuilder: Transaction error, removing all batches");
+                    self.batches_to_send.clear();
+                }
+                return Err(err);
+            }
 
             self.batches_to_send.pop_front();
         }

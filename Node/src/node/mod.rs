@@ -3,6 +3,7 @@ mod operator;
 mod verifier;
 
 use crate::node::verifier::Verifier;
+use crate::reorg_detector;
 use crate::{
     ethereum_l1::{transaction_error::TransactionError, EthereumL1},
     metrics::Metrics,
@@ -13,6 +14,7 @@ use alloy::primitives::U256;
 use anyhow::Error;
 use batch_manager::{BatchBuilderConfig, BatchManager};
 use operator::{Operator, Status as OperatorStatus};
+use reorg_detector::ReorgDetector;
 use std::sync::Arc;
 use tokio::{
     sync::mpsc::{error::TryRecvError, Receiver},
@@ -29,6 +31,7 @@ pub struct Thresholds {
 pub struct Node {
     cancel_token: CancellationToken,
     ethereum_l1: Arc<EthereumL1>,
+    reorg_detector: Arc<ReorgDetector>,
     preconf_heartbeat_ms: u64,
     operator: Operator,
     batch_manager: BatchManager,
@@ -46,6 +49,7 @@ impl Node {
         cancel_token: CancellationToken,
         taiko: Arc<Taiko>,
         ethereum_l1: Arc<EthereumL1>,
+        reorg_detector: Arc<ReorgDetector>,
         preconf_heartbeat_ms: u64,
         handover_window_slots: u64,
         handover_start_buffer_ms: u64,
@@ -87,6 +91,7 @@ impl Node {
             cancel_token,
             batch_manager: batch_manager,
             ethereum_l1,
+            reorg_detector,
             preconf_heartbeat_ms,
             operator,
             thresholds,
@@ -354,7 +359,8 @@ impl Node {
         let (l2_slot_info, current_status, pending_tx_list) =
             self.get_slot_info_and_status().await?;
 
-        self.handle_transaction_error(&current_status).await?;
+        self.check_transaction_error_channel(&current_status)
+            .await?;
 
         if current_status.is_preconfirmation_start_slot() {
             if current_status.is_submitter() {
@@ -419,24 +425,31 @@ impl Node {
             // first submit verification batches
             if let Some(mut verifier) = self.verifier.take() {
                 match self
-                    .verify_proposed_but_not_submitted_batches(&mut verifier)
+                    .verify_proposed_but_not_submitted_batches(&mut verifier, &current_status)
                     .await
                 {
-                    Ok(success) => {
-                        if !success {
-                            self.verifier = Some(verifier);
-                            return Ok(());
-                        }
+                    Ok(false) => {
+                        self.verifier = Some(verifier);
+                        return Ok(());
                     }
                     Err(err) => {
                         self.verifier = Some(verifier);
                         return Err(err);
                     }
-                };
+                    Ok(true) => {}
+                }
             } else {
-                self.batch_manager
+                if let Err(err) = self
+                    .batch_manager
                     .try_submit_oldest_batch(current_status.is_preconfer())
-                    .await?;
+                    .await
+                {
+                    if let Some(transaction_error) = err.downcast_ref::<TransactionError>() {
+                        self.handle_transaction_error(transaction_error, &current_status)
+                            .await?;
+                    }
+                    return Err(err);
+                }
             }
         }
 
@@ -485,6 +498,7 @@ impl Node {
     async fn verify_proposed_but_not_submitted_batches(
         &mut self,
         verifier: &mut Verifier,
+        current_status: &OperatorStatus,
     ) -> Result<bool, Error> {
         if verifier.has_blocks_to_verify() {
             let head_slot = self
@@ -521,54 +535,27 @@ impl Node {
         }
 
         if verifier.has_batches_to_submit() {
-            verifier.try_submit_oldest_batch().await?;
+            if let Err(err) = verifier.try_submit_oldest_batch().await {
+                if let Some(transaction_error) = err.downcast_ref::<TransactionError>() {
+                    self.handle_transaction_error(transaction_error, &current_status)
+                        .await?;
+                }
+                return Err(err);
+            }
         }
 
         return Ok(!verifier.has_batches_to_submit());
     }
 
-    async fn handle_transaction_error(
+    async fn check_transaction_error_channel(
         &mut self,
         current_status: &OperatorStatus,
     ) -> Result<(), Error> {
         match self.transaction_error_channel.try_recv() {
-            Ok(error) => match error {
-                TransactionError::TransactionReverted => {
-                    if current_status.is_preconfer() && current_status.is_submitter() {
-                        let taiko_inbox_height = self
-                            .ethereum_l1
-                            .execution_layer
-                            .get_l2_height_from_taiko_inbox()
-                            .await?;
-                        if let Err(err) = self
-                            .trigger_l2_reorg(taiko_inbox_height, "Transaction reverted")
-                            .await
-                        {
-                            self.cancel_token.cancel();
-                            return Err(anyhow::anyhow!("Failed to trigger L2 reorg: {}", err));
-                        }
-                    } else {
-                        warn!("Transaction reverted, not our epoch, skipping reorg");
-                    }
-                }
-                TransactionError::NotConfirmed => {
-                    self.cancel_token.cancel();
-                    return Err(anyhow::anyhow!(
-                        "Transaction not confirmed for a long time, exiting"
-                    ));
-                }
-                TransactionError::UnsupportedTransactionType => {
-                    self.cancel_token.cancel();
-                    return Err(anyhow::anyhow!(
-                        "Unsupported transaction type. You can send eip1559 or eip4844 transactions only"
-                    ));
-                }
-                TransactionError::GetBlockNumberFailed => {
-                    // TODO recreate L1 provider
-                    self.cancel_token.cancel();
-                    return Err(anyhow::anyhow!("Failed to get block number from L1"));
-                }
-            },
+            Ok(error) => {
+                self.handle_transaction_error(&error, current_status)
+                    .await?;
+            }
             Err(err) => match err {
                 TryRecvError::Empty => {
                     // no errors, proceed with preconfirmation
@@ -578,6 +565,47 @@ impl Node {
                     return Err(anyhow::anyhow!("Transaction error channel disconnected"));
                 }
             },
+        }
+
+        Ok(())
+    }
+
+    async fn handle_transaction_error(
+        &mut self,
+        error: &TransactionError,
+        current_status: &OperatorStatus,
+    ) -> Result<(), Error> {
+        match error {
+            TransactionError::TransactionReverted | TransactionError::EstimationFailed => {
+                if current_status.is_preconfer() && current_status.is_submitter() {
+                    let taiko_inbox_height = self
+                        .ethereum_l1
+                        .execution_layer
+                        .get_l2_height_from_taiko_inbox()
+                        .await?;
+                    self.trigger_l2_reorg(taiko_inbox_height, "Transaction reverted")
+                        .await?;
+                } else {
+                    warn!("Transaction reverted, not our epoch, skipping reorg");
+                }
+            }
+            TransactionError::NotConfirmed => {
+                self.cancel_token.cancel();
+                return Err(anyhow::anyhow!(
+                    "Transaction not confirmed for a long time, exiting"
+                ));
+            }
+            TransactionError::UnsupportedTransactionType => {
+                self.cancel_token.cancel();
+                return Err(anyhow::anyhow!(
+                        "Unsupported transaction type. You can send eip1559 or eip4844 transactions only"
+                    ));
+            }
+            TransactionError::GetBlockNumberFailed => {
+                // TODO recreate L1 provider
+                self.cancel_token.cancel();
+                return Err(anyhow::anyhow!("Failed to get block number from L1"));
+            }
         }
 
         Ok(())
@@ -645,10 +673,17 @@ impl Node {
         message: &str,
     ) -> Result<(), Error> {
         warn!("⛓️‍💥 Force Reorg: {}", message);
-        self.batch_manager
-            .trigger_l2_reorg(new_last_block_id)
-            .await?;
+
         self.verifier = None;
+        self.reorg_detector
+            .set_expected_reorg(new_last_block_id)
+            .await;
+
+        if let Err(err) = self.batch_manager.trigger_l2_reorg(new_last_block_id).await {
+            self.cancel_token.cancel();
+            return Err(anyhow::anyhow!("Failed to trigger L2 reorg: {}", err));
+        }
+
         Ok(())
     }
 }
