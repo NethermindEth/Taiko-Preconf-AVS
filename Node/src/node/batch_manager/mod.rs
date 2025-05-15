@@ -183,7 +183,7 @@ impl BatchManager {
 
         if self
             .batch_builder
-            .is_grater_than_max_anchor_height_offset()?
+            .is_greater_than_max_anchor_height_offset()?
         {
             // Handle max anchor height offset exceeded
             info!("📈 Maximum allowed anchor height offset exceeded, finalizing current batch.");
