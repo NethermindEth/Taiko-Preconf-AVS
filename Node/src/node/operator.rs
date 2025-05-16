@@ -26,7 +26,7 @@ pub struct Operator<
     next_operator: bool,
     continuing_role: bool,
     simulate_not_submitting_at_the_end_of_epoch: bool,
-    was_preconfer: bool,
+    was_proposer: bool,
     cancel_token: CancellationToken,
     cancel_counter: u64,
     operator_transition_slots: u64,
@@ -111,7 +111,7 @@ impl Operator {
             next_operator: false,
             continuing_role: false,
             simulate_not_submitting_at_the_end_of_epoch,
-            was_preconfer: false,
+            was_proposer: false,
             cancel_token,
             cancel_counter: 0,
             operator_transition_slots: OPERATOR_TRANSITION_SLOTS,
@@ -148,14 +148,19 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
             .is_preconfer(
                 current_operator,
                 handover_window,
-                is_driver_synced,
                 l1_slot,
                 l2_slot_info,
                 &driver_status,
             )
             .await?;
-        let preconfirmation_started = self.is_preconfirmation_start_l2_slot(preconfer);
-        self.was_preconfer = preconfer;
+        let preconfirmation_started = self.is_preconfirmation_start_l2_slot(preconfer, is_driver_synced);
+        if preconfirmation_started {
+            self.was_proposer = true;
+        }
+        if !preconfer {
+            self.was_proposer = false;
+        }
+
         let submitter = self.is_submitter(current_operator, handover_window);
         let end_of_sequencing = self.is_end_of_sequencing(preconfer, submitter, l1_slot)?;
 
@@ -209,15 +214,14 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
         &mut self,
         current_operator: bool,
         handover_window: bool,
-        is_driver_synced: bool,
         l1_slot: Slot,
         l2_slot_info: &L2SlotInfo,
         driver_status: &TaikoStatus,
     ) -> Result<bool, Error> {
         if handover_window {
             return Ok(self.next_operator
-                && (self.was_preconfer // If we were the operator for the previous slot, the handover buffer doesn't matter.
-                    || (is_driver_synced && !self.is_handover_buffer(l1_slot, l2_slot_info, driver_status).await?)));
+                && (self.was_proposer // If we were the operator for the previous slot, the handover buffer doesn't matter.
+                    || !self.is_handover_buffer(l1_slot, l2_slot_info, driver_status).await?));
         }
 
         Ok(current_operator)
@@ -266,8 +270,8 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
         current_operator
     }
 
-    fn is_preconfirmation_start_l2_slot(&self, preconfer: bool) -> bool {
-        !self.was_preconfer && preconfer
+    fn is_preconfirmation_start_l2_slot(&self, preconfer: bool, is_driver_synced: bool) -> bool {
+        !self.was_proposer && preconfer && is_driver_synced
     }
 
     fn is_handover_window(&self, slot: Slot) -> bool {
@@ -330,6 +334,23 @@ mod tests {
         }
     }
 
+    struct TaikoUnsyncedMock {
+        end_of_sequencing_block_hash: B256,
+    }
+
+    impl PreconfDriver for TaikoUnsyncedMock {
+        async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {
+            Ok(preconf_blocks::TaikoStatus {
+                end_of_sequencing_block_hash: self.end_of_sequencing_block_hash.clone(),
+                highest_unsafe_l2_payload_block_id: 2,
+            })
+        }
+
+        async fn get_latest_l2_block_id(&self) -> Result<u64, Error> {
+            Ok(0)
+        }
+    }
+
     struct TaikoMock {
         end_of_sequencing_block_hash: B256,
     }
@@ -369,7 +390,7 @@ mod tests {
             false,
         );
         operator.next_operator = false;
-        operator.was_preconfer = true;
+        operator.was_proposer = true;
         operator.continuing_role = false;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -388,7 +409,7 @@ mod tests {
             false,
         );
         operator.next_operator = false;
-        operator.was_preconfer = false;
+        operator.was_proposer = false;
         operator.continuing_role = false;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -407,7 +428,7 @@ mod tests {
             true,
         );
         operator.next_operator = true;
-        operator.was_preconfer = true;
+        operator.was_proposer = true;
         operator.continuing_role = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -426,7 +447,7 @@ mod tests {
             false,
         );
         operator.next_operator = false;
-        operator.was_preconfer = true;
+        operator.was_proposer = true;
         operator.continuing_role = false;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -448,7 +469,7 @@ mod tests {
             false,
         );
         operator.next_operator = true;
-        operator.was_preconfer = true;
+        operator.was_proposer = true;
         operator.continuing_role = false;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -466,7 +487,7 @@ mod tests {
             false,
             false,
         );
-        operator.was_preconfer = true;
+        operator.was_proposer = true;
         operator.continuing_role = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -488,7 +509,7 @@ mod tests {
             false,
         );
         operator.next_operator = true;
-        operator.was_preconfer = true;
+        operator.was_proposer = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
@@ -505,7 +526,7 @@ mod tests {
             false,
             false,
         );
-        operator.was_preconfer = true;
+        operator.was_proposer = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
@@ -514,6 +535,26 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_is_driver_synced_status() {
+        let mut operator = create_operator_with_unsynced_driver_and_geth(
+            31 * 12, // last slot of epoch
+            false,
+            true,
+        );
+        operator.was_proposer = true;
+        assert_eq!(
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
+            Status {
+                preconfer: true,
+                submitter: false,
+                preconfirmation_started: false,
+                end_of_sequencing: false,
+                is_driver_synced: false,
             }
         );
     }
@@ -542,7 +583,7 @@ mod tests {
             false,
         );
         operator.next_operator = true;
-        operator.was_preconfer = true;
+        operator.was_proposer = true;
         operator.continuing_role = false;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -561,7 +602,7 @@ mod tests {
             false,
         );
         operator.next_operator = true;
-        operator.was_preconfer = true;
+        operator.was_proposer = true;
         operator.continuing_role = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -755,7 +796,7 @@ mod tests {
         );
         operator.next_operator = true;
         operator.continuing_role = true;
-        operator.was_preconfer = true;
+        operator.was_proposer = true;
 
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -775,7 +816,7 @@ mod tests {
         );
         operator.next_operator = true;
         operator.continuing_role = true;
-        operator.was_preconfer = true;
+        operator.was_proposer = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
@@ -793,7 +834,7 @@ mod tests {
             true,
         );
         operator.continuing_role = true;
-        operator.was_preconfer = true;
+        operator.was_proposer = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
@@ -813,7 +854,7 @@ mod tests {
             false,
             true,
         );
-        operator.was_preconfer = false;
+        operator.was_proposer = false;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
@@ -861,7 +902,7 @@ mod tests {
             next_operator: false,
             continuing_role: false,
             simulate_not_submitting_at_the_end_of_epoch: false,
-            was_preconfer: false,
+            was_proposer: false,
             operator_transition_slots: 1,
         }
     }
@@ -888,7 +929,35 @@ mod tests {
             next_operator: false,
             continuing_role: false,
             simulate_not_submitting_at_the_end_of_epoch: false,
-            was_preconfer: false,
+            was_proposer: false,
+            cancel_counter: 0,
+            operator_transition_slots: 1,
+        }
+    }
+
+    fn create_operator_with_unsynced_driver_and_geth(
+        timestamp: i64,
+        current_operator: bool,
+        next_operator: bool,
+    ) -> Operator<ExecutionLayerMock, MockClock, TaikoUnsyncedMock> {
+        let mut slot_clock = SlotClock::<MockClock>::new(0, 0, 12, 32, 2000);
+        slot_clock.clock.timestamp = timestamp; // second l1 slot, second l2 slot
+        Operator {
+            cancel_token: CancellationToken::new(),
+            taiko: Arc::new(TaikoUnsyncedMock{
+                end_of_sequencing_block_hash: get_test_hash(),
+            }),
+            execution_layer: Arc::new(ExecutionLayerMock {
+                current_operator,
+                next_operator,
+            }),
+            slot_clock: Arc::new(slot_clock),
+            handover_window_slots: HANDOVER_WINDOW_SLOTS as u64,
+            handover_start_buffer_ms: 1000,
+            next_operator: false,
+            continuing_role: false,
+            simulate_not_submitting_at_the_end_of_epoch: false,
+            was_proposer: false,
             cancel_counter: 0,
             operator_transition_slots: 1,
         }
