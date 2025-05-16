@@ -26,7 +26,7 @@ pub struct Operator<
     next_operator: bool,
     continuing_role: bool,
     simulate_not_submitting_at_the_end_of_epoch: bool,
-    was_proposer: bool,
+    was_synced_preconfer: bool,
     cancel_token: CancellationToken,
     cancel_counter: u64,
     operator_transition_slots: u64,
@@ -111,7 +111,7 @@ impl Operator {
             next_operator: false,
             continuing_role: false,
             simulate_not_submitting_at_the_end_of_epoch,
-            was_proposer: false,
+            was_synced_preconfer: false,
             cancel_token,
             cancel_counter: 0,
             operator_transition_slots: OPERATOR_TRANSITION_SLOTS,
@@ -155,10 +155,10 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
             .await?;
         let preconfirmation_started = self.is_preconfirmation_start_l2_slot(preconfer, is_driver_synced);
         if preconfirmation_started {
-            self.was_proposer = true;
+            self.was_synced_preconfer = true;
         }
         if !preconfer {
-            self.was_proposer = false;
+            self.was_synced_preconfer = false;
         }
 
         let submitter = self.is_submitter(current_operator, handover_window);
@@ -220,7 +220,7 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
     ) -> Result<bool, Error> {
         if handover_window {
             return Ok(self.next_operator
-                && (self.was_proposer // If we were the operator for the previous slot, the handover buffer doesn't matter.
+                && (self.was_synced_preconfer // If we were the operator for the previous slot, the handover buffer doesn't matter.
                     || !self.is_handover_buffer(l1_slot, l2_slot_info, driver_status).await?));
         }
 
@@ -271,7 +271,7 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
     }
 
     fn is_preconfirmation_start_l2_slot(&self, preconfer: bool, is_driver_synced: bool) -> bool {
-        !self.was_proposer && preconfer && is_driver_synced
+        !self.was_synced_preconfer && preconfer && is_driver_synced
     }
 
     fn is_handover_window(&self, slot: Slot) -> bool {
@@ -390,7 +390,7 @@ mod tests {
             false,
         );
         operator.next_operator = false;
-        operator.was_proposer = true;
+        operator.was_synced_preconfer = true;
         operator.continuing_role = false;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -409,7 +409,7 @@ mod tests {
             false,
         );
         operator.next_operator = false;
-        operator.was_proposer = false;
+        operator.was_synced_preconfer = false;
         operator.continuing_role = false;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -428,7 +428,7 @@ mod tests {
             true,
         );
         operator.next_operator = true;
-        operator.was_proposer = true;
+        operator.was_synced_preconfer = true;
         operator.continuing_role = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -447,7 +447,7 @@ mod tests {
             false,
         );
         operator.next_operator = false;
-        operator.was_proposer = true;
+        operator.was_synced_preconfer = true;
         operator.continuing_role = false;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -469,7 +469,7 @@ mod tests {
             false,
         );
         operator.next_operator = true;
-        operator.was_proposer = true;
+        operator.was_synced_preconfer = true;
         operator.continuing_role = false;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -487,7 +487,7 @@ mod tests {
             false,
             false,
         );
-        operator.was_proposer = true;
+        operator.was_synced_preconfer = true;
         operator.continuing_role = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -509,7 +509,7 @@ mod tests {
             false,
         );
         operator.next_operator = true;
-        operator.was_proposer = true;
+        operator.was_synced_preconfer = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
@@ -526,7 +526,7 @@ mod tests {
             false,
             false,
         );
-        operator.was_proposer = true;
+        operator.was_synced_preconfer = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
@@ -546,7 +546,7 @@ mod tests {
             false,
             true,
         );
-        operator.was_proposer = true;
+        operator.was_synced_preconfer = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
@@ -583,7 +583,7 @@ mod tests {
             false,
         );
         operator.next_operator = true;
-        operator.was_proposer = true;
+        operator.was_synced_preconfer = true;
         operator.continuing_role = false;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -602,7 +602,7 @@ mod tests {
             false,
         );
         operator.next_operator = true;
-        operator.was_proposer = true;
+        operator.was_synced_preconfer = true;
         operator.continuing_role = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -796,7 +796,7 @@ mod tests {
         );
         operator.next_operator = true;
         operator.continuing_role = true;
-        operator.was_proposer = true;
+        operator.was_synced_preconfer = true;
 
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -816,7 +816,7 @@ mod tests {
         );
         operator.next_operator = true;
         operator.continuing_role = true;
-        operator.was_proposer = true;
+        operator.was_synced_preconfer = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
@@ -834,7 +834,7 @@ mod tests {
             true,
         );
         operator.continuing_role = true;
-        operator.was_proposer = true;
+        operator.was_synced_preconfer = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
@@ -854,7 +854,7 @@ mod tests {
             false,
             true,
         );
-        operator.was_proposer = false;
+        operator.was_synced_preconfer = false;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
@@ -902,7 +902,7 @@ mod tests {
             next_operator: false,
             continuing_role: false,
             simulate_not_submitting_at_the_end_of_epoch: false,
-            was_proposer: false,
+            was_synced_preconfer: false,
             operator_transition_slots: 1,
         }
     }
@@ -929,7 +929,7 @@ mod tests {
             next_operator: false,
             continuing_role: false,
             simulate_not_submitting_at_the_end_of_epoch: false,
-            was_proposer: false,
+            was_synced_preconfer: false,
             cancel_counter: 0,
             operator_transition_slots: 1,
         }
@@ -957,7 +957,7 @@ mod tests {
             next_operator: false,
             continuing_role: false,
             simulate_not_submitting_at_the_end_of_epoch: false,
-            was_proposer: false,
+            was_synced_preconfer: false,
             cancel_counter: 0,
             operator_transition_slots: 1,
         }
