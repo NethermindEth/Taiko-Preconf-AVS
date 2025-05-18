@@ -363,8 +363,12 @@ impl Node {
         let (l2_slot_info, current_status, pending_tx_list) =
             self.get_slot_info_and_status().await?;
 
-        self.check_transaction_error_channel(&current_status)
-            .await?;
+        if self
+            .check_transaction_error_channel(&current_status)
+            .await?
+        {
+            return Ok(());
+        };
 
         if current_status.is_preconfirmation_start_slot() {
             self.head_verifier
@@ -421,7 +425,10 @@ impl Node {
             }
         }
 
-        if current_status.is_preconfer() && current_status.is_driver_synced() {
+        if !self.cancel_token.is_cancelled()
+            && current_status.is_preconfer()
+            && current_status.is_driver_synced()
+        {
             if !self
                 .head_verifier
                 .verify(l2_slot_info.parent_id(), l2_slot_info.parent_hash())
@@ -455,7 +462,7 @@ impl Node {
             }
         }
 
-        if current_status.is_submitter() {
+        if !self.cancel_token.is_cancelled() && current_status.is_submitter() {
             // first submit verification batches
             if let Some(mut verifier) = self.verifier.take() {
                 match self
@@ -581,14 +588,14 @@ impl Node {
         return Ok(!verifier.has_batches_to_submit());
     }
 
+    /// Returns true if reorg is triggered
     async fn check_transaction_error_channel(
         &mut self,
         current_status: &OperatorStatus,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         match self.transaction_error_channel.try_recv() {
             Ok(error) => {
-                self.handle_transaction_error(&error, current_status)
-                    .await?;
+                return self.handle_transaction_error(&error, current_status).await;
             }
             Err(err) => match err {
                 TryRecvError::Empty => {
@@ -601,14 +608,15 @@ impl Node {
             },
         }
 
-        Ok(())
+        Ok(false)
     }
 
+    /// Returns true if reorg is triggered
     async fn handle_transaction_error(
         &mut self,
         error: &TransactionError,
         current_status: &OperatorStatus,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         match error {
             TransactionError::TransactionReverted | TransactionError::EstimationFailed => {
                 if current_status.is_preconfer() && current_status.is_submitter() {
@@ -619,6 +627,7 @@ impl Node {
                         .await?;
                     self.trigger_l2_reorg(taiko_inbox_height, "Transaction reverted")
                         .await?;
+                    return Ok(true);
                 } else {
                     warn!("Transaction reverted, not our epoch, skipping reorg");
                 }
@@ -642,7 +651,7 @@ impl Node {
             }
         }
 
-        Ok(())
+        Ok(false)
     }
 
     async fn preconfirm_block(
