@@ -1,14 +1,15 @@
 pub(crate) mod batch_manager;
+mod l2_head_verifier;
 mod operator;
 mod verifier;
 
-use crate::node::verifier::Verifier;
 use crate::reorg_detector;
 use crate::{
     ethereum_l1::{transaction_error::TransactionError, EthereumL1},
     metrics::Metrics,
+    node::{l2_head_verifier::L2HeadVerifier, verifier::Verifier},
     shared::{l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
-    taiko::Taiko,
+    taiko::{preconf_blocks::BuildPreconfBlockResponse, Taiko},
 };
 use alloy::primitives::U256;
 use anyhow::Error;
@@ -41,6 +42,7 @@ pub struct Node {
     transaction_error_channel: Receiver<TransactionError>,
     metrics: Arc<Metrics>,
     watchdog: u64,
+    head_verifier: L2HeadVerifier,
 }
 
 impl Node {
@@ -87,6 +89,7 @@ impl Node {
             ethereum_l1.clone(),
             taiko.clone(),
         );
+        let head_verifier = L2HeadVerifier::new();
         Ok(Self {
             cancel_token,
             batch_manager: batch_manager,
@@ -100,6 +103,7 @@ impl Node {
             transaction_error_channel,
             metrics,
             watchdog: 0,
+            head_verifier,
         })
     }
 
@@ -363,6 +367,10 @@ impl Node {
             .await?;
 
         if current_status.is_preconfirmation_start_slot() {
+            self.head_verifier
+                .set(l2_slot_info.parent_id(), l2_slot_info.parent_hash().clone())
+                .await;
+
             if current_status.is_submitter() {
                 // We start preconfirmation in the middle of the epoch.
                 // Need to check for unproposed L2 blocks.
@@ -407,18 +415,44 @@ impl Node {
                     }
                 } else {
                     // skip slot driver is not synced with geth
+                    error!("Unexpected skip slot: driver is not synced with Geth");
                     return Ok(());
                 }
             }
         }
 
         if current_status.is_preconfer() && current_status.is_driver_synced() {
-            self.preconfirm_block(
-                pending_tx_list,
-                l2_slot_info,
-                current_status.is_end_of_sequencing(),
-            )
-            .await?;
+            if !self
+                .head_verifier
+                .verify(l2_slot_info.parent_id(), l2_slot_info.parent_hash())
+                .await
+            {
+                self.head_verifier.log_error().await;
+                self.cancel_token.cancel();
+                return Err(anyhow::anyhow!(
+                    "Unexpected L2 head detected. Restarting node..."
+                ));
+            }
+            if let Some(block) = self
+                .preconfirm_block(
+                    pending_tx_list,
+                    l2_slot_info,
+                    current_status.is_end_of_sequencing(),
+                )
+                .await?
+            {
+                if !self
+                    .head_verifier
+                    .verify_next_and_set(block.number, block.hash, block.parent_hash)
+                    .await
+                {
+                    self.head_verifier.log_error().await;
+                    self.cancel_token.cancel();
+                    return Err(anyhow::anyhow!(
+                        "Unexpected L2 head after preconfirmation. Restarting node..."
+                    ));
+                }
+            }
         }
 
         if current_status.is_submitter() {
@@ -616,7 +650,7 @@ impl Node {
         pending_tx_list: Option<PreBuiltTxList>,
         l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
         trace!("preconfirm_block");
 
         self.batch_manager
@@ -677,6 +711,20 @@ impl Node {
         self.verifier = None;
         self.reorg_detector
             .set_expected_reorg(new_last_block_id)
+            .await;
+
+        let new_last_block_hash = match self.taiko.get_l2_block_hash(new_last_block_id).await {
+            Ok(hash) => hash,
+            Err(err) => {
+                self.cancel_token.cancel();
+                return Err(anyhow::anyhow!(
+                    "Failed to get L2 block hash during reorg: {}",
+                    err
+                ));
+            }
+        };
+        self.head_verifier
+            .set(new_last_block_id, new_last_block_hash)
             .await;
 
         if let Err(err) = self.batch_manager.trigger_l2_reorg(new_last_block_id).await {

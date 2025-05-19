@@ -42,7 +42,7 @@ use serde_json::Value;
 use std::str::FromStr;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::RwLock;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 mod fixed_k_signer_chainbound;
 mod l2_contracts_bindings;
 pub mod preconf_blocks;
@@ -381,7 +381,7 @@ impl Taiko {
         anchor_origin_height: u64,
         l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<preconf_blocks::BuildPreconfBlockResponse>, Error> {
         tracing::debug!("Submitting new L2 blocks to the Taiko driver");
 
         let anchor_block_state_root = self
@@ -433,11 +433,18 @@ impl Taiko {
             .call_driver_until_success(http::Method::POST, API_ENDPOINT, &request_body)
             .await?;
 
-        trace!("Response from preconfBlocks: {}", response);
+        trace!("Response from preconfBlocks: {:?}", response);
+
+        let preconfirmed_block =
+            preconf_blocks::BuildPreconfBlockResponse::new_from_value(response);
+
+        if preconfirmed_block.is_none() {
+            tracing::error!("Block was preconfirmed, but failed to decode response from driver.");
+        }
 
         self.metrics.inc_blocks_preconfirmed();
 
-        Ok(())
+        Ok(preconfirmed_block)
     }
 
     pub async fn trigger_l2_reorg(&self, new_last_block_id: u64) -> Result<(), Error> {

@@ -3,6 +3,7 @@ pub mod batch_builder;
 use crate::{
     ethereum_l1::EthereumL1,
     shared::{l2_block::L2Block, l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
+    taiko::preconf_blocks::BuildPreconfBlockResponse,
     taiko::Taiko,
 };
 use alloy::{consensus::BlockHeader, consensus::Transaction, primitives::Address};
@@ -155,8 +156,8 @@ impl BatchManager {
         pending_tx_list: Option<PreBuiltTxList>,
         l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
-    ) -> Result<(), Error> {
-        if let Some(pending_tx_list) = pending_tx_list {
+    ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
+        let result = if let Some(pending_tx_list) = pending_tx_list {
             // Handle the pending tx list from taiko geth
             debug!(
                 "Received pending tx list length: {}, bytes length: {}",
@@ -165,21 +166,22 @@ impl BatchManager {
             );
             let l2_block = L2Block::new_from(pending_tx_list, l2_slot_info.slot_timestamp());
             self.add_new_l2_block(l2_block, l2_slot_info, end_of_sequencing)
-                .await?;
+                .await?
         } else if self.is_empty_block_required(l2_slot_info.slot_timestamp()) {
             // Handle time shift between blocks exceeded
             debug!("No pending txs, proposing empty block");
             let empty_block = L2Block::new_empty(l2_slot_info.slot_timestamp());
             self.add_new_l2_block(empty_block, l2_slot_info, end_of_sequencing)
-                .await?;
+                .await?
         } else if end_of_sequencing {
             debug!("No pending txs, but reached end of sequencing, proposing empty block.");
             let empty_block = L2Block::new_empty(l2_slot_info.slot_timestamp());
             self.add_new_l2_block(empty_block, l2_slot_info, end_of_sequencing)
-                .await?;
+                .await?
         } else {
             trace!("No pending txs, skipping preconfirmation");
-        }
+            None
+        };
 
         if self
             .batch_builder
@@ -190,7 +192,7 @@ impl BatchManager {
             self.batch_builder.finalize_current_batch();
         }
 
-        Ok(())
+        Ok(result)
     }
 
     async fn add_new_l2_block(
@@ -198,7 +200,7 @@ impl BatchManager {
         l2_block: L2Block,
         l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
         info!(
             "Adding new L2 block to the batch, id: {}, timestamp: {}, parent gas used: {}",
             l2_slot_info.parent_id() + 1,
@@ -207,7 +209,7 @@ impl BatchManager {
         );
         let anchor_block_id: u64 = self.consume_l2_block(l2_block.clone()).await?;
 
-        if let Err(err) = self
+        match self
             .taiko
             .advance_head_to_new_l2_block(
                 l2_block,
@@ -217,10 +219,13 @@ impl BatchManager {
             )
             .await
         {
-            error!("Failed to advance head to new L2 block: {}", err);
-            self.remove_last_l2_block().await?;
+            Ok(preconfed_block) => Ok(preconfed_block),
+            Err(err) => {
+                error!("Failed to advance head to new L2 block: {}", err);
+                self.remove_last_l2_block().await?;
+                Ok(None)
+            }
         }
-        Ok(())
     }
 
     pub async fn consume_l2_block(&mut self, l2_block: L2Block) -> Result<u64, Error> {

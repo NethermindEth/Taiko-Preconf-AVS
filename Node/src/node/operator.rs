@@ -153,7 +153,8 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
                 &driver_status,
             )
             .await?;
-        let preconfirmation_started = self.is_preconfirmation_start_l2_slot(preconfer, is_driver_synced);
+        let preconfirmation_started =
+            self.is_preconfirmation_start_l2_slot(preconfer, is_driver_synced);
         if preconfirmation_started {
             self.was_synced_preconfer = true;
         }
@@ -944,7 +945,7 @@ mod tests {
         slot_clock.clock.timestamp = timestamp; // second l1 slot, second l2 slot
         Operator {
             cancel_token: CancellationToken::new(),
-            taiko: Arc::new(TaikoUnsyncedMock{
+            taiko: Arc::new(TaikoUnsyncedMock {
                 end_of_sequencing_block_hash: get_test_hash(),
             }),
             execution_layer: Arc::new(ExecutionLayerMock {

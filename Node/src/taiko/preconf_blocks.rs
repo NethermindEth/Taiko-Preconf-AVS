@@ -1,5 +1,6 @@
 use crate::utils::types::*;
 use alloy::primitives::B256;
+use hex::FromHex;
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -7,6 +8,34 @@ use serde::{Deserialize, Deserializer, Serialize};
 pub struct BuildPreconfBlockRequestBody {
     pub executable_data: ExecutableData,
     pub end_of_sequencing: bool,
+}
+
+#[derive(Debug)]
+pub struct BuildPreconfBlockResponse {
+    pub number: u64,
+    pub hash: B256,
+    pub parent_hash: B256,
+}
+
+impl BuildPreconfBlockResponse {
+    pub fn new_from_value(value: serde_json::Value) -> Option<Self> {
+        let header = value.get("blockHeader")?;
+
+        Some(Self {
+            number: u64::from_str_radix(
+                header.get("number")?.as_str()?.trim_start_matches("0x"),
+                16,
+            )
+            .ok()?,
+            hash: Self::to_b256(header.get("hash")?.as_str()?)?,
+            parent_hash: Self::to_b256(header.get("parentHash")?.as_str()?)?,
+        })
+    }
+
+    fn to_b256(s: &str) -> Option<B256> {
+        let bytes = <[u8; 32]>::from_hex(s.trim_start_matches("0x")).ok()?;
+        Some(B256::from(bytes))
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
