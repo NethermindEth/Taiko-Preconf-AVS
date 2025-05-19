@@ -581,7 +581,6 @@ impl Node {
         return Ok(!verifier.has_batches_to_submit());
     }
 
-    /// Returns true if reorg is triggered
     async fn check_transaction_error_channel(
         &mut self,
         current_status: &OperatorStatus,
@@ -604,7 +603,6 @@ impl Node {
         Ok(())
     }
 
-    /// Returns true if reorg is triggered
     async fn handle_transaction_error(
         &mut self,
         error: &TransactionError,
@@ -644,7 +642,7 @@ impl Node {
             }
         }
 
-        return Ok(());
+        Ok(())
     }
 
     async fn preconfirm_block(
