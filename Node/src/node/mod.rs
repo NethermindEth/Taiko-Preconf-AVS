@@ -363,12 +363,8 @@ impl Node {
         let (l2_slot_info, current_status, pending_tx_list) =
             self.get_slot_info_and_status().await?;
 
-        if self
-            .check_transaction_error_channel(&current_status)
-            .await?
-        {
-            return Ok(());
-        };
+        self.check_transaction_error_channel(&current_status)
+            .await?;
 
         if current_status.is_preconfirmation_start_slot() {
             self.head_verifier
@@ -592,7 +588,7 @@ impl Node {
     async fn check_transaction_error_channel(
         &mut self,
         current_status: &OperatorStatus,
-    ) -> Result<bool, Error> {
+    ) -> Result<(), Error> {
         match self.transaction_error_channel.try_recv() {
             Ok(error) => {
                 return self.handle_transaction_error(&error, current_status).await;
@@ -608,7 +604,7 @@ impl Node {
             },
         }
 
-        Ok(false)
+        Ok(())
     }
 
     /// Returns true if reorg is triggered
@@ -616,7 +612,7 @@ impl Node {
         &mut self,
         error: &TransactionError,
         current_status: &OperatorStatus,
-    ) -> Result<bool, Error> {
+    ) -> Result<(), Error> {
         match error {
             TransactionError::TransactionReverted | TransactionError::EstimationFailed => {
                 if current_status.is_preconfer() && current_status.is_submitter() {
@@ -627,7 +623,7 @@ impl Node {
                         .await?;
                     self.trigger_l2_reorg(taiko_inbox_height, "Transaction reverted")
                         .await?;
-                    return Ok(true);
+                    return Err(anyhow::anyhow!("Force reorg done"));
                 } else {
                     warn!("Transaction reverted, not our epoch, skipping reorg");
                 }
@@ -651,7 +647,7 @@ impl Node {
             }
         }
 
-        Ok(false)
+        return Ok(());
     }
 
     async fn preconfirm_block(
