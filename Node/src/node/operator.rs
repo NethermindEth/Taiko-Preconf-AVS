@@ -26,7 +26,7 @@ pub struct Operator<
     next_operator: bool,
     continuing_role: bool,
     simulate_not_submitting_at_the_end_of_epoch: bool,
-    was_preconfer: bool,
+    was_synced_preconfer: bool,
     cancel_token: CancellationToken,
     cancel_counter: u64,
     operator_transition_slots: u64,
@@ -38,6 +38,7 @@ pub struct Status {
     submitter: bool,
     preconfirmation_started: bool,
     end_of_sequencing: bool,
+    is_driver_synced: bool,
 }
 
 impl Status {
@@ -47,6 +48,10 @@ impl Status {
 
     pub fn is_submitter(&self) -> bool {
         self.submitter
+    }
+
+    pub fn is_driver_synced(&self) -> bool {
+        self.is_driver_synced
     }
 
     pub fn is_preconfirmation_start_slot(&self) -> bool {
@@ -70,6 +75,10 @@ impl std::fmt::Display for Status {
 
         if self.submitter {
             roles.push("Submit");
+        }
+
+        if self.preconfer && self.is_driver_synced {
+            roles.push("Synced");
         }
 
         if self.end_of_sequencing {
@@ -102,7 +111,7 @@ impl Operator {
             next_operator: false,
             continuing_role: false,
             simulate_not_submitting_at_the_end_of_epoch,
-            was_preconfer: false,
+            was_synced_preconfer: false,
             cancel_token,
             cancel_counter: 0,
             operator_transition_slots: OPERATOR_TRANSITION_SLOTS,
@@ -134,6 +143,7 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
 
         let handover_window = self.is_handover_window(l1_slot);
         let driver_status = self.taiko.get_status().await?;
+        let is_driver_synced = self.is_driver_synced(l2_slot_info, &driver_status).await?;
         let preconfer = self
             .is_preconfer(
                 current_operator,
@@ -143,8 +153,14 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
                 &driver_status,
             )
             .await?;
-        let preconfirmation_started = self.is_preconfirmation_start_l2_slot(preconfer);
-        self.was_preconfer = preconfer;
+        let preconfirmation_started = self.is_preconfirmation_start_l2_slot(preconfer, is_driver_synced);
+        if preconfirmation_started {
+            self.was_synced_preconfer = true;
+        }
+        if !preconfer {
+            self.was_synced_preconfer = false;
+        }
+
         let submitter = self.is_submitter(current_operator, handover_window);
         let end_of_sequencing = self.is_end_of_sequencing(preconfer, submitter, l1_slot)?;
 
@@ -153,6 +169,7 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
             submitter,
             preconfirmation_started,
             end_of_sequencing,
+            is_driver_synced,
         })
     }
 
@@ -176,11 +193,8 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
         }
     }
 
-    async fn is_preconfer(
+    async fn is_driver_synced(
         &mut self,
-        current_operator: bool,
-        handover_window: bool,
-        l1_slot: Slot,
         l2_slot_info: &L2SlotInfo,
         driver_status: &TaikoStatus,
     ) -> Result<bool, Error> {
@@ -193,10 +207,20 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
             return Ok(false);
         }
         self.cancel_counter = 0;
+        Ok(true)
+    }
 
+    async fn is_preconfer(
+        &mut self,
+        current_operator: bool,
+        handover_window: bool,
+        l1_slot: Slot,
+        l2_slot_info: &L2SlotInfo,
+        driver_status: &TaikoStatus,
+    ) -> Result<bool, Error> {
         if handover_window {
             return Ok(self.next_operator
-                && (self.was_preconfer // If we were the operator for the previous slot, the handover buffer doesn't matter.
+                && (self.was_synced_preconfer // If we were the operator for the previous slot, the handover buffer doesn't matter.
                     || !self.is_handover_buffer(l1_slot, l2_slot_info, driver_status).await?));
         }
 
@@ -246,8 +270,8 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
         current_operator
     }
 
-    fn is_preconfirmation_start_l2_slot(&self, preconfer: bool) -> bool {
-        !self.was_preconfer && preconfer
+    fn is_preconfirmation_start_l2_slot(&self, preconfer: bool, is_driver_synced: bool) -> bool {
+        !self.was_synced_preconfer && preconfer && is_driver_synced
     }
 
     fn is_handover_window(&self, slot: Slot) -> bool {
@@ -310,6 +334,23 @@ mod tests {
         }
     }
 
+    struct TaikoUnsyncedMock {
+        end_of_sequencing_block_hash: B256,
+    }
+
+    impl PreconfDriver for TaikoUnsyncedMock {
+        async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {
+            Ok(preconf_blocks::TaikoStatus {
+                end_of_sequencing_block_hash: self.end_of_sequencing_block_hash.clone(),
+                highest_unsafe_l2_payload_block_id: 2,
+            })
+        }
+
+        async fn get_latest_l2_block_id(&self) -> Result<u64, Error> {
+            Ok(0)
+        }
+    }
+
     struct TaikoMock {
         end_of_sequencing_block_hash: B256,
     }
@@ -349,7 +390,7 @@ mod tests {
             false,
         );
         operator.next_operator = false;
-        operator.was_preconfer = true;
+        operator.was_synced_preconfer = true;
         operator.continuing_role = false;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -358,6 +399,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: true,
+                is_driver_synced: true,
             }
         );
         // Not a preconfer and submiter
@@ -367,7 +409,7 @@ mod tests {
             false,
         );
         operator.next_operator = false;
-        operator.was_preconfer = false;
+        operator.was_synced_preconfer = false;
         operator.continuing_role = false;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -376,6 +418,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
         // Continuing role
@@ -385,7 +428,7 @@ mod tests {
             true,
         );
         operator.next_operator = true;
-        operator.was_preconfer = true;
+        operator.was_synced_preconfer = true;
         operator.continuing_role = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -394,6 +437,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
         // Not correct l2 slot
@@ -403,7 +447,7 @@ mod tests {
             false,
         );
         operator.next_operator = false;
-        operator.was_preconfer = true;
+        operator.was_synced_preconfer = true;
         operator.continuing_role = false;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -412,6 +456,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -424,7 +469,7 @@ mod tests {
             false,
         );
         operator.next_operator = true;
-        operator.was_preconfer = true;
+        operator.was_synced_preconfer = true;
         operator.continuing_role = false;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -433,6 +478,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -441,7 +487,7 @@ mod tests {
             false,
             false,
         );
-        operator.was_preconfer = true;
+        operator.was_synced_preconfer = true;
         operator.continuing_role = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -450,6 +496,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -462,7 +509,7 @@ mod tests {
             false,
         );
         operator.next_operator = true;
-        operator.was_preconfer = true;
+        operator.was_synced_preconfer = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
@@ -470,6 +517,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -478,7 +526,7 @@ mod tests {
             false,
             false,
         );
-        operator.was_preconfer = true;
+        operator.was_synced_preconfer = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
@@ -486,6 +534,27 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_is_driver_synced_status() {
+        let mut operator = create_operator_with_unsynced_driver_and_geth(
+            31 * 12, // last slot of epoch
+            false,
+            true,
+        );
+        operator.was_synced_preconfer = true;
+        assert_eq!(
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
+            Status {
+                preconfer: true,
+                submitter: false,
+                preconfirmation_started: false,
+                end_of_sequencing: false,
+                is_driver_synced: false,
             }
         );
     }
@@ -504,6 +573,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -513,7 +583,7 @@ mod tests {
             false,
         );
         operator.next_operator = true;
-        operator.was_preconfer = true;
+        operator.was_synced_preconfer = true;
         operator.continuing_role = false;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -522,6 +592,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -531,7 +602,7 @@ mod tests {
             false,
         );
         operator.next_operator = true;
-        operator.was_preconfer = true;
+        operator.was_synced_preconfer = true;
         operator.continuing_role = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -540,6 +611,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -559,6 +631,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -575,6 +648,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -590,6 +664,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -610,6 +685,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -626,6 +702,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -649,6 +726,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -668,6 +746,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -684,6 +763,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -703,6 +783,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -715,7 +796,7 @@ mod tests {
         );
         operator.next_operator = true;
         operator.continuing_role = true;
-        operator.was_preconfer = true;
+        operator.was_synced_preconfer = true;
 
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -724,6 +805,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -734,7 +816,7 @@ mod tests {
         );
         operator.next_operator = true;
         operator.continuing_role = true;
-        operator.was_preconfer = true;
+        operator.was_synced_preconfer = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
@@ -742,6 +824,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -751,7 +834,7 @@ mod tests {
             true,
         );
         operator.continuing_role = true;
-        operator.was_preconfer = true;
+        operator.was_synced_preconfer = true;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
@@ -759,6 +842,7 @@ mod tests {
                 submitter: true,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -770,7 +854,7 @@ mod tests {
             false,
             true,
         );
-        operator.was_preconfer = false;
+        operator.was_synced_preconfer = false;
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
             Status {
@@ -778,6 +862,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: true,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
 
@@ -789,6 +874,7 @@ mod tests {
                 submitter: false,
                 preconfirmation_started: false,
                 end_of_sequencing: false,
+                is_driver_synced: true,
             }
         );
     }
@@ -816,7 +902,7 @@ mod tests {
             next_operator: false,
             continuing_role: false,
             simulate_not_submitting_at_the_end_of_epoch: false,
-            was_preconfer: false,
+            was_synced_preconfer: false,
             operator_transition_slots: 1,
         }
     }
@@ -843,7 +929,35 @@ mod tests {
             next_operator: false,
             continuing_role: false,
             simulate_not_submitting_at_the_end_of_epoch: false,
-            was_preconfer: false,
+            was_synced_preconfer: false,
+            cancel_counter: 0,
+            operator_transition_slots: 1,
+        }
+    }
+
+    fn create_operator_with_unsynced_driver_and_geth(
+        timestamp: i64,
+        current_operator: bool,
+        next_operator: bool,
+    ) -> Operator<ExecutionLayerMock, MockClock, TaikoUnsyncedMock> {
+        let mut slot_clock = SlotClock::<MockClock>::new(0, 0, 12, 32, 2000);
+        slot_clock.clock.timestamp = timestamp; // second l1 slot, second l2 slot
+        Operator {
+            cancel_token: CancellationToken::new(),
+            taiko: Arc::new(TaikoUnsyncedMock{
+                end_of_sequencing_block_hash: get_test_hash(),
+            }),
+            execution_layer: Arc::new(ExecutionLayerMock {
+                current_operator,
+                next_operator,
+            }),
+            slot_clock: Arc::new(slot_clock),
+            handover_window_slots: HANDOVER_WINDOW_SLOTS as u64,
+            handover_start_buffer_ms: 1000,
+            next_operator: false,
+            continuing_role: false,
+            simulate_not_submitting_at_the_end_of_epoch: false,
+            was_synced_preconfer: false,
             cancel_counter: 0,
             operator_transition_slots: 1,
         }
