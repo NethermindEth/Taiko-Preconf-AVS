@@ -587,8 +587,7 @@ impl Node {
     ) -> Result<(), Error> {
         match self.transaction_error_channel.try_recv() {
             Ok(error) => {
-                self.handle_transaction_error(&error, current_status)
-                    .await?;
+                return self.handle_transaction_error(&error, current_status).await;
             }
             Err(err) => match err {
                 TryRecvError::Empty => {
@@ -619,6 +618,7 @@ impl Node {
                         .await?;
                     self.trigger_l2_reorg(taiko_inbox_height, "Transaction reverted")
                         .await?;
+                    return Err(anyhow::anyhow!("Force reorg done"));
                 } else {
                     warn!("Transaction reverted, not our epoch, skipping reorg");
                 }
