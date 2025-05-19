@@ -421,10 +421,7 @@ impl Node {
             }
         }
 
-        if !self.cancel_token.is_cancelled()
-            && current_status.is_preconfer()
-            && current_status.is_driver_synced()
-        {
+        if current_status.is_preconfer() && current_status.is_driver_synced() {
             if !self
                 .head_verifier
                 .verify(l2_slot_info.parent_id(), l2_slot_info.parent_hash())
@@ -458,7 +455,7 @@ impl Node {
             }
         }
 
-        if !self.cancel_token.is_cancelled() && current_status.is_submitter() {
+        if current_status.is_submitter() {
             // first submit verification batches
             if let Some(mut verifier) = self.verifier.take() {
                 match self
