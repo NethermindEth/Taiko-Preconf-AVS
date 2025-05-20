@@ -79,7 +79,7 @@ impl Metrics {
         }
 
         let opts = HistogramOpts::new("batch_propose_tries", "Number of tries to propose a batch")
-            .buckets(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+            .buckets(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
         let batch_propose_tries = match Histogram::with_opts(opts) {
             Ok(histogram) => histogram,
             Err(err) => panic!("Failed to create batch_propose_tries histogram: {}", err),
