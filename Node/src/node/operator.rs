@@ -127,6 +127,19 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
         // For the first N slots of the new epoch, use the next operator from the previous epoch
         // it's because of the delay that L1 updates the current operator after the epoch has changed.
         let current_operator = if l1_slot < self.operator_transition_slots {
+            let curr = match self.execution_layer.is_operator_for_current_epoch().await {
+                Ok(val) => format!("{}", val),
+                Err(e) => {
+                    format!("Failed to check current epoch operator: {}", e)
+                }
+            };
+            let next = match self.execution_layer.is_operator_for_next_epoch().await {
+                Ok(val) => format!("{}", val),
+                Err(e) => {
+                    format!("Failed to check next epoch operator: {}", e)
+                }
+            };
+            tracing::debug!("Status in transition: l1_slot: {} current_operator: {} next_operator: {}", l1_slot, curr, next);
             self.next_operator
         } else {
             self.next_operator = match self.execution_layer.is_operator_for_next_epoch().await {
