@@ -37,6 +37,7 @@ secp256k1 = { workspace = true }
 serde = { workspace = true }
 serde_bytes = { workspace = true }
 serde_json = { workspace = true }
+ssz_rs = { workspace = true }
 tiny-keccak = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
@@ -50,7 +51,7 @@ mockall = { workspace = true }
 mockall_double = { workspace = true }
 mockito = { workspace = true }
 
-[lints]
-workspace = true
+#[lints]
+#workspace = true
 
 

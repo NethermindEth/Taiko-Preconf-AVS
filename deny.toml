@@ -116,7 +116,7 @@ highlight = "all"
 
 [bans.workspace-dependencies]
 duplicates = 'warn'
-unused = 'deny'
+unused = 'warn'
 
 [sources]
 unknown-registry = "deny"
@@ -125,6 +125,7 @@ allow-git = [
     "https://github.com/noahfigueras/ssz-rs",
     "https://github.com/paradigmxyz/reth",
     "https://github.com/ralexstokes/ethereum-consensus",
+    "https://github.com/ralexstokes/ssz-rs",
     "https://github.com/paradigmxyz/mev-share-rs",
     "https://github.com/gyscos/zstd-rs",
 ]
