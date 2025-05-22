@@ -4,7 +4,7 @@ In this doc, we will go through what we have implemented for the PoC, and what n
 
 # Slides
 
-[https://docs.google.com/presentation/d/1-v1j6ub069fyugvDZSNRrNwVDl1LnQwSI1Y2jgF_Uy0/edit?usp=sharing](https://docs.google.com/presentation/d/1-v1j6ub069fyugvDZSNRrNwVDl1LnQwSI1Y2jgF_Uy0/edit?usp=sharing)
+[Preconfirmation PoC Progress Report](https://docs.google.com/presentation/d/1-v1j6ub069fyugvDZSNRrNwVDl1LnQwSI1Y2jgF_Uy0/edit?usp=sharing)
 
 # Current Status
 
