@@ -89,9 +89,8 @@ impl P2PNetwork {
         let message_authenticity = MessageAuthenticity::Signed(config.local_key.clone());
 
         // build a gossipsub network behaviour
-        let mut gossipsub =
-            gossipsub::Behaviour::new(message_authenticity, gossipsub_config)
-                .expect("Correct configuration");
+        let mut gossipsub = gossipsub::Behaviour::new(message_authenticity, gossipsub_config)
+            .expect("Correct configuration");
 
         // Create a Gossipsub topic
         let topic_name = "taiko-avs".to_string();

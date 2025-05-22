@@ -402,9 +402,7 @@ impl PeerManager {
             .filter(|(_, peer_data)| {
                 peer_data.average_connection_duration.unwrap_or(0) > MIN_AVERAGE_CONNECTION_DURATION
             })
-            .filter(|(peer_id, _)| {
-                !self.banned_peers.contains(peer_id)
-            })
+            .filter(|(peer_id, _)| !self.banned_peers.contains(peer_id))
             .map(|(peer_id, peer_data)| (*peer_id, peer_data))
             .collect();
         peer_data.sort_by(|(_, a), (_, b)| {

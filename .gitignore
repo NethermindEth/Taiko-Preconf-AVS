@@ -1,4 +1,4 @@
-/Node/target
+target/
 .vscode
 .env
 venv

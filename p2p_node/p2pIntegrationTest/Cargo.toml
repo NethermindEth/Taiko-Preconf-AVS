@@ -1,12 +1,16 @@
 [package]
 name = "p2p-node"
-version = "0.0.1"
-edition = "2021"
-license = "MIT"
+version = "0.1.0"
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+#[lints]
+#workspace = true
 
 [dependencies]
 tokio = { version = "1.23.0", features = ["full"] }
 tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-p2p-network ={ path = "../p2pNetwork" }
+p2p-network ={ path = "../p2p_network" }
 rand = "0.8"

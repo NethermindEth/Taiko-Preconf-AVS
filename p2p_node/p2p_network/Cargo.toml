@@ -1,0 +1,22 @@
+[package]
+name = "p2p-network"
+version = "0.1.0"
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+#[lints]
+#workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+libp2p = { workspace = true }
+discv5 = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_millis = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+libp2p-mplex = { workspace = true }
+void = { workspace = true }
+anyhow = { workspace = true }
