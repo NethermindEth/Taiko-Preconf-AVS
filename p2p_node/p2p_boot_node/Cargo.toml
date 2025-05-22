@@ -9,7 +9,7 @@ license.workspace = true
 #workspace = true
 
 [dependencies]
-tokio = { workspace = true }
 discv5 = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

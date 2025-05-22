@@ -5,53 +5,53 @@ edition.workspace = true
 repository.workspace = true
 license.workspace = true
 
-[lints]
-workspace = true
+[features]
+use_mock = []
 
 [dependencies]
 alloy = { workspace = true }
 alloy-rlp = { workspace = true }
+anyhow = { workspace = true }
+beacon-api-client = { workspace = true }
+bincode = { workspace = true }
+blst = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+dotenv = { workspace = true }
+ecdsa = { workspace = true }
+elliptic-curve = { workspace = true }
+ethereum-consensus = { workspace = true }
+futures-util = { workspace = true }
+hex = { workspace = true }
+http = { workspace = true }
+jsonrpsee = { workspace = true }
+jsonwebtoken = { workspace = true }
+k256 = { workspace = true }
+lazy_static = { workspace = true }
+p2p-network = { workspace = true }
+rand = { workspace = true }
+rand_core = { workspace = true }
+reqwest = { workspace = true }
+reth-primitives = { workspace = true }
+secp256k1 = { workspace = true }
+serde = { workspace = true }
+serde_bytes = { workspace = true }
+serde_json = { workspace = true }
+ssz_rs = { workspace = true }
+tiny-keccak = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-jsonrpsee = { workspace = true }
-jsonwebtoken = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-lazy_static = { workspace = true }
-anyhow = { workspace = true }
-k256 = { workspace = true }
-ecdsa = { workspace = true }
-elliptic-curve = { workspace = true }
-reqwest = { workspace = true }
-hex = { workspace = true }
-tiny-keccak = { workspace = true }
-secp256k1 = { workspace = true }
-beacon-api-client = { workspace = true }
-ethereum-consensus = { workspace = true }
-ssz_rs = { workspace = true }
-dotenv = { workspace = true }
-rand_core = { workspace = true }
-chrono = { workspace = true }
-p2p-network = { workspace = true }
-bincode = { workspace = true }
-serde_bytes = { workspace = true }
-clap = { workspace = true }
-futures-util = { workspace = true }
-rand = { workspace = true }
 tree_hash = { workspace = true }
 tree_hash_derive = { workspace = true }
-reth-primitives = { workspace = true }
-blst = { workspace = true }
-http = { workspace = true }
 
 [dev-dependencies]
-mockall_double = "0.3"
-mockall = "0.13"
-mockito = "1.4"
-alloy-json-rpc = "0.2"
+alloy-json-rpc = { workspace = true }
+mockall = { workspace = true }
+mockall_double = { workspace = true }
+mockito = { workspace = true }
 
-[features]
-use_mock = []
+[lints]
+workspace = true
 
 
