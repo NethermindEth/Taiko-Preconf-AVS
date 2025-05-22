@@ -126,8 +126,6 @@ def send_transaction(nonce : int):
     return tx_hash.hex()
 
 def spam_transactions(count):
-    start_nonce = w3.eth.get_transaction_count(account.address)
-
     # Create batches of transactions
     batch_size = min(args.batch_size, count)
     print(f"Sending {count} transactions in batches of {batch_size}")
@@ -155,8 +153,10 @@ def spam_transactions(count):
         batch_count = min(batch_size, count - sent_count)
         signed_txs = []
 
+        pending_nonce = w3.eth.get_transaction_count(account.address, 'pending')
+
         for i in range(batch_count):
-            nonce = start_nonce + sent_count + i
+            nonce = pending_nonce + i
             tx = {
                 'nonce': nonce,
                 'to': recipient,
@@ -189,7 +189,7 @@ def spam_transactions(count):
                     print(f"Error processing transaction result: {e}")
 
         sent_count += batch_count
-        print(f"Sent {sent_count}/{count} transactions")
+        print(f"Sent {sent_count}/{count} transactions starting from nonce {pending_nonce}")
 
         # Sleep between batches if there are more to send
         if sent_count < count:
