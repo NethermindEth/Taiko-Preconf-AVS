@@ -8,6 +8,7 @@ members = [
 ]
 resolver = "2"
 default-members = ["node"]
+
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
@@ -16,10 +17,17 @@ license = "MIT"
 
 [workspace.dependencies]
 alloy = { version = "0.2", default-features = false, features = [
-    "full",
+    "std",
+    "consensus",
+    "contract",
+    "network",
     "node-bindings",
+    "provider-ws",
+    "pubsub",
     "rlp",
     "rpc-types-beacon",
+    "signers",
+    "signer-local",
 ] }
 alloy-json-rpc = { version = "0.2", default-features = false }
 alloy-rlp = { version = "0.3", default-features = false }
@@ -57,11 +65,10 @@ serde = { version = "1.0", default-features = false, features = ["derive"] }
 serde_bytes = { version = "0.11", default-features = false }
 serde_json = { version = "1.0", default-features = false }
 serde_millis = { version = "0.1.1", default-features = false }
-ssz_rs = { git = "https://github.com/ralexstokes/ssz-rs", rev = "84ef2b71aa004f6767420badb42c902ad56b8b72", default-features = false }
 tiny-keccak = { version = "2.0", default-features = false }
 tokio = { version = "1.38", default-features = false, features = ["full"] }
 tracing = { version = "0.1.40", default-features = false }
-tracing-subscriber = { version = "0.3", default-features = false }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }
 tree_hash = { version = "0.6.0", default-features = false }
 tree_hash_derive = { version = "0.6.0", default-features = false }
 void = { version = "1.0.2", default-features = false }
