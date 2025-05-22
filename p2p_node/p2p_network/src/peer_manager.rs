@@ -361,7 +361,7 @@ impl PeerManager {
         };
 
         info!(
-            "Updating average connection duration withs status {:?} with new duration {:?}",
+            "Updating average connection duration with status {:?} with new duration {:?}",
             connection_data.connection_status, new_duration
         );
 

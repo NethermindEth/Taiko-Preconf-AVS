@@ -1,6 +1,6 @@
 # Taiko Preconf Smart Contracts
 
-These smart contracts constitute an **actively validated service (AVS)** that provides based preconfirmations of transactions for Taiko L2. The contracts are resposible for:
+These smart contracts constitute an **actively validated service (AVS)** that provides based preconfirmations of transactions for Taiko L2. The contracts are responsible for:
 
 - Managing registration of staked preconfers who may deliver the preconfirmations on an external P2P layer.
 - Slashing the stake of a preconfer for not respecting a preconfirmation i.e

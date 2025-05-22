@@ -177,13 +177,13 @@ mod tests {
             avs: avs_contracts,
         };
 
-        let concensus_url_str = "https://docs-demo.quiknode.pro";
+        let consensus_url_str = "https://docs-demo.quiknode.pro";
         // Create an Ethereum L1 client
         let eth = EthereumL1::new(
             &ws_rpc_url,
             &pk_str,
             &contracts,
-            &concensus_url_str,
+            &consensus_url_str,
             12000,
             32,
             60,
