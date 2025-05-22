@@ -139,7 +139,12 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
                     format!("Failed to check next epoch operator: {}", e)
                 }
             };
-            tracing::debug!("Status in transition: l1_slot: {} current_operator: {} next_operator: {}", l1_slot, curr, next);
+            tracing::debug!(
+                "Status in transition: l1_slot: {} current_operator: {} next_operator: {}",
+                l1_slot,
+                curr,
+                next
+            );
             self.next_operator
         } else {
             self.next_operator = match self.execution_layer.is_operator_for_next_epoch().await {

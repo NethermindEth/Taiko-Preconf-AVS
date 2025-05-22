@@ -201,6 +201,13 @@ impl ExecutionLayer {
             .ok_or(anyhow::anyhow!("No L2 blocks provided"))?
             .timestamp_sec;
 
+        debug!(
+            "Proposing batch: current L1 block: {}, last_block_timestamp {}, last_anchor_origin_height {}",
+            self.get_l1_height().await?,
+            last_block_timestamp,
+            last_anchor_origin_height
+        );
+
         // Build proposeBatch transaction
         #[cfg(not(feature = "extra-gas-percentage"))]
         let builder = ProposeBatchBuilder::new(self.provider_ws.clone());
