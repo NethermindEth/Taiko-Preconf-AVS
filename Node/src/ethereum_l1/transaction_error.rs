@@ -1,6 +1,7 @@
 #[derive(Debug)]
 pub enum TransactionError {
     EstimationFailed,
+    EstimationTooEarly,
     TransactionReverted,
     NotConfirmed,
     UnsupportedTransactionType,

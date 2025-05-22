@@ -8,7 +8,7 @@ use alloy::{
     rpc::types::TransactionRequest,
     sol_types::SolValue,
 };
-use alloy_json_rpc::RpcError;
+use alloy_json_rpc::{ErrorPayload, RpcError};
 use anyhow::{anyhow, Error};
 use std::sync::Arc;
 use tracing::warn;
@@ -84,8 +84,8 @@ impl ProposeBatchBuilder {
                     e
                 );
                 match e {
-                    RpcError::ErrorResp(_) => {
-                        return Err(anyhow!(TransactionError::EstimationFailed))
+                    RpcError::ErrorResp(err) => {
+                        return Err(anyhow!(Self::convert_error_payload(err)));
                     }
                     _ => return Ok(tx_blob),
                 }
@@ -138,8 +138,8 @@ impl ProposeBatchBuilder {
                     e
                 );
                 match e {
-                    RpcError::ErrorResp(_) => {
-                        return Err(anyhow!(TransactionError::EstimationFailed))
+                    RpcError::ErrorResp(err) => {
+                        return Err(anyhow!(Self::convert_error_payload(err)));
                     }
                     _ => return Ok(tx_blob), // In case of error return eip4844 transaction
                 }
@@ -176,6 +176,14 @@ impl ProposeBatchBuilder {
         } else {
             Ok(self.update_eip1559(tx_calldata, &fees_per_gas, tx_calldata_gas))
         }
+    }
+
+    fn convert_error_payload(err: ErrorPayload) -> TransactionError {
+        if err.message.contains("0x3d32ffdb") {
+            // TimestampTooLarge contract error
+            return TransactionError::EstimationTooEarly;
+        }
+        return TransactionError::EstimationFailed;
     }
 
     fn update_eip1559(

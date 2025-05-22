@@ -640,6 +640,10 @@ impl Node {
                 self.cancel_token.cancel();
                 return Err(anyhow::anyhow!("Failed to get block number from L1"));
             }
+            TransactionError::EstimationTooEarly => {
+                warn!("Estimation too early, skipping");
+                return Ok(());
+            }
         }
 
         Ok(())
