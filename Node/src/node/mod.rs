@@ -197,10 +197,6 @@ impl Node {
         // Wait for the last sent transaction to be executed
         self.wait_for_sent_transactions().await?;
 
-        // Wait for Taiko Driver to synchronize with Taiko Geth
-        #[cfg(feature = "sync-on-warmup")]
-        self.wait_for_taiko_driver_sync_with_geth().await;
-
         Ok(())
     }
 
@@ -307,57 +303,6 @@ impl Node {
         }
 
         Ok(())
-    }
-
-    /// Wait for Taiko Driver to synchronize with Taiko Geth chain tip.
-    #[cfg(feature = "sync-on-warmup")]
-    async fn wait_for_taiko_driver_sync_with_geth(&self) {
-        // TODO move to config
-        const TAIKO_DRIVER_SYNC_RETRY_PERIOD_BEFORE_PANIC_SEC: u64 = 600; // 10 mins
-
-        let sleep_duration = Duration::from_millis(self.preconf_heartbeat_ms / 2);
-        let start_time = std::time::SystemTime::now();
-        while self
-            .get_last_synced_block_height_between_taiko_geth_and_the_driver()
-            .await
-            .is_none()
-        {
-            if let Ok(elapsed) = start_time.elapsed() {
-                if elapsed > Duration::from_secs(TAIKO_DRIVER_SYNC_RETRY_PERIOD_BEFORE_PANIC_SEC) {
-                    error!(
-                        "Driver sync exceeded max retry period before panic {}. Shutting down...",
-                        TAIKO_DRIVER_SYNC_RETRY_PERIOD_BEFORE_PANIC_SEC
-                    );
-                    self.cancel_token.cancel();
-                }
-            }
-            sleep(sleep_duration).await;
-        }
-
-        if let Ok(elapsed) = start_time.elapsed() {
-            warn!("⭕ Driver sync took: {} ms.", elapsed.as_millis());
-        }
-    }
-
-    #[cfg(feature = "sync-on-warmup")]
-    async fn get_last_synced_block_height_between_taiko_geth_and_the_driver(&self) -> Option<u64> {
-        if let Ok(taiko_geth_height) = self.taiko.get_latest_l2_block_id().await {
-            match self.taiko.get_status().await {
-                Ok(status) => {
-                    info!(
-                        "🌀 Taiko status highestUnsafeL2PayloadBlockID: {}, Taiko Geth Height: {}",
-                        status.highest_unsafe_l2_payload_block_id, taiko_geth_height
-                    );
-                    if taiko_geth_height == status.highest_unsafe_l2_payload_block_id {
-                        return Some(taiko_geth_height);
-                    }
-                }
-                Err(err) => {
-                    error!("Failed to get status from taiko driver: {}", err);
-                }
-            }
-        }
-        None
     }
 
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {

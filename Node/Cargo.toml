@@ -9,7 +9,6 @@ license.workspace = true
 default = ["extra-gas-percentage"]
 extra-gas-percentage = []
 test-gas = ["clap"]
-sync-on-warmup = []
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
