@@ -1,4 +1,5 @@
 # Taiko Preconfirmation AVS (Actively Validated Service)
+
 [Design Document](https://github.com/NethermindEth/Taiko-Preconf-AVS/blob/master/Docs/design-doc.md)
 
 ## node
@@ -22,3 +23,7 @@ docker compose -f ./p2pNode/docker-compose.yml up -d
 ## License
 
 MIT. The license is also applied to all commits made before the license introduced.
+
+## Would like to contribute?
+
+see [Contributing](./CONTRIBUTING.md).

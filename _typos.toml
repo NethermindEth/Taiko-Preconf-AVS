@@ -1,0 +1,5 @@
+[files]
+extend-exclude = [
+    "Node/src/ethereum_l1/abi/*.json", 
+    "Node/src/taiko/abi/*.json"
+]

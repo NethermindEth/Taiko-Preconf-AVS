@@ -5,42 +5,42 @@ edition.workspace = true
 repository.workspace = true
 license.workspace = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-alloy = { workspace = true }
-alloy-rlp = { workspace = true }
-tokio = { workspace = true }
-tokio-util = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-jsonrpsee = { workspace = true }
-jsonwebtoken = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-lazy_static = { workspace = true }
-anyhow = { workspace = true }
-k256 = { workspace = true }
-ecdsa = { workspace = true }
-elliptic-curve = { workspace = true }
-reqwest = { workspace = true }
-hex = { workspace = true }
-ethereum-consensus = { workspace = true }
-dotenv = { workspace = true }
-chrono = { workspace = true }
-futures-util = { workspace = true }
-http = { workspace = true }
-flate2 = { workspace = true }
-alloy-json-rpc = { workspace = true }
-prometheus = { workspace = true }
-warp = { workspace = true }
-clap = { workspace = true, optional = true }
-
-[dev-dependencies]
-mockito = { workspace = true }
-
 [features]
 default = ["extra-gas-percentage"]
 extra-gas-percentage = []
 test-gas = ["clap"]
 sync-on-warmup = []
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+alloy = { workspace = true }
+alloy-json-rpc = { workspace = true }
+alloy-rlp = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true, optional = true }
+dotenv = { workspace = true }
+ecdsa = { workspace = true }
+elliptic-curve = { workspace = true }
+ethereum-consensus = { workspace = true }
+flate2 = { workspace = true }
+futures-util = { workspace = true }
+hex = { workspace = true }
+http = { workspace = true }
+jsonrpsee = { workspace = true }
+jsonwebtoken = { workspace = true }
+k256 = { workspace = true }
+lazy_static = { workspace = true }
+prometheus = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+warp = { workspace = true }
+
+[dev-dependencies]
+mockito = { workspace = true }

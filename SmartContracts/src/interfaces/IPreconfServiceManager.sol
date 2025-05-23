@@ -21,7 +21,7 @@ interface IPreconfServiceManager {
     /// @dev Only Callable by PreconfTaskManager to prevent withdrawals of stake during preconf or lookahead dispute period
     function lockStakeUntil(address operator, uint256 timestamp) external;
 
-    /// @dev Only Callable by PreconfTaskManager to slash an operator for incorret lookahead or preconfirmation
+    /// @dev Only Callable by PreconfTaskManager to slash an operator for incorrect lookahead or preconfirmation
     function slashOperator(address operator) external;
 
     /// @dev Returns the address of the preconf registry

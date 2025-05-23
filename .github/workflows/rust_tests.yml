@@ -1,0 +1,23 @@
+name: Build and test code
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Foundry (needed for contracts tests)
+      uses: foundry-rs/foundry-toolchain@v1
+    - name: Build
+      run: cargo test --workspace --verbose --no-run
+    - name: Run tests
+      run: cargo test --workspace --verbose
