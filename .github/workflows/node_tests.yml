@@ -20,15 +20,9 @@ jobs:
         submodules: recursive
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
-    - name: Update dependencies
-      working-directory: ./Node
-      run: cargo update
     - name: Build
-      working-directory: ./Node
-      run: cargo build --verbose
+      run: cargo build -p taiko_preconf_avs_node --verbose
     - name: Run tests
-      working-directory: ./Node
-      run: cargo test --verbose
+      run: cargo test -p taiko_preconf_avs_node --verbose
     - name: Run tests with use_mock feature
-      working-directory: ./Node
-      run: cargo test --features use_mock --verbose
+      run: cargo test -p taiko_preconf_avs_node --features use_mock --verbose
