@@ -1,6 +1,14 @@
 name: Linter check
 
-on: push
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    tags:
+      - "taiko-preconf-p2p-bootnode-v*"
+    paths:
+      - "p2pNode/**"
 
 env:
   CARGO_TERM_COLOR: always

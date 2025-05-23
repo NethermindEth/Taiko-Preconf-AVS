@@ -1,13 +1,6 @@
 name: "[Nethermind] Taiko Preconf P2P Bootnode - Docker build and push"
 
-on:
-  workflow_dispatch:
-  push:
-    branches: [master]
-    tags:
-      - "taiko-preconf-p2p-bootnode-v*"
-    paths:
-      - "p2pNode/**"
+on: push
 
 env:
   DOCKER_REGISTRY: docker.io
@@ -24,8 +17,8 @@ jobs:
         include:
           - os: ubuntu-latest
             platform: linux/amd64
-          - os: ubuntu-24.04-arm
-            platform: linux/arm64
+          # - os: ubuntu-24.04-arm
+          #   platform: linux/arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
