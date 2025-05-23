@@ -1,4 +1,4 @@
-FROM rust:1.84 as builder
+FROM rust:1.84 AS builder
 
 # Set the working directory inside the container
 WORKDIR /usr/src/p2p-node

@@ -1,1 +1,5 @@
-Node/target
+target
+Docs
+.github
+deny.toml
+*.md

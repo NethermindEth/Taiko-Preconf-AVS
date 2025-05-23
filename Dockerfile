@@ -5,10 +5,7 @@ INCLUDE+ Dockerfile.build
 # Set the working directory inside the container
 WORKDIR /app/taiko_preconf_avs_node
 
-COPY ../Node/src /app/taiko_preconf_avs_node/src
-COPY ../Node/Cargo.toml /app/taiko_preconf_avs_node/Cargo.toml
-COPY ../Node/Cargo.lock /app/taiko_preconf_avs_node/Cargo.lock
-COPY ../p2pNode/p2pNetwork /app/p2pNode/p2pNetwork
+COPY . .
 
 # Build taiko_preconf_avs_node
 RUN --mount=type=cache,target=/usr/local/cargo/registry \

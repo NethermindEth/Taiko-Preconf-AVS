@@ -5,12 +5,12 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
-tokio = { version = "1.23.0", features = ["full"] }
-tracing = { version = "0.1", features = ["log"] }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-p2p-network ={ path = "../p2pNetwork" }
-rand = "0.8"
-jsonrpc-client-transports = "18.0.0"
-jsonrpc-core = "18.0"
-jsonrpc-core-client = "18.0"
-serde_json = "1.0.140"
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+p2p-network = { workspace = true }
+rand = { workspace = true }
+jsonrpc-client-transports = { workspace = true }
+jsonrpc-core = { workspace = true }
+jsonrpc-core-client = { workspace = true }
+serde_json = { workspace = true }
