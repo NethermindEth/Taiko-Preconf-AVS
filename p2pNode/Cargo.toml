@@ -1,7 +1,0 @@
-[workspace]
-members = [
-    "p2pNetwork",
-    "p2pIntegrationTest",
-    "p2pBootNode",
-]
-resolver = "2"
