@@ -1,4 +1,4 @@
-FROM rust:1.80 as builder
+FROM rust:1.84 AS builder
 
 # Set the working directory inside the container
 WORKDIR /usr/src/p2p-boot-node
@@ -7,7 +7,7 @@ WORKDIR /usr/src/p2p-boot-node
 COPY . .
 
 # Build the project in release mode
-RUN cargo build --release
+RUN cargo build -p p2p-boot-node --release
 
 # Use ubuntu as the base image
 FROM ubuntu:latest

@@ -5,8 +5,7 @@ INCLUDE+ Dockerfile.build
 # Set the working directory inside the container
 WORKDIR /app/taiko_preconf_avs_node
 
-COPY ../Node /app/taiko_preconf_avs_node
-COPY ../p2pNode/p2pNetwork /app/p2pNode/p2pNetwork
+COPY . .
 
 RUN cargo build -p taiko_preconf_avs_node --release
 

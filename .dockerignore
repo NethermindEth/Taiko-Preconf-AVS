@@ -1,1 +1,6 @@
-Node/target
+target
+e2e_tests
+Docs
+.github
+deny.toml
+*.md
