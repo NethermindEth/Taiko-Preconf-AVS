@@ -339,6 +339,7 @@ impl Node {
         }
     }
 
+    #[cfg(feature = "sync-on-warmup")]
     async fn get_last_synced_block_height_between_taiko_geth_and_the_driver(&self) -> Option<u64> {
         if let Ok(taiko_geth_height) = self.taiko.get_latest_l2_block_id().await {
             match self.taiko.get_status().await {
@@ -387,36 +388,27 @@ impl Node {
                 }
             } else {
                 // It is for handover window
-                if let Some(taiko_geth_height) = self
-                    .get_last_synced_block_height_between_taiko_geth_and_the_driver()
-                    .await
-                {
-                    let verification_slot =
-                        self.ethereum_l1.slot_clock.get_next_epoch_start_slot()?;
-                    let verifier_result = verifier::Verifier::new_with_taiko_height(
-                        taiko_geth_height,
-                        self.taiko.clone(),
-                        self.batch_manager.clone_without_batches(),
-                        verification_slot,
-                    )
-                    .await;
-                    match verifier_result {
-                        Ok(verifier) => {
-                            self.verifier = Some(verifier);
-                        }
-                        Err(err) => {
-                            error!("Shutdown: Failed to create verifier: {}", err);
-                            self.cancel_token.cancel();
-                            return Err(anyhow::anyhow!(
-                                "Shutdown: Failed to create verifier on startup: {}",
-                                err
-                            ));
-                        }
+                let taiko_geth_height = l2_slot_info.parent_id();
+                let verification_slot = self.ethereum_l1.slot_clock.get_next_epoch_start_slot()?;
+                let verifier_result = verifier::Verifier::new_with_taiko_height(
+                    taiko_geth_height,
+                    self.taiko.clone(),
+                    self.batch_manager.clone_without_batches(),
+                    verification_slot,
+                )
+                .await;
+                match verifier_result {
+                    Ok(verifier) => {
+                        self.verifier = Some(verifier);
                     }
-                } else {
-                    // skip slot driver is not synced with geth
-                    error!("Unexpected skip slot: driver is not synced with Geth");
-                    return Ok(());
+                    Err(err) => {
+                        error!("Shutdown: Failed to create verifier: {}", err);
+                        self.cancel_token.cancel();
+                        return Err(anyhow::anyhow!(
+                            "Shutdown: Failed to create verifier on startup: {}",
+                            err
+                        ));
+                    }
                 }
             }
         }
