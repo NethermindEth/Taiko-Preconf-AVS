@@ -8,9 +8,9 @@ license.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies] 
-tokio = { workspace = true }
 discv5 = { workspace = true }
+jsonrpc-core = { workspace = true }
+jsonrpc-http-server = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-jsonrpc-http-server = { workspace = true }
-jsonrpc-core = { workspace = true }

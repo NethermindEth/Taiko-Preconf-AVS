@@ -2,8 +2,8 @@
 [workspace]
 members = [
     "Node",
-    "p2pNode/p2pIntegrationTest",
     "p2pNode/p2pBootNode",
+    "p2pNode/p2pIntegrationTest",
     "p2pNode/p2pNetwork",
 ]
 resolver = "2"
@@ -39,12 +39,12 @@ futures = { version = "0.3.25", default-features = false }
 futures-util = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false }
 http = { version = "1.2", default-features = false }
+jsonrpc-client-transports = { version = "18.0.0", default-features = false, features = ["http", "tls", "ws"] }
+jsonrpc-core = { version = "18.0.0", default-features = false, features = ["futures-executor", "futures"] }
+jsonrpc-core-client = { version = "18.0", default-features = false }
+jsonrpc-http-server = { version = "18.0.0", default-features = false }
 jsonrpsee = { version = "0.24", default-features = false, features = ["http-client", "server"] }
 jsonwebtoken = { version = "9.3", default-features = false }
-jsonrpc-http-server = { version = "18.0.0", default-features = false }
-jsonrpc-core = { version = "18.0.0", default-features = false, features = ["futures-executor", "futures"] }
-jsonrpc-client-transports = { version = "18.0.0", default-features = false, features = ["http", "tls", "ws"] }
-jsonrpc-core-client = { version = "18.0", default-features = false }
 k256 = { version = "0.13", default-features = false, features = ["arithmetic", "ecdsa", "pkcs8", "precomputed-tables", "schnorr", "std"] }
 lazy_static = { version = "1.4", default-features = false }
 libp2p = { version = "0.54.0", default-features = false, features = ["full", "tcp", "dns", "websocket", "tokio", "identify", "yamux", "noise", "gossipsub"] }
