@@ -434,6 +434,7 @@ impl Taiko {
 
         let anchor_tx = self
             .construct_anchor_tx(
+                l2_slot_info.parent_hash().clone(),
                 anchor_origin_height,
                 anchor_block_state_root,
                 l2_slot_info.parent_gas_used(),
@@ -581,6 +582,7 @@ impl Taiko {
 
     async fn construct_anchor_tx(
         &self,
+        parent_hash: B256,
         anchor_block_id: u64,
         anchor_state_root: B256,
         parent_gas_used: u32,
@@ -594,6 +596,7 @@ impl Taiko {
             .read()
             .await
             .get_transaction_count(GOLDEN_TOUCH_ADDRESS)
+            .block_id(parent_hash.into())
             .await;
         let nonce = self
             .check_for_ws_provider_failure(tx_count_result, "Failed to get nonce")

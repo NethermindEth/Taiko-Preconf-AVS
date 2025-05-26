@@ -16,7 +16,6 @@ use anyhow::Error;
 use batch_manager::{BatchBuilderConfig, BatchManager};
 use operator::{Operator, Status as OperatorStatus};
 use reorg_detector::ReorgDetector;
-use serde::de;
 use std::sync::Arc;
 use tokio::{
     sync::mpsc::{error::TryRecvError, Receiver},
@@ -708,9 +707,11 @@ impl Node {
 
         for block in blocks {
             debug!(
-                "Reanchoring block {} with {} transactions",
+                "Reanchoring block {} with {} transactions, parent_id {}, parent_hash {}",
                 block.header.number,
-                block.transactions.len()
+                block.transactions.len(),
+                l2_slot_info.parent_id(),
+                l2_slot_info.parent_hash(),
             );
 
             let (_, txs) = match block.transactions.as_transactions() {
