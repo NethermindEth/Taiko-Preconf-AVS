@@ -170,7 +170,7 @@ impl Config {
             .expect("L1_HEIGHT_LAG must be a number");
 
         let max_bytes_size_of_batch = std::env::var("MAX_BYTES_SIZE_OF_BATCH")
-            .unwrap_or("130044".to_string())
+            .unwrap_or("390132".to_string()) // 130044 * 3
             .parse::<u64>()
             .expect("MAX_BYTES_SIZE_OF_BATCH must be a number");
 
