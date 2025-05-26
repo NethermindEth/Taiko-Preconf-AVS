@@ -7,7 +7,14 @@ license.workspace = true
 
 [features]
 default = ["extra-gas-percentage"]
+# Increase the estimated gas for transactions. 
+# This is necessary because in some cases, 
+# the actual gas usage slightly exceeds the estimate
 extra-gas-percentage = []
+# A testing feature that allows the node to send only 
+# a proposeBatch transaction and then stop. 
+# Useful for validating transaction sending logic 
+# without running the full flow
 test-gas = ["clap"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
