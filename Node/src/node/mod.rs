@@ -698,11 +698,6 @@ impl Node {
             .set_expected_reorg(parent_block_id)
             .await;
 
-        self.head_verifier
-            .set(l2_slot_info.parent_id(), l2_slot_info.parent_hash().clone())
-            .await;
-
-
         let start_block_id = parent_block_id + 1;
         let blocks = self.taiko.fetch_l2_blocks_until_latest(start_block_id, true).await?;
 
@@ -737,6 +732,10 @@ impl Node {
 
             l2_slot_info = self.taiko.get_l2_slot_info().await?;
         }
+
+        self.head_verifier
+            .set(l2_slot_info.parent_id(), l2_slot_info.parent_hash().clone())
+            .await;
 
         Ok(())
     }
