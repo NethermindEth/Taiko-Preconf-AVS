@@ -578,8 +578,9 @@ impl Node {
                 return Err(anyhow::anyhow!("Failed to get block number from L1"));
             }
             TransactionError::EstimationTooEarly => {
-                warn!("Estimation too early, skipping");
-                return Ok(());
+                return Err(anyhow::anyhow!(
+                    "Transaction estimation too early, skipping slot"
+                ));
             }
         }
 
