@@ -359,6 +359,14 @@ impl Node {
         }
 
         if current_status.is_preconfer() && current_status.is_driver_synced() {
+            if self
+                .check_and_handle_anchor_offset_for_unsafe_l2_blocks(&l2_slot_info)
+                .await?
+            {
+                // reorged, no need to preconf
+                return Ok(());
+            }
+
             if !self
                 .head_verifier
                 .verify(l2_slot_info.parent_id(), l2_slot_info.parent_hash())
@@ -436,6 +444,42 @@ impl Node {
         }
 
         Ok(())
+    }
+
+    /// return true if reorg was triggered
+    async fn check_and_handle_anchor_offset_for_unsafe_l2_blocks(
+        &mut self,
+        l2_slot_info: &L2SlotInfo,
+    ) -> Result<bool, Error> {
+        let taiko_inbox_height = self
+            .ethereum_l1
+            .execution_layer
+            .get_l2_height_from_taiko_inbox()
+            .await?;
+        if taiko_inbox_height < l2_slot_info.parent_id() {
+            let anchor_offset = self
+                .batch_manager
+                .get_l1_anchor_block_offset_for_l2_block(l2_slot_info.parent_id())
+                .await?;
+            let max_anchor_height_offset = self
+                .ethereum_l1
+                .execution_layer
+                .get_config_max_anchor_height_offset();
+            if anchor_offset > max_anchor_height_offset + 1 {
+                warn!(
+                    "Anchor offset {} is too high for unsafe L2 blocks, triggering reorg",
+                    anchor_offset
+                );
+                self.trigger_l2_reorg(
+                    taiko_inbox_height,
+                    "Anchor offset is too high for unsafe L2 blocks",
+                )
+                .await?;
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     async fn get_slot_info_and_status(
