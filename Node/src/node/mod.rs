@@ -46,6 +46,7 @@ pub struct Node {
 }
 
 impl Node {
+
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         cancel_token: CancellationToken,
@@ -496,7 +497,7 @@ impl Node {
                 .verify_submitted_blocks(taiko_inbox_height, self.metrics.clone())
                 .await
             {
-                self.trigger_l2_reorg(
+                self.reanchor_blocks(
                     taiko_inbox_height,
                     &format!("Verifier return an error: {}", err),
                 )
@@ -553,7 +554,7 @@ impl Node {
                         .execution_layer
                         .get_l2_height_from_taiko_inbox()
                         .await?;
-                    self.trigger_l2_reorg(taiko_inbox_height, "Transaction reverted")
+                    self.reanchor_blocks(taiko_inbox_height, "Transaction reverted")
                         .await?;
                     return Err(anyhow::anyhow!("Force reorg done"));
                 } else {
@@ -671,6 +672,70 @@ impl Node {
         if let Err(err) = self.batch_manager.trigger_l2_reorg(new_last_block_id).await {
             self.cancel_token.cancel();
             return Err(anyhow::anyhow!("Failed to trigger L2 reorg: {}", err));
+        }
+
+        Ok(())
+    }
+
+    async fn reanchor_blocks(&mut self, parent_block_id: u64, reason: &str) -> Result<(), Error> {
+        warn!(
+            "⛓️‍💥 Reanchor blocks parent block: {} reason: {}",
+            parent_block_id, reason
+        );
+
+        let mut l2_slot_info = self
+            .taiko
+            .get_l2_slot_info_by_parent_block(alloy::eips::BlockNumberOrTag::Number(
+                parent_block_id,
+            ))
+            .await?;
+
+        // Update self state
+        self.verifier = None;
+        self.batch_manager.reset_builder();
+
+        self.reorg_detector
+            .set_expected_reorg(parent_block_id)
+            .await;
+
+        self.head_verifier
+            .set(l2_slot_info.parent_id(), l2_slot_info.parent_hash().clone())
+            .await;
+
+
+        let start_block_id = parent_block_id + 1;
+        let blocks = self.taiko.fetch_l2_blocks_until_latest(start_block_id, true).await?;
+
+        for block in blocks {
+            let (_, txs) = match block.transactions.as_transactions() {
+                Some(txs) => txs.split_first().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Cannot get anchor transaction from block {}",
+                        block.header.number
+                    )
+                })?,
+                None => {
+                    return Err(anyhow::anyhow!(
+                        "No transactions in block {}",
+                        block.header.number
+                    ))
+                }
+            };
+
+            let tx_list = txs.to_vec();
+            let bytes_length =
+                crate::shared::l2_tx_lists::encode_and_compress(&tx_list)?.len() as u64;
+            let pending_tx_list = crate::shared::l2_tx_lists::PreBuiltTxList {
+                tx_list: tx_list,
+                estimated_gas_used: 0,
+                bytes_length,
+            };
+
+            // TODO handle error
+            self.preconfirm_block(Some(pending_tx_list), l2_slot_info, false)
+                .await?;
+
+            l2_slot_info = self.taiko.get_l2_slot_info().await?;
         }
 
         Ok(())

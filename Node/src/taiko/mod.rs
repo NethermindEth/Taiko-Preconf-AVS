@@ -216,6 +216,27 @@ impl Taiko {
         Ok(block)
     }
 
+    pub async fn fetch_l2_blocks_until_latest(
+        &self,
+        start_block: u64,
+        full_txs: bool,
+    ) -> Result<Vec<alloy::rpc::types::Block>, Error> {
+        let start_time = std::time::Instant::now();
+        let end_block = self.get_latest_l2_block_id().await?;
+        let mut blocks = Vec::with_capacity((end_block - start_block + 1) as usize);
+        for block_number in start_block..=end_block {
+            let block = self.get_l2_block_by_number(block_number, full_txs).await?;
+            blocks.push(block);
+        }
+        debug!(
+            "Fetched L2 blocks from {} to {} in {} ms",
+            start_block,
+            end_block,
+            start_time.elapsed().as_millis()
+        );
+        Ok(blocks)
+    }
+
     pub async fn get_transaction_by_hash(
         &self,
         hash: B256,
@@ -242,7 +263,15 @@ impl Taiko {
     pub async fn get_latest_l2_block_id_hash_and_gas_used(
         &self,
     ) -> Result<(u64, B256, u64), Error> {
-        let block = self.get_l2_block_header(BlockNumberOrTag::Latest).await?;
+        self.get_l2_block_id_hash_and_gas_used(BlockNumberOrTag::Latest)
+            .await
+    }
+
+    pub async fn get_l2_block_id_hash_and_gas_used(
+        &self,
+        block: BlockNumberOrTag,
+    ) -> Result<(u64, B256, u64), Error> {
+        let block = self.get_l2_block_header(block).await?;
 
         Ok((
             block.header.number(),
@@ -286,9 +315,17 @@ impl Taiko {
     }
 
     pub async fn get_l2_slot_info(&self) -> Result<L2SlotInfo, Error> {
+        self.get_l2_slot_info_by_parent_block(BlockNumberOrTag::Latest)
+            .await
+    }
+
+    pub async fn get_l2_slot_info_by_parent_block(
+        &self,
+        block: BlockNumberOrTag,
+    ) -> Result<L2SlotInfo, Error> {
         let l2_slot_timestamp = self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
         let (parent_id, parent_hash, parent_gas_used) =
-            self.get_latest_l2_block_id_hash_and_gas_used().await?;
+            self.get_l2_block_id_hash_and_gas_used(block).await?;
 
         // Safe conversion with overflow check
         let parent_gas_used_u32 = u32::try_from(parent_gas_used).map_err(|_| {
