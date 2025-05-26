@@ -16,6 +16,7 @@ use anyhow::Error;
 use batch_manager::{BatchBuilderConfig, BatchManager};
 use operator::{Operator, Status as OperatorStatus};
 use reorg_detector::ReorgDetector;
+use serde::de;
 use std::sync::Arc;
 use tokio::{
     sync::mpsc::{error::TryRecvError, Receiver},
@@ -46,7 +47,6 @@ pub struct Node {
 }
 
 impl Node {
-
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         cancel_token: CancellationToken,
@@ -679,9 +679,11 @@ impl Node {
 
     async fn reanchor_blocks(&mut self, parent_block_id: u64, reason: &str) -> Result<(), Error> {
         warn!(
-            "⛓️‍💥 Reanchor blocks parent block: {} reason: {}",
+            "⛓️‍💥 Reanchoring blocks for parent block: {} reason: {}",
             parent_block_id, reason
         );
+
+        let start_time = std::time::Instant::now();
 
         let mut l2_slot_info = self
             .taiko
@@ -699,9 +701,18 @@ impl Node {
             .await;
 
         let start_block_id = parent_block_id + 1;
-        let blocks = self.taiko.fetch_l2_blocks_until_latest(start_block_id, true).await?;
+        let blocks = self
+            .taiko
+            .fetch_l2_blocks_until_latest(start_block_id, true)
+            .await?;
 
         for block in blocks {
+            debug!(
+                "Reanchoring block {} with {} transactions",
+                block.header.number,
+                block.transactions.len()
+            );
+
             let (_, txs) = match block.transactions.as_transactions() {
                 Some(txs) => txs.split_first().ok_or_else(|| {
                     anyhow::anyhow!(
@@ -737,6 +748,11 @@ impl Node {
             .set(l2_slot_info.parent_id(), l2_slot_info.parent_hash().clone())
             .await;
 
+        debug!(
+            "Finished reanchoring blocks for parent block {} in {} ms",
+            parent_block_id,
+            start_time.elapsed().as_millis()
+        );
         Ok(())
     }
 }
