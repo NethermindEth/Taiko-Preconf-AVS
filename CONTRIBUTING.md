@@ -30,3 +30,8 @@ Install a pre-push git hook:
 ```sh
 git config core.hooksPath .githooks
 ```
+
+## Tools
+
+* [p2p network emulator](tools/p2p_node/README.md)
+* [tx spammer](tools/tx_spammer/README.md)

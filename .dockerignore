@@ -1,5 +1,5 @@
 target
-Docs
+docs
 .github
 deny.toml
 *.md
