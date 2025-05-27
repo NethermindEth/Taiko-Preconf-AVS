@@ -382,7 +382,10 @@ impl ExecutionLayer {
                     unzen: 0,
                 },
             },
-            taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::new(Address::ZERO, &provider_ws),
+            taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::new(
+                Address::ZERO,
+                provider_ws.clone(),
+            ),
             #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage: 5,
             transaction_monitor: TransactionMonitor::new(
