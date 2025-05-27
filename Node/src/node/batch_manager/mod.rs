@@ -134,21 +134,21 @@ impl BatchManager {
         )
     }
 
-    pub async fn trigger_l2_reorg(&mut self, new_last_block_id: u64) -> Result<(), Error> {
-        warn!("Triggering L2 reorg {}", new_last_block_id);
-        self.taiko.trigger_l2_reorg(new_last_block_id).await?;
-
-        self.reset_builder();
-
-        Ok(())
-    }
-
     pub fn is_anchor_block_offset_valid(&self, anchor_block_offset: u64) -> bool {
         anchor_block_offset + MIN_SLOTS_TO_PROPOSE
             < self
                 .ethereum_l1
                 .execution_layer
                 .get_config_max_anchor_height_offset()
+    }
+
+    pub async fn reanchor_block(
+        &mut self,
+        pending_tx_list: PreBuiltTxList,
+        l2_slot_info: L2SlotInfo,
+    ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
+        let l2_block = L2Block::new_from(pending_tx_list, l2_slot_info.slot_timestamp());
+        self.add_new_l2_block(l2_block, l2_slot_info, false).await
     }
 
     pub async fn preconfirm_block(
@@ -222,7 +222,7 @@ impl BatchManager {
             Ok(preconfed_block) => Ok(preconfed_block),
             Err(err) => {
                 error!("Failed to advance head to new L2 block: {}", err);
-                self.remove_last_l2_block().await?;
+                self.remove_last_l2_block();
                 Ok(None)
             }
         }
@@ -253,9 +253,8 @@ impl BatchManager {
         Ok(anchor_block_id)
     }
 
-    async fn remove_last_l2_block(&mut self) -> Result<(), Error> {
+    fn remove_last_l2_block(&mut self) {
         self.batch_builder.remove_last_l2_block();
-        Ok(())
     }
 
     async fn calculate_anchor_block_id(&self) -> Result<u64, Error> {

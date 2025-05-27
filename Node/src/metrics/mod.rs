@@ -5,7 +5,7 @@ pub struct Metrics {
     preconfer_eth_balance: Gauge,
     preconfer_taiko_balance: Gauge,
     blocks_preconfirmed: Counter,
-    reorgs_executed: Counter,
+    blocks_reanchored: Counter,
     batch_recovered: Counter,
     batch_sent: Counter,
     batch_confirmed: Counter,
@@ -49,11 +49,14 @@ impl Metrics {
             error!("Error: Failed to register blocks_preconfirmed: {}", err);
         }
 
-        let reorgs_executed = Counter::new("reorgs", "Number of reorgs executed by the node")
-            .expect("Failed to create reorgs counter");
+        let blocks_reanchored = Counter::new(
+            "blocks_reanchored",
+            "Number of blocks reanchored by the node",
+        )
+        .expect("Failed to create blocks_reanchored counter");
 
-        if let Err(err) = registry.register(Box::new(reorgs_executed.clone())) {
-            error!("Error: Failed to register reorgs: {}", err);
+        if let Err(err) = registry.register(Box::new(blocks_reanchored.clone())) {
+            error!("Error: Failed to register blocks_reanchored: {}", err);
         }
 
         let batch_recovered =
@@ -120,7 +123,7 @@ impl Metrics {
             preconfer_eth_balance,
             preconfer_taiko_balance,
             blocks_preconfirmed,
-            reorgs_executed,
+            blocks_reanchored,
             batch_recovered,
             batch_sent,
             batch_confirmed,
@@ -145,8 +148,8 @@ impl Metrics {
         self.blocks_preconfirmed.inc();
     }
 
-    pub fn inc_reorgs_executed(&self) {
-        self.reorgs_executed.inc();
+    pub fn inc_by_blocks_reanchored(&self, value: u64) {
+        self.blocks_reanchored.inc_by(value as f64);
     }
 
     pub fn inc_by_batch_recovered(&self, value: u64) {
