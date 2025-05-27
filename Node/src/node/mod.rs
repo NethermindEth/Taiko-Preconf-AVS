@@ -724,9 +724,9 @@ impl Node {
                 debug!("Reanchored block {} hash {}", block.number, block.hash);
             } else {
                 let err_msg = match block {
-                    Ok(None) => "Failed to reanchor block: None returned",
+                    Ok(None) => "Failed to reanchor block: None returned".to_string(),
                     Err(err) => format!("Failed to reanchor block: {}", err),
-                    Ok(Some(_)) => "Unreachable",
+                    Ok(Some(_)) => "Unreachable".to_string(),
                 };
                 error!("{}", err_msg);
                 self.cancel_token.cancel();
