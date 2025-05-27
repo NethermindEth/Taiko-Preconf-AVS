@@ -251,10 +251,11 @@ impl ExecutionLayer {
         let pacaya_config = contract.pacayaConfig().call().await?._0;
 
         debug!(
-            "Pacaya config: chainid {}, maxUnverifiedBatches {}, batchRingBufferSize {}",
+            "Pacaya config: chainid {}, maxUnverifiedBatches {}, batchRingBufferSize {}, maxAnchorHeightOffset {}",
             pacaya_config.chainId,
             pacaya_config.maxUnverifiedBatches,
-            pacaya_config.batchRingBufferSize
+            pacaya_config.batchRingBufferSize,
+            pacaya_config.maxAnchorHeightOffset,
         );
 
         Ok(pacaya_config)
