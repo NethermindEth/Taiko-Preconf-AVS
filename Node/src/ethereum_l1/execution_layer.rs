@@ -32,6 +32,7 @@ pub struct ExecutionLayer {
     extra_gas_percentage: u64,
     transaction_monitor: TransactionMonitor,
     metrics: Arc<metrics::Metrics>,
+    taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::TaikoWrapperInstance<(), Arc<WsProvider>>,
 }
 
 pub struct ContractAddresses {
@@ -39,6 +40,7 @@ pub struct ContractAddresses {
     pub taiko_token: Address,
     pub preconf_whitelist: Address,
     pub preconf_router: Address,
+    pub taiko_wrapper: Address,
 }
 
 impl ExecutionLayer {
@@ -75,6 +77,9 @@ impl ExecutionLayer {
                 .await
                 .map_err(|e| Error::msg(format!("Failed to parse contract addresses: {}", e)))?;
 
+        let taiko_wrapper_contract =
+            taiko_wrapper::TaikoWrapper::new(contract_addresses.taiko_wrapper, provider_ws.clone());
+
         let transaction_monitor = TransactionMonitor::new(
             provider_ws.clone(),
             config.min_priority_fee_per_gas_wei,
@@ -99,6 +104,7 @@ impl ExecutionLayer {
             extra_gas_percentage,
             transaction_monitor,
             metrics,
+            taiko_wrapper_contract,
         })
     }
 
@@ -109,6 +115,7 @@ impl ExecutionLayer {
         let taiko_inbox = contract_addresses.taiko_inbox.parse()?;
         let preconf_whitelist = contract_addresses.preconf_whitelist.parse()?;
         let preconf_router = contract_addresses.preconf_router.parse()?;
+        let taiko_wrapper = contract_addresses.taiko_wrapper.parse()?;
 
         let contract = taiko_inbox::ITaikoInbox::new(taiko_inbox, provider);
         let taiko_token = contract
@@ -123,6 +130,7 @@ impl ExecutionLayer {
             taiko_token,
             preconf_whitelist,
             preconf_router,
+            taiko_wrapper,
         })
     }
 
@@ -344,6 +352,7 @@ impl ExecutionLayer {
                 taiko_token: Address::ZERO,
                 preconf_whitelist: Address::ZERO,
                 preconf_router: Address::ZERO,
+                taiko_wrapper: Address::ZERO,
             },
             pacaya_config: taiko_inbox::ITaikoInbox::Config {
                 chainId: 1,
@@ -373,6 +382,10 @@ impl ExecutionLayer {
                     unzen: 0,
                 },
             },
+            taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::new(
+                Address::ZERO,
+                provider_ws.clone(),
+            ),
             #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage: 5,
             transaction_monitor: TransactionMonitor::new(
@@ -516,6 +529,11 @@ impl ExecutionLayer {
                 block_id
             ))?;
         Ok(block.header.timestamp)
+    }
+
+    pub async fn is_preconf_router_specified_in_taiko_wrapper(&self) -> Result<bool, Error> {
+        let preconf_router = self.taiko_wrapper_contract.preconfRouter().call().await?._0;
+        Ok(preconf_router != Address::ZERO)
     }
 }
 

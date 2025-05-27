@@ -222,7 +222,7 @@ impl BatchManager {
             Ok(preconfed_block) => Ok(preconfed_block),
             Err(err) => {
                 error!("Failed to advance head to new L2 block: {}", err);
-                self.remove_last_l2_block().await?;
+                self.remove_last_l2_block();
                 Ok(None)
             }
         }
@@ -253,9 +253,8 @@ impl BatchManager {
         Ok(anchor_block_id)
     }
 
-    async fn remove_last_l2_block(&mut self) -> Result<(), Error> {
+    fn remove_last_l2_block(&mut self) {
         self.batch_builder.remove_last_l2_block();
-        Ok(())
     }
 
     async fn calculate_anchor_block_id(&self) -> Result<u64, Error> {

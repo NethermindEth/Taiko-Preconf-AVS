@@ -22,7 +22,7 @@ use tokio::{
     time::{sleep, Duration},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct Thresholds {
     pub eth: U256,
@@ -308,6 +308,16 @@ impl Node {
     async fn main_block_preconfirmation_step(&mut self) -> Result<(), Error> {
         let (l2_slot_info, current_status, pending_tx_list) =
             self.get_slot_info_and_status().await?;
+
+        if !self
+            .ethereum_l1
+            .execution_layer
+            .is_preconf_router_specified_in_taiko_wrapper()
+            .await?
+        {
+            warn!("Preconf router is not specified in Taiko wrapper. Skipping preconfirmation.");
+            return Ok(());
+        }
 
         self.check_transaction_error_channel(&current_status)
             .await?;
@@ -641,8 +651,6 @@ impl Node {
         l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
     ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
-        trace!("preconfirm_block");
-
         self.batch_manager
             .preconfirm_block(pending_tx_list, l2_slot_info, end_of_sequencing)
             .await
@@ -755,13 +763,22 @@ impl Node {
                 bytes_length,
             };
 
-            // TODO handle error
             let block = self
                 .batch_manager
                 .reanchor_block(pending_tx_list, l2_slot_info)
-                .await?;
-            if let Some(block) = block {
+                .await;
+            // if reanchor_block fails restart the node
+            if let Ok(Some(block)) = block {
                 debug!("Reanchored block {} hash {}", block.number, block.hash);
+            } else {
+                let err_msg = match block {
+                    Ok(None) => "Failed to reanchor block: None returned".to_string(),
+                    Err(err) => format!("Failed to reanchor block: {}", err),
+                    Ok(Some(_)) => "Unreachable".to_string(),
+                };
+                error!("{}", err_msg);
+                self.cancel_token.cancel();
+                return Err(anyhow::anyhow!("{}", err_msg));
             }
 
             // TODO reduce 1 geth call

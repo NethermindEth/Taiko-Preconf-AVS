@@ -7,7 +7,7 @@ on:
     tags:
       - "taiko-preconf-p2p-bootnode-v*"
     paths:
-      - "p2pNode/**"
+      - "tools/p2p_node/**"
 
 env:
   DOCKER_REGISTRY: docker.io
@@ -55,7 +55,7 @@ jobs:
         with:
           platforms: linux/amd64,linux/arm64
           context: .
-          file: ./p2pNode/Dockerfile
+          file: ./tools/p2p_node/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

@@ -90,7 +90,7 @@ sol!(
     "src/ethereum_l1/abi/PreconfWhitelist.json"
 );
 
-sol! (
+sol!(
     struct MessageData {
         uint256 chainId;
         uint8 op;
@@ -106,4 +106,15 @@ sol! {
         function allowance(address owner, address spender) external view returns (uint256);
         function balanceOf(address target) returns (uint256);
     }
+}
+
+pub mod taiko_wrapper {
+    use super::*;
+
+    sol!(
+        #[allow(missing_docs)]
+        #[sol(rpc)]
+        TaikoWrapper,
+        "src/ethereum_l1/abi/TaikoWrapper.json"
+    );
 }
