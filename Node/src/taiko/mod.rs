@@ -335,13 +335,14 @@ impl Taiko {
         let base_fee_config = self.get_base_fee_config();
 
         let base_fee = self
-            .get_base_fee(parent_gas_used_u32, base_fee_config, l2_slot_timestamp)
+            .get_base_fee(parent_hash, parent_gas_used_u32, base_fee_config, l2_slot_timestamp)
             .await?;
 
         debug!(
             timestamp = %l2_slot_timestamp,
             parent_hash = %parent_hash,
             parent_gas_used = %parent_gas_used_u32,
+            base_fee = %base_fee,
             "L2 slot info"
         );
 
@@ -653,6 +654,7 @@ impl Taiko {
 
     pub async fn get_base_fee(
         &self,
+        parent_hash: B256,
         parent_gas_used: u32,
         base_fee_config: LibSharedData::BaseFeeConfig,
         l2_slot_timestamp: u64,
@@ -662,6 +664,7 @@ impl Taiko {
             .read()
             .await
             .getBasefeeV2(parent_gas_used, l2_slot_timestamp, base_fee_config)
+            .block(parent_hash.into())
             .call()
             .await;
         let base_fee = self
