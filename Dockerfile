@@ -1,6 +1,11 @@
-# syntax = edrevo/dockerfile-plus
+FROM rust:1.84 AS builder
 
-INCLUDE+ Dockerfile.build
+# Update CA certificates in builder stage
+RUN apt-get update && apt-get install -y \
+    libclang-dev \
+    ca-certificates \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory inside the container
 WORKDIR /app/taiko_preconf_avs_node
