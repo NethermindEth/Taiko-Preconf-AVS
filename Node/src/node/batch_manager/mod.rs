@@ -151,6 +151,15 @@ impl BatchManager {
                 .get_config_max_anchor_height_offset()
     }
 
+    pub async fn reanchor_block(
+        &mut self,
+        pending_tx_list: PreBuiltTxList,
+        l2_slot_info: L2SlotInfo,
+    ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
+        let l2_block = L2Block::new_from(pending_tx_list, l2_slot_info.slot_timestamp());
+        self.add_new_l2_block(l2_block, l2_slot_info, false).await
+    }
+
     pub async fn preconfirm_block(
         &mut self,
         pending_tx_list: Option<PreBuiltTxList>,

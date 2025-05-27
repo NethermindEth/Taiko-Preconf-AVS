@@ -739,9 +739,16 @@ impl Node {
             };
 
             // TODO handle error
-            self.preconfirm_block(Some(pending_tx_list), l2_slot_info, false)
+            let block = self
+                .batch_manager
+                .reanchor_block(pending_tx_list, l2_slot_info)
                 .await?;
+            if let Some(block) = block {
+                debug!("Reanchored block {} hash {}", block.number, block.hash);
+            }
 
+            // TODO reduce 1 geth call
+            // We can get previous L2 slot info from BuildPreconfBlockResponse
             l2_slot_info = self.taiko.get_l2_slot_info().await?;
         }
 

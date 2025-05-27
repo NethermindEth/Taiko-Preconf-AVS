@@ -63,6 +63,8 @@ impl BatchBuilder {
                     // Check if the number of L2 blocks in the current batch after adding the new L2 block
                     // is less than or equal to the max blocks per batch
                     && self.config.is_within_block_limit(batch.l2_blocks.len() as u16 + 1)
+                    // check that time shift between blocks is not expired
+                    && !self.is_time_shift_expired(l2_block.timestamp_sec)
             })
     }
 
