@@ -474,7 +474,7 @@ impl Node {
                     "Anchor offset {} is too high for l2 block id {}, triggering reorg",
                     anchor_offset, l2_block_id
                 );
-                self.trigger_l2_reorg(
+                self.reanchor_blocks(
                     taiko_inbox_height,
                     "Anchor offset is too high for unsafe L2 blocks",
                 )
