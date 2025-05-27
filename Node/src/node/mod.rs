@@ -481,7 +481,7 @@ impl Node {
             // +1 because we are checking the next block
             if anchor_offset > max_anchor_height_offset + 1 {
                 warn!(
-                    "Anchor offset {} is too high for l2 block id {}, triggering reorg",
+                    "Anchor offset {} is too high for l2 block id {}, triggering reanchor",
                     anchor_offset, l2_block_id
                 );
                 self.reanchor_blocks(
