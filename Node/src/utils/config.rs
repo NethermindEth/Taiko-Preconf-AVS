@@ -40,6 +40,7 @@ pub struct L1ContractAddresses {
     pub taiko_inbox: String,
     pub preconf_whitelist: String,
     pub preconf_router: String,
+    pub taiko_wrapper: String,
     #[cfg(feature = "extra-gas-percentage")]
     pub extra_gas_percentage: u64,
 }
@@ -88,6 +89,15 @@ impl Config {
             default_empty_address.clone()
         });
 
+        const TAIKO_WRAPPER_ADDRESS: &str = "TAIKO_WRAPPER_ADDRESS";
+        let taiko_wrapper = std::env::var(TAIKO_WRAPPER_ADDRESS).unwrap_or_else(|_| {
+            warn!(
+                "No TaikoWrapper contract address found in {} env var, using default",
+                TAIKO_WRAPPER_ADDRESS
+            );
+            default_empty_address.clone()
+        });
+
         #[cfg(feature = "extra-gas-percentage")]
         let extra_gas_percentage = std::env::var("EXTRA_GAS_PERCENTAGE")
             .unwrap_or("5".to_string())
@@ -98,6 +108,7 @@ impl Config {
             taiko_inbox,
             preconf_whitelist,
             preconf_router,
+            taiko_wrapper,
             #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage,
         };
