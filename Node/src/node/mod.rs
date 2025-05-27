@@ -548,7 +548,8 @@ impl Node {
         match error {
             TransactionError::TransactionReverted | TransactionError::EstimationFailed => {
                 if current_status.is_preconfer() && current_status.is_submitter() {
-                    let taiko_inbox_height = self
+                    warn!("🚨 FOO!! Transaction reverted: {}", error);
+/*                     let taiko_inbox_height = self
                         .ethereum_l1
                         .execution_layer
                         .get_l2_height_from_taiko_inbox()
@@ -556,7 +557,7 @@ impl Node {
                     self.reanchor_blocks(taiko_inbox_height, "Transaction reverted")
                         .await?;
                     return Err(anyhow::anyhow!("Force reorg done"));
-                } else {
+ */                } else {
                     warn!("Transaction reverted, not our epoch, skipping reorg");
                 }
             }

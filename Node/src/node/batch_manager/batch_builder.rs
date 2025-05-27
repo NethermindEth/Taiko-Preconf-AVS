@@ -247,7 +247,7 @@ impl BatchBuilder {
                 if let Some(transaction_error) = err.downcast_ref::<TransactionError>() {
                     if !matches!(transaction_error, TransactionError::EstimationTooEarly) {
                         debug!("BatchBuilder: Transaction error, removing all batches");
-                        self.batches_to_send.clear();
+                        /* self.batches_to_send.clear(); */
                     }
                 }
                 return Err(err);
