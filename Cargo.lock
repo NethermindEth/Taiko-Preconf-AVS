@@ -5657,7 +5657,7 @@ dependencies = [
 
 [[package]]
 name = "p2p-node"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "jsonrpc-client-transports",
  "jsonrpc-core",
@@ -7612,7 +7612,7 @@ dependencies = [
 
 [[package]]
 name = "taiko_preconf_avs_node"
-version = "0.2.71"
+version = "0.2.74"
 dependencies = [
  "alloy",
  "alloy-json-rpc",

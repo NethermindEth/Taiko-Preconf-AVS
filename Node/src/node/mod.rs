@@ -309,6 +309,16 @@ impl Node {
         let (l2_slot_info, current_status, pending_tx_list) =
             self.get_slot_info_and_status().await?;
 
+        if !self
+            .ethereum_l1
+            .execution_layer
+            .is_preconf_router_specified_in_taiko_wrapper()
+            .await?
+        {
+            warn!("Preconf router is not specified in Taiko wrapper. Skipping preconfirmation.");
+            return Ok(());
+        }
+
         self.check_transaction_error_channel(&current_status)
             .await?;
 
@@ -578,8 +588,9 @@ impl Node {
                 return Err(anyhow::anyhow!("Failed to get block number from L1"));
             }
             TransactionError::EstimationTooEarly => {
-                warn!("Estimation too early, skipping");
-                return Ok(());
+                return Err(anyhow::anyhow!(
+                    "Transaction estimation too early, skipping slot"
+                ));
             }
         }
 
