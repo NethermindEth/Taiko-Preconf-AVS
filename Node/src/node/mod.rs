@@ -555,7 +555,7 @@ impl Node {
                         .await?;
                     self.reanchor_blocks(taiko_inbox_height, "Transaction reverted")
                         .await?;
-                    return Err(anyhow::anyhow!("Force reorg done"));
+                    return Err(anyhow::anyhow!("Reanchoring done"));
                 } else {
                     warn!("Transaction reverted, not our epoch, skipping reorg");
                 }
@@ -642,40 +642,6 @@ impl Node {
         Ok(())
     }
 
-    async fn trigger_l2_reorg(
-        &mut self,
-        new_last_block_id: u64,
-        message: &str,
-    ) -> Result<(), Error> {
-        warn!("⛓️‍💥 Force Reorg: {}", message);
-
-        self.verifier = None;
-        self.reorg_detector
-            .set_expected_reorg(new_last_block_id)
-            .await;
-
-        let new_last_block_hash = match self.taiko.get_l2_block_hash(new_last_block_id).await {
-            Ok(hash) => hash,
-            Err(err) => {
-                self.cancel_token.cancel();
-                return Err(anyhow::anyhow!(
-                    "Failed to get L2 block hash during reorg: {}",
-                    err
-                ));
-            }
-        };
-        self.head_verifier
-            .set(new_last_block_id, new_last_block_hash)
-            .await;
-
-        if let Err(err) = self.batch_manager.trigger_l2_reorg(new_last_block_id).await {
-            self.cancel_token.cancel();
-            return Err(anyhow::anyhow!("Failed to trigger L2 reorg: {}", err));
-        }
-
-        Ok(())
-    }
-
     async fn reanchor_blocks(&mut self, parent_block_id: u64, reason: &str) -> Result<(), Error> {
         warn!(
             "⛓️‍💥 Reanchoring blocks for parent block: {} reason: {}",
@@ -704,6 +670,8 @@ impl Node {
             .taiko
             .fetch_l2_blocks_until_latest(start_block_id, true)
             .await?;
+
+        let blocks_reanchored = blocks.len() as u64;
 
         for block in blocks {
             debug!(
@@ -755,6 +723,8 @@ impl Node {
         self.head_verifier
             .set(l2_slot_info.parent_id(), l2_slot_info.parent_hash().clone())
             .await;
+
+        self.metrics.inc_by_blocks_reanchored(blocks_reanchored);
 
         debug!(
             "Finished reanchoring blocks for parent block {} in {} ms",
