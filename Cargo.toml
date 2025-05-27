@@ -35,10 +35,10 @@ ecdsa = { version = "0.16", default-features = false }
 elliptic-curve = { version = "0.13", default-features = false }
 ethereum-consensus = { git = "https://github.com/ralexstokes/ethereum-consensus", package = "ethereum-consensus", rev = "8fbd8a53dca0170bedeca40a92ee70fd48c4615b", default-features = false, features = ["serde", "async"] }
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
-futures = { version = "0.3.25", default-features = false }
+futures = { version = "0.3.31", default-features = false }
 futures-util = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false }
-http = { version = "1.2", default-features = false }
+http = { version = "1.3", default-features = false }
 jsonrpc-client-transports = { version = "18.0.0", default-features = false, features = ["http", "tls", "ws"] }
 jsonrpc-core = { version = "18.0.0", default-features = false, features = ["futures-executor", "futures"] }
 jsonrpc-core-client = { version = "18.0", default-features = false }
@@ -46,10 +46,10 @@ jsonrpc-http-server = { version = "18.0.0", default-features = false }
 jsonrpsee = { version = "0.24", default-features = false, features = ["http-client", "server"] }
 jsonwebtoken = { version = "9.3", default-features = false }
 k256 = { version = "0.13", default-features = false, features = ["arithmetic", "ecdsa", "pkcs8", "precomputed-tables", "schnorr", "std"] }
-lazy_static = { version = "1.4", default-features = false }
-libp2p = { version = "0.54.0", default-features = false, features = ["full", "tcp", "dns", "websocket", "tokio", "identify", "yamux", "noise", "gossipsub"] }
+lazy_static = { version = "1.5", default-features = false }
+libp2p = { version = "0.54.1", default-features = false, features = ["full", "tcp", "dns", "websocket", "tokio", "identify", "yamux", "noise", "gossipsub"] }
 libp2p-mplex = { version = "0.41", default-features = false }
-mockito = { version = "1.4", default-features = false }
+mockito = { version = "1.7", default-features = false }
 p2p-network = { path = "tools/p2p_node/p2p_network", default-features = false }
 prometheus = { version = "0.14", default-features = false }
 rand = { version = "0.8", default-features = false }
@@ -60,9 +60,9 @@ serde_json = { version = "1.0", default-features = false }
 serde_millis = { version = "0.1.1", default-features = false }
 ssz_rs = { git = "https://github.com/ralexstokes/ssz-rs", rev = "84ef2b71aa004f6767420badb42c902ad56b8b72", default-features = false }
 tiny-keccak = { version = "2.0", default-features = false }
-tokio = { version = "1.38", default-features = false, features = ["full"] }
+tokio = { version = "1.45", default-features = false, features = ["full"] }
 tokio-util = { version = "0.7", default-features = false }
-tracing = { version = "0.1.40", default-features = false }
+tracing = { version = "0.1.41", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }
 void = { version = "1.0.2", default-features = false }
 warp = { version = "0.3", default-features = false }
