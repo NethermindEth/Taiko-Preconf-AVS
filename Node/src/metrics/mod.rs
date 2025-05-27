@@ -157,7 +157,7 @@ impl Metrics {
         self.batch_recovered.inc_by(value as f64);
     }
 
-    pub fn inc_batch_sent(&self) {
+    pub fn inc_batch_proposed(&self) {
         self.batch_proposed.inc();
     }
 
@@ -232,7 +232,7 @@ mod tests {
         metrics.inc_blocks_preconfirmed();
         metrics.inc_by_blocks_reanchored(1);
         metrics.inc_by_batch_recovered(1);
-        metrics.inc_batch_sent();
+        metrics.inc_batch_proposed();
         metrics.inc_batch_confirmed();
         metrics.observe_batch_propose_tries(1);
         metrics.observe_batch_info(5, 1000);
