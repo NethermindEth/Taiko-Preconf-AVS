@@ -373,7 +373,7 @@ impl Node {
                 .check_and_handle_anchor_offset_for_unsafe_l2_blocks(&l2_slot_info)
                 .await?
             {
-                // reorged, no need to preconf
+                // reanchored, no need to preconf
                 return Ok(());
             }
 
@@ -456,8 +456,8 @@ impl Node {
         Ok(())
     }
 
-    /// Checks the anchor offset for unsafe L2 blocks and triggers a reorg if necessary.
-    /// Returns true if reorg was triggered.
+    /// Checks the anchor offset for unsafe L2 blocks and triggers a reanchor if necessary.
+    /// Returns true if reanchor was triggered.
     async fn check_and_handle_anchor_offset_for_unsafe_l2_blocks(
         &mut self,
         l2_slot_info: &L2SlotInfo,
