@@ -8,7 +8,7 @@ In this doc, we will go through what we have implemented for the PoC, and what n
 
 # Current Status
 
-We implemented all features presented in [the design doc](https://github.com/NethermindEth/Taiko-Preconf-AVS/blob/master/Docs/design-doc.md). In this section we will briefly summarize the key features; for more details of each feature, refer to the design doc or [our repository](https://github.com/NethermindEth/Taiko-Preconf-AVS).
+We implemented all features presented in [the design doc](https://github.com/NethermindEth/Taiko-Preconf-AVS/blob/master/docs/design-doc.md). In this section we will briefly summarize the key features; for more details of each feature, refer to the design doc or [our repository](https://github.com/NethermindEth/Taiko-Preconf-AVS).
 
 ## Smart Contracts
 
@@ -69,7 +69,7 @@ We will outline the required features to be incorporated into the PoC to make it
 
 A recent fork of Taiko's contracts added support for including multiple L2 blocks within a single blob. However, our PoC implementation relies on an earlier version before this multi-block support (i.e., we use [BlockParams](https://github.com/NethermindEth/taiko-mono/blob/c2f59c30c085f19c5fed64e07c7961009060c428/packages/protocol/contracts/layer1/based/TaikoData.sol#L64) instead of [BlockParamsV2](https://github.com/NethermindEth/taiko-mono/blob/c2f59c30c085f19c5fed64e07c7961009060c428/packages/protocol/contracts/layer1/based/TaikoData.sol#L73)). 
 
-Supporting multi-block would require reconsideration of design, most notably around preconfirmation slashing. As outlined in [our design doc](https://github.com/NethermindEth/Taiko-Preconf-AVS/blob/master/Docs/design-doc.md#incorrect-preconfirmation-slashing), our current slashing logic ([code](https://github.com/NethermindEth/Taiko-Preconf-AVS/blob/ca2ce61682ff58a5b105ec8e5626112cf45a1094/SmartContracts/src/avs/PreconfTaskManager.sol#L122)) works by comparing the `txListHash` of the preconfirmed block with that of the proposed block. However, with the introduction of multi-block support, the hash of individual proposed blocks is no longer easily accessible on-chain. This is because the Taiko inbox now stores only the blob hash of the entire blob—which contains multiple blocks—along with offset information to introspect the blob.
+Supporting multi-block would require reconsideration of design, most notably around preconfirmation slashing. As outlined in [our design doc](https://github.com/NethermindEth/Taiko-Preconf-AVS/blob/master/docs/design-doc.md#incorrect-preconfirmation-slashing), our current slashing logic ([code](https://github.com/NethermindEth/Taiko-Preconf-AVS/blob/ca2ce61682ff58a5b105ec8e5626112cf45a1094/SmartContracts/src/avs/PreconfTaskManager.sol#L122)) works by comparing the `txListHash` of the preconfirmed block with that of the proposed block. However, with the introduction of multi-block support, the hash of individual proposed blocks is no longer easily accessible on-chain. This is because the Taiko inbox now stores only the blob hash of the entire blob—which contains multiple blocks—along with offset information to introspect the blob.
 
 **Potential Solution(s):**
 
@@ -124,7 +124,7 @@ However, for mainnet release, we should test out integration with actual restaki
 
 **Problem:**
 
-In the PoC, the first preconfirmer in the lookahead is tasked with submitting the lookahead for the next epoch and is slashed if they submit an invalid one ([doc](https://github.com/NethermindEth/Taiko-Preconf-AVS/blob/master/Docs/design-doc.md#lookahead-visibility)). However, if the profit from proposing Taiko blocks becomes higher than the slashing risk, this preconfirmer might submit an invalid lookahead to unfairly elect themselves as the preconfirmer for the entire next epoch.
+In the PoC, the first preconfirmer in the lookahead is tasked with submitting the lookahead for the next epoch and is slashed if they submit an invalid one ([doc](https://github.com/NethermindEth/Taiko-Preconf-AVS/blob/master/docs/design-doc.md#lookahead-visibility)). However, if the profit from proposing Taiko blocks becomes higher than the slashing risk, this preconfirmer might submit an invalid lookahead to unfairly elect themselves as the preconfirmer for the entire next epoch.
 
 **Solution:**
 
