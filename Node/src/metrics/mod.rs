@@ -7,7 +7,7 @@ pub struct Metrics {
     blocks_preconfirmed: Counter,
     blocks_reanchored: Counter,
     batch_recovered: Counter,
-    batch_sent: Counter,
+    batch_proposed: Counter,
     batch_confirmed: Counter,
     batch_propose_tries: Histogram,
     batch_block_count: Histogram,
@@ -67,10 +67,11 @@ impl Metrics {
             error!("Error: Failed to register batch_recovered: {}", err);
         }
 
-        let batch_sent = Counter::new("batch_proposed", "Number of batches proposed by the node")
-            .expect("Failed to create batch_proposed counter");
+        let batch_proposed =
+            Counter::new("batch_proposed", "Number of batches proposed by the node")
+                .expect("Failed to create batch_proposed counter");
 
-        if let Err(err) = registry.register(Box::new(batch_sent.clone())) {
+        if let Err(err) = registry.register(Box::new(batch_proposed.clone())) {
             error!("Error: Failed to register batch_proposed: {}", err);
         }
 
@@ -125,7 +126,7 @@ impl Metrics {
             blocks_preconfirmed,
             blocks_reanchored,
             batch_recovered,
-            batch_sent,
+            batch_proposed,
             batch_confirmed,
             batch_propose_tries,
             batch_block_count,
@@ -157,7 +158,7 @@ impl Metrics {
     }
 
     pub fn inc_batch_sent(&self) {
-        self.batch_sent.inc();
+        self.batch_proposed.inc();
     }
 
     pub fn inc_batch_confirmed(&self) {
@@ -199,7 +200,56 @@ impl Metrics {
         let encoder = TextEncoder::new();
         let metric_families = self.registry.gather();
         let mut buffer = Vec::new();
-        encoder.encode(&metric_families, &mut buffer).unwrap();
-        String::from_utf8(buffer).unwrap()
+
+        // Handle encoding error
+        if let Err(e) = encoder.encode(&metric_families, &mut buffer) {
+            error!("Failed to encode metrics: {}", e);
+            return String::new();
+        }
+
+        // Handle UTF-8 conversion error
+        match String::from_utf8(buffer) {
+            Ok(metrics) => metrics,
+            Err(e) => {
+                error!("Failed to convert metrics to UTF-8: {}", e);
+                String::new()
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_gather() {
+        let metrics = Metrics::new();
+
+        // Set some test values
+        metrics.set_preconfer_eth_balance(alloy::primitives::U256::from(1000000000000000000u128));
+        metrics.set_preconfer_taiko_balance(alloy::primitives::U256::from(2000000000000000000u128));
+        metrics.inc_blocks_preconfirmed();
+        metrics.inc_by_blocks_reanchored(1);
+        metrics.inc_by_batch_recovered(1);
+        metrics.inc_batch_sent();
+        metrics.inc_batch_confirmed();
+        metrics.observe_batch_propose_tries(1);
+        metrics.observe_batch_info(5, 1000);
+
+        let output = metrics.gather();
+        println!("{}", output);
+
+        // Verify the output contains our metrics
+        assert!(output.contains("preconfer_eth_balance 1"));
+        assert!(output.contains("preconfer_taiko_balance 2"));
+        assert!(output.contains("blocks_preconfirmed 1"));
+        assert!(output.contains("blocks_reanchored 1"));
+        assert!(output.contains("batch_recovered 1"));
+        assert!(output.contains("batch_proposed 1"));
+        assert!(output.contains("batch_confirmed 1"));
+        assert!(output.contains("batch_propose_tries_count 1"));
+        assert!(output.contains("batch_block_count_sum 5"));
+        assert!(output.contains("batch_blob_size_sum 1000"));
     }
 }
