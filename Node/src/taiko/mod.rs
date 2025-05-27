@@ -335,7 +335,12 @@ impl Taiko {
         let base_fee_config = self.get_base_fee_config();
 
         let base_fee = self
-            .get_base_fee(parent_hash, parent_gas_used_u32, base_fee_config, l2_slot_timestamp)
+            .get_base_fee(
+                parent_hash,
+                parent_gas_used_u32,
+                base_fee_config,
+                l2_slot_timestamp,
+            )
             .await?;
 
         debug!(
@@ -484,24 +489,6 @@ impl Taiko {
         self.metrics.inc_blocks_preconfirmed();
 
         Ok(preconfirmed_block)
-    }
-
-    pub async fn trigger_l2_reorg(&self, new_last_block_id: u64) -> Result<(), Error> {
-        debug!("Triggering L2 reorg to block {}", new_last_block_id);
-
-        let request_body = preconf_blocks::RemovePreconfBlockRequestBody { new_last_block_id };
-
-        const API_ENDPOINT: &str = "preconfBlocks";
-
-        let response = self
-            .call_driver_until_success(http::Method::DELETE, API_ENDPOINT, &request_body)
-            .await?;
-
-        debug!("Response from deleting preconfBlocks: {:?}", response);
-
-        self.metrics.inc_reorgs_executed();
-
-        Ok(())
     }
 
     pub async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {

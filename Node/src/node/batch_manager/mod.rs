@@ -134,15 +134,6 @@ impl BatchManager {
         )
     }
 
-    pub async fn trigger_l2_reorg(&mut self, new_last_block_id: u64) -> Result<(), Error> {
-        warn!("Triggering L2 reorg {}", new_last_block_id);
-        self.taiko.trigger_l2_reorg(new_last_block_id).await?;
-
-        self.reset_builder();
-
-        Ok(())
-    }
-
     pub fn is_anchor_block_offset_valid(&self, anchor_block_offset: u64) -> bool {
         anchor_block_offset + MIN_SLOTS_TO_PROPOSE
             < self
