@@ -380,6 +380,10 @@ mod tests {
         async fn is_operator_for_next_epoch(&self) -> Result<bool, Error> {
             Ok(self.next_operator)
         }
+
+        async fn is_preconf_router_specified_in_taiko_wrapper(&self) -> Result<bool, Error> {
+            Ok(true)
+        }
     }
 
     struct TaikoUnsyncedMock {
@@ -448,6 +452,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: true,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
         // Not a preconfer and submiter
@@ -467,6 +472,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
         // Continuing role
@@ -486,6 +492,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
         // Not correct l2 slot
@@ -505,6 +512,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
     }
@@ -527,6 +535,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
 
@@ -545,6 +554,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
     }
@@ -566,6 +576,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
 
@@ -583,6 +594,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
     }
@@ -603,6 +615,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: false,
+                is_preconf_router_zero: false,
             }
         );
     }
@@ -622,6 +635,7 @@ mod tests {
                 preconfirmation_started: true,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
 
@@ -641,6 +655,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
 
@@ -660,6 +675,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
     }
@@ -680,6 +696,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
 
@@ -697,6 +714,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
 
@@ -713,6 +731,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
     }
@@ -734,6 +753,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
 
@@ -751,6 +771,7 @@ mod tests {
                 preconfirmation_started: true,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
     }
@@ -775,6 +796,7 @@ mod tests {
                 preconfirmation_started: true,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
     }
@@ -795,6 +817,7 @@ mod tests {
                 preconfirmation_started: true,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
 
@@ -812,6 +835,7 @@ mod tests {
                 preconfirmation_started: true,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
     }
@@ -832,6 +856,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
     }
@@ -854,6 +879,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
 
@@ -873,6 +899,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
 
@@ -891,6 +918,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
     }
@@ -911,6 +939,7 @@ mod tests {
                 preconfirmation_started: true,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
 
@@ -923,6 +952,7 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
+                is_preconf_router_zero: false,
             }
         );
     }
