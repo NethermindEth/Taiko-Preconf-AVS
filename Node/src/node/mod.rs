@@ -369,6 +369,16 @@ impl Node {
         }
 
         if current_status.is_preconfer() && current_status.is_driver_synced() {
+            // do not trigger fast reanchor on submitter window to prevent from double reanchor
+            if !current_status.is_submitter()
+                && self
+                    .check_and_handle_anchor_offset_for_unsafe_l2_blocks(&l2_slot_info)
+                    .await?
+            {
+                // reanchored, no need to preconf
+                return Ok(());
+            }
+
             if !self
                 .head_verifier
                 .verify(l2_slot_info.parent_id(), l2_slot_info.parent_hash())
@@ -446,6 +456,47 @@ impl Node {
         }
 
         Ok(())
+    }
+
+    /// Checks the anchor offset for unsafe L2 blocks and triggers a reanchor if necessary.
+    /// Returns true if reanchor was triggered.
+    async fn check_and_handle_anchor_offset_for_unsafe_l2_blocks(
+        &mut self,
+        l2_slot_info: &L2SlotInfo,
+    ) -> Result<bool, Error> {
+        debug!("Checking anchor offset for unsafe L2 blocks to do fast reanchor when needed");
+        let taiko_inbox_height = self
+            .ethereum_l1
+            .execution_layer
+            .get_l2_height_from_taiko_inbox()
+            .await?;
+        if taiko_inbox_height < l2_slot_info.parent_id() {
+            let l2_block_id = taiko_inbox_height + 1;
+            let anchor_offset = self
+                .batch_manager
+                .get_l1_anchor_block_offset_for_l2_block(l2_block_id)
+                .await?;
+            let max_anchor_height_offset = self
+                .ethereum_l1
+                .execution_layer
+                .get_config_max_anchor_height_offset();
+
+            // +1 because we are checking the next block
+            if anchor_offset > max_anchor_height_offset + 1 {
+                warn!(
+                    "Anchor offset {} is too high for l2 block id {}, triggering reanchor",
+                    anchor_offset, l2_block_id
+                );
+                self.reanchor_blocks(
+                    taiko_inbox_height,
+                    "Anchor offset is too high for unsafe L2 blocks",
+                )
+                .await?;
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     async fn get_slot_info_and_status(
