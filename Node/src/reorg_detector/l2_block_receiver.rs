@@ -4,7 +4,7 @@ use anyhow::Error;
 use tokio::{
     select,
     sync::mpsc::Sender,
-    time::{sleep, Duration},
+    time::{Duration, sleep},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, trace, warn};
@@ -72,7 +72,7 @@ impl L2BlockReceiver {
     ) -> Result<(), Error> {
         let ws = WsConnect::new(rpc_url.to_string());
 
-        let provider_ws = ProviderBuilder::new().on_ws(ws).await.map_err(|e| {
+        let provider_ws = ProviderBuilder::new().connect_ws(ws).await.map_err(|e| {
             error!("Failed to create WebSocket provider: {:?}", e);
             e
         })?;

@@ -1,6 +1,6 @@
 use alloy::{
-    consensus::{utils::WholeFe, Blob, SidecarCoder},
-    eips::eip4844::{builder::PartialSidecar, BYTES_PER_BLOB, FIELD_ELEMENT_BYTES_USIZE},
+    consensus::{Blob, SidecarCoder, utils::WholeFe},
+    eips::eip4844::{BYTES_PER_BLOB, FIELD_ELEMENT_BYTES_USIZE, builder::PartialSidecar},
 };
 use anyhow::Error;
 

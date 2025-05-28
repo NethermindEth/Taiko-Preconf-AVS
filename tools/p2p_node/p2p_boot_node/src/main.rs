@@ -1,4 +1,4 @@
-use discv5::{enr, enr::CombinedKey, ConfigBuilder, Discv5, Event, ListenConfig};
+use discv5::{ConfigBuilder, Discv5, Event, ListenConfig, enr, enr::CombinedKey};
 use jsonrpc_core::{IoHandler, Params, Result, Value};
 use jsonrpc_http_server::ServerBuilder;
 use std::{net::Ipv4Addr, sync::Arc};

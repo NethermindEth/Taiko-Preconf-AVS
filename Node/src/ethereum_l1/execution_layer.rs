@@ -32,7 +32,7 @@ pub struct ExecutionLayer {
     extra_gas_percentage: u64,
     transaction_monitor: TransactionMonitor,
     metrics: Arc<metrics::Metrics>,
-    taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::TaikoWrapperInstance<(), Arc<WsProvider>>,
+    taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::TaikoWrapperInstance<Arc<WsProvider>>,
 }
 
 pub struct ContractAddresses {
@@ -68,7 +68,7 @@ impl ExecutionLayer {
         let provider_ws: Arc<WsProvider> = Arc::new(
             ProviderBuilder::new()
                 .wallet(wallet)
-                .on_ws(ws.clone())
+                .connect_ws(ws.clone())
                 .await?,
         );
 
@@ -122,8 +122,7 @@ impl ExecutionLayer {
             .bondToken()
             .call()
             .await
-            .map_err(|e| Error::msg(format!("Failed to get bond token: {}", e)))?
-            ._0;
+            .map_err(|e| Error::msg(format!("Failed to get bond token: {}", e)))?;
 
         Ok(ContractAddresses {
             taiko_inbox,
@@ -142,8 +141,7 @@ impl ExecutionLayer {
             .block(alloy::eips::BlockId::pending())
             .call()
             .await
-            .map_err(|e| Error::msg(format!("Failed to get operator for current epoch: {}", e)))?
-            ._0;
+            .map_err(|e| Error::msg(format!("Failed to get operator for current epoch: {}", e)))?;
         Ok(operator)
     }
 
@@ -155,8 +153,7 @@ impl ExecutionLayer {
             .block(alloy::eips::BlockId::pending())
             .call()
             .await
-            .map_err(|e| Error::msg(format!("Failed to get operator for next epoch: {}", e)))?
-            ._0;
+            .map_err(|e| Error::msg(format!("Failed to get operator for next epoch: {}", e)))?;
         Ok(operator)
     }
 
@@ -248,7 +245,7 @@ impl ExecutionLayer {
         ws_provider: &WsProvider,
     ) -> Result<taiko_inbox::ITaikoInbox::Config, Error> {
         let contract = taiko_inbox::ITaikoInbox::new(*taiko_inbox_address, ws_provider);
-        let pacaya_config = contract.pacayaConfig().call().await?._0;
+        let pacaya_config = contract.pacayaConfig().call().await?;
 
         info!(
             "Pacaya config: chainid {}, maxUnverifiedBatches {}, batchRingBufferSize {}, maxAnchorHeightOffset {}",
@@ -272,8 +269,7 @@ impl ExecutionLayer {
             .bondBalanceOf(self.preconfer_address)
             .call()
             .await
-            .map_err(|e| Error::msg(format!("Failed to get bonds balance: {}", e)))?
-            ._0;
+            .map_err(|e| Error::msg(format!("Failed to get bonds balance: {}", e)))?;
         Ok(bonds_balance)
     }
 
@@ -283,15 +279,13 @@ impl ExecutionLayer {
             .allowance(self.preconfer_address, self.contract_addresses.taiko_inbox)
             .call()
             .await
-            .map_err(|e| Error::msg(format!("Failed to get allowance: {}", e)))?
-            ._0;
+            .map_err(|e| Error::msg(format!("Failed to get allowance: {}", e)))?;
 
         let balance = contract
             .balanceOf(self.preconfer_address)
             .call()
             .await
-            .map_err(|e| Error::msg(format!("Failed to get preconfer balance: {}", e)))?
-            ._0;
+            .map_err(|e| Error::msg(format!("Failed to get preconfer balance: {}", e)))?;
 
         Ok(balance.min(allowance))
     }
@@ -333,7 +327,7 @@ impl ExecutionLayer {
         let provider_ws: Arc<WsProvider> = Arc::new(
             ProviderBuilder::new()
                 .wallet(wallet)
-                .on_ws(ws.clone())
+                .connect_ws(ws.clone())
                 .await
                 .unwrap(),
         );
@@ -434,7 +428,7 @@ impl ExecutionLayer {
         println!("Incremented number: {tx_hash}");
 
         let builder = contract.number();
-        let number = builder.call().await?.number.to_string();
+        let number = builder.call().await?.to_string();
 
         assert_eq!(number, "43");
 
@@ -483,9 +477,9 @@ impl ExecutionLayer {
             self.contract_addresses.taiko_inbox.clone(),
             self.provider_ws.clone(),
         );
-        let num_batches = contract.getStats2().call().await?._0.numBatches;
+        let num_batches = contract.getStats2().call().await?.numBatches;
         // It is safe because num_batches initial value is 1
-        let batch = contract.getBatch(num_batches - 1).call().await?.batch_;
+        let batch = contract.getBatch(num_batches - 1).call().await?;
 
         Ok(batch.lastBlockId)
     }
@@ -533,7 +527,7 @@ impl ExecutionLayer {
     }
 
     pub async fn is_preconf_router_specified_in_taiko_wrapper(&self) -> Result<bool, Error> {
-        let preconf_router = self.taiko_wrapper_contract.preconfRouter().call().await?._0;
+        let preconf_router = self.taiko_wrapper_contract.preconfRouter().call().await?;
         Ok(preconf_router != Address::ZERO)
     }
 }

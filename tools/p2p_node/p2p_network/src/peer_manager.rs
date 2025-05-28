@@ -1,7 +1,10 @@
 use libp2p::swarm::behaviour::{ConnectionClosed, ConnectionEstablished, DialFailure, FromSwarm};
 use libp2p::swarm::dummy::ConnectionHandler;
-use libp2p::swarm::{ConnectionDenied, ConnectionId, NetworkBehaviour, ToSwarm};
-use libp2p::{identify::Info, Multiaddr, PeerId};
+use libp2p::swarm::{
+    ConnectionDenied, ConnectionHandler as ConnectionHandlerTrait, ConnectionId, NetworkBehaviour,
+    ToSwarm,
+};
+use libp2p::{Multiaddr, PeerId, identify::Info};
 use serde::{Deserialize, Serialize};
 
 use std::collections::{HashMap, HashSet};
@@ -80,7 +83,12 @@ impl NetworkBehaviour for PeerManager {
     type ConnectionHandler = ConnectionHandler;
     type ToSwarm = PeerManagerEvent;
 
-    fn poll(&mut self, cx: &mut Context<'_>) -> Poll<ToSwarm<Self::ToSwarm, void::Void>> {
+    fn poll(
+        &mut self,
+        cx: &mut Context<'_>,
+    ) -> Poll<
+        ToSwarm<Self::ToSwarm, <Self::ConnectionHandler as ConnectionHandlerTrait>::FromBehaviour>,
+    > {
         // perform the heartbeat when necessary
         if !self.waiting_for_peer_discovery && self.peers_to_discover > 0 {
             let ev = Poll::Ready(ToSwarm::GenerateEvent(PeerManagerEvent::DiscoverPeers(

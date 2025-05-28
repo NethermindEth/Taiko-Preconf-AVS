@@ -15,21 +15,21 @@ use crate::{
 };
 use alloy::{
     consensus::{
-        transaction::Recovered, BlockHeader, SignableTransaction, Transaction as AnchorTransaction,
-        TxEnvelope,
+        BlockHeader, SignableTransaction, Transaction as AnchorTransaction, TxEnvelope,
+        transaction::Recovered,
     },
     contract::Error as ContractError,
     eips::BlockNumberOrTag,
     network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder},
-    primitives::{Address, BlockNumber, B256},
+    primitives::{Address, B256, BlockNumber},
     providers::{
-        fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
         Identity, Provider, ProviderBuilder, RootProvider, WsConnect,
+        fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
     },
     rpc::types::{Block as RpcBlock, BlockTransactionsKind, Transaction},
     signers::{
-        local::{LocalSigner, PrivateKeySigner},
         Signature, SignerSync,
+        local::{LocalSigner, PrivateKeySigner},
     },
     transports::TransportErrorKind,
 };
@@ -75,7 +75,7 @@ pub struct Taiko {
     pub chain_id: u64,
     preconfer_address: PreconferAddress,
     ethereum_l1: Arc<EthereumL1>,
-    taiko_anchor: RwLock<TaikoAnchor::TaikoAnchorInstance<(), WsProvider>>,
+    taiko_anchor: RwLock<TaikoAnchor::TaikoAnchorInstance<WsProvider>>,
     taiko_anchor_address: Address,
     metrics: Arc<Metrics>,
 }
@@ -94,9 +94,14 @@ impl Taiko {
         metrics: Arc<Metrics>,
     ) -> Result<Self, Error> {
         let ws = WsConnect::new(taiko_geth_ws_url.to_string());
-        let provider_ws = RwLock::new(ProviderBuilder::new().on_ws(ws.clone()).await.map_err(
-            |e| anyhow::anyhow!("Taiko::new: Failed to create WebSocket provider: {e}"),
-        )?);
+        let provider_ws = RwLock::new(
+            ProviderBuilder::new()
+                .connect_ws(ws.clone())
+                .await
+                .map_err(|e| {
+                    anyhow::anyhow!("Taiko::new: Failed to create WebSocket provider: {e}")
+                })?,
+        );
 
         let chain_id = provider_ws.read().await.get_chain_id().await?;
         info!("L2 Chain ID: {}", chain_id);
@@ -404,7 +409,7 @@ impl Taiko {
     async fn recreate_ws_provider(&self) -> Result<(), Error> {
         let ws = WsConnect::new(self.taiko_geth_ws_url.clone());
         let provider = ProviderBuilder::new()
-            .on_ws(ws.clone())
+            .connect_ws(ws.clone())
             .await
             .map_err(|e| anyhow::anyhow!("Taiko::new: Failed to create WebSocket provider: {e}"))?;
 
@@ -631,7 +636,7 @@ impl Taiko {
 
     pub fn decode_anchor_tx_data(data: &[u8]) -> Result<u64, Error> {
         let tx_data =
-            <TaikoAnchor::anchorV3Call as alloy::sol_types::SolCall>::abi_decode(data, true)?;
+            <TaikoAnchor::anchorV3Call as alloy::sol_types::SolCall>::abi_decode_validate(data)?;
         Ok(tx_data._anchorBlockId)
     }
 
@@ -674,8 +679,7 @@ impl Taiko {
             .await;
         Ok(self
             .check_for_contract_failure(last_synced_block, "Failed to get last synced block")
-            .await?
-            ._0)
+            .await?)
     }
 
     pub async fn get_last_synced_anchor_block_id_from_geth(&self) -> Result<u64, Error> {

@@ -24,12 +24,12 @@ alloy = { workspace = true }
 alloy-json-rpc = { workspace = true }
 alloy-rlp = { workspace = true }
 anyhow = { workspace = true }
+c-kzg = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, optional = true }
 dotenv = { workspace = true }
 ecdsa = { workspace = true }
 elliptic-curve = { workspace = true }
-ethereum-consensus = { workspace = true }
 flate2 = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }

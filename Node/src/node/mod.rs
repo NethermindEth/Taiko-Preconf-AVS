@@ -5,11 +5,11 @@ mod verifier;
 
 use crate::reorg_detector;
 use crate::{
-    ethereum_l1::{transaction_error::TransactionError, EthereumL1},
+    ethereum_l1::{EthereumL1, transaction_error::TransactionError},
     metrics::Metrics,
     node::{l2_head_verifier::L2HeadVerifier, verifier::Verifier},
     shared::{l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
-    taiko::{preconf_blocks::BuildPreconfBlockResponse, Taiko},
+    taiko::{Taiko, preconf_blocks::BuildPreconfBlockResponse},
 };
 use alloy::primitives::U256;
 use anyhow::Error;
@@ -18,8 +18,8 @@ use operator::{Operator, Status as OperatorStatus};
 use reorg_detector::ReorgDetector;
 use std::sync::Arc;
 use tokio::{
-    sync::mpsc::{error::TryRecvError, Receiver},
-    time::{sleep, Duration},
+    sync::mpsc::{Receiver, error::TryRecvError},
+    time::{Duration, sleep},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -215,7 +215,9 @@ impl Node {
             if nonce_pending == nonce_latest {
                 break;
             }
-            debug!("Waiting for sent transactions to be executed. Nonce Latest: {nonce_latest}, Nonce Pending: {nonce_pending}");
+            debug!(
+                "Waiting for sent transactions to be executed. Nonce Latest: {nonce_latest}, Nonce Pending: {nonce_pending}"
+            );
             sleep(Duration::from_secs(6)).await;
         }
 
@@ -447,7 +449,9 @@ impl Node {
         if !current_status.is_submitter() && !current_status.is_preconfer() {
             if self.batch_manager.has_batches() {
                 self.batch_manager.reset_builder();
-                error!("Some batches were not successfully sent in the submitter window. Resetting batch builder.");
+                error!(
+                    "Some batches were not successfully sent in the submitter window. Resetting batch builder."
+                );
             }
             if self.verifier.is_some() {
                 error!("Verifier is not None after submitter window.");
@@ -630,8 +634,8 @@ impl Node {
             TransactionError::UnsupportedTransactionType => {
                 self.cancel_token.cancel();
                 return Err(anyhow::anyhow!(
-                        "Unsupported transaction type. You can send eip1559 or eip4844 transactions only"
-                    ));
+                    "Unsupported transaction type. You can send eip1559 or eip4844 transactions only"
+                ));
             }
             TransactionError::GetBlockNumberFailed => {
                 // TODO recreate L1 provider
@@ -753,7 +757,7 @@ impl Node {
                     return Err(anyhow::anyhow!(
                         "No transactions in block {}",
                         block.header.number
-                    ))
+                    ));
                 }
             };
 

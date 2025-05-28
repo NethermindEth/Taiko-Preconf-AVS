@@ -7,7 +7,7 @@ use futures_util::StreamExt;
 use tokio::{
     select,
     sync::mpsc::Sender,
-    time::{sleep, Duration},
+    time::{Duration, sleep},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -64,7 +64,7 @@ impl BatchProposedEventReceiver {
 
             let ws = WsConnect::new(ws_rpc_url.clone());
 
-            let provider_ws = match ProviderBuilder::new().on_ws(ws).await {
+            let provider_ws = match ProviderBuilder::new().connect_ws(ws).await {
                 Ok(provider) => provider,
                 Err(e) => {
                     error!("Failed to create WebSocket provider: {:?}", e);

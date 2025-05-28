@@ -3,8 +3,8 @@ pub mod batch_builder;
 use crate::{
     ethereum_l1::EthereumL1,
     shared::{l2_block::L2Block, l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
-    taiko::preconf_blocks::BuildPreconfBlockResponse,
     taiko::Taiko,
+    taiko::preconf_blocks::BuildPreconfBlockResponse,
 };
 use alloy::{consensus::BlockHeader, consensus::Transaction, primitives::Address};
 use anyhow::Error;
@@ -82,7 +82,11 @@ impl BatchManager {
         let anchor_block_id = Taiko::decode_anchor_tx_data(anchor_tx.input())?;
         debug!(
             "Recovering from L2 block {}, anchor block id {}, timestamp {}, coinbase {}, transactions {}",
-            block_height, anchor_block_id, block.header.timestamp, coinbase, txs.len()
+            block_height,
+            anchor_block_id,
+            block.header.timestamp,
+            coinbase,
+            txs.len()
         );
 
         let anchor_block_timestamp_sec = self

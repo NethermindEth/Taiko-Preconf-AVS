@@ -1,6 +1,9 @@
-use alloy::{consensus::transaction::Recovered, rpc::types::Transaction};
+use alloy::{
+    consensus::transaction::{Recovered, SignerRecoverable},
+    rpc::types::Transaction,
+};
 use anyhow::Error;
-use flate2::{write::ZlibEncoder, Compression};
+use flate2::{Compression, write::ZlibEncoder};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::io::Write;

@@ -8,10 +8,10 @@ use alloy::{
     signers::Signature,
 };
 use k256::{
-    elliptic_curve::{
-        bigint::Uint, point::AffineCoordinates, scalar::FromUintUnchecked, PrimeField,
-    },
     FieldBytes, ProjectivePoint, Scalar,
+    elliptic_curve::{
+        PrimeField, bigint::Uint, point::AffineCoordinates, scalar::FromUintUnchecked,
+    },
 };
 
 /// Half of the secp256k1 (a.k.a k256) curve order `N`. Used to check if the

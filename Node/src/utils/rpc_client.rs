@@ -5,7 +5,7 @@ use jsonrpsee::{
     core::client::{ClientT, Error as JsonRpcError},
     http_client::{HttpClient, HttpClientBuilder},
 };
-use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
