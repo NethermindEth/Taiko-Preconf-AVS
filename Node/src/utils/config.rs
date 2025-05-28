@@ -22,7 +22,7 @@ pub struct Config {
     pub handover_start_buffer_ms: u64,
     pub l1_height_lag: u64,
     pub max_bytes_size_of_batch: u64,
-    pub max_blocks_per_batch_reduction: u16,
+    pub max_blocks_per_batch: u16,
     pub max_time_shift_between_blocks_sec: u64,
     pub max_anchor_height_offset_reduction: u64,
     pub min_priority_fee_per_gas_wei: u64,
@@ -185,10 +185,10 @@ impl Config {
             .parse::<u64>()
             .expect("MAX_BYTES_SIZE_OF_BATCH must be a number");
 
-        let max_blocks_per_batch_reduction = std::env::var("MAX_BLOCKS_PER_BATCH_REDUCTION_VALUE")
+        let max_blocks_per_batch = std::env::var("MAX_BLOCKS_PER_BATCH")
             .unwrap_or("0".to_string())
             .parse::<u16>()
-            .expect("MAX_BLOCKS_PER_BATCH_REDUCTION_VALUE must be a number");
+            .expect("MAX_BLOCKS_PER_BATCH must be a number");
 
         let max_time_shift_between_blocks_sec = std::env::var("MAX_TIME_SHIFT_BETWEEN_BLOCKS_SEC")
             .unwrap_or("255".to_string())
@@ -277,7 +277,7 @@ impl Config {
             handover_start_buffer_ms,
             l1_height_lag,
             max_bytes_size_of_batch,
-            max_blocks_per_batch_reduction,
+            max_blocks_per_batch,
             max_time_shift_between_blocks_sec,
             max_anchor_height_offset_reduction,
             min_priority_fee_per_gas_wei,
@@ -311,7 +311,7 @@ handover window slots: {}
 handover start buffer: {}ms
 l1 height lag: {}
 max bytes size of batch: {}
-max blocks per batch reduction value: {}
+max blocks per batch value: {}
 max time shift between blocks: {}s
 max anchor height offset reduction value: {}
 min priority fee per gas wei: {}
@@ -341,7 +341,7 @@ simulate not submitting at the end of epoch: {}
             config.handover_start_buffer_ms,
             config.l1_height_lag,
             config.max_bytes_size_of_batch,
-            config.max_blocks_per_batch_reduction,
+            config.max_blocks_per_batch,
             config.max_time_shift_between_blocks_sec,
             config.max_anchor_height_offset_reduction,
             config.min_priority_fee_per_gas_wei,
