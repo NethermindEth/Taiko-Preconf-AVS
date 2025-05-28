@@ -39,6 +39,7 @@ pub struct Status {
     preconfirmation_started: bool,
     end_of_sequencing: bool,
     is_driver_synced: bool,
+    is_preconf_router_zero: bool,
 }
 
 impl Status {
@@ -85,6 +86,10 @@ impl std::fmt::Display for Status {
             roles.push("EndOfSequencing");
         }
 
+        if self.is_preconf_router_zero {
+            roles.push("PreconfRouterIsZero");
+        }
+
         if roles.is_empty() {
             write!(f, "No active roles")
         } else {
@@ -122,6 +127,22 @@ impl Operator {
 impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
     /// Get the current status of the operator based on the current L1 and L2 slots
     pub async fn get_status(&mut self, l2_slot_info: &L2SlotInfo) -> Result<Status, Error> {
+        if !self
+            .execution_layer
+            .is_preconf_router_specified_in_taiko_wrapper()
+            .await?
+        {
+            self.reset();
+            return Ok(Status {
+                preconfer: false,
+                submitter: false,
+                preconfirmation_started: false,
+                end_of_sequencing: false,
+                is_driver_synced: false,
+                is_preconf_router_zero: true,
+            });
+        }
+
         let l1_slot = self.slot_clock.get_current_slot_of_epoch()?;
 
         // For the first N slots of the new epoch, use the next operator from the previous epoch
@@ -189,7 +210,15 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
             preconfirmation_started,
             end_of_sequencing,
             is_driver_synced,
+            is_preconf_router_zero: false,
         })
+    }
+
+    pub fn reset(&mut self) {
+        self.next_operator = false;
+        self.continuing_role = false;
+        self.was_synced_preconfer = false;
+        self.cancel_counter = 0;
     }
 
     fn is_end_of_sequencing(
