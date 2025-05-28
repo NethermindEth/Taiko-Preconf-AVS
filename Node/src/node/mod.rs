@@ -22,7 +22,7 @@ use tokio::{
     time::{Duration, sleep},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct Thresholds {
     pub eth: U256,
@@ -371,6 +371,16 @@ impl Node {
         }
 
         if current_status.is_preconfer() && current_status.is_driver_synced() {
+            // do not trigger fast reanchor on submitter window to prevent from double reanchor
+            if !current_status.is_submitter()
+                && self
+                    .check_and_handle_anchor_offset_for_unsafe_l2_blocks(&l2_slot_info)
+                    .await?
+            {
+                // reanchored, no need to preconf
+                return Ok(());
+            }
+
             if !self
                 .head_verifier
                 .verify(l2_slot_info.parent_id(), l2_slot_info.parent_hash())
@@ -452,6 +462,47 @@ impl Node {
         Ok(())
     }
 
+    /// Checks the anchor offset for unsafe L2 blocks and triggers a reanchor if necessary.
+    /// Returns true if reanchor was triggered.
+    async fn check_and_handle_anchor_offset_for_unsafe_l2_blocks(
+        &mut self,
+        l2_slot_info: &L2SlotInfo,
+    ) -> Result<bool, Error> {
+        debug!("Checking anchor offset for unsafe L2 blocks to do fast reanchor when needed");
+        let taiko_inbox_height = self
+            .ethereum_l1
+            .execution_layer
+            .get_l2_height_from_taiko_inbox()
+            .await?;
+        if taiko_inbox_height < l2_slot_info.parent_id() {
+            let l2_block_id = taiko_inbox_height + 1;
+            let anchor_offset = self
+                .batch_manager
+                .get_l1_anchor_block_offset_for_l2_block(l2_block_id)
+                .await?;
+            let max_anchor_height_offset = self
+                .ethereum_l1
+                .execution_layer
+                .get_config_max_anchor_height_offset();
+
+            // +1 because we are checking the next block
+            if anchor_offset > max_anchor_height_offset + 1 {
+                warn!(
+                    "Anchor offset {} is too high for l2 block id {}, triggering reanchor",
+                    anchor_offset, l2_block_id
+                );
+                self.reanchor_blocks(
+                    taiko_inbox_height,
+                    "Anchor offset is too high for unsafe L2 blocks",
+                )
+                .await?;
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
     async fn get_slot_info_and_status(
         &mut self,
     ) -> Result<(L2SlotInfo, OperatorStatus, Option<PreBuiltTxList>), Error> {
@@ -510,7 +561,7 @@ impl Node {
                 .verify_submitted_blocks(taiko_inbox_height, self.metrics.clone())
                 .await
             {
-                self.trigger_l2_reorg(
+                self.reanchor_blocks(
                     taiko_inbox_height,
                     &format!("Verifier return an error: {}", err),
                 )
@@ -567,9 +618,9 @@ impl Node {
                         .execution_layer
                         .get_l2_height_from_taiko_inbox()
                         .await?;
-                    self.trigger_l2_reorg(taiko_inbox_height, "Transaction reverted")
+                    self.reanchor_blocks(taiko_inbox_height, "Transaction reverted")
                         .await?;
-                    return Err(anyhow::anyhow!("Force reorg done"));
+                    return Err(anyhow::anyhow!("Reanchoring done"));
                 } else {
                     warn!("Transaction reverted, not our epoch, skipping reorg");
                 }
@@ -607,8 +658,6 @@ impl Node {
         l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
     ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
-        trace!("preconfirm_block");
-
         self.batch_manager
             .preconfirm_block(pending_tx_list, l2_slot_info, end_of_sequencing)
             .await
@@ -657,37 +706,104 @@ impl Node {
         Ok(())
     }
 
-    async fn trigger_l2_reorg(
-        &mut self,
-        new_last_block_id: u64,
-        message: &str,
-    ) -> Result<(), Error> {
-        warn!("⛓️‍💥 Force Reorg: {}", message);
+    async fn reanchor_blocks(&mut self, parent_block_id: u64, reason: &str) -> Result<(), Error> {
+        warn!(
+            "⛓️‍💥 Reanchoring blocks for parent block: {} reason: {}",
+            parent_block_id, reason
+        );
 
+        let start_time = std::time::Instant::now();
+
+        let mut l2_slot_info = self
+            .taiko
+            .get_l2_slot_info_by_parent_block(alloy::eips::BlockNumberOrTag::Number(
+                parent_block_id,
+            ))
+            .await?;
+
+        // Update self state
         self.verifier = None;
+        self.batch_manager.reset_builder();
+
         self.reorg_detector
-            .set_expected_reorg(new_last_block_id)
+            .set_expected_reorg(parent_block_id)
             .await;
 
-        let new_last_block_hash = match self.taiko.get_l2_block_hash(new_last_block_id).await {
-            Ok(hash) => hash,
-            Err(err) => {
+        let start_block_id = parent_block_id + 1;
+        let blocks = self
+            .taiko
+            .fetch_l2_blocks_until_latest(start_block_id, true)
+            .await?;
+
+        let blocks_reanchored = blocks.len() as u64;
+
+        for block in blocks {
+            debug!(
+                "Reanchoring block {} with {} transactions, parent_id {}, parent_hash {}",
+                block.header.number,
+                block.transactions.len(),
+                l2_slot_info.parent_id(),
+                l2_slot_info.parent_hash(),
+            );
+
+            let (_, txs) = match block.transactions.as_transactions() {
+                Some(txs) => txs.split_first().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Cannot get anchor transaction from block {}",
+                        block.header.number
+                    )
+                })?,
+                None => {
+                    return Err(anyhow::anyhow!(
+                        "No transactions in block {}",
+                        block.header.number
+                    ))
+                }
+            };
+
+            let tx_list = txs.to_vec();
+            let bytes_length =
+                crate::shared::l2_tx_lists::encode_and_compress(&tx_list)?.len() as u64;
+            let pending_tx_list = crate::shared::l2_tx_lists::PreBuiltTxList {
+                tx_list: tx_list,
+                estimated_gas_used: 0,
+                bytes_length,
+            };
+
+            let block = self
+                .batch_manager
+                .reanchor_block(pending_tx_list, l2_slot_info)
+                .await;
+            // if reanchor_block fails restart the node
+            if let Ok(Some(block)) = block {
+                debug!("Reanchored block {} hash {}", block.number, block.hash);
+            } else {
+                let err_msg = match block {
+                    Ok(None) => "Failed to reanchor block: None returned".to_string(),
+                    Err(err) => format!("Failed to reanchor block: {}", err),
+                    Ok(Some(_)) => "Unreachable".to_string(),
+                };
+                error!("{}", err_msg);
                 self.cancel_token.cancel();
-                return Err(anyhow::anyhow!(
-                    "Failed to get L2 block hash during reorg: {}",
-                    err
-                ));
+                return Err(anyhow::anyhow!("{}", err_msg));
             }
-        };
-        self.head_verifier
-            .set(new_last_block_id, new_last_block_hash)
-            .await;
 
-        if let Err(err) = self.batch_manager.trigger_l2_reorg(new_last_block_id).await {
-            self.cancel_token.cancel();
-            return Err(anyhow::anyhow!("Failed to trigger L2 reorg: {}", err));
+            // TODO reduce 1 geth call
+            // We can get previous L2 slot info from BuildPreconfBlockResponse
+            l2_slot_info = self.taiko.get_l2_slot_info().await?;
         }
 
+        self.head_verifier
+            .set(l2_slot_info.parent_id(), l2_slot_info.parent_hash().clone())
+            .await;
+
+        self.metrics.inc_by_blocks_reanchored(blocks_reanchored);
+
+        debug!(
+            "Finished reanchoring blocks for parent block {} in {} ms",
+            parent_block_id,
+            start_time.elapsed().as_millis()
+        );
         Ok(())
     }
 }

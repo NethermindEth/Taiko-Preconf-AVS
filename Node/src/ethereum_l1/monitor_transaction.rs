@@ -178,7 +178,7 @@ impl TransactionMonitorThread {
         let mut root_provider: Option<RootProvider<alloy::network::Ethereum>> = None;
         let mut l1_block_at_send = 0;
 
-        self.metrics.inc_batch_sent();
+        self.metrics.inc_batch_proposed();
         // Sending attempts loop
         let mut tx_hashes = Vec::new();
         for sending_attempt in 0..self.config.max_attempts_to_send_tx {

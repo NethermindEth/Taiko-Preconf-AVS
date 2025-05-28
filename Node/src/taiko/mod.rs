@@ -221,6 +221,27 @@ impl Taiko {
         Ok(block)
     }
 
+    pub async fn fetch_l2_blocks_until_latest(
+        &self,
+        start_block: u64,
+        full_txs: bool,
+    ) -> Result<Vec<alloy::rpc::types::Block>, Error> {
+        let start_time = std::time::Instant::now();
+        let end_block = self.get_latest_l2_block_id().await?;
+        let mut blocks = Vec::with_capacity((end_block - start_block + 1) as usize);
+        for block_number in start_block..=end_block {
+            let block = self.get_l2_block_by_number(block_number, full_txs).await?;
+            blocks.push(block);
+        }
+        debug!(
+            "Fetched L2 blocks from {} to {} in {} ms",
+            start_block,
+            end_block,
+            start_time.elapsed().as_millis()
+        );
+        Ok(blocks)
+    }
+
     pub async fn get_transaction_by_hash(
         &self,
         hash: B256,
@@ -247,7 +268,15 @@ impl Taiko {
     pub async fn get_latest_l2_block_id_hash_and_gas_used(
         &self,
     ) -> Result<(u64, B256, u64), Error> {
-        let block = self.get_l2_block_header(BlockNumberOrTag::Latest).await?;
+        self.get_l2_block_id_hash_and_gas_used(BlockNumberOrTag::Latest)
+            .await
+    }
+
+    pub async fn get_l2_block_id_hash_and_gas_used(
+        &self,
+        block: BlockNumberOrTag,
+    ) -> Result<(u64, B256, u64), Error> {
+        let block = self.get_l2_block_header(block).await?;
 
         Ok((
             block.header.number(),
@@ -291,9 +320,17 @@ impl Taiko {
     }
 
     pub async fn get_l2_slot_info(&self) -> Result<L2SlotInfo, Error> {
+        self.get_l2_slot_info_by_parent_block(BlockNumberOrTag::Latest)
+            .await
+    }
+
+    pub async fn get_l2_slot_info_by_parent_block(
+        &self,
+        block: BlockNumberOrTag,
+    ) -> Result<L2SlotInfo, Error> {
         let l2_slot_timestamp = self.ethereum_l1.slot_clock.get_l2_slot_begin_timestamp()?;
         let (parent_id, parent_hash, parent_gas_used) =
-            self.get_latest_l2_block_id_hash_and_gas_used().await?;
+            self.get_l2_block_id_hash_and_gas_used(block).await?;
 
         // Safe conversion with overflow check
         let parent_gas_used_u32 = u32::try_from(parent_gas_used).map_err(|_| {
@@ -303,13 +340,19 @@ impl Taiko {
         let base_fee_config = self.get_base_fee_config();
 
         let base_fee = self
-            .get_base_fee(parent_gas_used_u32, base_fee_config, l2_slot_timestamp)
+            .get_base_fee(
+                parent_hash,
+                parent_gas_used_u32,
+                base_fee_config,
+                l2_slot_timestamp,
+            )
             .await?;
 
         debug!(
             timestamp = %l2_slot_timestamp,
             parent_hash = %parent_hash,
             parent_gas_used = %parent_gas_used_u32,
+            base_fee = %base_fee,
             "L2 slot info"
         );
 
@@ -402,6 +445,7 @@ impl Taiko {
 
         let anchor_tx = self
             .construct_anchor_tx(
+                l2_slot_info.parent_hash().clone(),
                 anchor_origin_height,
                 anchor_block_state_root,
                 l2_slot_info.parent_gas_used(),
@@ -450,24 +494,6 @@ impl Taiko {
         self.metrics.inc_blocks_preconfirmed();
 
         Ok(preconfirmed_block)
-    }
-
-    pub async fn trigger_l2_reorg(&self, new_last_block_id: u64) -> Result<(), Error> {
-        debug!("Triggering L2 reorg to block {}", new_last_block_id);
-
-        let request_body = preconf_blocks::RemovePreconfBlockRequestBody { new_last_block_id };
-
-        const API_ENDPOINT: &str = "preconfBlocks";
-
-        let response = self
-            .call_driver_until_success(http::Method::DELETE, API_ENDPOINT, &request_body)
-            .await?;
-
-        debug!("Response from deleting preconfBlocks: {:?}", response);
-
-        self.metrics.inc_reorgs_executed();
-
-        Ok(())
     }
 
     pub async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {
@@ -549,6 +575,7 @@ impl Taiko {
 
     async fn construct_anchor_tx(
         &self,
+        parent_hash: B256,
         anchor_block_id: u64,
         anchor_state_root: B256,
         parent_gas_used: u32,
@@ -562,6 +589,7 @@ impl Taiko {
             .read()
             .await
             .get_transaction_count(GOLDEN_TOUCH_ADDRESS)
+            .block_id(parent_hash.into())
             .await;
         let nonce = self
             .check_for_ws_provider_failure(tx_count_result, "Failed to get nonce")
@@ -618,6 +646,7 @@ impl Taiko {
 
     pub async fn get_base_fee(
         &self,
+        parent_hash: B256,
         parent_gas_used: u32,
         base_fee_config: LibSharedData::BaseFeeConfig,
         l2_slot_timestamp: u64,
@@ -627,6 +656,7 @@ impl Taiko {
             .read()
             .await
             .getBasefeeV2(parent_gas_used, l2_slot_timestamp, base_fee_config)
+            .block(parent_hash.into())
             .call()
             .await;
         let base_fee = self
