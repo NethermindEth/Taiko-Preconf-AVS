@@ -78,6 +78,8 @@ pub struct Taiko {
     taiko_anchor: RwLock<TaikoAnchor::TaikoAnchorInstance<(), WsProvider>>,
     taiko_anchor_address: Address,
     metrics: Arc<Metrics>,
+    max_bytes_per_tx_list: u64,
+    throttling_factor: u64,
 }
 
 impl Taiko {
@@ -87,6 +89,8 @@ impl Taiko {
         taiko_geth_auth_url: &str,
         driver_url: &str,
         rpc_client_timeout: Duration,
+        max_bytes_per_tx_list: u64,
+        throttling_factor: u64,
         jwt_secret_bytes: &[u8],
         preconfer_address: PreconferAddress,
         ethereum_l1: Arc<EthereumL1>,
@@ -126,13 +130,21 @@ impl Taiko {
             taiko_anchor,
             taiko_anchor_address,
             metrics,
+            max_bytes_per_tx_list,
+            throttling_factor,
         })
     }
 
     pub async fn get_pending_l2_tx_list_from_taiko_geth(
         &self,
         base_fee: u64,
+        batches_ready_to_send: u64,
     ) -> Result<Option<PreBuiltTxList>, Error> {
+        let max_bytes_per_tx_list = calculate_max_bytes_per_tx_list(
+            batches_ready_to_send,
+            self.throttling_factor,
+            self.max_bytes_per_tx_list,
+        );
         let params = vec![
             Value::String(format!("0x{}", hex::encode(self.preconfer_address))), // beneficiary address
             Value::from(base_fee),                                               // baseFee
@@ -142,10 +154,10 @@ impl Taiko {
                     .get_config_block_max_gas_limit()
                     .into(),
             ), // blockMaxGasLimit
-            Value::Number(131_072.into()), // maxBytesPerTxList (128KB)
-            Value::Array(vec![]),          // locals (empty array)
-            Value::Number(1.into()),       // maxTransactionsLists
-            Value::Number(0.into()),       // minTip
+            Value::Number(max_bytes_per_tx_list.into()), // maxBytesPerTxList (128KB by default)
+            Value::Array(vec![]),                        // locals (empty array)
+            Value::Number(1.into()),                     // maxTransactionsLists
+            Value::Number(0.into()),                     // minTip
         ];
 
         let result = self
@@ -703,6 +715,58 @@ impl PreconfDriver for Taiko {
 
     async fn get_latest_l2_block_id(&self) -> Result<u64, Error> {
         Taiko::get_latest_l2_block_id(self).await
+    }
+}
+
+/// Calculate the max bytes per tx list based on the number of batches ready to send.
+/// The max bytes per tx list is reduced exponentially by given factor.
+fn calculate_max_bytes_per_tx_list(
+    max_bytes_per_tx_list: u64,
+    throttling_factor: u64,
+    batches_ready_to_send: u64,
+) -> u64 {
+    let mut size = max_bytes_per_tx_list;
+    for _ in 0..batches_ready_to_send {
+        size = size.saturating_sub(size / throttling_factor);
+    }
+    size
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_calculate_max_bytes_per_tx_list() {
+        let max_bytes = 1000; // 128KB
+        let throttling_factor = 10;
+
+        // Test with no throttling (attempt = 0)
+        assert_eq!(
+            calculate_max_bytes_per_tx_list(max_bytes, throttling_factor, 0),
+            max_bytes
+        );
+
+        assert_eq!(
+            calculate_max_bytes_per_tx_list(max_bytes, throttling_factor, 1),
+            900
+        );
+
+        assert_eq!(
+            calculate_max_bytes_per_tx_list(max_bytes, throttling_factor, 2),
+            810
+        );
+
+        assert_eq!(
+            calculate_max_bytes_per_tx_list(max_bytes, throttling_factor, 3),
+            729
+        );
+
+        // Test with throttling factor greater than max_bytes
+        assert_eq!(calculate_max_bytes_per_tx_list(100, 200, 1), 100);
+
+        // Test with zero max_bytes
+        assert_eq!(calculate_max_bytes_per_tx_list(0, throttling_factor, 1), 0);
     }
 }
 

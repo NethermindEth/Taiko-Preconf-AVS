@@ -304,6 +304,10 @@ impl BatchManager {
         self.batch_builder.get_number_of_batches()
     }
 
+    pub fn get_number_of_batches_ready_to_send(&self) -> u64 {
+        self.batch_builder.get_number_of_batches_ready_to_send()
+    }
+
     pub fn reset_builder(&mut self) {
         warn!("Resetting batch builder");
         self.batch_builder = batch_builder::BatchBuilder::new(

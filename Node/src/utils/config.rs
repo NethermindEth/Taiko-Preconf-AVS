@@ -33,6 +33,8 @@ pub struct Config {
     pub threshold_eth: U256,
     pub threshold_taiko: U256,
     pub simulate_not_submitting_at_the_end_of_epoch: bool,
+    pub max_bytes_per_tx_list: u64,
+    pub throttling_factor: u64,
 }
 
 #[derive(Debug)]
@@ -251,6 +253,17 @@ impl Config {
                 .parse::<bool>()
                 .expect("SIMULATE_NOT_SUBMITTING_AT_THE_END_OF_EPOCH must be a boolean");
 
+        let max_bytes_per_tx_list = std::env::var("MAX_BYTES_PER_TX_LIST")
+            .unwrap_or("131072".to_string())
+            .parse::<u64>()
+            .expect("MAX_BYTES_PER_TX_LIST must be a number");
+
+        // The throttling factor is used to reduce the max bytes per tx list exponentially.
+        let throttling_factor = std::env::var("THROTTLING_FACTOR")
+            .unwrap_or("12".to_string())
+            .parse::<u64>()
+            .expect("THROTTLING_FACTOR must be a number");
+
         let config = Self {
             taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
                 .unwrap_or("ws://127.0.0.1:1234".to_string()),
@@ -288,6 +301,8 @@ impl Config {
             threshold_eth,
             threshold_taiko,
             simulate_not_submitting_at_the_end_of_epoch,
+            max_bytes_per_tx_list,
+            throttling_factor,
         };
 
         info!(
@@ -310,6 +325,8 @@ taiko anchor address: {}
 handover window slots: {}
 handover start buffer: {}ms
 l1 height lag: {}
+max bytes per tx list from taiko driver: {}
+throttling factor: {}
 max bytes size of batch: {}
 max blocks per batch value: {}
 max time shift between blocks: {}s
@@ -340,6 +357,8 @@ simulate not submitting at the end of epoch: {}
             config.handover_window_slots,
             config.handover_start_buffer_ms,
             config.l1_height_lag,
+            config.max_bytes_per_tx_list,
+            config.throttling_factor,
             config.max_bytes_size_of_batch,
             config.max_blocks_per_batch,
             config.max_time_shift_between_blocks_sec,

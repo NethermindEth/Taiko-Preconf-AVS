@@ -511,7 +511,10 @@ impl Node {
             Ok(info) => {
                 self.batch_manager
                     .taiko
-                    .get_pending_l2_tx_list_from_taiko_geth(info.base_fee())
+                    .get_pending_l2_tx_list_from_taiko_geth(
+                        info.base_fee(),
+                        self.batch_manager.get_number_of_batches_ready_to_send(),
+                    )
                     .await
             }
             Err(_) => Err(anyhow::anyhow!("Failed to get L2 slot info")),
@@ -535,7 +538,7 @@ impl Node {
         if verifier.has_blocks_to_verify() {
             let head_slot = self
                 .ethereum_l1
-                ._consensus_layer
+                .consensus_layer
                 .get_head_slot_number()
                 .await?;
 

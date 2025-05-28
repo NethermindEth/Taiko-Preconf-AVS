@@ -108,6 +108,8 @@ async fn main() -> Result<(), Error> {
             &config.taiko_geth_auth_rpc_url,
             &config.taiko_driver_url,
             config.rpc_client_timeout,
+            config.max_bytes_per_tx_list,
+            config.throttling_factor,
             &jwt_secret_bytes,
             ethereum_l1.execution_layer.get_preconfer_address(),
             ethereum_l1.clone(),

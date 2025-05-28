@@ -318,6 +318,10 @@ impl BatchBuilder {
     pub fn get_number_of_batches(&self) -> u64 {
         self.batches_to_send.len() as u64 + if self.current_batch.is_some() { 1 } else { 0 }
     }
+
+    pub fn get_number_of_batches_ready_to_send(&self) -> u64 {
+        self.batches_to_send.len() as u64
+    }
 }
 
 #[cfg(test)]
