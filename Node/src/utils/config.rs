@@ -260,7 +260,7 @@ impl Config {
 
         // The throttling factor is used to reduce the max bytes per tx list exponentially.
         let throttling_factor = std::env::var("THROTTLING_FACTOR")
-            .unwrap_or("12".to_string())
+            .unwrap_or("2".to_string())
             .parse::<u64>()
             .expect("THROTTLING_FACTOR must be a number");
 
