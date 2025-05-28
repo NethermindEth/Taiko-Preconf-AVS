@@ -21,7 +21,7 @@ On the contract side ****([code](https://github.com/NethermindEth/Taiko-Preconf-
 
 ## AVS Node
 
-On the AVS node side ([code](https://github.com/NethermindEth/Taiko-Preconf-AVS/tree/master/Node)), we fully automate:
+On the AVS node side ([code](https://github.com/NethermindEth/Taiko-Preconf-AVS/tree/master/node)), we fully automate:
 
 - **Validator registration** to the preconfirmation registry at initial setup.
 - **Lookahead** submissions and disputes.
