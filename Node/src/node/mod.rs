@@ -369,9 +369,11 @@ impl Node {
         }
 
         if current_status.is_preconfer() && current_status.is_driver_synced() {
-            if self
-                .check_and_handle_anchor_offset_for_unsafe_l2_blocks(&l2_slot_info)
-                .await?
+            // do not trigger fast reanchor on submitter window to prevent from double reanchor
+            if !current_status.is_submitter()
+                && self
+                    .check_and_handle_anchor_offset_for_unsafe_l2_blocks(&l2_slot_info)
+                    .await?
             {
                 // reanchored, no need to preconf
                 return Ok(());
