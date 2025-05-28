@@ -10,6 +10,13 @@ RUN apt-get update && apt-get install -y \
 # Set the working directory inside the container
 WORKDIR /app/taiko_preconf_avs_node
 
+# Copy only the toolchain file first
+COPY rust-toolchain.toml .
+
+# Install the toolchain components
+RUN rustup show
+
+# Now copy the rest of the files
 COPY . .
 
 # Build taiko_preconf_avs_node
