@@ -141,9 +141,9 @@ impl Taiko {
         batches_ready_to_send: u64,
     ) -> Result<Option<PreBuiltTxList>, Error> {
         let max_bytes_per_tx_list = calculate_max_bytes_per_tx_list(
-            batches_ready_to_send,
-            self.throttling_factor,
             self.max_bytes_per_tx_list,
+            self.throttling_factor,
+            batches_ready_to_send,
         );
         let params = vec![
             Value::String(format!("0x{}", hex::encode(self.preconfer_address))), // beneficiary address
@@ -728,6 +728,9 @@ fn calculate_max_bytes_per_tx_list(
     let mut size = max_bytes_per_tx_list;
     for _ in 0..batches_ready_to_send {
         size = size.saturating_sub(size / throttling_factor);
+    }
+    if batches_ready_to_send > 0 {
+        debug!("Reducing max bytes per tx list to {}", size);
     }
     size
 }
