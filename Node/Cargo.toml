@@ -1,6 +1,6 @@
 [package]
 name = "taiko_preconf_avs_node"
-version = "0.2.75"
+version = "0.2.77"
 edition.workspace = true
 repository.workspace = true
 license.workspace = true
