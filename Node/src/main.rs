@@ -1,3 +1,4 @@
+mod crypto;
 mod ethereum_l1;
 mod metrics;
 mod node;
@@ -11,9 +12,9 @@ use metrics::Metrics;
 use node::Thresholds;
 use std::sync::Arc;
 use tokio::{
-    signal::unix::{signal, SignalKind},
+    signal::unix::{SignalKind, signal},
     sync::mpsc,
-    time::{sleep, Duration},
+    time::{Duration, sleep},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -264,7 +265,7 @@ async fn wait_for_the_termination(cancel_token: CancellationToken, shutdown_dela
 }
 
 fn init_logging() {
-    use tracing_subscriber::{fmt, EnvFilter};
+    use tracing_subscriber::{EnvFilter, fmt};
 
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         EnvFilter::new("debug")

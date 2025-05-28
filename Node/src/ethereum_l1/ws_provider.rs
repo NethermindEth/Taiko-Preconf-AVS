@@ -1,11 +1,11 @@
 use alloy::{
     network::EthereumWallet,
     providers::{
+        Identity, RootProvider,
         fillers::{
             BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
             WalletFiller,
         },
-        Identity, RootProvider,
     },
 };
 

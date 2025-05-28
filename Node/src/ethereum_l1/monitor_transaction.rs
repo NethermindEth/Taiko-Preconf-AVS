@@ -4,18 +4,18 @@ use super::{transaction_error::TransactionError, ws_provider::WsProvider};
 use alloy::{
     consensus::{TxEip4844Variant, TxEnvelope, TxType},
     network::{Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
-    primitives::{Address, TxKind, B256},
+    primitives::{Address, B256, TxKind},
     providers::{
-        ext::DebugApi, PendingTransactionBuilder, PendingTransactionError, Provider, RootProvider,
-        WatchTxError,
+        PendingTransactionBuilder, PendingTransactionError, Provider, RootProvider, WatchTxError,
+        ext::DebugApi,
     },
-    rpc::types::{trace::geth::GethDebugTracingOptions, Transaction, TransactionRequest},
+    rpc::types::{Transaction, TransactionRequest, trace::geth::GethDebugTracingOptions},
 };
 use alloy_json_rpc::RpcError;
 use anyhow::Error;
 use std::{sync::Arc, time::Duration};
-use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
+use tokio::sync::mpsc::Sender;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
@@ -146,7 +146,10 @@ impl TransactionMonitorThread {
             return;
         }
 
-        debug!("Monitoring tx with nonce: {}  max_fee_per_gas: {:?}, max_priority_fee_per_gas: {:?}, max_fee_per_blob_gas: {:?}", self.nonce, tx.max_fee_per_gas, tx.max_priority_fee_per_gas, tx.max_fee_per_blob_gas);
+        debug!(
+            "Monitoring tx with nonce: {}  max_fee_per_gas: {:?}, max_priority_fee_per_gas: {:?}, max_fee_per_blob_gas: {:?}",
+            self.nonce, tx.max_fee_per_gas, tx.max_priority_fee_per_gas, tx.max_fee_per_blob_gas
+        );
 
         // Initial gas tuning
         let mut max_priority_fee_per_gas = tx.max_priority_fee_per_gas.unwrap();
@@ -217,8 +220,13 @@ impl TransactionMonitorThread {
                 root_provider = Some(pending_tx.provider().clone());
             }
 
-            debug!("{} tx nonce: {}, attempt: {}, l1_block: {}, hash: {},  max_fee_per_gas: {}, max_priority_fee_per_gas: {}, max_fee_per_blob_gas: {:?}",
-                if sending_attempt == 0 { "🟢 Send" } else { "🟡 Replace" },
+            debug!(
+                "{} tx nonce: {}, attempt: {}, l1_block: {}, hash: {},  max_fee_per_gas: {}, max_priority_fee_per_gas: {}, max_fee_per_blob_gas: {:?}",
+                if sending_attempt == 0 {
+                    "🟢 Send"
+                } else {
+                    "🟡 Replace"
+                },
                 self.nonce,
                 sending_attempt,
                 l1_block_at_send,
@@ -583,7 +591,12 @@ impl TransactionMonitorThread {
         tx.set_nonce(self.nonce.into());
 
         debug!(
-            "Tx params, max_fee_per_gas: {:?}, max_priority_fee_per_gas: {:?}, max_fee_per_blob_gas: {:?}, gas limit: {:?}, nonce: {:?}", tx.max_fee_per_gas, tx.max_priority_fee_per_gas, tx.max_fee_per_blob_gas, tx.gas, tx.nonce,
+            "Tx params, max_fee_per_gas: {:?}, max_priority_fee_per_gas: {:?}, max_fee_per_blob_gas: {:?}, gas limit: {:?}, nonce: {:?}",
+            tx.max_fee_per_gas,
+            tx.max_priority_fee_per_gas,
+            tx.max_fee_per_blob_gas,
+            tx.gas,
+            tx.nonce,
         );
     }
 }

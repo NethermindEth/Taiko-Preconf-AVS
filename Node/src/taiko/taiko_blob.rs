@@ -1,11 +1,11 @@
-use crate::taiko::taiko_blob_coder::{TaikoBlobCoder, MAX_BLOB_DATA_SIZE};
+use crate::crypto::kzg::{blob_to_kzg_commitment, compute_blob_kzg_proof};
+use crate::taiko::taiko_blob_coder::{MAX_BLOB_DATA_SIZE, TaikoBlobCoder};
 use alloy::{
     consensus::{Blob, BlobTransactionSidecar, Bytes48, EnvKzgSettings},
     eips::eip4844::BYTES_PER_BLOB,
     primitives::FixedBytes,
 };
 use anyhow::Error;
-use ethereum_consensus::crypto::kzg::{blob_to_kzg_commitment, compute_blob_kzg_proof};
 
 pub fn build_taiko_blob_sidecar(data: &[u8]) -> Result<BlobTransactionSidecar, Error> {
     // Split to blob chunks

@@ -4,7 +4,7 @@ use crate::shared::l2_tx_lists::PreBuiltTxList;
 use anyhow::Error;
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 use tracing::info;
 
 pub async fn test_gas_params(

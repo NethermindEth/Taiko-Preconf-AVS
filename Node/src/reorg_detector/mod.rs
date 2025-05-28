@@ -1,11 +1,11 @@
 use alloy::primitives::{Address, B256};
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use batch_proposed::BatchProposed;
 use batch_proposed_receiver::BatchProposedEventReceiver;
 use l2_block_receiver::{L2BlockInfo, L2BlockReceiver};
 use std::{str::FromStr, sync::Arc};
-use tokio::sync::mpsc::{self, Receiver};
 use tokio::sync::Mutex;
+use tokio::sync::mpsc::{self, Receiver};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 

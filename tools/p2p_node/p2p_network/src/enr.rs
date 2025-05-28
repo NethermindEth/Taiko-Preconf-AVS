@@ -1,10 +1,10 @@
 use crate::network::P2PNetworkConfig;
 use discv5::{
-    enr::{self, CombinedKey, CombinedPublicKey},
     Enr,
+    enr::{self, CombinedKey, CombinedPublicKey},
 };
-use libp2p::identity::{ed25519, secp256k1, PublicKey};
 use libp2p::PeerId;
+use libp2p::identity::{PublicKey, ed25519, secp256k1};
 
 pub fn build_enr(config: &P2PNetworkConfig, combined_key: &CombinedKey) -> Enr {
     let mut enr_builder = enr::Enr::builder();

@@ -1,11 +1,11 @@
 use crate::{
     ethereum_l1::{
+        EthereumL1,
         execution_layer::{ExecutionLayer, PreconfOperator},
         slot_clock::{Clock, RealClock, SlotClock},
-        EthereumL1,
     },
     shared::l2_slot_info::L2SlotInfo,
-    taiko::{preconf_blocks::TaikoStatus, PreconfDriver, Taiko},
+    taiko::{PreconfDriver, Taiko, preconf_blocks::TaikoStatus},
     utils::types::*,
 };
 use anyhow::Error;

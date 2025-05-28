@@ -11,29 +11,29 @@ default-members = ["Node"]
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 repository = "https://github.com/NethermindEth/Taiko-Preconf-AVS"
 license = "MIT"
 
 [workspace.dependencies]
-alloy = { version = "0.12", default-features = false, features = [
+alloy = { version = "1.0", default-features = false, features = [
     "full",
     "node-bindings",
     "rlp",
     "rpc-types-beacon",
     "rpc-types",
 ] }
-alloy-json-rpc = { version = "0.12", default-features = false }
+alloy-json-rpc = { version = "1.0", default-features = false }
 alloy-rlp = { version = "0.3", default-features = false }
 anyhow = { version = "1", default-features = false }
 blst = { version = "0.3", default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 clap = { version = "4.5", default-features = false, features = ["std", "color", "help", "usage", "error-context", "suggestions", "derive"] }
-discv5 = { version = "0.6.0", default-features = false, features = ["libp2p"] }
+discv5 = { version = "0.9.1", default-features = false, features = ["libp2p"] }
 dotenv = { version = "0.15", default-features = false }
 ecdsa = { version = "0.16", default-features = false }
 elliptic-curve = { version = "0.13", default-features = false }
-ethereum-consensus = { git = "https://github.com/ralexstokes/ethereum-consensus", package = "ethereum-consensus", rev = "8fbd8a53dca0170bedeca40a92ee70fd48c4615b", default-features = false, features = ["serde", "async"] }
+c-kzg = { version = "2.1", default-features = false }
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 futures = { version = "0.3.31", default-features = false }
 futures-util = { version = "0.3", default-features = false }
@@ -43,28 +43,26 @@ jsonrpc-client-transports = { version = "18.0.0", default-features = false, feat
 jsonrpc-core = { version = "18.0.0", default-features = false, features = ["futures-executor", "futures"] }
 jsonrpc-core-client = { version = "18.0", default-features = false }
 jsonrpc-http-server = { version = "18.0.0", default-features = false }
-jsonrpsee = { version = "0.24", default-features = false, features = ["http-client", "server"] }
+jsonrpsee = { version = "0.25", default-features = false, features = ["http-client", "server"] }
 jsonwebtoken = { version = "9.3", default-features = false }
 k256 = { version = "0.13", default-features = false, features = ["arithmetic", "ecdsa", "pkcs8", "precomputed-tables", "schnorr", "std"] }
 lazy_static = { version = "1.5", default-features = false }
-libp2p = { version = "0.54.1", default-features = false, features = ["full", "tcp", "dns", "websocket", "tokio", "identify", "yamux", "noise", "gossipsub"] }
-libp2p-mplex = { version = "0.41", default-features = false }
+libp2p = { version = "0.55.0", default-features = false, features = ["full", "tcp", "dns", "websocket", "tokio", "identify", "yamux", "noise", "gossipsub"] }
+libp2p-mplex = { version = "0.43", default-features = false }
 mockito = { version = "1.7", default-features = false }
 p2p-network = { path = "tools/p2p_node/p2p_network", default-features = false }
 prometheus = { version = "0.14", default-features = false }
-rand = { version = "0.8", default-features = false }
-rand_core = { version = "0.6", default-features = false }
+rand = { version = "0.9", default-features = false }
+rand_core = { version = "0.9", default-features = false }
 reqwest = { version = "0.12", default-features = false }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0", default-features = false }
 serde_millis = { version = "0.1.1", default-features = false }
-ssz_rs = { git = "https://github.com/ralexstokes/ssz-rs", rev = "84ef2b71aa004f6767420badb42c902ad56b8b72", default-features = false }
 tiny-keccak = { version = "2.0", default-features = false }
 tokio = { version = "1.45", default-features = false, features = ["full"] }
 tokio-util = { version = "0.7", default-features = false }
 tracing = { version = "0.1.41", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }
-void = { version = "1.0.2", default-features = false }
 warp = { version = "0.3", default-features = false }
 
 [workspace.lints.rust]

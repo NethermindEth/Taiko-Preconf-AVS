@@ -13,7 +13,7 @@ fn generate_1mb_vec(count: u32) -> Vec<u8> {
     let count: u8 = if count > 255 { 0u8 } else { count as u8 };
     let mut vec = vec![0u8; 1_048_576]; // 1 MB of zeros initially
     vec[0] = count;
-    rand::thread_rng().fill(&mut vec[1..]); // Fill with random data
+    rand::rng().fill(&mut vec[1..]); // Fill with random data
     vec
 }
 

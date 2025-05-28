@@ -1,7 +1,7 @@
 #[cfg(test)]
 pub mod test {
-    use jsonrpsee::server::{ServerBuilder, ServerHandle};
     use jsonrpsee::RpcModule;
+    use jsonrpsee::server::{ServerBuilder, ServerHandle};
     use serde_json::json;
     use std::net::SocketAddr;
     use tracing::info;

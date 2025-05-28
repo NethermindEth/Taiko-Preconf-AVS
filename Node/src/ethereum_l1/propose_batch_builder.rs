@@ -9,7 +9,7 @@ use alloy::{
     sol_types::SolValue,
 };
 use alloy_json_rpc::{ErrorPayload, RpcError};
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use std::sync::Arc;
 use tracing::warn;
 

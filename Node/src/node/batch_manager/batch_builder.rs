@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use crate::{
-    ethereum_l1::{slot_clock::SlotClock, transaction_error::TransactionError, EthereumL1},
+    ethereum_l1::{EthereumL1, slot_clock::SlotClock, transaction_error::TransactionError},
     shared::l2_block::L2Block,
 };
 use alloy::primitives::Address;

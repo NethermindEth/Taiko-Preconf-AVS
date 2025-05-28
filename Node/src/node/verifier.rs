@@ -98,7 +98,11 @@ impl Verifier {
                     // preconfirmation_root.number < taiko_inbox_height
                     // extra block proposal was made by previous preconfer
                     // return an error that will trigger a reorg.
-                    return Err(anyhow::anyhow!("❌ Unexpected block proposal was made by previous preconfer: preconfirming on {} but taiko_inbox_height is {}", self.preconfirmation_root.number, taiko_inbox_height));
+                    return Err(anyhow::anyhow!(
+                        "❌ Unexpected block proposal was made by previous preconfer: preconfirming on {} but taiko_inbox_height is {}",
+                        self.preconfirmation_root.number,
+                        taiko_inbox_height
+                    ));
                 }
                 Ordering::Equal => {
                     // preconfirmation_root.number == taiko_inbox_height

@@ -35,3 +35,10 @@ git config core.hooksPath .githooks
 
 * [p2p network emulator](tools/p2p_node/README.md)
 * [tx spammer](tools/tx_spammer/README.md)
+
+## Useful links
+
+* [What is libp2p](https://docs.libp2p.io/concepts/introduction/overview/)
+* [Protocols](https://docs.libp2p.io/concepts/fundamentals/protocols/)
+* [Swarm](https://docs.libp2p.io/concepts/appendix/glossary/#swarm)
+* [devp2p](https://docs.libp2p.io/concepts/similar-projects/devp2p/)

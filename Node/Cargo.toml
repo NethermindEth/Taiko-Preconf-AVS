@@ -29,7 +29,7 @@ clap = { workspace = true, optional = true }
 dotenv = { workspace = true }
 ecdsa = { workspace = true }
 elliptic-curve = { workspace = true }
-ethereum-consensus = { workspace = true }
+c-kzg = { workspace = true }
 flate2 = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }

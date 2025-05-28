@@ -3,8 +3,8 @@ use crate::peer_manager::PeerManager;
 use libp2p::futures::StreamExt;
 use libp2p::gossipsub::{MessageAuthenticity, ValidationMode};
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
-use libp2p::{gossipsub, identify, identity, noise, PeerId};
 use libp2p::{Multiaddr, SwarmBuilder};
+use libp2p::{PeerId, gossipsub, identify, identity, noise};
 use libp2p_mplex::{MaxBufferBehaviour, MplexConfig};
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
@@ -42,11 +42,7 @@ impl fmt::Display for P2PNetworkConfig {
         write!(
             f,
             "P2PNetworkConfig {{\n  listen_addr: {},\n  ipv4: {},\n  udpv4: {},\n  tcpv4: {},\n  boot_nodes: {:?}\n}}",
-            self.listen_addr,
-            self.ipv4,
-            self.udpv4,
-            self.tcpv4,
-            self.boot_nodes
+            self.listen_addr, self.ipv4, self.udpv4, self.tcpv4, self.boot_nodes
         )
     }
 }

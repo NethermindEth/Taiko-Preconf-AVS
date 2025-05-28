@@ -1,16 +1,16 @@
-use crate::enr::{build_enr, EnrAsPeerId};
+use crate::enr::{EnrAsPeerId, build_enr};
 use crate::network::P2PNetworkConfig;
 use discv5::enr::NodeId;
-use discv5::{enr::CombinedKey, ConfigBuilder, Discv5, Enr, Event, ListenConfig};
-use futures::stream::FuturesUnordered;
+use discv5::{ConfigBuilder, Discv5, Enr, Event, ListenConfig, enr::CombinedKey};
 use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use libp2p::futures::FutureExt;
 use libp2p::identity::Keypair;
 use libp2p::multiaddr::Protocol;
-use libp2p::swarm::behaviour::{DialFailure, FromSwarm};
 use libp2p::swarm::THandlerInEvent;
-use libp2p::swarm::{dummy::ConnectionHandler, ConnectionId};
-use libp2p::swarm::{NetworkBehaviour, ToSwarm};
+use libp2p::swarm::behaviour::{DialFailure, FromSwarm};
+use libp2p::swarm::{ConnectionHandler as ConnectionHandlerTrait, NetworkBehaviour, ToSwarm};
+use libp2p::swarm::{ConnectionId, dummy::ConnectionHandler};
 use libp2p::{Multiaddr, PeerId};
 use std::collections::HashMap;
 use std::future::Future;
@@ -200,7 +200,7 @@ impl NetworkBehaviour for Discovery {
         &mut self,
         _peer_id: PeerId,
         _connection_id: ConnectionId,
-        _event: void::Void,
+        _event: <<Discovery as NetworkBehaviour>::ConnectionHandler as ConnectionHandlerTrait>::ToBehaviour,
     ) {
     }
 
