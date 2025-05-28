@@ -17,7 +17,7 @@ use anyhow::Error;
 use std::{str::FromStr, sync::Arc};
 use tokio::sync::mpsc::Sender;
 
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::ethereum_l1::propose_batch_builder::ProposeBatchBuilder;
 
@@ -49,14 +49,14 @@ impl ExecutionLayer {
         transaction_error_channel: Sender<TransactionError>,
         metrics: Arc<metrics::Metrics>,
     ) -> Result<Self, Error> {
-        tracing::debug!(
+        debug!(
             "Creating ExecutionLayer with WS URL: {}",
             config.execution_ws_rpc_url
         );
 
         let signer = PrivateKeySigner::from_str(&config.avs_node_ecdsa_private_key)?;
         let preconfer_address: Address = signer.address();
-        tracing::info!("AVS node address: {}", preconfer_address);
+        info!("AVS node address: {}", preconfer_address);
 
         let wallet = EthereumWallet::from(signer);
 
@@ -195,7 +195,7 @@ impl ExecutionLayer {
 
         let tx_lists_bytes = encode_and_compress(&tx_vec)?;
 
-        tracing::info!(
+        info!(
             "📦 Proposing batch with {} blocks and {} bytes length",
             blocks.len(),
             tx_lists_bytes.len(),
@@ -250,7 +250,7 @@ impl ExecutionLayer {
         let contract = taiko_inbox::ITaikoInbox::new(*taiko_inbox_address, ws_provider);
         let pacaya_config = contract.pacayaConfig().call().await?._0;
 
-        debug!(
+        info!(
             "Pacaya config: chainid {}, maxUnverifiedBatches {}, batchRingBufferSize {}, maxAnchorHeightOffset {}",
             pacaya_config.chainId,
             pacaya_config.maxUnverifiedBatches,

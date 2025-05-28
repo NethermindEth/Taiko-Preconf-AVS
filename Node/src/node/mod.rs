@@ -464,6 +464,7 @@ impl Node {
         &mut self,
         l2_slot_info: &L2SlotInfo,
     ) -> Result<bool, Error> {
+        debug!("Checking anchor offset for unsafe L2 blocks to do fast reanchor when needed");
         let taiko_inbox_height = self
             .ethereum_l1
             .execution_layer
