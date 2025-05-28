@@ -757,7 +757,7 @@ impl Node {
                     return Err(anyhow::anyhow!(
                         "No transactions in block {}",
                         block.header.number
-                    ))
+                    ));
                 }
             };
 
