@@ -8,8 +8,8 @@ use crate::{
 };
 use alloy::{consensus::BlockHeader, consensus::Transaction, primitives::Address};
 use anyhow::Error;
-use batch_builder::BatchBuilder;
-use std::sync::Arc;
+use batch_builder::{Batch, BatchBuilder};
+use std::{collections::VecDeque, sync::Arc};
 use tracing::{debug, error, info, trace, warn};
 
 // TODO move to config
@@ -327,5 +327,17 @@ impl BatchManager {
             taiko: self.taiko.clone(),
             l1_height_lag: self.l1_height_lag,
         }
+    }
+
+    pub fn prepend_batches(&mut self, batches: VecDeque<Batch>) {
+        self.batch_builder.prepend_batches(batches);
+    }
+
+    pub fn finalize_current_batch(&mut self) {
+        self.batch_builder.finalize_current_batch();
+    }
+
+    pub fn take_batches_to_send(&mut self) -> VecDeque<Batch> {
+        self.batch_builder.take_batches_to_send()
     }
 }

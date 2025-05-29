@@ -7,7 +7,7 @@ use crate::reorg_detector;
 use crate::{
     ethereum_l1::{EthereumL1, transaction_error::TransactionError},
     metrics::Metrics,
-    node::{l2_head_verifier::L2HeadVerifier, verifier::Verifier},
+    node::l2_head_verifier::L2HeadVerifier,
     shared::{l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
     taiko::{Taiko, preconf_blocks::BuildPreconfBlockResponse},
 };
@@ -23,6 +23,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
+use verifier::VerificationResult;
 
 pub struct Thresholds {
     pub eth: U256,
@@ -405,23 +406,8 @@ impl Node {
         }
 
         if current_status.is_submitter() {
-            // first submit verification batches
-            if let Some(mut verifier) = self.verifier.take() {
-                match self
-                    .verify_proposed_but_not_submitted_batches(&mut verifier, &current_status)
-                    .await
-                {
-                    Ok(false) => {
-                        self.verifier = Some(verifier);
-                        return Ok(());
-                    }
-                    Err(err) => {
-                        self.verifier = Some(verifier);
-                        return Err(err);
-                    }
-                    Ok(true) => {}
-                }
-            } else {
+            // first check verifier
+            if self.is_verifier_successful().await? {
                 if let Err(err) = self
                     .batch_manager
                     .try_submit_oldest_batch(current_status.is_preconfer())
@@ -481,11 +467,17 @@ impl Node {
                     "Anchor offset {} is too high for l2 block id {}, triggering reanchor",
                     anchor_offset, l2_block_id
                 );
-                self.reanchor_blocks(
-                    taiko_inbox_height,
-                    "Anchor offset is too high for unsafe L2 blocks",
-                )
-                .await?;
+                if let Err(err) = self
+                    .reanchor_blocks(
+                        taiko_inbox_height,
+                        "Anchor offset is too high for unsafe L2 blocks",
+                    )
+                    .await
+                {
+                    error!("Failed to reanchor: {}", err);
+                    self.cancel_token.cancel();
+                    return Err(anyhow::anyhow!("Failed to reanchor: {}", err));
+                }
                 return Ok(true);
             }
         }
@@ -501,12 +493,7 @@ impl Node {
             Ok(info) => self.operator.get_status(info).await,
             Err(_) => Err(anyhow::anyhow!("Failed to get L2 slot info")),
         };
-        let batches_ready_to_send = self.batch_manager.get_number_of_batches_ready_to_send()
-            + if let Some(verifier) = &self.verifier {
-                verifier.get_number_of_batches_ready_to_send()
-            } else {
-                0
-            };
+        let batches_ready_to_send = self.batch_manager.get_number_of_batches_ready_to_send();
         let pending_tx_list = match &l2_slot_info {
             Ok(info) => {
                 self.batch_manager
@@ -527,56 +514,37 @@ impl Node {
     }
 
     /// Returns true if the operation succeeds
-    async fn verify_proposed_but_not_submitted_batches(
-        &mut self,
-        verifier: &mut Verifier,
-        current_status: &OperatorStatus,
-    ) -> Result<bool, Error> {
-        if verifier.has_blocks_to_verify() {
-            let head_slot = self
-                .ethereum_l1
-                .consensus_layer
-                .get_head_slot_number()
-                .await?;
-
-            if !verifier.is_slot_valid(head_slot) {
-                info!(
-                    "Slot {} is not valid for verification, target slot {}, skipping",
-                    head_slot,
-                    verifier.get_verification_slot()
-                );
-                return Ok(false);
-            }
-
-            let taiko_inbox_height = self
-                .ethereum_l1
-                .execution_layer
-                .get_l2_height_from_taiko_inbox()
-                .await?;
-            if let Err(err) = verifier
-                .verify_submitted_blocks(taiko_inbox_height, self.metrics.clone())
+    async fn is_verifier_successful(&mut self) -> Result<bool, Error> {
+        if let Some(mut verifier) = self.verifier.take() {
+            match verifier
+                .verify(self.ethereum_l1.clone(), self.metrics.clone())
                 .await
             {
-                self.reanchor_blocks(
-                    taiko_inbox_height,
-                    &format!("Verifier return an error: {}", err),
-                )
-                .await?;
-                return Ok(true);
-            }
-        }
-
-        if verifier.has_batches_to_submit() {
-            if let Err(err) = verifier.try_submit_oldest_batch().await {
-                if let Some(transaction_error) = err.downcast_ref::<TransactionError>() {
-                    self.handle_transaction_error(transaction_error, &current_status)
-                        .await?;
+                Ok(res) => match res {
+                    VerificationResult::SlotNotValid => {
+                        self.verifier = Some(verifier);
+                        return Ok(false);
+                    }
+                    VerificationResult::ReanchorNeeded(block, reason) => {
+                        if let Err(err) = self.reanchor_blocks(block, &reason).await {
+                            error!("Failed to reanchor blocks: {}", err);
+                            self.cancel_token.cancel();
+                            self.verifier = Some(verifier);
+                            return Err(err);
+                        }
+                    }
+                    VerificationResult::SuccessWithBatches(batches) => {
+                        self.batch_manager.prepend_batches(batches);
+                    }
+                    VerificationResult::SuccessNoBatches => {}
+                },
+                Err(err) => {
+                    self.verifier = Some(verifier);
+                    return Err(err);
                 }
-                return Err(err);
             }
         }
-
-        return Ok(!verifier.has_batches_to_submit());
+        return Ok(true);
     }
 
     async fn check_transaction_error_channel(
@@ -614,8 +582,14 @@ impl Node {
                         .execution_layer
                         .get_l2_height_from_taiko_inbox()
                         .await?;
-                    self.reanchor_blocks(taiko_inbox_height, "Transaction reverted")
-                        .await?;
+                    if let Err(err) = self
+                        .reanchor_blocks(taiko_inbox_height, "Transaction reverted")
+                        .await
+                    {
+                        error!("Failed to reanchor blocks: {}", err);
+                        self.cancel_token.cancel();
+                        return Err(anyhow::anyhow!("Failed to reanchor blocks: {}", err));
+                    }
                     return Err(anyhow::anyhow!("Reanchoring done"));
                 } else {
                     warn!("Transaction reverted, not our epoch, skipping reorg");
