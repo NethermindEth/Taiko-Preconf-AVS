@@ -171,6 +171,22 @@ impl ExecutionLayer {
         coinbase: Address,
         current_l1_slot_timestamp: u64,
     ) -> Result<(), Error> {
+        let last_block_timestamp = l2_blocks
+            .last()
+            .ok_or(anyhow::anyhow!("No L2 blocks provided"))?
+            .timestamp_sec;
+
+        // Check if the last block timestamp is within the delayed L1 proposal buffer
+        // we don't propose in this period because there is a chance that the batch will
+        // be included in the previous L1 block and we'll get TimestampTooLarge error.
+        if current_l1_slot_timestamp < last_block_timestamp
+            && SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs()
+                < current_l1_slot_timestamp + DELAYED_L1_PROPOSAL_BUFFER
+        {
+            warn!("Last block timestamp is within the delayed L1 proposal buffer.");
+            return Err(anyhow::anyhow!(TransactionError::EstimationTooEarly));
+        }
+
         let mut tx_vec = Vec::new();
         let mut blocks = Vec::new();
 
@@ -204,22 +220,6 @@ impl ExecutionLayer {
 
         self.metrics
             .observe_batch_info(blocks.len() as u64, tx_lists_bytes.len() as u64);
-
-        let last_block_timestamp = l2_blocks
-            .last()
-            .ok_or(anyhow::anyhow!("No L2 blocks provided"))?
-            .timestamp_sec;
-
-        // Check if the last block timestamp is within the delayed L1 proposal buffer
-        // we don't propose in this period because there is a chance that the batch will
-        // be included in the previous L1 block and we'll get TimestampTooLarge error.
-        if current_l1_slot_timestamp < last_block_timestamp
-            && SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs()
-                < current_l1_slot_timestamp + DELAYED_L1_PROPOSAL_BUFFER
-        {
-            warn!("Last block timestamp is within the delayed L1 proposal buffer.");
-            return Err(anyhow::anyhow!(TransactionError::EstimationTooEarly));
-        }
 
         debug!(
             "Proposing batch: current L1 block: {}, last_block_timestamp {}, last_anchor_origin_height {}",
