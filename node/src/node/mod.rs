@@ -419,7 +419,6 @@ impl Node {
                     }
                     return Err(err);
                 }
-                return Err(err);
             }
         }
 
@@ -545,7 +544,7 @@ impl Node {
                 }
             }
         }
-        return Ok(true);
+        Ok(true)
     }
 
     async fn check_transaction_error_channel(
