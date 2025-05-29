@@ -525,16 +525,12 @@ impl ExecutionLayer {
             ))?;
         Ok(block.header.timestamp)
     }
-
-    pub async fn is_preconf_router_specified_in_taiko_wrapper(&self) -> Result<bool, Error> {
-        let preconf_router = self.taiko_wrapper_contract.preconfRouter().call().await?;
-        Ok(preconf_router != Address::ZERO)
-    }
 }
 
 pub trait PreconfOperator {
     async fn is_operator_for_current_epoch(&self) -> Result<bool, Error>;
     async fn is_operator_for_next_epoch(&self) -> Result<bool, Error>;
+    async fn is_preconf_router_specified_in_taiko_wrapper(&self) -> Result<bool, Error>;
 }
 
 impl PreconfOperator for ExecutionLayer {
@@ -546,6 +542,11 @@ impl PreconfOperator for ExecutionLayer {
     async fn is_operator_for_next_epoch(&self) -> Result<bool, Error> {
         let operator = self.get_operator_for_next_epoch().await?;
         Ok(operator == self.preconfer_address)
+    }
+
+    async fn is_preconf_router_specified_in_taiko_wrapper(&self) -> Result<bool, Error> {
+        let preconf_router = self.taiko_wrapper_contract.preconfRouter().call().await?;
+        Ok(preconf_router != Address::ZERO)
     }
 }
 
