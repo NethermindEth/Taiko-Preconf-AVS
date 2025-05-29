@@ -7,8 +7,8 @@ on:
     tags:
       - "taiko-preconf-avs-v*"
     paths:
-      - "Node/**"
-      - "p2pNode/p2pNetwork/**"
+      - "node/**"
+      - "tools/p2p_node/p2p_network/**"
 
 env:
   DOCKER_REGISTRY: docker.io
