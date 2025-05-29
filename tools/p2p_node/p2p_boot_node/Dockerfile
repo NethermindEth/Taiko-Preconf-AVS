@@ -1,7 +1,13 @@
 FROM rust:1.87 AS builder
 
 # Set the working directory inside the container
-WORKDIR /usr/src/p2p-boot-node
+WORKDIR /usr/src/build
+
+# Copy only the toolchain file first
+COPY rust-toolchain.toml .
+
+# Install the toolchain components
+RUN rustup show
 
 # Copy the entire project into the container
 COPY . .
@@ -13,7 +19,7 @@ RUN cargo build -p p2p-boot-node --release
 FROM ubuntu:latest
 
 # Copy the build artifact from the builder stage
-COPY --from=builder /usr/src/p2p-boot-node/target/release/p2p-boot-node /usr/local/bin/p2p-boot-node
+COPY --from=builder /usr/src/build/target/release/p2p-boot-node /usr/local/bin/p2p-boot-node
 
 # Expose the port that the server will run on
 EXPOSE 9000

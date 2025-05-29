@@ -1,0 +1,84 @@
+# https://embarkstudios.github.io/cargo-deny/index.html
+
+[graph]
+targets = [
+    { triple = "x86_64-unknown-linux-gnu" },
+    { triple = "aarch64-unknown-linux-gnu" },
+]
+all-features = true
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+yanked = "deny"
+ignore = [
+    "RUSTSEC-2024-0436", # paste - no longer maintained
+]
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "BSD-2-Clause",
+    "CC-BY-1.0",
+    "CC-BY-2.0",
+    "CC-BY-3.0",
+    "CC-BY-4.0",
+    "ISC",
+    "OpenSSL",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+]
+confidence-threshold = 0.8
+unused-allowed-license = "allow"
+
+[licenses.private]
+ignore = false
+registries = []
+
+[[licenses.exceptions]]
+allow = ["0BSD"]
+name = "doctest-file"
+version = "*"
+
+[[licenses.exceptions]]
+allow = ["CC0-1.0"]
+name = "tiny-keccak"
+version = "*"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "attohttpc"
+version = "*"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0", "CDLA-Permissive-2.0"]
+name = "webpki-roots"
+version = "*"
+
+[bans]
+allow-wildcard-paths = true
+multiple-versions = "allow"
+wildcards = "deny"
+highlight = "all"
+
+[bans.workspace-dependencies]
+duplicates = 'deny'
+# TODO(template) you should provide an example with the lib usage
+unused = 'deny'
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = []
+
+[sources.allow-org]
+github = []
+gitlab = []
+bitbucket = []

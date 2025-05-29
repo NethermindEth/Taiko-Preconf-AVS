@@ -27,7 +27,7 @@ anyhow = { workspace = true }
 c-kzg = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, optional = true }
-dotenv = { workspace = true }
+dotenvy = { workspace = true }
 ecdsa = { workspace = true }
 elliptic-curve = { workspace = true }
 flate2 = { workspace = true }

@@ -1,31 +1,27 @@
+use anyhow::Result;
 use discv5::{ConfigBuilder, Discv5, Event, ListenConfig, enr, enr::CombinedKey};
-use jsonrpc_core::{IoHandler, Params, Result, Value};
-use jsonrpc_http_server::ServerBuilder;
-use std::{net::Ipv4Addr, sync::Arc};
+use std::{
+    net::{Ipv4Addr, SocketAddr},
+    sync::Arc,
+};
 use tracing::info;
 
-// This is the handler for the JSON-RPC methods.
-fn create_rpc_handler(enr: Arc<String>) -> IoHandler {
-    let mut io = IoHandler::new();
+use jsonrpsee::server::{RpcModule, ServerBuilder};
 
-    io.add_method("p2p_getENR", move |_params: Params| {
-        let s = enr.to_string();
-        async move { Ok(Value::String(s)) }
-    });
+fn create_rpc_handler(enr: Arc<String>) -> Result<RpcModule<()>> {
+    let mut module = RpcModule::new(());
 
-    // Add a health check method
-    io.add_method("health", |_params: Params| {
-        async move {
-            // Return a simple response indicating the service is healthy
-            Ok(Value::String("Ok".to_string()))
-        }
-    });
+    module.register_method("p2p_getENR", move |_, _, _| enr.to_string())?;
 
-    io
+    module.register_method("health", |_, _, _| {
+        // Return a simple response indicating the service is healthy
+        "Ok".to_string()
+    })?;
+    Ok(module)
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Setup tracing
     let filter_layer = tracing_subscriber::EnvFilter::try_from_default_env()
         .or_else(|_| tracing_subscriber::EnvFilter::try_new("debug"))
@@ -94,19 +90,19 @@ async fn main() -> Result<()> {
     // save base64 ENR
     let enr_base64 = Arc::new(discv5.local_enr().to_base64());
 
-    std::thread::spawn(move || {
-        let io_handler = create_rpc_handler(enr_base64);
+    // Start the JSON-RPC server in a separate tokio task
+    let rpc_enr_base64 = Arc::clone(&enr_base64); // Clone for the RPC thread
+    let module = create_rpc_handler(rpc_enr_base64)?;
 
-        let addr = "0.0.0.0:9001".to_string();
-
-        let server = ServerBuilder::new(io_handler)
-            //.cors(Method::POST)
-            .start_http(&addr.parse().unwrap())
-            .expect("Unable to start RPC server");
-
-        info!("RPC server started on port 9001");
-        server.wait();
-    });
+    let addr: SocketAddr = "0.0.0.0:9001".parse().unwrap();
+    info!("RPC server to be started on {addr}");
+    let server = ServerBuilder::default()
+        .build(addr)
+        .await
+        .expect("Unable to start RPC server");
+    let handle = server.start(module);
+    // we don't care about doing shutdown
+    tokio::spawn(handle.stopped());
 
     // Start the discv5 service
     discv5.start().await.unwrap();
