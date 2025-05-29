@@ -1,6 +1,8 @@
+use super::{config::EthereumL1Config, transaction_error::TransactionError};
 use crate::{
     ethereum_l1::{
-        l1_contracts_bindings::*, monitor_transaction::TransactionMonitor, ws_provider::WsProvider,
+        l1_contracts_bindings::*, monitor_transaction::TransactionMonitor,
+        propose_batch_builder::ProposeBatchBuilder, ws_provider::WsProvider,
     },
     metrics,
     shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress},
@@ -14,14 +16,15 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use anyhow::Error;
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{
+    str::FromStr,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::sync::mpsc::Sender;
-
 use tracing::{debug, info, warn};
 
-use crate::ethereum_l1::propose_batch_builder::ProposeBatchBuilder;
-
-use super::{config::EthereumL1Config, transaction_error::TransactionError};
+const DELAYED_L1_PROPOSAL_BUFFER: u64 = 4;
 
 pub struct ExecutionLayer {
     provider_ws: Arc<WsProvider>,
@@ -166,7 +169,7 @@ impl ExecutionLayer {
         l2_blocks: Vec<L2Block>,
         last_anchor_origin_height: u64,
         coinbase: Address,
-        slot_duration: Duration,
+        current_l1_slot_timestamp: u64,
     ) -> Result<(), Error> {
         let mut tx_vec = Vec::new();
         let mut blocks = Vec::new();
@@ -207,13 +210,14 @@ impl ExecutionLayer {
             .ok_or(anyhow::anyhow!("No L2 blocks provided"))?
             .timestamp_sec;
 
-        if last_block_timestamp
-            > self
-                .get_block_timestamp_by_number_or_tag(BlockNumberOrTag::Latest)
-                .await?
-                + slot_duration.as_secs()
+        // Check if the last block timestamp is within the delayed L1 proposal buffer
+        // we don't propose in this period because there is a chance that the batch will
+        // be included in the previous L1 block and we'll get TimestampTooLarge error.
+        if current_l1_slot_timestamp < last_block_timestamp
+            && SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs()
+                < current_l1_slot_timestamp + DELAYED_L1_PROPOSAL_BUFFER
         {
-            warn!("Last block timestamp is greater than next L1 block timestamp.");
+            warn!("Last block timestamp is within the delayed L1 proposal buffer.");
             return Err(anyhow::anyhow!(TransactionError::EstimationTooEarly));
         }
 

@@ -241,7 +241,7 @@ impl BatchBuilder {
                     batch.l2_blocks.clone(),
                     batch.anchor_block_id,
                     batch.coinbase,
-                    self.slot_clock.get_slot_duration(),
+                    self.slot_clock.get_current_slot_begin_timestamp()?,
                 )
                 .await
             {
