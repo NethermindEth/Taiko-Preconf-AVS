@@ -311,16 +311,6 @@ impl Node {
         let (l2_slot_info, current_status, pending_tx_list) =
             self.get_slot_info_and_status().await?;
 
-        if !self
-            .ethereum_l1
-            .execution_layer
-            .is_preconf_router_specified_in_taiko_wrapper()
-            .await?
-        {
-            warn!("Preconf router is not specified in Taiko wrapper. Skipping preconfirmation.");
-            return Ok(());
-        }
-
         self.check_transaction_error_channel(&current_status)
             .await?;
 
@@ -511,11 +501,17 @@ impl Node {
             Ok(info) => self.operator.get_status(info).await,
             Err(_) => Err(anyhow::anyhow!("Failed to get L2 slot info")),
         };
+        let batches_ready_to_send = self.batch_manager.get_number_of_batches_ready_to_send()
+            + if let Some(verifier) = &self.verifier {
+                verifier.get_number_of_batches_ready_to_send()
+            } else {
+                0
+            };
         let pending_tx_list = match &l2_slot_info {
             Ok(info) => {
                 self.batch_manager
                     .taiko
-                    .get_pending_l2_tx_list_from_taiko_geth(info.base_fee())
+                    .get_pending_l2_tx_list_from_taiko_geth(info.base_fee(), batches_ready_to_send)
                     .await
             }
             Err(_) => Err(anyhow::anyhow!("Failed to get L2 slot info")),
@@ -539,7 +535,7 @@ impl Node {
         if verifier.has_blocks_to_verify() {
             let head_slot = self
                 .ethereum_l1
-                ._consensus_layer
+                .consensus_layer
                 .get_head_slot_number()
                 .await?;
 

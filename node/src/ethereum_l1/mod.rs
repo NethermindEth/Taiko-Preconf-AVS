@@ -21,7 +21,7 @@ use crate::metrics::Metrics;
 
 pub struct EthereumL1 {
     pub slot_clock: Arc<SlotClock>,
-    pub _consensus_layer: ConsensusLayer,
+    pub consensus_layer: ConsensusLayer,
     pub execution_layer: Arc<ExecutionLayer>,
 }
 
@@ -51,7 +51,7 @@ impl EthereumL1 {
 
         Ok(Self {
             slot_clock,
-            _consensus_layer: consensus_layer,
+            consensus_layer,
             execution_layer: Arc::new(execution_layer),
         })
     }
