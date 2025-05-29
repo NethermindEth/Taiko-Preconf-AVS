@@ -1,6 +1,8 @@
-use jsonrpc_core::Params;
-use jsonrpc_core_client::transports::http;
-use jsonrpc_core_client::{RawClient, RpcError};
+use anyhow::Result;
+use jsonrpsee::{
+    core::client::ClientT,
+    http_client::{HttpClient, HttpClientBuilder},
+};
 use p2p_network::generate_secp256k1;
 use p2p_network::network::{P2PNetwork, P2PNetworkConfig};
 use rand::Rng;
@@ -17,16 +19,15 @@ fn generate_1mb_vec(count: u32) -> Vec<u8> {
     vec
 }
 
-async fn get_boot_node_enr(boot_node_ip: String) -> Result<String, RpcError> {
+async fn get_boot_node_enr(boot_node_ip: String) -> Result<String> {
     // Define the RPC endpoint
-    let boot_node = format!("http://{}:9001", boot_node_ip);
-    let client: RawClient = http::connect(&boot_node).await.unwrap();
+    let boot_node_url = format!("http://{}:9001", boot_node_ip);
 
-    // Call the `getBase64ENR` method
-    let response = client
-        .call_method("p2p_getENR", Params::None)
-        .await
-        .unwrap();
+    let client: HttpClient = HttpClientBuilder::default().build(&boot_node_url)?;
+
+    let response: String = client
+        .request("p2p_getENR", jsonrpsee::rpc_params![])
+        .await?;
     info!("Response: {}", response);
 
     // Remove surrounding quotes
@@ -34,7 +35,7 @@ async fn get_boot_node_enr(boot_node_ip: String) -> Result<String, RpcError> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<()> {
     // Setup tracing
     let filter_layer = tracing_subscriber::EnvFilter::try_from_default_env()
         .or_else(|_| tracing_subscriber::EnvFilter::try_new("debug"))
@@ -42,22 +43,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(filter_layer)
         .try_init();
-    // Load ADDRESS from env
+
     let address = std::env::var("ADDRESS").unwrap_or_else(|_| "0.0.0.0".to_string());
-    let ipv4 = address.parse().unwrap();
+    let ipv4 = address.parse()?;
     info!("ADDRESS: {address:?}");
 
     // get boot node ip
-    let boot_node_ip = std::env::var("BOOT_NODE_IP").unwrap();
+    let boot_node_ip = std::env::var("BOOT_NODE_IP")?;
 
     // Get boot node by JSON-RPC
-    let bootnode = get_boot_node_enr(boot_node_ip).await.unwrap();
-    info!("Boot node: {bootnode}");
-    let boot_nodes = Some(vec![bootnode]);
+    let bootnode_enr = get_boot_node_enr(boot_node_ip).await?;
+    info!("Boot node ENR: {bootnode_enr}");
+    let boot_nodes = Some(vec![bootnode_enr]);
 
     let config = P2PNetworkConfig {
         local_key: generate_secp256k1(),
-        listen_addr: "/ip4/0.0.0.0/tcp/9000".parse().unwrap(),
+        listen_addr: "/ip4/0.0.0.0/tcp/9000".parse()?,
         ipv4,
         udpv4: 9000,
         tcpv4: 9000,
@@ -76,8 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         p2p.run(&config).await;
     });
 
-    // Load SEND from env
-    let send_prefix = std::env::var("SEND_PREFIX").unwrap();
+    let send_prefix = std::env::var("SEND_PREFIX")?;
     info!("SEND PREFIX: {send_prefix}");
     let mut send_count = 1;
     let mut send_interval = tokio::time::interval(Duration::from_secs(40));
@@ -91,8 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 node_to_p2p_tx
                     .send(data)
-                    .await
-                    .unwrap();
+                    .await?;
             }
             Some(message) = node_rx.recv() => {
                 info!("Node received message: {} size {}", message[0], message.len());

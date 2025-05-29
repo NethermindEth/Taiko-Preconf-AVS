@@ -7,12 +7,11 @@ if ! cargo sort --workspace --check; then
     exit 1
 fi
 
-# TODO https://github.com/NethermindEth/Taiko-Preconf-AVS/issues/433
-# # Dependency audit
-# if ! cargo deny check; then
-#     echo "❌ Critical: Vulnerable dependencies detected (run 'cargo deny check')"
-#     exit 2
-# fi
+# Dependency audit
+if ! cargo deny check; then
+    echo "❌ Critical: Vulnerable dependencies detected (run 'cargo deny check')"
+    exit 2
+fi
 
 # Formatting check
 if ! cargo fmt --all -- --check; then

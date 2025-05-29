@@ -1,14 +1,14 @@
 [package]
 name = "p2p-node"
 version = "0.1.0"
+publish = false
 edition.workspace = true
 repository.workspace = true
 license.workspace = true
 
 [dependencies]
-jsonrpc-client-transports = { workspace = true }
-jsonrpc-core = { workspace = true }
-jsonrpc-core-client = { workspace = true }
+anyhow = { workspace = true }
+jsonrpsee = { workspace = true }
 p2p-network = { workspace = true }
 rand = { workspace = true }
 serde_json = { workspace = true }

@@ -50,7 +50,7 @@ pub struct L1ContractAddresses {
 impl Config {
     pub fn read_env_variables() -> Self {
         // Load environment variables from .env file
-        dotenv::dotenv().ok();
+        dotenvy::dotenv().ok();
 
         let default_empty_address = "0x0000000000000000000000000000000000000000".to_string();
 
