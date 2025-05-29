@@ -168,8 +168,8 @@ impl<T: Clock> SlotClock<T> {
         Ok(start_of_slot.as_secs())
     }
 
-    pub fn get_slot_begin_timestamp(&self, slot: Slot) -> Result<u64, Error> {
-        let start_of_slot = self.start_of(slot)?;
+    pub fn get_current_slot_begin_timestamp(&self) -> Result<u64, Error> {
+        let start_of_slot = self.start_of(self.get_current_slot()?)?;
         Ok(start_of_slot.as_secs())
     }
 

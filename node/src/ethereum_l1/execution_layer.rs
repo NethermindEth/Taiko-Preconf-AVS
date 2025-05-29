@@ -1,6 +1,8 @@
+use super::{config::EthereumL1Config, transaction_error::TransactionError};
 use crate::{
     ethereum_l1::{
-        l1_contracts_bindings::*, monitor_transaction::TransactionMonitor, ws_provider::WsProvider,
+        l1_contracts_bindings::*, monitor_transaction::TransactionMonitor,
+        propose_batch_builder::ProposeBatchBuilder, ws_provider::WsProvider,
     },
     metrics,
     shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress},
@@ -14,14 +16,15 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use anyhow::Error;
-use std::{str::FromStr, sync::Arc};
+use std::{
+    str::FromStr,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::sync::mpsc::Sender;
+use tracing::{debug, info, warn};
 
-use tracing::{debug, info};
-
-use crate::ethereum_l1::propose_batch_builder::ProposeBatchBuilder;
-
-use super::{config::EthereumL1Config, transaction_error::TransactionError};
+const DELAYED_L1_PROPOSAL_BUFFER: u64 = 4;
 
 pub struct ExecutionLayer {
     provider_ws: Arc<WsProvider>,
@@ -166,7 +169,24 @@ impl ExecutionLayer {
         l2_blocks: Vec<L2Block>,
         last_anchor_origin_height: u64,
         coinbase: Address,
+        current_l1_slot_timestamp: u64,
     ) -> Result<(), Error> {
+        let last_block_timestamp = l2_blocks
+            .last()
+            .ok_or(anyhow::anyhow!("No L2 blocks provided"))?
+            .timestamp_sec;
+
+        // Check if the last block timestamp is within the delayed L1 proposal buffer
+        // we don't propose in this period because there is a chance that the batch will
+        // be included in the previous L1 block and we'll get TimestampTooLarge error.
+        if current_l1_slot_timestamp < last_block_timestamp
+            && SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs()
+                < current_l1_slot_timestamp + DELAYED_L1_PROPOSAL_BUFFER
+        {
+            warn!("Last block timestamp is within the delayed L1 proposal buffer.");
+            return Err(anyhow::anyhow!(TransactionError::EstimationTooEarly));
+        }
+
         let mut tx_vec = Vec::new();
         let mut blocks = Vec::new();
 
@@ -200,11 +220,6 @@ impl ExecutionLayer {
 
         self.metrics
             .observe_batch_info(blocks.len() as u64, tx_lists_bytes.len() as u64);
-
-        let last_block_timestamp = l2_blocks
-            .last()
-            .ok_or(anyhow::anyhow!("No L2 blocks provided"))?
-            .timestamp_sec;
 
         debug!(
             "Proposing batch: current L1 block: {}, last_block_timestamp {}, last_anchor_origin_height {}",
@@ -515,13 +530,21 @@ impl ExecutionLayer {
     }
 
     pub async fn get_block_timestamp_by_id(&self, block_id: u64) -> Result<u64, Error> {
+        self.get_block_timestamp_by_number_or_tag(BlockNumberOrTag::Number(block_id))
+            .await
+    }
+
+    async fn get_block_timestamp_by_number_or_tag(
+        &self,
+        block_number_or_tag: BlockNumberOrTag,
+    ) -> Result<u64, Error> {
         let block = self
             .provider_ws
-            .get_block_by_number(BlockNumberOrTag::Number(block_id))
+            .get_block_by_number(block_number_or_tag)
             .await?
             .ok_or(anyhow::anyhow!(
                 "Failed to get block by number ({})",
-                block_id
+                block_number_or_tag
             ))?;
         Ok(block.header.timestamp)
     }
