@@ -179,8 +179,9 @@ impl ProposeBatchBuilder {
     }
 
     fn convert_error_payload(err: ErrorPayload) -> TransactionError {
+        let err_str = err.to_string();
         // TimestampTooLarge or ZeroAnchorBlockHash contract error
-        if err.message.contains("0x3d32ffdb") || err.message.contains("0x2b44f010") {
+        if err_str.contains("0x3d32ffdb") || err_str.contains("0x2b44f010") {
             return TransactionError::EstimationTooEarly;
         }
         return TransactionError::EstimationFailed;
