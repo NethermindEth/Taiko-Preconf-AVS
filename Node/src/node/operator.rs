@@ -39,7 +39,6 @@ pub struct Status {
     preconfirmation_started: bool,
     end_of_sequencing: bool,
     is_driver_synced: bool,
-    is_preconf_router_zero: bool,
 }
 
 impl Status {
@@ -86,10 +85,6 @@ impl std::fmt::Display for Status {
             roles.push("EndOfSequencing");
         }
 
-        if self.is_preconf_router_zero {
-            roles.push("PreconfRouterIsZero");
-        }
-
         if roles.is_empty() {
             write!(f, "No active roles")
         } else {
@@ -132,6 +127,7 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
             .is_preconf_router_specified_in_taiko_wrapper()
             .await?
         {
+            warn!("PreconfRouter is not specified in TaikoWrapper");
             self.reset();
             return Ok(Status {
                 preconfer: false,
@@ -139,7 +135,6 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: false,
-                is_preconf_router_zero: true,
             });
         }
 
@@ -210,7 +205,6 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
             preconfirmation_started,
             end_of_sequencing,
             is_driver_synced,
-            is_preconf_router_zero: false,
         })
     }
 
@@ -370,6 +364,7 @@ mod tests {
     struct ExecutionLayerMock {
         current_operator: bool,
         next_operator: bool,
+        is_preconf_router_specified: bool,
     }
 
     impl PreconfOperator for ExecutionLayerMock {
@@ -382,7 +377,7 @@ mod tests {
         }
 
         async fn is_preconf_router_specified_in_taiko_wrapper(&self) -> Result<bool, Error> {
-            Ok(true)
+            Ok(self.is_preconf_router_specified)
         }
     }
 
@@ -434,12 +429,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_preconf_router_not_specified() {
+        let mut operator = create_operator(
+            32 * 12 + 2, // first l1 slot, second l2 slot
+            true,
+            false,
+            false,
+        );
+        operator.next_operator = true;
+        operator.was_synced_preconfer = true;
+        operator.continuing_role = false;
+        assert_eq!(
+            operator.get_status(&get_l2_slot_info()).await.unwrap(),
+            Status {
+                preconfer: false,
+                submitter: false,
+                preconfirmation_started: false,
+                end_of_sequencing: false,
+                is_driver_synced: false,
+            },
+        );
+    }
+
+    #[tokio::test]
     async fn test_end_of_sequencing() {
         // End of sequencing
         let mut operator = create_operator(
             (31 - HANDOVER_WINDOW_SLOTS) * 12 + 5 * 2, // l1 slot before handover window, 5th l2 slot
             true,
             false,
+            true,
         );
         operator.next_operator = false;
         operator.was_synced_preconfer = true;
@@ -452,7 +471,6 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: true,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
         // Not a preconfer and submiter
@@ -460,6 +478,7 @@ mod tests {
             (31 - HANDOVER_WINDOW_SLOTS) * 12 + 5 * 2, // l1 slot before handover window, 5th l2 slot
             false,
             false,
+            true,
         );
         operator.next_operator = false;
         operator.was_synced_preconfer = false;
@@ -472,12 +491,12 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
         // Continuing role
         let mut operator = create_operator(
             (31 - HANDOVER_WINDOW_SLOTS) * 12 + 5 * 2, // l1 slot before handover window, 5th l2 slot
+            true,
             true,
             true,
         );
@@ -492,7 +511,6 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
         // Not correct l2 slot
@@ -500,6 +518,7 @@ mod tests {
             (31 - HANDOVER_WINDOW_SLOTS) * 12 + 4 * 2, // l1 slot before handover window, 4th l2 slot
             true,
             false,
+            true,
         );
         operator.next_operator = false;
         operator.was_synced_preconfer = true;
@@ -512,7 +531,6 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
     }
@@ -523,6 +541,7 @@ mod tests {
             32 * 12 + 2, // first l1 slot, second l2 slot
             true,
             false,
+            true,
         );
         operator.next_operator = true;
         operator.was_synced_preconfer = true;
@@ -535,7 +554,6 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
 
@@ -543,6 +561,7 @@ mod tests {
             32 * 12 + 2, // first l1 slot, second l2 slot
             false,
             false,
+            true,
         );
         operator.was_synced_preconfer = true;
         operator.continuing_role = true;
@@ -554,7 +573,6 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
     }
@@ -565,6 +583,7 @@ mod tests {
             32 * 12 + 12 + 2, // second l1 slot, second l2 slot
             true,
             false,
+            true,
         );
         operator.next_operator = true;
         operator.was_synced_preconfer = true;
@@ -576,7 +595,6 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
 
@@ -584,6 +602,7 @@ mod tests {
             32 * 12 + 12 + 2, // second l1 slot, second l2 slot
             false,
             false,
+            true,
         );
         operator.was_synced_preconfer = true;
         assert_eq!(
@@ -594,7 +613,6 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
     }
@@ -604,6 +622,7 @@ mod tests {
         let mut operator = create_operator_with_unsynced_driver_and_geth(
             31 * 12, // last slot of epoch
             false,
+            true,
             true,
         );
         operator.was_synced_preconfer = true;
@@ -615,7 +634,6 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: false,
-                is_preconf_router_zero: false,
             }
         );
     }
@@ -626,6 +644,7 @@ mod tests {
             31 * 12, // last slot of epoch
             false,
             true,
+            true,
         );
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -635,7 +654,6 @@ mod tests {
                 preconfirmation_started: true,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
 
@@ -643,6 +661,7 @@ mod tests {
             32 * 12, // first slot of next epoch
             true,
             false,
+            true,
         );
         operator.next_operator = true;
         operator.was_synced_preconfer = true;
@@ -655,7 +674,6 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
 
@@ -663,6 +681,7 @@ mod tests {
             32 * 12, // first slot of next epoch
             true,
             false,
+            true,
         );
         operator.next_operator = true;
         operator.was_synced_preconfer = true;
@@ -675,7 +694,6 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
     }
@@ -687,6 +705,7 @@ mod tests {
             20 * 12, // middle of epoch
             false,
             false,
+            true,
         );
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -696,7 +715,6 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
 
@@ -705,6 +723,7 @@ mod tests {
             32 * 12, // first slot of next epoch
             false,
             false,
+            true,
         );
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -714,7 +733,6 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
 
@@ -722,6 +740,7 @@ mod tests {
             31 * 12, // last slot
             false,
             false,
+            true,
         );
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -731,7 +750,6 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
     }
@@ -743,6 +761,7 @@ mod tests {
             (32 - HANDOVER_WINDOW_SLOTS) * 12, // handover buffer
             false,
             true,
+            true,
         );
         // Override the handover start buffer to be larger than the mock timestamp
         assert_eq!(
@@ -753,13 +772,13 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
 
         let mut operator = create_operator(
             (32 - HANDOVER_WINDOW_SLOTS + 1) * 12, // handover window after the buffer
             false,
+            true,
             true,
         );
         // Override the handover start buffer to be larger than the mock timestamp
@@ -771,7 +790,6 @@ mod tests {
                 preconfirmation_started: true,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
     }
@@ -782,6 +800,7 @@ mod tests {
         let mut operator = create_operator_with_end_of_sequencing_marker_received(
             (32 - HANDOVER_WINDOW_SLOTS) * 12, // handover buffer
             false,
+            true,
             true,
         );
         // Override the handover start buffer to be larger than the mock timestamp
@@ -796,7 +815,6 @@ mod tests {
                 preconfirmation_started: true,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
     }
@@ -808,6 +826,7 @@ mod tests {
             31 * 12, // last slot of epoch (handover window)
             true,
             true,
+            true,
         );
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -817,7 +836,6 @@ mod tests {
                 preconfirmation_started: true,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
 
@@ -826,6 +844,7 @@ mod tests {
             20 * 12, // middle of epoch
             true,
             false,
+            true,
         );
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -835,7 +854,6 @@ mod tests {
                 preconfirmation_started: true,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
     }
@@ -847,6 +865,7 @@ mod tests {
             31 * 12, // last slot of epoch
             true,
             false,
+            true,
         );
         assert_eq!(
             operator.get_status(&get_l2_slot_info()).await.unwrap(),
@@ -856,7 +875,6 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
     }
@@ -865,7 +883,7 @@ mod tests {
     async fn test_get_l1_statuses_for_operator_continuing_role() {
         let mut operator = create_operator(
             0, // first slot of epoch
-            true, true,
+            true, true, true,
         );
         operator.next_operator = true;
         operator.continuing_role = true;
@@ -879,7 +897,6 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
 
@@ -887,6 +904,7 @@ mod tests {
             1 * 12, // second slot of epoch
             true,
             true,
+            true,
         );
         operator.next_operator = true;
         operator.continuing_role = true;
@@ -899,12 +917,12 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
 
         let mut operator = create_operator(
             2 * 12, // third slot of epoch
+            true,
             true,
             true,
         );
@@ -918,7 +936,6 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
     }
@@ -928,6 +945,7 @@ mod tests {
         let mut operator = create_operator(
             31 * 12, // last slot of epoch
             false,
+            true,
             true,
         );
         operator.was_synced_preconfer = false;
@@ -939,7 +957,6 @@ mod tests {
                 preconfirmation_started: true,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
 
@@ -952,7 +969,6 @@ mod tests {
                 preconfirmation_started: false,
                 end_of_sequencing: false,
                 is_driver_synced: true,
-                is_preconf_router_zero: false,
             }
         );
     }
@@ -961,6 +977,7 @@ mod tests {
         timestamp: i64,
         current_operator: bool,
         next_operator: bool,
+        is_preconf_router_specified: bool,
     ) -> Operator<ExecutionLayerMock, MockClock, TaikoMock> {
         let mut slot_clock = SlotClock::<MockClock>::new(0, 0, 12, 32, 2000);
         slot_clock.clock.timestamp = timestamp; // second l1 slot, second l2 slot
@@ -973,6 +990,7 @@ mod tests {
             execution_layer: Arc::new(ExecutionLayerMock {
                 current_operator,
                 next_operator,
+                is_preconf_router_specified,
             }),
             slot_clock: Arc::new(slot_clock),
             handover_window_slots: HANDOVER_WINDOW_SLOTS as u64,
@@ -989,6 +1007,7 @@ mod tests {
         timestamp: i64,
         current_operator: bool,
         next_operator: bool,
+        is_preconf_router_specified: bool,
     ) -> Operator<ExecutionLayerMock, MockClock, TaikoMock> {
         let mut slot_clock = SlotClock::<MockClock>::new(0, 0, 12, 32, 2000);
         slot_clock.clock.timestamp = timestamp; // second l1 slot, second l2 slot
@@ -1000,6 +1019,7 @@ mod tests {
             execution_layer: Arc::new(ExecutionLayerMock {
                 current_operator,
                 next_operator,
+                is_preconf_router_specified,
             }),
             slot_clock: Arc::new(slot_clock),
             handover_window_slots: HANDOVER_WINDOW_SLOTS as u64,
@@ -1017,6 +1037,7 @@ mod tests {
         timestamp: i64,
         current_operator: bool,
         next_operator: bool,
+        is_preconf_router_specified: bool,
     ) -> Operator<ExecutionLayerMock, MockClock, TaikoUnsyncedMock> {
         let mut slot_clock = SlotClock::<MockClock>::new(0, 0, 12, 32, 2000);
         slot_clock.clock.timestamp = timestamp; // second l1 slot, second l2 slot
@@ -1028,6 +1049,7 @@ mod tests {
             execution_layer: Arc::new(ExecutionLayerMock {
                 current_operator,
                 next_operator,
+                is_preconf_router_specified,
             }),
             slot_clock: Arc::new(slot_clock),
             handover_window_slots: HANDOVER_WINDOW_SLOTS as u64,
