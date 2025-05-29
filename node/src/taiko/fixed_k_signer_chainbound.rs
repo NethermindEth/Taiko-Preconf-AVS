@@ -107,7 +107,7 @@ fn scalar_from_bytes(bytes: &[u8]) -> (Scalar, bool) {
         // Thus we need to compute the modulus by hand.
 
         let alloy_field_bytes = U256::from_be_slice(bytes);
-        let modulus_bytes = B256::from_str(Scalar::MODULUS).unwrap();
+        let modulus_bytes = B256::from_str(Scalar::MODULUS).expect("assert: modulus fits B256");
         let modulus_bytes = U256::from_be_slice(modulus_bytes.as_slice());
 
         // Compute the reduced scalar modulo the field order.

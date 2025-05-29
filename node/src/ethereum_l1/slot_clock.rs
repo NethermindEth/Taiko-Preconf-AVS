@@ -112,8 +112,9 @@ impl<T: Clock> SlotClock<T> {
             let since_genesis = now
                 .checked_sub(genesis)
                 .ok_or(anyhow::anyhow!("slot_of: Subtraction overflow"))?;
-            let slot =
-                Slot::from((since_genesis.as_millis() / self.slot_duration.as_millis()) as u64);
+            let slot = Slot::from(u64::try_from(
+                since_genesis.as_millis() / self.slot_duration.as_millis(),
+            )?);
             Ok(slot + self.genesis_slot)
         } else {
             Err(anyhow::anyhow!("slot_of: now is less than genesis"))
@@ -221,13 +222,13 @@ impl<T: Clock> SlotClock<T> {
         let l1_slot = self.get_current_slot()?;
         let now = self.clock.now().duration_since(UNIX_EPOCH)?;
         let slot_begin = self.start_of(l1_slot)?;
-        Ok(self.which_l2_slot_is_it((now - slot_begin).as_millis() as u64))
+        Ok(self.which_l2_slot_is_it(u64::try_from((now - slot_begin).as_millis())?))
     }
 
     pub fn get_l2_slot_begin_timestamp(&self) -> Result<u64, Error> {
         let now = self.clock.now().duration_since(UNIX_EPOCH)?;
         let now_from_genesis = now - self.genesis_duration;
-        let preconf_heartbeat_ms: u128 = self.preconf_heartbeat_ms as u128;
+        let preconf_heartbeat_ms: u128 = u128::from(self.preconf_heartbeat_ms);
         let timestamp_sec = TryInto::<u64>::try_into(
             ((now_from_genesis.as_millis() / preconf_heartbeat_ms) * preconf_heartbeat_ms) / 1000,
         )
@@ -407,12 +408,12 @@ mod tests {
         let slot_clock: SlotClock =
             SlotClock::new(0u64, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
 
-        assert_eq!(slot_clock.is_slot_in_last_n_slots_of_epoch(0, 2), false);
-        assert_eq!(slot_clock.is_slot_in_last_n_slots_of_epoch(1, 2), false);
-        assert_eq!(slot_clock.is_slot_in_last_n_slots_of_epoch(29, 2), false);
+        assert!(!slot_clock.is_slot_in_last_n_slots_of_epoch(0, 2));
+        assert!(!slot_clock.is_slot_in_last_n_slots_of_epoch(1, 2));
+        assert!(!slot_clock.is_slot_in_last_n_slots_of_epoch(29, 2));
         assert!(slot_clock.is_slot_in_last_n_slots_of_epoch(30, 2));
         assert!(slot_clock.is_slot_in_last_n_slots_of_epoch(31, 2));
-        assert_eq!(slot_clock.is_slot_in_last_n_slots_of_epoch(32, 2), false);
+        assert!(!slot_clock.is_slot_in_last_n_slots_of_epoch(32, 2));
     }
 
     #[test]

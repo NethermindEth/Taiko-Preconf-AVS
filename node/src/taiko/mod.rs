@@ -240,7 +240,7 @@ impl Taiko {
     ) -> Result<Vec<alloy::rpc::types::Block>, Error> {
         let start_time = std::time::Instant::now();
         let end_block = self.get_latest_l2_block_id().await?;
-        let mut blocks = Vec::with_capacity((end_block - start_block + 1) as usize);
+        let mut blocks = Vec::with_capacity(usize::try_from(end_block - start_block + 1)?);
         for block_number in start_block..=end_block {
             let block = self.get_l2_block_by_number(block_number, full_txs).await?;
             blocks.push(block);
@@ -457,7 +457,7 @@ impl Taiko {
 
         let anchor_tx = self
             .construct_anchor_tx(
-                l2_slot_info.parent_hash().clone(),
+                *l2_slot_info.parent_hash(),
                 anchor_origin_height,
                 anchor_block_state_root,
                 l2_slot_info.parent_gas_used(),
@@ -615,7 +615,7 @@ impl Taiko {
                 vec![],
             )
             .gas(1_000_000) // value expected by Taiko
-            .max_fee_per_gas(base_fee as u128) // value expected by Taiko
+            .max_fee_per_gas(u128::from(base_fee)) // value expected by Taiko
             .max_priority_fee_per_gas(0) // value expected by Taiko
             .nonce(nonce)
             .chain_id(self.chain_id);
@@ -689,9 +689,8 @@ impl Taiko {
             .lastSyncedBlock()
             .call()
             .await;
-        Ok(self
-            .check_for_contract_failure(last_synced_block, "Failed to get last synced block")
-            .await?)
+        self.check_for_contract_failure(last_synced_block, "Failed to get last synced block")
+            .await
     }
 
     pub async fn get_last_synced_anchor_block_id_from_geth(&self) -> Result<u64, Error> {

@@ -54,6 +54,7 @@ pub struct TransactionMonitor {
 }
 
 impl TransactionMonitor {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         provider: Arc<WsProvider>,
         min_priority_fee_per_gas_wei: u64,
@@ -67,8 +68,8 @@ impl TransactionMonitor {
         Ok(Self {
             provider,
             config: TransactionMonitorConfig {
-                min_priority_fee_per_gas_wei: min_priority_fee_per_gas_wei as u128,
-                tx_fees_increase_percentage: tx_fees_increase_percentage as u128,
+                min_priority_fee_per_gas_wei: u128::from(min_priority_fee_per_gas_wei),
+                tx_fees_increase_percentage: u128::from(tx_fees_increase_percentage),
                 max_attempts_to_send_tx,
                 max_attempts_to_wait_tx,
                 delay_between_tx_attempts: Duration::from_secs(delay_between_tx_attempts_sec),
@@ -152,8 +153,12 @@ impl TransactionMonitorThread {
         );
 
         // Initial gas tuning
-        let mut max_priority_fee_per_gas = tx.max_priority_fee_per_gas.unwrap();
-        let mut max_fee_per_gas = tx.max_fee_per_gas.unwrap();
+        let mut max_priority_fee_per_gas = tx
+            .max_priority_fee_per_gas
+            .expect("assert: tx max_priority_fee_per_gas is set");
+        let mut max_fee_per_gas = tx
+            .max_fee_per_gas
+            .expect("assert: tx max_fee_per_gas is set");
         let mut max_fee_per_blob_gas = tx.max_fee_per_blob_gas;
 
         // increase priority fee by percentage, rest double
@@ -205,7 +210,7 @@ impl TransactionMonitorThread {
             }
 
             let pending_tx = if let Some(pending_tx) = self
-                .send_transaction(tx_clone, &tx_hashes, sending_attempt as u64)
+                .send_transaction(tx_clone, &tx_hashes, sending_attempt)
                 .await
             {
                 pending_tx
@@ -241,7 +246,7 @@ impl TransactionMonitorThread {
                     pending_tx.provider().clone(),
                     tx_hash,
                     l1_block_at_send,
-                    sending_attempt as u64,
+                    sending_attempt,
                 )
                 .await
             {
@@ -261,14 +266,16 @@ impl TransactionMonitorThread {
         let mut wait_attempt = 0;
         if let Some(root_provider) = root_provider {
             // We can use unwrap since tx_hashes is updated before root_provider
-            let tx_hash = tx_hashes.last().unwrap();
+            let tx_hash = tx_hashes
+                .last()
+                .expect("assert: tx_hashes is updated before root_provider");
             while wait_attempt < self.config.max_attempts_to_wait_tx
                 && !self
                     .is_transaction_handled_by_builder(
                         root_provider.clone(),
                         *tx_hash,
                         l1_block_at_send,
-                        (self.config.max_attempts_to_send_tx) as u64,
+                        self.config.max_attempts_to_send_tx,
                     )
                     .await
                 && !self
@@ -368,7 +375,7 @@ impl TransactionMonitorThread {
                 error!("Failed to send transaction: {}", e);
                 self.send_error_signal(TransactionError::TransactionReverted)
                     .await;
-                return None;
+                None
             }
         }
     }
@@ -588,7 +595,7 @@ impl TransactionMonitorThread {
         if let Some(max_fee_per_blob_gas) = max_fee_per_blob_gas {
             tx.set_max_fee_per_blob_gas(max_fee_per_blob_gas);
         }
-        tx.set_nonce(self.nonce.into());
+        tx.set_nonce(self.nonce);
 
         debug!(
             "Tx params, max_fee_per_gas: {:?}, max_priority_fee_per_gas: {:?}, max_fee_per_blob_gas: {:?}, gas limit: {:?}, nonce: {:?}",

@@ -149,10 +149,12 @@ impl Metrics {
         self.blocks_preconfirmed.inc();
     }
 
+    #[allow(clippy::cast_precision_loss)]
     pub fn inc_by_blocks_reanchored(&self, value: u64) {
         self.blocks_reanchored.inc_by(value as f64);
     }
 
+    #[allow(clippy::cast_precision_loss)]
     pub fn inc_by_batch_recovered(&self, value: u64) {
         self.batch_recovered.inc_by(value as f64);
     }
@@ -165,10 +167,12 @@ impl Metrics {
         self.batch_confirmed.inc();
     }
 
+    #[allow(clippy::cast_precision_loss)]
     pub fn observe_batch_propose_tries(&self, tries: u64) {
         self.batch_propose_tries.observe(tries as f64);
     }
 
+    #[allow(clippy::cast_precision_loss)]
     pub fn observe_batch_info(&self, block_count: u64, blob_size: u64) {
         self.batch_block_count.observe(block_count as f64);
         self.batch_blob_size.observe(blob_size as f64);
@@ -190,10 +194,7 @@ impl Metrics {
         result.insert(len - 18, '.');
         let result = result.split_at(len - 13).0.to_string();
 
-        match result.parse::<f64>() {
-            Ok(v) => v,
-            Err(_) => 0f64,
-        }
+        result.parse::<f64>().unwrap_or(0f64)
     }
 
     pub fn gather(&self) -> String {

@@ -54,6 +54,7 @@ impl ProposeBatchBuilder {
     /// # Returns
     ///
     /// A `TransactionRequest` representing the proposeBatch transaction.
+    #[allow(clippy::too_many_arguments)]
     pub async fn build_propose_batch_tx(
         &self,
         from: Address,
@@ -179,11 +180,12 @@ impl ProposeBatchBuilder {
     }
 
     fn convert_error_payload(err: ErrorPayload) -> TransactionError {
+        let err_str = err.to_string();
         // TimestampTooLarge or ZeroAnchorBlockHash contract error
-        if err.message.contains("0x3d32ffdb") || err.message.contains("0x2b44f010") {
+        if err_str.contains("0x3d32ffdb") || err_str.contains("0x2b44f010") {
             return TransactionError::EstimationTooEarly;
         }
-        return TransactionError::EstimationFailed;
+        TransactionError::EstimationFailed
     }
 
     fn update_eip1559(
@@ -210,7 +212,8 @@ impl ProposeBatchBuilder {
     }
 
     async fn get_eip1559_cost(&self, fees_per_gas: &FeesPerGas, gas_used: u64) -> u128 {
-        (fees_per_gas.base_fee_per_gas + fees_per_gas.max_priority_fee_per_gas) * gas_used as u128
+        (fees_per_gas.base_fee_per_gas + fees_per_gas.max_priority_fee_per_gas)
+            * u128::from(gas_used)
     }
 
     async fn get_eip4844_cost(
@@ -220,9 +223,9 @@ impl ProposeBatchBuilder {
         gas_used: u64,
     ) -> u128 {
         let blob_gas_used = alloy::eips::eip4844::DATA_GAS_PER_BLOB * blob_count;
-        let execution_gas_cost = gas_used as u128
+        let execution_gas_cost = u128::from(gas_used)
             * (fees_per_gas.base_fee_per_gas + fees_per_gas.max_priority_fee_per_gas);
-        let blob_gas_cost = blob_gas_used as u128 * fees_per_gas.base_fee_per_blob_gas;
+        let blob_gas_cost = u128::from(blob_gas_used) * fees_per_gas.base_fee_per_blob_gas;
         execution_gas_cost + blob_gas_cost
     }
 
@@ -263,6 +266,7 @@ impl ProposeBatchBuilder {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn build_propose_batch_calldata(
         &self,
         from: Address,
@@ -273,7 +277,7 @@ impl ProposeBatchBuilder {
         last_block_timestamp: u64,
         coinbase: Address,
     ) -> Result<TransactionRequest, Error> {
-        let tx_list_len = tx_list.len() as u32;
+        let tx_list_len = u32::try_from(tx_list.len())?;
         let tx_list = Bytes::from(tx_list);
 
         let bytes_x = Bytes::new();
@@ -318,6 +322,7 @@ impl ProposeBatchBuilder {
         Ok(tx)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn build_propose_batch_blob(
         &self,
         from: Address,
@@ -328,13 +333,13 @@ impl ProposeBatchBuilder {
         last_block_timestamp: u64,
         coinbase: Address,
     ) -> Result<TransactionRequest, Error> {
-        let tx_list_len = tx_list.len() as u32;
+        let tx_list_len = u32::try_from(tx_list.len())?;
 
         let bytes_x = Bytes::new();
 
         // Build sidecar
         let sidecar = crate::taiko::taiko_blob::build_taiko_blob_sidecar(tx_list)?;
-        let num_blobs = sidecar.blobs.len() as u8;
+        let num_blobs = u8::try_from(sidecar.blobs.len())?;
 
         let batch_params = BatchParams {
             proposer: from,

@@ -17,12 +17,12 @@ pub async fn test_gas_params(
     >,
 ) -> Result<(), Error> {
     let timestamp_sec = std::time::SystemTime::now()
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .unwrap()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)?
         .as_secs()
         - 20;
 
-    let tx: alloy::rpc::types::Transaction = serde_json::from_str(r#"{
+    let tx: alloy::rpc::types::Transaction = serde_json::from_str(
+        r#"{
         "blockHash": "0xdd31b8f2c9bbc36ecaadfded27d756e9c941751a7f75b0727f31f5f07a08a7fa",
         "blockNumber": "0x38f6aa",
         "from": "0xc4b0f902f4ced6dc1ad1be7ffec47ab50845955e",
@@ -43,9 +43,11 @@ pub async fn test_gas_params(
         "r": "0xcee69e0ca80103c4fc286bd5d79fca511077cdb6d008ce54dbf31124fb9e8a73",
         "s": "0x441c79fd9c663aba862884c8507bbe07e2f88a9e2a4bb81290a4ff3552cf515a",
         "yParity": "0x1"
-    }"#).unwrap();
+    }"#,
+    )?;
 
-    let tx_per_block = max_bytes_size_of_batch / 10 / blocks as u64;
+    let blocks: u64 = blocks.into();
+    let tx_per_block = max_bytes_size_of_batch / 10 / blocks;
     info!("tx_per_block: {}", tx_per_block);
 
     let mut tx_vec = Vec::new();
@@ -66,9 +68,8 @@ pub async fn test_gas_params(
         l2_blocks.push(l2_block);
     }
 
-    let coinbase = Some(
-        alloy::primitives::Address::from_str("0xC4B0F902f4CEd6dC1Ad1Be7FFeC47ab50845955e").unwrap(),
-    );
+    let coinbase =
+        alloy::primitives::Address::from_str("0xC4B0F902f4CEd6dC1Ad1Be7FFeC47ab50845955e")?;
 
     let l1_height = ethereum_l1.execution_layer.get_l1_height().await?;
     let anchor_block_id = l1_height - anchor_height_lag;
@@ -76,16 +77,17 @@ pub async fn test_gas_params(
     info!("anchor_block_id: {}", anchor_block_id);
     info!("l1_height: {}", l1_height);
 
+    let current_timestamp = ethereum_l1.slot_clock.get_current_slot_begin_timestamp()?;
+
     let _ = ethereum_l1
         .execution_layer
-        .send_batch_to_l1(l2_blocks, anchor_block_id, coinbase)
+        .send_batch_to_l1(l2_blocks, anchor_block_id, coinbase, current_timestamp)
         .await;
 
     while ethereum_l1
         .execution_layer
         .is_transaction_in_progress()
-        .await
-        .unwrap()
+        .await?
     {
         info!("Sleeping for 20 seconds...");
         sleep(Duration::from_secs(20)).await;

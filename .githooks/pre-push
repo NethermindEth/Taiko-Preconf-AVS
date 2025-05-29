@@ -25,12 +25,11 @@ if ! typos; then
     exit 4
 fi
 
-# TODO https://github.com/NethermindEth/Taiko-Preconf-AVS/issues/430
-# # Linting
-# if ! cargo clippy --all-targets --all-features -- -D warnings; then
-#     echo "❌ Clippy violations (check warnings above)"
-#     exit 5
-# fi
+# Linting
+if ! cargo clippy --all-features -- -D warnings; then
+    echo "❌ Clippy violations (check warnings above)"
+    exit 5
+fi
 
 # Tests
 if ! cargo test --workspace --verbose; then
