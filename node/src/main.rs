@@ -269,7 +269,6 @@ async fn wait_for_the_termination(cancel_token: CancellationToken, shutdown_dela
         }
         _ = cancel_token.cancelled() => {
             info!("Shutdown signal received, exiting avs node...");
-            return;
         }
     }
 }
@@ -279,14 +278,46 @@ fn init_logging() {
 
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         EnvFilter::new("debug")
-            .add_directive("reqwest=info".parse().unwrap())
-            .add_directive("hyper=info".parse().unwrap())
-            .add_directive("alloy_transport=info".parse().unwrap())
-            .add_directive("alloy_rpc_client=info".parse().unwrap())
-            .add_directive("p2p_network=info".parse().unwrap())
-            .add_directive("libp2p_gossipsub=info".parse().unwrap())
-            .add_directive("discv5=info".parse().unwrap())
-            .add_directive("netlink_proto=info".parse().unwrap())
+            .add_directive(
+                "reqwest=info"
+                    .parse()
+                    .expect("assert: can parse env filter directive"),
+            )
+            .add_directive(
+                "hyper=info"
+                    .parse()
+                    .expect("assert: can parse env filter directive"),
+            )
+            .add_directive(
+                "alloy_transport=info"
+                    .parse()
+                    .expect("assert: can parse env filter directive"),
+            )
+            .add_directive(
+                "alloy_rpc_client=info"
+                    .parse()
+                    .expect("assert: can parse env filter directive"),
+            )
+            .add_directive(
+                "p2p_network=info"
+                    .parse()
+                    .expect("assert: can parse env filter directive"),
+            )
+            .add_directive(
+                "libp2p_gossipsub=info"
+                    .parse()
+                    .expect("assert: can parse env filter directive"),
+            )
+            .add_directive(
+                "discv5=info"
+                    .parse()
+                    .expect("assert: can parse env filter directive"),
+            )
+            .add_directive(
+                "netlink_proto=info"
+                    .parse()
+                    .expect("assert: can parse env filter directive"),
+            )
     });
 
     fmt().with_env_filter(filter).init();

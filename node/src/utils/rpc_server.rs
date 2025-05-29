@@ -25,21 +25,18 @@ pub mod test {
             let server = ServerBuilder::default().build(addr).await?;
             let mut module = RpcModule::new(());
 
-            module.register_async_method("taikoAuth_txPoolContentWithMinTip", |_, _, _| async {
+            module.register_method("taikoAuth_txPoolContentWithMinTip", |_, _, _| {
                 let tx_lists_response: serde_json::Value =
                     serde_json::from_str(include_str!("tx_lists_test_response_from_geth.json"))
-                        .unwrap();
+                        .expect("assert: can parse geth test response");
                 tx_lists_response
             })?;
-            module.register_async_method(
-                "RPC.AdvanceL2ChainHeadWithNewBlocks",
-                |_, _, _| async {
-                    json!({
-                        "result": "Request received and processed successfully",
-                        "id": 1
-                    })
-                },
-            )?;
+            module.register_method("RPC.AdvanceL2ChainHeadWithNewBlocks", |_, _, _| {
+                json!({
+                    "result": "Request received and processed successfully",
+                    "id": 1
+                })
+            })?;
 
             let handle = server.start(module);
             tokio::spawn(handle.clone().stopped());
@@ -50,7 +47,7 @@ pub mod test {
 
         pub async fn stop(&mut self) {
             if let Some(handle) = self.handle.take() {
-                handle.stop().unwrap();
+                handle.stop().expect("can stop the rpc server");
             }
             info!("Server stopped");
         }

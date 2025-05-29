@@ -16,7 +16,7 @@ pub struct BatchProposed {
 
 impl BatchProposed {
     pub fn new(event_data: TaikoEvents::BatchProposed) -> Result<Self, Error> {
-        let last_block_id = event_data.info.lastBlockId.try_into()?;
+        let last_block_id = event_data.info.lastBlockId;
         Ok(Self {
             event_data,
             last_block_id,

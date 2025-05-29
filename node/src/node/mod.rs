@@ -92,7 +92,7 @@ impl Node {
         let head_verifier = L2HeadVerifier::new();
         Ok(Self {
             cancel_token,
-            batch_manager: batch_manager,
+            batch_manager,
             ethereum_l1,
             reorg_detector,
             preconf_heartbeat_ms,
@@ -221,7 +221,7 @@ impl Node {
             sleep(Duration::from_secs(6)).await;
         }
 
-        return Ok(());
+        Ok(())
     }
 
     async fn preconfirmation_loop(&mut self) {
@@ -316,7 +316,7 @@ impl Node {
 
         if current_status.is_preconfirmation_start_slot() {
             self.head_verifier
-                .set(l2_slot_info.parent_id(), l2_slot_info.parent_hash().clone())
+                .set(l2_slot_info.parent_id(), *l2_slot_info.parent_hash())
                 .await;
 
             if current_status.is_submitter() {
@@ -421,18 +421,16 @@ impl Node {
                     }
                     Ok(true) => {}
                 }
-            } else {
-                if let Err(err) = self
-                    .batch_manager
-                    .try_submit_oldest_batch(current_status.is_preconfer())
-                    .await
-                {
-                    if let Some(transaction_error) = err.downcast_ref::<TransactionError>() {
-                        self.handle_transaction_error(transaction_error, &current_status)
-                            .await?;
-                    }
-                    return Err(err);
+            } else if let Err(err) = self
+                .batch_manager
+                .try_submit_oldest_batch(current_status.is_preconfer())
+                .await
+            {
+                if let Some(transaction_error) = err.downcast_ref::<TransactionError>() {
+                    self.handle_transaction_error(transaction_error, &current_status)
+                        .await?;
                 }
+                return Err(err);
             }
         }
 
@@ -569,14 +567,14 @@ impl Node {
         if verifier.has_batches_to_submit() {
             if let Err(err) = verifier.try_submit_oldest_batch().await {
                 if let Some(transaction_error) = err.downcast_ref::<TransactionError>() {
-                    self.handle_transaction_error(transaction_error, &current_status)
+                    self.handle_transaction_error(transaction_error, current_status)
                         .await?;
                 }
                 return Err(err);
             }
         }
 
-        return Ok(!verifier.has_batches_to_submit());
+        Ok(!verifier.has_batches_to_submit())
     }
 
     async fn check_transaction_error_channel(
@@ -761,7 +759,7 @@ impl Node {
             let bytes_length =
                 crate::shared::l2_tx_lists::encode_and_compress(&tx_list)?.len() as u64;
             let pending_tx_list = crate::shared::l2_tx_lists::PreBuiltTxList {
-                tx_list: tx_list,
+                tx_list,
                 estimated_gas_used: 0,
                 bytes_length,
             };
@@ -790,7 +788,7 @@ impl Node {
         }
 
         self.head_verifier
-            .set(l2_slot_info.parent_id(), l2_slot_info.parent_hash().clone())
+            .set(l2_slot_info.parent_id(), *l2_slot_info.parent_hash())
             .await;
 
         self.metrics.inc_by_blocks_reanchored(blocks_reanchored);

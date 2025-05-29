@@ -56,13 +56,16 @@ impl BatchBuilder {
     pub fn can_consume_l2_block(&self, l2_block: &L2Block) -> bool {
         self.current_batch
             .as_ref()
-            .map_or(false, |batch| {
+            .is_some_and(|batch| {
+                let number_of_blocks = if let Ok(n) = u16::try_from(batch.l2_blocks.len() + 1) {n} else {
+            return false;
+        };
                 // Check if the total bytes of the current batch after adding the new L2 block
                 // is less than or equal to the max bytes size of the batch
                 self.config.is_within_bytes_limit(batch.total_bytes + l2_block.prebuilt_tx_list.bytes_length)
                     // Check if the number of L2 blocks in the current batch after adding the new L2 block
                     // is less than or equal to the max blocks per batch
-                    && self.config.is_within_block_limit(batch.l2_blocks.len() as u16 + 1)
+                    && self.config.is_within_block_limit(number_of_blocks)
                     // check that time shift between blocks is not expired
                     && !self.is_time_shift_expired(l2_block.timestamp_sec)
             })
@@ -115,7 +118,7 @@ impl BatchBuilder {
             let removed_block = current_batch.l2_blocks.pop();
             if let Some(removed_block) = removed_block {
                 current_batch.total_bytes -= removed_block.prebuilt_tx_list.bytes_length;
-                if current_batch.l2_blocks.len() == 0 {
+                if current_batch.l2_blocks.is_empty() {
                     self.current_batch = None;
                 }
                 debug!(
@@ -179,13 +182,13 @@ impl BatchBuilder {
     fn is_same_anchor_block_id(&self, anchor_block_id: u64) -> bool {
         self.current_batch
             .as_ref()
-            .map_or(false, |batch| batch.anchor_block_id == anchor_block_id)
+            .is_some_and(|batch| batch.anchor_block_id == anchor_block_id)
     }
 
     fn is_same_coinbase(&self, coinbase: Address) -> bool {
         self.current_batch
             .as_ref()
-            .map_or(false, |batch| batch.coinbase == coinbase)
+            .is_some_and(|batch| batch.coinbase == coinbase)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -205,7 +208,13 @@ impl BatchBuilder {
         if self.current_batch.is_some()
             && (!submit_only_full_batches
                 || !self.config.is_within_block_limit(
-                    self.current_batch.as_ref().unwrap().l2_blocks.len() as u16 + 1,
+                    u16::try_from(
+                        self.current_batch
+                            .as_ref()
+                            .expect("assert: current batch is available")
+                            .l2_blocks
+                            .len(),
+                    )? + 1,
                 ))
         {
             self.finalize_current_batch();
@@ -343,14 +352,8 @@ mod tests {
             Arc::new(SlotClock::new(0, 5, 12, 32, 3000)),
         );
 
-        assert_eq!(
-            batch_builder.is_the_last_l1_slot_to_add_an_empty_l2_block(100, 0),
-            false
-        );
-        assert_eq!(
-            batch_builder.is_the_last_l1_slot_to_add_an_empty_l2_block(242, 0),
-            false
-        );
+        assert!(!batch_builder.is_the_last_l1_slot_to_add_an_empty_l2_block(100, 0));
+        assert!(!batch_builder.is_the_last_l1_slot_to_add_an_empty_l2_block(242, 0));
         assert!(batch_builder.is_the_last_l1_slot_to_add_an_empty_l2_block(243, 0));
         assert!(batch_builder.is_the_last_l1_slot_to_add_an_empty_l2_block(255, 0));
     }
