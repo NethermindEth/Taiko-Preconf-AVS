@@ -20,7 +20,7 @@ struct Claims {
 const JWT_TOKEN_EXPIRATION_TIME_SECONDS: usize = 3600;
 
 fn create_jwt_token(secret: &[u8]) -> Result<String, Box<dyn std::error::Error>> {
-    let now = chrono::Utc::now().timestamp() as usize;
+    let now: usize = chrono::Utc::now().timestamp().try_into()?;
     let claims = Claims {
         iat: now,
         exp: now + JWT_TOKEN_EXPIRATION_TIME_SECONDS,

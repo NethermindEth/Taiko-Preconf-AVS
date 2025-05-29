@@ -50,3 +50,6 @@ warp = { workspace = true }
 
 [dev-dependencies]
 mockito = { workspace = true }
+
+[lints]
+workspace = true

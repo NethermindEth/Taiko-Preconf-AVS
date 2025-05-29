@@ -290,7 +290,7 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
                 "Is handover buffer, end_of_sequencing_block_hash: {}",
                 driver_status.end_of_sequencing_block_hash
             );
-            return Ok(!self.end_of_sequencing_marker_received(&driver_status, l2_slot_info));
+            return Ok(!self.end_of_sequencing_marker_received(driver_status, l2_slot_info));
         }
 
         Ok(false)
@@ -388,7 +388,7 @@ mod tests {
     impl PreconfDriver for TaikoUnsyncedMock {
         async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {
             Ok(preconf_blocks::TaikoStatus {
-                end_of_sequencing_block_hash: self.end_of_sequencing_block_hash.clone(),
+                end_of_sequencing_block_hash: self.end_of_sequencing_block_hash,
                 highest_unsafe_l2_payload_block_id: 2,
             })
         }
@@ -405,7 +405,7 @@ mod tests {
     impl PreconfDriver for TaikoMock {
         async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {
             Ok(preconf_blocks::TaikoStatus {
-                end_of_sequencing_block_hash: self.end_of_sequencing_block_hash.clone(),
+                end_of_sequencing_block_hash: self.end_of_sequencing_block_hash,
                 highest_unsafe_l2_payload_block_id: 0,
             })
         }
@@ -901,10 +901,8 @@ mod tests {
         );
 
         let mut operator = create_operator(
-            1 * 12, // second slot of epoch
-            true,
-            true,
-            true,
+            12, // second slot of epoch
+            true, true, true,
         );
         operator.next_operator = true;
         operator.continuing_role = true;

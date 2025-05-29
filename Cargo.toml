@@ -65,14 +65,9 @@ warp = { version = "0.3", default-features = false }
 # TODO document public api
 # https://github.com/NethermindEth/Taiko-Preconf-AVS/issues/426
 #missing_docs = "deny"
-# TODO sol! macros use unsafe - check after the alloy update
-# https://github.com/NethermindEth/Taiko-Preconf-AVS/issues/425
-#unsafe_code = "forbid"
+unsafe_code = "forbid"
 
-# TODO introduced for crates
-# https://github.com/NethermindEth/Taiko-Preconf-AVS/issues/430
 [workspace.lints.clippy]
-arithmetic_side_effects = "deny"
 cast_lossless = "deny"
 cast_possible_truncation = "deny"
 cast_possible_wrap = "deny"
@@ -81,3 +76,6 @@ cast_sign_loss = "deny"
 needless_return = "deny"
 panicking_overflow_checks = "deny"
 unwrap_used = "deny"
+
+[profile.release]
+overflow-checks = true

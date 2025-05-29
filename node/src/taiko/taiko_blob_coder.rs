@@ -89,7 +89,7 @@ impl TaikoBlobCoder {
             if round == 0 {
                 // special case for the zeroth round
                 buf31[0] = ENCODING_VERSION;
-                let ilen = data.len() as u32;
+                let ilen = u32::try_from(data.len())?;
                 buf31[1..4].copy_from_slice(&ilen.to_be_bytes()[1..]);
                 let to_read = data.len().min(27); // 27 = 31 - 4
                 buf31[4..4 + to_read].clone_from_slice(&data[..to_read]);

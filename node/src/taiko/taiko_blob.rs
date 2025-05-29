@@ -41,7 +41,8 @@ mod tests {
     #[test]
     fn test_build_taiko_blob_sidecar() {
         let data = vec![3u8; 400];
-        let sidecar = build_taiko_blob_sidecar(&data).unwrap();
+        let sidecar =
+            build_taiko_blob_sidecar(&data).expect("assert: can build taiko blob sidecar");
         for s in sidecar.into_iter() {
             println!("{:?}", s.kzg_commitment);
             assert!(s.verify_blob_kzg_proof().is_ok());
@@ -68,15 +69,16 @@ mod tests {
             0x61, 0x58, 0xF1, 0x1D,
         ];
 
-        let encoded_blob: Blob = TaikoBlobCoder::encode_blob(&data).unwrap();
+        let encoded_blob: Blob =
+            TaikoBlobCoder::encode_blob(&data).expect("assert: can encode taiko blob");
 
         assert_eq!(
-            alloy::primitives::keccak256(&encoded_blob),
+            alloy::primitives::keccak256(encoded_blob),
             FixedBytes::<32>::from_slice(
                 &alloy::hex::decode(
                     "f7ae80fe2d0ea322c04bc51e4a89495329f0628fbabacfcf6cc76dba3317bef8"
                 )
-                .unwrap()
+                .expect("assert: can decode static hex blob")
             )
         );
     }

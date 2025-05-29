@@ -99,7 +99,7 @@ impl ExecutionLayer {
             Self::fetch_pacaya_config(&contract_addresses.taiko_inbox, &provider_ws).await?;
 
         Ok(Self {
-            provider_ws: provider_ws,
+            provider_ws,
             preconfer_address,
             contract_addresses,
             pacaya_config,
@@ -191,7 +191,7 @@ impl ExecutionLayer {
         let mut blocks = Vec::new();
 
         for (i, l2_block) in l2_blocks.iter().enumerate() {
-            let count = l2_block.prebuilt_tx_list.tx_list.len() as u16;
+            let count = u16::try_from(l2_block.prebuilt_tx_list.tx_list.len())?;
             tx_vec.extend(l2_block.prebuilt_tx_list.tx_list.clone());
 
             /* times_shift is the difference in seconds between the current L2 block and the L2 previous block. */
@@ -489,7 +489,7 @@ impl ExecutionLayer {
 
     pub async fn get_l2_height_from_taiko_inbox(&self) -> Result<u64, Error> {
         let contract = taiko_inbox::ITaikoInbox::new(
-            self.contract_addresses.taiko_inbox.clone(),
+            self.contract_addresses.taiko_inbox,
             self.provider_ws.clone(),
         );
         let num_batches = contract.getStats2().call().await?.numBatches;
