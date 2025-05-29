@@ -207,7 +207,12 @@ impl ExecutionLayer {
             .ok_or(anyhow::anyhow!("No L2 blocks provided"))?
             .timestamp_sec;
 
-        if last_block_timestamp > self.get_l1_height().await? + slot_duration.as_secs() {
+        if last_block_timestamp
+            > self
+                .get_block_timestamp_by_number_or_tag(BlockNumberOrTag::Latest)
+                .await?
+                + slot_duration.as_secs()
+        {
             warn!("Last block timestamp is greater than next L1 block timestamp.");
             return Err(anyhow::anyhow!(TransactionError::EstimationTooEarly));
         }
@@ -521,13 +526,21 @@ impl ExecutionLayer {
     }
 
     pub async fn get_block_timestamp_by_id(&self, block_id: u64) -> Result<u64, Error> {
+        self.get_block_timestamp_by_number_or_tag(BlockNumberOrTag::Number(block_id))
+            .await
+    }
+
+    async fn get_block_timestamp_by_number_or_tag(
+        &self,
+        block_number_or_tag: BlockNumberOrTag,
+    ) -> Result<u64, Error> {
         let block = self
             .provider_ws
-            .get_block_by_number(BlockNumberOrTag::Number(block_id))
+            .get_block_by_number(block_number_or_tag)
             .await?
             .ok_or(anyhow::anyhow!(
                 "Failed to get block by number ({})",
-                block_id
+                block_number_or_tag
             ))?;
         Ok(block.header.timestamp)
     }
