@@ -14,10 +14,10 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use anyhow::Error;
-use std::{str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc, time::Duration};
 use tokio::sync::mpsc::Sender;
 
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::ethereum_l1::propose_batch_builder::ProposeBatchBuilder;
 
@@ -166,6 +166,7 @@ impl ExecutionLayer {
         l2_blocks: Vec<L2Block>,
         last_anchor_origin_height: u64,
         coinbase: Address,
+        slot_duration: Duration,
     ) -> Result<(), Error> {
         let mut tx_vec = Vec::new();
         let mut blocks = Vec::new();
@@ -205,6 +206,11 @@ impl ExecutionLayer {
             .last()
             .ok_or(anyhow::anyhow!("No L2 blocks provided"))?
             .timestamp_sec;
+
+        if last_block_timestamp > self.get_l1_height().await? + slot_duration.as_secs() {
+            warn!("Last block timestamp is greater than next L1 block timestamp.");
+            return Err(anyhow::anyhow!(TransactionError::EstimationTooEarly));
+        }
 
         debug!(
             "Proposing batch: current L1 block: {}, last_block_timestamp {}, last_anchor_origin_height {}",
