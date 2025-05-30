@@ -536,6 +536,9 @@ impl Node {
                         self.batch_manager.prepend_batches(batches);
                     }
                     VerificationResult::SuccessNoBatches => {}
+                    VerificationResult::VerificationInProgress => {
+                        return Ok(false);
+                    }
                 },
                 Err(err) => {
                     self.verifier = Some(verifier);
