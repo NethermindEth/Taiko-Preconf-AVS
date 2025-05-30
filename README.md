@@ -5,6 +5,8 @@
 
 # Taiko preconfer sidecar
 
+Engineered with ❤️ at [Nethermind](https://www.nethermind.io/)
+
 ## Features
 
 ✅ **Validator registration** to the preconfirmation registry at initial setup
@@ -19,8 +21,6 @@
     ✅ Constructing L2 blocks using the Taiko mempool.
     ✅ Publishing the L2 block to a preconfirmation P2P network.
     ✅ Syncing the local Taiko head with the latest preconfirmation state.
-
-Engineered with ❤️ at [Nethermind](https://www.nethermind.io/)
 
 ## Docker image
 
