@@ -49,3 +49,8 @@ See [README](node/README.md)
 * [Based Preconfirmations](https://docs.taiko.xyz/taiko-alethia-protocol/protocol-design/based-preconfirmation/)
 * [Based Preconfs FAQ](https://hackmd.io/@samlaf/based-preconfs-faq)
 * [Exploring Based Preconfirmations Without Gateways](https://www.youtube.com/watch?v=F5buuRuCCt4)
+
+## Use PR templates for contributions
+
+* https://github.com/NethermindEth/Taiko-Preconf-AVS/compare/master...{your-feature-branch}?template=feature.md
+* https://github.com/NethermindEth/Taiko-Preconf-AVS/compare/master...{your-bugfix-branch}?template=bugfix.md
