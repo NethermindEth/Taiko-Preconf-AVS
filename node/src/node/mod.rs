@@ -299,6 +299,7 @@ impl Node {
                         self.taiko.clone(),
                         self.batch_manager.clone_without_batches(),
                         0,
+                        self.cancel_token.clone(),
                     )
                     .await?,
                 );
@@ -343,6 +344,7 @@ impl Node {
                     self.taiko.clone(),
                     self.batch_manager.clone_without_batches(),
                     verification_slot,
+                    self.cancel_token.clone(),
                 )
                 .await;
                 match verifier_result {
@@ -537,6 +539,7 @@ impl Node {
                     }
                     VerificationResult::SuccessNoBatches => {}
                     VerificationResult::VerificationInProgress => {
+                        self.verifier = Some(verifier);
                         return Ok(false);
                     }
                 },

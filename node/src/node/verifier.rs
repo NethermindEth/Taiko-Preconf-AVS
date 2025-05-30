@@ -2,6 +2,7 @@ use alloy::primitives::B256;
 use anyhow::Error;
 use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
 use tokio::{sync::Mutex, task::JoinHandle};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::{ethereum_l1::EthereumL1, taiko::Taiko, utils::types::Slot};
@@ -36,6 +37,7 @@ struct VerifierThread {
     taiko: Arc<Taiko>,
     preconfirmation_root: PreconfirmationRootBlock,
     batch_manager: BatchManager,
+    cancel_token: CancellationToken,
 }
 
 impl Verifier {
@@ -44,7 +46,7 @@ impl Verifier {
         taiko: Arc<Taiko>,
         batch_manager: BatchManager,
         verification_slot: Slot,
-        //TODO: add cancel token
+        cancel_token: CancellationToken,
     ) -> Result<Self, Error> {
         let hash = taiko.get_l2_block_hash(taiko_geth_height).await?;
         debug!(
@@ -60,6 +62,7 @@ impl Verifier {
                 taiko,
                 preconfirmation_root: preconfirmation_root.clone(),
                 batch_manager,
+                cancel_token: cancel_token,
             }),
             verification_slot,
             verifier_thread_handle: None,
@@ -102,27 +105,29 @@ impl Verifier {
     ) -> Result<VerificationResult, Error> {
         if let Some(handle) = self.verifier_thread_handle.as_mut() {
             if handle.is_finished() {
+                debug!("Verifier thread handle has finished");
                 let result = handle.await?;
                 match result {
                     Ok(batches) => {
+                        debug!("Batches to send from verifier: {}", batches.len());
                         if batches.is_empty() {
                             return Ok(VerificationResult::SuccessNoBatches);
                         }
-                        return Ok(VerificationResult::SuccessWithBatches(batches));
+                        Ok(VerificationResult::SuccessWithBatches(batches))
                     }
                     Err(err) => {
                         let taiko_inbox_height = ethereum_l1
                             .execution_layer
                             .get_l2_height_from_taiko_inbox()
                             .await?;
-                        return Ok(VerificationResult::ReanchorNeeded(
+                        Ok(VerificationResult::ReanchorNeeded(
                             taiko_inbox_height,
                             format!("Verifier return an error: {}", err),
-                        ));
+                        ))
                     }
                 }
             } else {
-                return Ok(VerificationResult::VerificationInProgress);
+                Ok(VerificationResult::VerificationInProgress)
             }
         } else {
             if self.has_blocks_to_verify() {
@@ -146,7 +151,7 @@ impl Verifier {
 
                 return Ok(VerificationResult::VerificationInProgress);
             }
-            return Ok(VerificationResult::SuccessNoBatches);
+            Ok(VerificationResult::SuccessNoBatches)
         }
     }
 }
@@ -233,6 +238,9 @@ impl VerifierThread {
             let start = std::time::Instant::now();
             // recover all missed l2 blocks
             for current_height in taiko_inbox_height + 1..=taiko_geth_height {
+                if self.cancel_token.is_cancelled() {
+                    return Err(anyhow::anyhow!("Verification cancelled"));
+                }
                 self.batch_manager
                     .recover_from_l2_block(current_height)
                     .await?;
