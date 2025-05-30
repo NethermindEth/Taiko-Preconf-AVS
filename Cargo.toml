@@ -10,7 +10,7 @@ resolver = "2"
 default-members = ["node"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.84"
 edition = "2024"
 repository = "https://github.com/NethermindEth/Taiko-Preconf-AVS"
 license = "MIT"
@@ -62,9 +62,6 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 warp = { version = "0.3", default-features = false }
 
 [workspace.lints.rust]
-# TODO document public api
-# https://github.com/NethermindEth/Taiko-Preconf-AVS/issues/426
-#missing_docs = "deny"
 unsafe_code = "forbid"
 
 [workspace.lints.clippy]
