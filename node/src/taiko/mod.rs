@@ -39,8 +39,12 @@ use ecdsa::SigningKey;
 use k256::Secp256k1;
 use l2_contracts_bindings::{LibSharedData, TaikoAnchor};
 use serde_json::Value;
-use std::str::FromStr;
-use std::{sync::Arc, time::Duration};
+use std::{
+    cmp::{max, min},
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
+};
 use tokio::sync::RwLock;
 use tracing::{debug, info, trace, warn};
 mod fixed_k_signer_chainbound;
@@ -80,6 +84,7 @@ pub struct Taiko {
     metrics: Arc<Metrics>,
     max_bytes_per_tx_list: u64,
     throttling_factor: u64,
+    min_pending_tx_list_size_bytes: u64,
 }
 
 impl Taiko {
@@ -91,6 +96,7 @@ impl Taiko {
         rpc_client_timeout: Duration,
         max_bytes_per_tx_list: u64,
         throttling_factor: u64,
+        min_pending_tx_list_size_bytes: u64,
         jwt_secret_bytes: &[u8],
         preconfer_address: PreconferAddress,
         ethereum_l1: Arc<EthereumL1>,
@@ -137,6 +143,7 @@ impl Taiko {
             metrics,
             max_bytes_per_tx_list,
             throttling_factor,
+            min_pending_tx_list_size_bytes,
         })
     }
 
@@ -149,6 +156,7 @@ impl Taiko {
             self.max_bytes_per_tx_list,
             self.throttling_factor,
             batches_ready_to_send,
+            self.min_pending_tx_list_size_bytes,
         );
         let params = vec![
             Value::String(format!("0x{}", hex::encode(self.preconfer_address))), // beneficiary address
@@ -727,11 +735,16 @@ fn calculate_max_bytes_per_tx_list(
     max_bytes_per_tx_list: u64,
     throttling_factor: u64,
     batches_ready_to_send: u64,
+    min_pending_tx_list_size_bytes: u64,
 ) -> u64 {
     let mut size = max_bytes_per_tx_list;
     for _ in 0..batches_ready_to_send {
         size = size.saturating_sub(size / throttling_factor);
     }
+    size = min(
+        max_bytes_per_tx_list,
+        max(size, min_pending_tx_list_size_bytes),
+    );
     if batches_ready_to_send > 0 {
         debug!("Reducing max bytes per tx list to {}", size);
     }
@@ -746,33 +759,43 @@ mod test {
     fn test_calculate_max_bytes_per_tx_list() {
         let max_bytes = 1000; // 128KB
         let throttling_factor = 10;
+        let min_value = 100;
 
         // Test with no throttling (attempt = 0)
         assert_eq!(
-            calculate_max_bytes_per_tx_list(max_bytes, throttling_factor, 0),
+            calculate_max_bytes_per_tx_list(max_bytes, throttling_factor, 0, min_value),
             max_bytes
         );
 
         assert_eq!(
-            calculate_max_bytes_per_tx_list(max_bytes, throttling_factor, 1),
+            calculate_max_bytes_per_tx_list(max_bytes, throttling_factor, 1, min_value),
             900
         );
 
         assert_eq!(
-            calculate_max_bytes_per_tx_list(max_bytes, throttling_factor, 2),
+            calculate_max_bytes_per_tx_list(max_bytes, throttling_factor, 2, min_value),
             810
         );
 
         assert_eq!(
-            calculate_max_bytes_per_tx_list(max_bytes, throttling_factor, 3),
+            calculate_max_bytes_per_tx_list(max_bytes, throttling_factor, 3, min_value),
             729
         );
 
         // Test with throttling factor greater than max_bytes
-        assert_eq!(calculate_max_bytes_per_tx_list(100, 200, 1), 100);
+        assert_eq!(calculate_max_bytes_per_tx_list(100, 200, 1, min_value), 100);
 
         // Test with zero max_bytes
-        assert_eq!(calculate_max_bytes_per_tx_list(0, throttling_factor, 1), 0);
+        assert_eq!(
+            calculate_max_bytes_per_tx_list(0, throttling_factor, 1, min_value),
+            0
+        );
+
+        // Test with min_value
+        assert_eq!(
+            calculate_max_bytes_per_tx_list(max_bytes, throttling_factor, 500, min_value),
+            min_value
+        );
     }
 }
 
