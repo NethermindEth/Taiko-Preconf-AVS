@@ -9,18 +9,15 @@ Engineered with ❤️ at [Nethermind](https://www.nethermind.io/)
 
 ## Features
 
-✅ **Validator registration** to the preconfirmation registry at initial setup
-
-✅ **Lookahead** submissions and disputes.
-
-✅ **Dispute** **against preconfirmations** made by other validators.
-
-✅ Execution of the **main preconfirmation duties**, which include:
-
-    ✅ Checking the lookahead to determine if it's the validator’s turn to preconfirm.
-    ✅ Constructing L2 blocks using the Taiko mempool.
-    ✅ Publishing the L2 block to a preconfirmation P2P network.
-    ✅ Syncing the local Taiko head with the latest preconfirmation state.
+- ✅ **Validator registration** to the preconfirmation registry at initial setup
+- ✅ **Lookahead** submissions and disputes.
+- ✅ **Dispute** **against preconfirmations** made by other validators.
+- ✅ Execution of the **main preconfirmation duties**, which include:
+  - ✅ Checking the lookahead to determine if it's the validator’s turn to preconfirm.
+  - ✅ Constructing L2 blocks using the Taiko mempool.
+  - ✅ Publishing the L2 block to a preconfirmation P2P network.
+  - ✅ Syncing the local Taiko head with the latest preconfirmation state.
+  - ✅ Posting L2 blocks through the L1 mempool
 
 ## Docker image
 
