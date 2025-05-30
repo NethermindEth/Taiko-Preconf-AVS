@@ -332,6 +332,15 @@ impl BatchBuilder {
     pub fn get_number_of_batches_ready_to_send(&self) -> u64 {
         self.batches_to_send.len() as u64
     }
+
+    pub fn take_batches_to_send(&mut self) -> VecDeque<Batch> {
+        std::mem::take(&mut self.batches_to_send)
+    }
+
+    pub fn prepend_batches(&mut self, mut batches: VecDeque<Batch>) {
+        batches.append(&mut self.batches_to_send);
+        self.batches_to_send = batches;
+    }
 }
 
 #[cfg(test)]

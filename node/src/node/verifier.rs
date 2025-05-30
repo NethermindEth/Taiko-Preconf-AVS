@@ -1,13 +1,20 @@
 use alloy::primitives::B256;
 use anyhow::Error;
-use std::{cmp::Ordering, sync::Arc};
+use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
 use tracing::{debug, info};
 
-use crate::{taiko::Taiko, utils::types::Slot};
+use crate::{ethereum_l1::EthereumL1, taiko::Taiko, utils::types::Slot};
 
-use super::batch_manager::BatchManager;
+use super::batch_manager::{BatchManager, batch_builder::Batch};
 
 use crate::Metrics;
+
+pub enum VerificationResult {
+    SuccessNoBatches,
+    SuccessWithBatches(VecDeque<Batch>),
+    ReanchorNeeded(u64, String),
+    SlotNotValid,
+}
 
 struct PreconfirmationRootBlock {
     number: u64,
@@ -115,22 +122,15 @@ impl Verifier {
             );
             self.verified_height = self.preconfirmation_root.number;
 
-            metrics.inc_by_batch_recovered(self.get_number_of_batches());
+            metrics.inc_by_batch_recovered(self.batch_manager.get_number_of_batches());
         }
 
         Ok(())
     }
 
-    pub fn has_batches_to_submit(&self) -> bool {
-        self.batch_manager.has_batches()
-    }
-
-    pub fn get_number_of_batches(&self) -> u64 {
-        self.batch_manager.get_number_of_batches()
-    }
-
-    pub fn get_number_of_batches_ready_to_send(&self) -> u64 {
-        self.batch_manager.get_number_of_batches_ready_to_send()
+    fn finalize_and_take_batches_to_send(&mut self) -> VecDeque<Batch> {
+        self.batch_manager.finalize_current_batch();
+        self.batch_manager.take_batches_to_send()
     }
 
     pub async fn handle_unprocessed_blocks(
@@ -168,7 +168,45 @@ impl Verifier {
         Ok(())
     }
 
-    pub async fn try_submit_oldest_batch(&mut self) -> Result<(), Error> {
-        self.batch_manager.try_submit_oldest_batch(false).await
+    /// Returns true if the operation succeeds
+    pub async fn verify(
+        &mut self,
+        ethereum_l1: Arc<EthereumL1>,
+        metrics: Arc<Metrics>,
+    ) -> Result<VerificationResult, Error> {
+        if self.has_blocks_to_verify() {
+            let head_slot = ethereum_l1.consensus_layer.get_head_slot_number().await?;
+
+            if !self.is_slot_valid(head_slot) {
+                info!(
+                    "Slot {} is not valid for verification, target slot {}, skipping",
+                    head_slot,
+                    self.get_verification_slot()
+                );
+                return Ok(VerificationResult::SlotNotValid);
+            }
+
+            let taiko_inbox_height = ethereum_l1
+                .execution_layer
+                .get_l2_height_from_taiko_inbox()
+                .await?;
+            if let Err(err) = self
+                .verify_submitted_blocks(taiko_inbox_height, metrics)
+                .await
+            {
+                return Ok(VerificationResult::ReanchorNeeded(
+                    taiko_inbox_height,
+                    format!("Verifier return an error: {}", err),
+                ));
+            }
+        }
+
+        if self.batch_manager.has_batches() {
+            Ok(VerificationResult::SuccessWithBatches(
+                self.finalize_and_take_batches_to_send(),
+            ))
+        } else {
+            Ok(VerificationResult::SuccessNoBatches)
+        }
     }
 }
