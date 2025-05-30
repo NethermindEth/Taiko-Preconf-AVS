@@ -62,7 +62,7 @@ impl Verifier {
                 taiko,
                 preconfirmation_root: preconfirmation_root.clone(),
                 batch_manager,
-                cancel_token: cancel_token,
+                cancel_token,
             }),
             verification_slot,
             verifier_thread_handle: None,
