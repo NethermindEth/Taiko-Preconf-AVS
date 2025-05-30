@@ -111,6 +111,7 @@ async fn main() -> Result<(), Error> {
             config.rpc_client_timeout,
             config.max_bytes_per_tx_list,
             config.throttling_factor,
+            config.min_bytes_per_tx_list,
             &jwt_secret_bytes,
             ethereum_l1.execution_layer.get_preconfer_address(),
             ethereum_l1.clone(),
