@@ -18,7 +18,6 @@
     ✅ Checking the lookahead to determine if it's the validator’s turn to preconfirm.
     ✅ Constructing L2 blocks using the Taiko mempool.
     ✅ Publishing the L2 block to a preconfirmation P2P network.
-    ✅ Force-including the preconfirmed L2 blocks to L1 using [Chainbound’s Bolt](https://docs.boltprotocol.xyz/).
     ✅ Syncing the local Taiko head with the latest preconfirmation state.
 
 Engineered with ❤️ at [Nethermind](https://www.nethermind.io/)
