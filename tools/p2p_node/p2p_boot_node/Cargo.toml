@@ -1,7 +1,7 @@
 [package]
 name = "p2p-boot-node"
 publish = false
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 repository.workspace = true
 license.workspace = true
