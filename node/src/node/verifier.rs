@@ -1,7 +1,7 @@
 use alloy::primitives::B256;
 use anyhow::Error;
 use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
-use tokio::{sync::Mutex, task::JoinHandle};
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
@@ -30,7 +30,6 @@ pub struct Verifier {
     verifier_thread: Option<VerifierThread>,
     verifier_thread_handle: Option<JoinHandle<Result<VecDeque<Batch>, Error>>>,
     preconfirmation_root: PreconfirmationRootBlock,
-    thread_start_mutex: Mutex<()>,
 }
 
 struct VerifierThread {
@@ -67,7 +66,6 @@ impl Verifier {
             verification_slot,
             verifier_thread_handle: None,
             preconfirmation_root,
-            thread_start_mutex: Mutex::new(()),
         })
     }
 
@@ -84,7 +82,6 @@ impl Verifier {
     }
 
     async fn start_verification_thread(&mut self, taiko_inbox_height: u64, metrics: Arc<Metrics>) {
-        let _guard = self.thread_start_mutex.lock().await; // protect from multiple threads
         if let Some(mut verifier_thread) = self.verifier_thread.take() {
             self.verifier_thread_handle = Some(tokio::spawn(async move {
                 info!("🔍 Started block verification thread");
