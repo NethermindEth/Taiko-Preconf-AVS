@@ -31,6 +31,10 @@ Install a pre-push git hook:
 git config core.hooksPath .githooks
 ```
 
+## Node
+
+See [README](node/README.md)
+
 ## Tools
 
 * [p2p network emulator](tools/p2p_node/README.md)
@@ -42,3 +46,6 @@ git config core.hooksPath .githooks
 * [Protocols](https://docs.libp2p.io/concepts/fundamentals/protocols/)
 * [Swarm](https://docs.libp2p.io/concepts/appendix/glossary/#swarm)
 * [devp2p](https://docs.libp2p.io/concepts/similar-projects/devp2p/)
+* [Based Preconfirmations](https://docs.taiko.xyz/taiko-alethia-protocol/protocol-design/based-preconfirmation/)
+* [Based Preconfs FAQ](https://hackmd.io/@samlaf/based-preconfs-faq)
+* [Exploring Based Preconfirmations Without Gateways](https://www.youtube.com/watch?v=F5buuRuCCt4)
