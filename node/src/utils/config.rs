@@ -35,7 +35,7 @@ pub struct Config {
     pub simulate_not_submitting_at_the_end_of_epoch: bool,
     pub max_bytes_per_tx_list: u64,
     pub throttling_factor: u64,
-    pub min_pending_tx_list_size_bytes: u64,
+    pub min_bytes_per_tx_list: u64,
 }
 
 #[derive(Debug)]
@@ -265,10 +265,10 @@ impl Config {
             .parse::<u64>()
             .expect("THROTTLING_FACTOR must be a number");
 
-        let min_pending_tx_list_size_bytes = std::env::var("MIN_PENDING_TX_LIST_SIZE_BYTES")
+        let min_bytes_per_tx_list = std::env::var("MIN_BYTES_PER_TX_LIST")
             .unwrap_or("8192".to_string()) // 8KB
             .parse::<u64>()
-            .expect("MIN_PENDING_TX_LIST_SIZE_BYTES must be a number");
+            .expect("MIN_BYTES_PER_TX_LIST must be a number");
 
         let config = Self {
             taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
@@ -309,7 +309,7 @@ impl Config {
             simulate_not_submitting_at_the_end_of_epoch,
             max_bytes_per_tx_list,
             throttling_factor,
-            min_pending_tx_list_size_bytes,
+            min_bytes_per_tx_list,
         };
 
         info!(
@@ -367,7 +367,7 @@ simulate not submitting at the end of epoch: {}
             config.l1_height_lag,
             config.max_bytes_per_tx_list,
             config.throttling_factor,
-            config.min_pending_tx_list_size_bytes,
+            config.min_bytes_per_tx_list,
             config.max_bytes_size_of_batch,
             config.max_blocks_per_batch,
             config.max_time_shift_between_blocks_sec,
