@@ -407,7 +407,7 @@ impl Node {
 
         if current_status.is_submitter() {
             // first check verifier
-            if self.is_verifier_successful().await? {
+            if self.has_verified_unproposed_batches().await? {
                 if let Err(err) = self
                     .batch_manager
                     .try_submit_oldest_batch(current_status.is_preconfer())
@@ -514,7 +514,7 @@ impl Node {
     }
 
     /// Returns true if the operation succeeds
-    async fn is_verifier_successful(&mut self) -> Result<bool, Error> {
+    async fn has_verified_unproposed_batches(&mut self) -> Result<bool, Error> {
         if let Some(mut verifier) = self.verifier.take() {
             match verifier
                 .verify(self.ethereum_l1.clone(), self.metrics.clone())
@@ -529,7 +529,6 @@ impl Node {
                         if let Err(err) = self.reanchor_blocks(block, &reason).await {
                             error!("Failed to reanchor blocks: {}", err);
                             self.cancel_token.cancel();
-                            self.verifier = Some(verifier);
                             return Err(err);
                         }
                     }
