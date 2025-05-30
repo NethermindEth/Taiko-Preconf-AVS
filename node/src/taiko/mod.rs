@@ -84,7 +84,7 @@ pub struct Taiko {
     metrics: Arc<Metrics>,
     max_bytes_per_tx_list: u64,
     throttling_factor: u64,
-    min_pending_tx_list_size_bytes: u64,
+    min_bytes_per_tx_list: u64,
 }
 
 impl Taiko {
@@ -96,7 +96,7 @@ impl Taiko {
         rpc_client_timeout: Duration,
         max_bytes_per_tx_list: u64,
         throttling_factor: u64,
-        min_pending_tx_list_size_bytes: u64,
+        min_bytes_per_tx_list: u64,
         jwt_secret_bytes: &[u8],
         preconfer_address: PreconferAddress,
         ethereum_l1: Arc<EthereumL1>,
@@ -143,7 +143,7 @@ impl Taiko {
             metrics,
             max_bytes_per_tx_list,
             throttling_factor,
-            min_pending_tx_list_size_bytes,
+            min_bytes_per_tx_list,
         })
     }
 
@@ -156,7 +156,7 @@ impl Taiko {
             self.max_bytes_per_tx_list,
             self.throttling_factor,
             batches_ready_to_send,
-            self.min_pending_tx_list_size_bytes,
+            self.min_bytes_per_tx_list,
         );
         let params = vec![
             Value::String(format!("0x{}", hex::encode(self.preconfer_address))), // beneficiary address
@@ -735,16 +735,13 @@ fn calculate_max_bytes_per_tx_list(
     max_bytes_per_tx_list: u64,
     throttling_factor: u64,
     batches_ready_to_send: u64,
-    min_pending_tx_list_size_bytes: u64,
+    min_bytes_per_tx_list: u64,
 ) -> u64 {
     let mut size = max_bytes_per_tx_list;
     for _ in 0..batches_ready_to_send {
         size = size.saturating_sub(size / throttling_factor);
     }
-    size = min(
-        max_bytes_per_tx_list,
-        max(size, min_pending_tx_list_size_bytes),
-    );
+    size = min(max_bytes_per_tx_list, max(size, min_bytes_per_tx_list));
     if batches_ready_to_send > 0 {
         debug!("Reducing max bytes per tx list to {}", size);
     }
