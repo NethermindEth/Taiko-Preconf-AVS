@@ -181,7 +181,7 @@ impl ExecutionLayer {
         // be included in the previous L1 block and we'll get TimestampTooLarge error.
         if current_l1_slot_timestamp < last_block_timestamp
             && SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs()
-                < current_l1_slot_timestamp + DELAYED_L1_PROPOSAL_BUFFER
+                <= current_l1_slot_timestamp + DELAYED_L1_PROPOSAL_BUFFER
         {
             warn!("Last block timestamp is within the delayed L1 proposal buffer.");
             return Err(anyhow::anyhow!(TransactionError::EstimationTooEarly));
