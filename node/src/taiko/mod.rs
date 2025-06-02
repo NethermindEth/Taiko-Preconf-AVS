@@ -474,7 +474,7 @@ impl Taiko {
                 self.call_driver_short_timeout(http::Method::POST, API_ENDPOINT, &request_body)
                     .await?
             }
-            OperationType::Reorg => {
+            OperationType::Reanchor => {
                 self.call_driver_long_timeout(http::Method::POST, API_ENDPOINT, &request_body)
                     .await?
             }

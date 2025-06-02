@@ -152,7 +152,7 @@ impl BatchManager {
         l2_slot_info: L2SlotInfo,
     ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
         let l2_block = L2Block::new_from(pending_tx_list, l2_slot_info.slot_timestamp());
-        self.add_new_l2_block(l2_block, l2_slot_info, false, OperationType::Reorg)
+        self.add_new_l2_block(l2_block, l2_slot_info, false, OperationType::Reanchor)
             .await
     }
 

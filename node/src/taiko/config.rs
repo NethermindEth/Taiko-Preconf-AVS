@@ -29,7 +29,7 @@ pub type WsProvider = FillProvider<
 
 pub enum OperationType {
     Preconfirm,
-    Reorg,
+    Reanchor,
 }
 
 pub struct TaikoConfig {
