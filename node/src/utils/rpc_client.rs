@@ -160,14 +160,6 @@ impl HttpRPCClient {
         })
     }
 
-    pub fn get_base_url(&self) -> &str {
-        &self.base_url
-    }
-
-    pub fn get_jwt_secret(&self) -> &[u8; 32] {
-        &self.jwt_secret
-    }
-
     fn create_client(timeout: Duration, jwt_secret: &[u8; 32]) -> Result<reqwest::Client, Error> {
         let jwt = B256::from_slice(jwt_secret);
 

@@ -538,9 +538,9 @@ impl Taiko {
         T: serde::Serialize,
     {
         let driver_rpc = HttpRPCClient::new_with_jwt(
-            self.driver_rpc.get_base_url(),
+            &self.config.driver_url,
             self.config.rpc_long_timeout,
-            self.driver_rpc.get_jwt_secret(),
+            &self.config.jwt_secret_bytes,
         )?;
 
         driver_rpc
