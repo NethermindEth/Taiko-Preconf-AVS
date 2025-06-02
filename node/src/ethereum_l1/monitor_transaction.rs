@@ -321,7 +321,7 @@ impl TransactionMonitorThread {
                 TxStatus::Confirmed(_) => return true,
                 TxStatus::Failed(err_str) => {
                     if err_str.contains("0x3d32ffdb") {
-                        debug!("⚠️ Transaction reverted TimestampTooLarge()");
+                        warn!("⚠️ Transaction reverted TimestampTooLarge()");
                         self.send_tx_result_signal(TransactionResult::TimestampTooLarge)
                             .await;
                         return true;
