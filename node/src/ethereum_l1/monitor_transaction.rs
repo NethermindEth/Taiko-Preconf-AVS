@@ -318,7 +318,13 @@ impl TransactionMonitorThread {
             let tx_status = self.wait_for_tx_receipt(check_tx, sending_attempt).await;
             match tx_status {
                 TxStatus::Confirmed(_) => return true,
-                TxStatus::Failed(_) => {
+                TxStatus::Failed(err_str) => {
+                    if err_str.contains("0x3d32ffdb") {
+                        warn!("⚠️ Transaction reverted TimestampTooLarge()");
+                        self.send_error_signal(TransactionError::TimestampTooLarge)
+                            .await;
+                        return true;
+                    }
                     self.send_error_signal(TransactionError::TransactionReverted)
                         .await;
                     return true;

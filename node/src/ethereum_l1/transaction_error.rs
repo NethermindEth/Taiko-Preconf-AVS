@@ -6,6 +6,7 @@ pub enum TransactionError {
     NotConfirmed,
     UnsupportedTransactionType,
     GetBlockNumberFailed,
+    TimestampTooLarge,
 }
 
 impl std::fmt::Display for TransactionError {
