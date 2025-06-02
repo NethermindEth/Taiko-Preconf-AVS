@@ -319,8 +319,7 @@ impl TransactionMonitorThread {
             let tx_status = self.wait_for_tx_receipt(check_tx, sending_attempt).await;
             match tx_status {
                 TxStatus::Confirmed(_) => {
-                    self.send_tx_result_signal(TransactionResult::Success)
-                            .await;
+                    self.send_tx_result_signal(TransactionResult::Success).await;
                     return true;
                 }
                 TxStatus::Failed(err_str) => {
