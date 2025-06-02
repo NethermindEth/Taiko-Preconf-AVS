@@ -68,6 +68,10 @@ impl<T: Clock> SlotClock<T> {
         self.slot_duration
     }
 
+    pub fn get_epoch_duration(&self) -> Duration {
+        Duration::from_secs(self.slot_duration.as_secs() * self.slots_per_epoch)
+    }
+
     pub fn get_slots_per_epoch(&self) -> u64 {
         self.slots_per_epoch
     }
@@ -511,5 +515,11 @@ mod tests {
 
         // Test case 3: L1 block timestamp is at slot 8
         assert_eq!(slot_clock.slots_since_l1_block(96).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_get_epoch_duration() {
+        let slot_clock: SlotClock = SlotClock::new(0, 0, SLOT_DURATION, 32, PRECONF_HEART_BEAT_MS);
+        assert_eq!(slot_clock.get_epoch_duration(), Duration::from_secs(384));
     }
 }

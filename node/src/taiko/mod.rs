@@ -35,6 +35,9 @@ use alloy::{
 };
 use alloy_json_rpc::RpcError;
 use anyhow::Error;
+use config::{
+    GOLDEN_TOUCH_ADDRESS, GOLDEN_TOUCH_PRIVATE_KEY, OperationType, TaikoConfig, WsProvider,
+};
 use ecdsa::SigningKey;
 use k256::Secp256k1;
 use l2_contracts_bindings::{LibSharedData, TaikoAnchor};
@@ -47,63 +50,33 @@ use std::{
 };
 use tokio::sync::RwLock;
 use tracing::{debug, info, trace, warn};
+
+pub mod config;
 mod fixed_k_signer_chainbound;
 mod l2_contracts_bindings;
 pub mod preconf_blocks;
 pub mod taiko_blob;
 mod taiko_blob_coder;
 
-const GOLDEN_TOUCH_PRIVATE_KEY: B256 = B256::new([
-    0x92, 0x95, 0x43, 0x68, 0xaf, 0xd3, 0xca, 0xa1, 0xf3, 0xce, 0x3e, 0xad, 0x00, 0x69, 0xc1, 0xaf,
-    0x41, 0x40, 0x54, 0xae, 0xfe, 0x1e, 0xf9, 0xae, 0xac, 0xc1, 0xbf, 0x42, 0x62, 0x22, 0xce, 0x38,
-]);
-
-const GOLDEN_TOUCH_ADDRESS: Address = Address::new([
-    0x00, 0x00, 0x77, 0x77, 0x35, 0x36, 0x7b, 0x36, 0xbc, 0x9b, 0x61, 0xc5, 0x00, 0x22, 0xd9, 0xd0,
-    0x70, 0x0d, 0xb4, 0xec,
-]);
-
-type WsProvider = FillProvider<
-    JoinFill<
-        Identity,
-        JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
-    >,
-    RootProvider,
->;
-
 pub struct Taiko {
     taiko_geth_provider_ws: RwLock<WsProvider>,
-    taiko_geth_ws_url: String,
     taiko_geth_auth_rpc: JSONRPCClient,
     driver_rpc: HttpRPCClient,
     pub chain_id: u64,
-    preconfer_address: PreconferAddress,
     ethereum_l1: Arc<EthereumL1>,
     taiko_anchor: RwLock<TaikoAnchor::TaikoAnchorInstance<WsProvider>>,
-    taiko_anchor_address: Address,
     metrics: Arc<Metrics>,
-    max_bytes_per_tx_list: u64,
-    throttling_factor: u64,
-    min_bytes_per_tx_list: u64,
+    config: TaikoConfig,
 }
 
 impl Taiko {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
-        taiko_geth_ws_url: &str,
-        taiko_geth_auth_url: &str,
-        driver_url: &str,
-        rpc_client_timeout: Duration,
-        max_bytes_per_tx_list: u64,
-        throttling_factor: u64,
-        min_bytes_per_tx_list: u64,
-        jwt_secret_bytes: &[u8],
-        preconfer_address: PreconferAddress,
         ethereum_l1: Arc<EthereumL1>,
-        taiko_anchor_address: String,
         metrics: Arc<Metrics>,
+        taiko_config: TaikoConfig,
     ) -> Result<Self, Error> {
-        let ws = WsConnect::new(taiko_geth_ws_url.to_string());
+        let ws = WsConnect::new(taiko_config.taiko_geth_ws_url.to_string());
         let provider_ws = RwLock::new(
             ProviderBuilder::new()
                 .connect_ws(ws.clone())
@@ -116,7 +89,7 @@ impl Taiko {
         let chain_id = provider_ws.read().await.get_chain_id().await?;
         info!("L2 Chain ID: {}", chain_id);
 
-        let taiko_anchor_address = Address::from_str(&taiko_anchor_address)?;
+        let taiko_anchor_address = Address::from_str(&taiko_config.taiko_anchor_address)?;
         let mut taiko_anchor = RwLock::new(TaikoAnchor::new(
             taiko_anchor_address,
             provider_ws.read().await.clone(),
@@ -124,26 +97,21 @@ impl Taiko {
 
         Ok(Self {
             taiko_geth_provider_ws: provider_ws,
-            taiko_geth_ws_url: taiko_geth_ws_url.to_string(),
             taiko_geth_auth_rpc: JSONRPCClient::new_with_timeout_and_jwt(
-                taiko_geth_auth_url,
-                rpc_client_timeout,
-                jwt_secret_bytes,
+                &taiko_config.taiko_geth_auth_url,
+                taiko_config.rpc_short_timeout,
+                &taiko_config.jwt_secret_bytes,
             )?,
             driver_rpc: HttpRPCClient::new_with_jwt(
-                driver_url,
-                rpc_client_timeout,
-                jwt_secret_bytes,
+                &taiko_config.driver_url,
+                taiko_config.rpc_short_timeout,
+                &taiko_config.jwt_secret_bytes,
             )?,
             chain_id,
-            preconfer_address,
             ethereum_l1,
             taiko_anchor,
-            taiko_anchor_address,
             metrics,
-            max_bytes_per_tx_list,
-            throttling_factor,
-            min_bytes_per_tx_list,
+            config: taiko_config,
         })
     }
 
@@ -153,14 +121,14 @@ impl Taiko {
         batches_ready_to_send: u64,
     ) -> Result<Option<PreBuiltTxList>, Error> {
         let max_bytes_per_tx_list = calculate_max_bytes_per_tx_list(
-            self.max_bytes_per_tx_list,
-            self.throttling_factor,
+            self.config.max_bytes_per_tx_list,
+            self.config.throttling_factor,
             batches_ready_to_send,
-            self.min_bytes_per_tx_list,
+            self.config.min_bytes_per_tx_list,
         );
         let params = vec![
-            Value::String(format!("0x{}", hex::encode(self.preconfer_address))), // beneficiary address
-            Value::from(base_fee),                                               // baseFee
+            Value::String(format!("0x{}", hex::encode(self.config.preconfer_address))), // beneficiary address
+            Value::from(base_fee),                                                      // baseFee
             Value::Number(
                 self.ethereum_l1
                     .execution_layer
@@ -427,18 +395,20 @@ impl Taiko {
     }
 
     async fn recreate_ws_provider(&self) -> Result<(), Error> {
-        let ws = WsConnect::new(self.taiko_geth_ws_url.clone());
+        let ws = WsConnect::new(self.config.taiko_geth_ws_url.clone());
         let provider = ProviderBuilder::new()
             .connect_ws(ws.clone())
             .await
             .map_err(|e| anyhow::anyhow!("Taiko::new: Failed to create WebSocket provider: {e}"))?;
 
-        *self.taiko_anchor.write().await =
-            TaikoAnchor::new(self.taiko_anchor_address, provider.clone());
+        *self.taiko_anchor.write().await = TaikoAnchor::new(
+            Address::from_str(&self.config.taiko_anchor_address)?,
+            provider.clone(),
+        );
         *self.taiko_geth_provider_ws.write().await = provider;
         debug!(
             "Created new WebSocket provider for {}",
-            self.taiko_geth_ws_url
+            self.config.taiko_geth_ws_url
         );
         Ok(())
     }
@@ -449,6 +419,7 @@ impl Taiko {
         anchor_origin_height: u64,
         l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
+        operation_type: OperationType,
     ) -> Result<Option<preconf_blocks::BuildPreconfBlockResponse>, Error> {
         tracing::debug!("Submitting new L2 blocks to the Taiko driver");
 
@@ -484,7 +455,7 @@ impl Taiko {
             base_fee_per_gas: l2_slot_info.base_fee(),
             block_number: l2_slot_info.parent_id() + 1,
             extra_data: format!("0x{:0>64}", hex::encode(extra_data)),
-            fee_recipient: format!("0x{}", hex::encode(self.preconfer_address)),
+            fee_recipient: format!("0x{}", hex::encode(self.config.preconfer_address)),
             gas_limit: 241_000_000u64,
             parent_hash: format!("0x{}", hex::encode(l2_slot_info.parent_hash())),
             timestamp: l2_block.timestamp_sec,
@@ -498,9 +469,16 @@ impl Taiko {
 
         const API_ENDPOINT: &str = "preconfBlocks";
 
-        let response = self
-            .call_driver_until_success(http::Method::POST, API_ENDPOINT, &request_body)
-            .await?;
+        let response = match operation_type {
+            OperationType::Preconfirm => {
+                self.call_driver_short_timeout(http::Method::POST, API_ENDPOINT, &request_body)
+                    .await?
+            }
+            OperationType::Reorg => {
+                self.call_driver_long_timeout(http::Method::POST, API_ENDPOINT, &request_body)
+                    .await?
+            }
+        };
 
         trace!("Response from preconfBlocks: {:?}", response);
 
@@ -523,7 +501,7 @@ impl Taiko {
         let request_body = serde_json::json!({});
 
         let response = self
-            .call_driver_until_success(http::Method::GET, API_ENDPOINT, &request_body)
+            .call_driver_short_timeout(http::Method::GET, API_ENDPOINT, &request_body)
             .await?;
 
         trace!("Response from taiko status: {:?}", response);
@@ -533,7 +511,7 @@ impl Taiko {
         Ok(status)
     }
 
-    async fn call_driver_until_success<T>(
+    async fn call_driver_short_timeout<T>(
         &self,
         method: http::Method,
         endpoint: &str,
@@ -543,43 +521,36 @@ impl Taiko {
         T: serde::Serialize,
     {
         let heartbeat_ms = self.ethereum_l1.slot_clock.get_preconf_heartbeat_ms();
-        let start_time = std::time::Instant::now();
         let max_duration = Duration::from_millis(heartbeat_ms / 2); // half of the heartbeat duration, leave time for other operations
 
-        // Try until we exceed the heartbeat duration
-        while start_time.elapsed() < max_duration {
-            let response = self
-                .driver_rpc
-                .request_json(method.clone(), endpoint, payload)
-                .await;
+        self.driver_rpc
+            .retry_request_with_timeout(method, endpoint, payload, max_duration)
+            .await
+    }
 
-            match response {
-                Ok(ref data) => {
-                    return Ok(data.clone());
-                }
-                Err(ref e) => {
-                    let elapsed = start_time.elapsed();
-                    let remaining = max_duration.checked_sub(elapsed).unwrap_or_default();
+    async fn call_driver_long_timeout<T>(
+        &self,
+        method: http::Method,
+        endpoint: &str,
+        payload: &T,
+    ) -> Result<Value, Error>
+    where
+        T: serde::Serialize,
+    {
+        let driver_rpc = HttpRPCClient::new_with_jwt(
+            self.driver_rpc.get_base_url(),
+            self.config.rpc_long_timeout,
+            self.driver_rpc.get_jwt_secret(),
+        )?;
 
-                    tracing::error!(
-                        "Failed to call driver RPC for API '{}': {}. Retrying... ({}ms elapsed, {}ms remaining)",
-                        endpoint,
-                        e,
-                        elapsed.as_millis(),
-                        remaining.as_millis()
-                    );
-
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                    self.driver_rpc.recreate_client().await?;
-                }
-            }
-        }
-
-        Err(anyhow::anyhow!(
-            "Failed to call driver RPC for API '{}' within the duration ({}ms)",
-            endpoint,
-            max_duration.as_millis()
-        ))
+        driver_rpc
+            .retry_request_with_timeout(
+                method,
+                endpoint,
+                payload,
+                self.ethereum_l1.slot_clock.get_epoch_duration() / 2,
+            )
+            .await
     }
 
     fn get_base_fee_config(&self) -> LibSharedData::BaseFeeConfig {

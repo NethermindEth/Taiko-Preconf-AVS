@@ -16,7 +16,8 @@ pub struct Config {
     pub msg_expiry_sec: u64,
     pub contract_addresses: L1ContractAddresses,
     pub jwt_secret_file_path: String,
-    pub rpc_client_timeout: Duration,
+    pub rpc_short_timeout: Duration,
+    pub rpc_long_timeout: Duration,
     pub taiko_anchor_address: String,
     pub handover_window_slots: u64,
     pub handover_start_buffer_ms: u64,
@@ -159,11 +160,17 @@ impl Config {
             "/tmp/jwtsecret".to_string()
         });
 
-        let rpc_client_timeout = std::env::var("RPC_CLIENT_TIMEOUT_MS")
+        let rpc_short_timeout = std::env::var("RPC_SHORT_TIMEOUT_MS")
             .unwrap_or("1000".to_string())
             .parse::<u64>()
-            .expect("RPC_CLIENT_TIMEOUT_MS must be a number");
-        let rpc_client_timeout = Duration::from_millis(rpc_client_timeout);
+            .expect("RPC_SHORT_TIMEOUT_MS must be a number");
+        let rpc_short_timeout = Duration::from_millis(rpc_short_timeout);
+
+        let rpc_long_timeout = std::env::var("RPC_LONG_TIMEOUT_MS")
+            .unwrap_or("10000".to_string())
+            .parse::<u64>()
+            .expect("RPC_LONG_TIMEOUT_MS must be a number");
+        let rpc_long_timeout = Duration::from_millis(rpc_long_timeout);
 
         let taiko_anchor_address = std::env::var("TAIKO_ANCHOR_ADDRESS")
             .unwrap_or("0x1670010000000000000000000000000000010001".to_string());
@@ -290,7 +297,8 @@ impl Config {
             msg_expiry_sec,
             contract_addresses,
             jwt_secret_file_path,
-            rpc_client_timeout,
+            rpc_short_timeout,
+            rpc_long_timeout,
             taiko_anchor_address,
             handover_window_slots,
             handover_start_buffer_ms,
@@ -327,7 +335,8 @@ L2 slot duration (heart beat): {}
 Preconf registry expiry: {}s
 Contract addresses: {:#?}
 jwt secret file path: {}
-rpc client timeout: {}s
+rpc short timeout: {}ms
+rpc long timeout: {}ms
 taiko anchor address: {}
 handover window slots: {}
 handover start buffer: {}ms
@@ -360,7 +369,8 @@ simulate not submitting at the end of epoch: {}
             config.msg_expiry_sec,
             config.contract_addresses,
             config.jwt_secret_file_path,
-            config.rpc_client_timeout.as_secs(),
+            config.rpc_short_timeout.as_millis(),
+            config.rpc_long_timeout.as_millis(),
             config.taiko_anchor_address,
             config.handover_window_slots,
             config.handover_start_buffer_ms,

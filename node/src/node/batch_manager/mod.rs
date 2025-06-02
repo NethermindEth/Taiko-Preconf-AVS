@@ -3,8 +3,8 @@ pub mod batch_builder;
 use crate::{
     ethereum_l1::EthereumL1,
     shared::{l2_block::L2Block, l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
-    taiko::Taiko,
     taiko::preconf_blocks::BuildPreconfBlockResponse,
+    taiko::{Taiko, config::OperationType},
 };
 use alloy::{consensus::BlockHeader, consensus::Transaction, primitives::Address};
 use anyhow::Error;
@@ -152,7 +152,8 @@ impl BatchManager {
         l2_slot_info: L2SlotInfo,
     ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
         let l2_block = L2Block::new_from(pending_tx_list, l2_slot_info.slot_timestamp());
-        self.add_new_l2_block(l2_block, l2_slot_info, false).await
+        self.add_new_l2_block(l2_block, l2_slot_info, false, OperationType::Reorg)
+            .await
     }
 
     pub async fn preconfirm_block(
@@ -169,19 +170,34 @@ impl BatchManager {
                 pending_tx_list.bytes_length
             );
             let l2_block = L2Block::new_from(pending_tx_list, l2_slot_info.slot_timestamp());
-            self.add_new_l2_block(l2_block, l2_slot_info, end_of_sequencing)
-                .await?
+            self.add_new_l2_block(
+                l2_block,
+                l2_slot_info,
+                end_of_sequencing,
+                OperationType::Preconfirm,
+            )
+            .await?
         } else if self.is_empty_block_required(l2_slot_info.slot_timestamp()) {
             // Handle time shift between blocks exceeded
             debug!("No pending txs, proposing empty block");
             let empty_block = L2Block::new_empty(l2_slot_info.slot_timestamp());
-            self.add_new_l2_block(empty_block, l2_slot_info, end_of_sequencing)
-                .await?
+            self.add_new_l2_block(
+                empty_block,
+                l2_slot_info,
+                end_of_sequencing,
+                OperationType::Preconfirm,
+            )
+            .await?
         } else if end_of_sequencing {
             debug!("No pending txs, but reached end of sequencing, proposing empty block.");
             let empty_block = L2Block::new_empty(l2_slot_info.slot_timestamp());
-            self.add_new_l2_block(empty_block, l2_slot_info, end_of_sequencing)
-                .await?
+            self.add_new_l2_block(
+                empty_block,
+                l2_slot_info,
+                end_of_sequencing,
+                OperationType::Preconfirm,
+            )
+            .await?
         } else {
             trace!("No pending txs, skipping preconfirmation");
             None
@@ -204,9 +220,10 @@ impl BatchManager {
         l2_block: L2Block,
         l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
+        operation_type: OperationType,
     ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
         info!(
-            "Adding new L2 block to the batch, id: {}, timestamp: {}, parent gas used: {}",
+            "Adding new L2 block id: {}, timestamp: {}, parent gas used: {}",
             l2_slot_info.parent_id() + 1,
             l2_slot_info.slot_timestamp(),
             l2_slot_info.parent_gas_used()
@@ -220,6 +237,7 @@ impl BatchManager {
                 anchor_block_id,
                 l2_slot_info,
                 end_of_sequencing,
+                operation_type,
             )
             .await
         {

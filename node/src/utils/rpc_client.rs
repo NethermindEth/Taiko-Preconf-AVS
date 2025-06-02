@@ -160,6 +160,14 @@ impl HttpRPCClient {
         })
     }
 
+    pub fn get_base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    pub fn get_jwt_secret(&self) -> &[u8; 32] {
+        &self.jwt_secret
+    }
+
     fn create_client(timeout: Duration, jwt_secret: &[u8; 32]) -> Result<reqwest::Client, Error> {
         let jwt = B256::from_slice(jwt_secret);
 
@@ -187,6 +195,51 @@ impl HttpRPCClient {
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?;
 
         Ok(client)
+    }
+
+    pub async fn retry_request_with_timeout<T>(
+        &self,
+        method: http::Method,
+        endpoint: &str,
+        payload: &T,
+        max_duration: Duration,
+    ) -> Result<Value, Error>
+    where
+        T: serde::Serialize,
+    {
+        let start_time = std::time::Instant::now();
+
+        // Try until we exceed the max duration
+        while start_time.elapsed() < max_duration {
+            let response = self.request_json(method.clone(), endpoint, payload).await;
+
+            match response {
+                Ok(ref data) => {
+                    return Ok(data.clone());
+                }
+                Err(ref e) => {
+                    let elapsed = start_time.elapsed();
+                    let remaining = max_duration.checked_sub(elapsed).unwrap_or_default();
+
+                    tracing::error!(
+                        "Failed to call driver RPC for API '{}': {}. Retrying... ({}ms elapsed, {}ms remaining)",
+                        endpoint,
+                        e,
+                        elapsed.as_millis(),
+                        remaining.as_millis()
+                    );
+
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    self.recreate_client().await?;
+                }
+            }
+        }
+
+        Err(anyhow::anyhow!(
+            "Failed to call driver RPC for API '{}' within the duration ({}ms)",
+            endpoint,
+            max_duration.as_millis()
+        ))
     }
 
     /// Send a request to the specified endpoint with the given method and payload
