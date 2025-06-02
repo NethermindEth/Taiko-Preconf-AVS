@@ -181,7 +181,12 @@ async fn main() -> Result<(), Error> {
 
     node.entrypoint().await?;
 
-    update_metrics_loop(ethereum_l1.clone(), metrics.clone(), cancel_token.clone());
+    update_metrics_loop(
+        ethereum_l1.clone(),
+        taiko,
+        metrics.clone(),
+        cancel_token.clone(),
+    );
     serve_metrics(metrics.clone(), cancel_token.clone());
 
     wait_for_the_termination(cancel_token, config.l1_slot_duration_sec).await;
@@ -191,40 +196,54 @@ async fn main() -> Result<(), Error> {
 
 fn update_metrics_loop(
     ethereum_l1: Arc<ethereum_l1::EthereumL1>,
+    taiko: Arc<taiko::Taiko>,
     metrics: Arc<Metrics>,
     cancel_token: CancellationToken,
 ) {
     tokio::spawn(async move {
         loop {
-            let eth_balance = ethereum_l1.execution_layer.get_preconfer_wallet_eth().await;
-            let taiko_balance = ethereum_l1
+            let eth_balance = match ethereum_l1.execution_layer.get_preconfer_wallet_eth().await {
+                Ok(balance) => {
+                    metrics.set_preconfer_eth_balance(balance);
+                    format!("{}", balance)
+                }
+                Err(e) => {
+                    warn!("Failed to get preconfer eth balance: {}", e);
+                    "-".to_string()
+                }
+            };
+            let taiko_balance = match ethereum_l1
                 .execution_layer
                 .get_preconfer_total_bonds()
-                .await;
-
-            match (eth_balance, taiko_balance) {
-                (Ok(eth), Ok(taiko)) => {
-                    info!("Balances - ETH: {}, TAIKO: {}", eth, taiko);
-                    metrics.set_preconfer_eth_balance(eth);
-                    metrics.set_preconfer_taiko_balance(taiko);
+                .await
+            {
+                Ok(balance) => {
+                    metrics.set_preconfer_taiko_balance(balance);
+                    format!("{}", balance)
                 }
-                (Ok(eth), Err(e)) => {
-                    info!("ETH Balance {}", eth);
-                    metrics.set_preconfer_eth_balance(eth);
+                Err(e) => {
                     warn!("Failed to get preconfer taiko balance: {}", e);
+                    "-".to_string()
                 }
-                (Err(e), Ok(taiko)) => {
-                    warn!("Failed to get preconfer eth balance: {}", e);
-                    info!("TAIKO Balance {}", taiko);
-                    metrics.set_preconfer_taiko_balance(taiko);
+            };
+
+            let preconfer_address = ethereum_l1.execution_layer.get_preconfer_address_coinbase();
+
+            let l2_eth_balance = match taiko.get_balance(preconfer_address).await {
+                Ok(balance) => {
+                    metrics.set_preconfer_l2_eth_balance(balance);
+                    format!("{}", balance)
                 }
-                (Err(e), Err(e2)) => {
-                    warn!(
-                        "Failed to get preconfer eth and taiko balances: {} {}",
-                        e, e2
-                    );
+                Err(e) => {
+                    warn!("Failed to get preconfer l2 eth balance: {}", e);
+                    "-".to_string()
                 }
-            }
+            };
+
+            info!(
+                "Balances - ETH: {}, TAIKO: {}, L2 ETH: {}",
+                eth_balance, taiko_balance, l2_eth_balance
+            );
 
             tokio::select! {
                 _ = sleep(Duration::from_secs(60)) => {},
