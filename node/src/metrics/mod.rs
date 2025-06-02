@@ -4,6 +4,7 @@ use tracing::error;
 pub struct Metrics {
     preconfer_eth_balance: Gauge,
     preconfer_taiko_balance: Gauge,
+    preconfer_l2_eth_balance: Gauge,
     blocks_preconfirmed: Counter,
     blocks_reanchored: Counter,
     batch_recovered: Counter,
@@ -37,6 +38,19 @@ impl Metrics {
 
         if let Err(err) = registry.register(Box::new(preconfer_taiko_balance.clone())) {
             error!("Error: Failed to register preconfer_taiko_balance: {}", err);
+        }
+
+        let preconfer_l2_eth_balance = Gauge::new(
+            "preconfer_l2_eth_balance",
+            "L2 ETH balance of the preconfer wallet",
+        )
+        .expect("Failed to create preconfer_l2_eth_balance gauge");
+
+        if let Err(err) = registry.register(Box::new(preconfer_l2_eth_balance.clone())) {
+            error!(
+                "Error: Failed to register preconfer_l2_eth_balance: {}",
+                err
+            );
         }
 
         let blocks_preconfirmed = Counter::new(
@@ -123,6 +137,7 @@ impl Metrics {
         Self {
             preconfer_eth_balance,
             preconfer_taiko_balance,
+            preconfer_l2_eth_balance,
             blocks_preconfirmed,
             blocks_reanchored,
             batch_recovered,
@@ -142,6 +157,11 @@ impl Metrics {
 
     pub fn set_preconfer_taiko_balance(&self, balance: alloy::primitives::U256) {
         self.preconfer_taiko_balance
+            .set(Metrics::u256_to_f64(balance));
+    }
+
+    pub fn set_preconfer_l2_eth_balance(&self, balance: alloy::primitives::U256) {
+        self.preconfer_l2_eth_balance
             .set(Metrics::u256_to_f64(balance));
     }
 

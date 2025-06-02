@@ -204,6 +204,17 @@ impl Taiko {
         }
     }
 
+    pub async fn get_balance(&self, address: Address) -> Result<alloy::primitives::U256, Error> {
+        let balance = self
+            .taiko_geth_provider_ws
+            .read()
+            .await
+            .get_balance(address)
+            .await;
+        self.check_for_ws_provider_failure(balance, "Failed to get L2 balance")
+            .await
+    }
+
     pub async fn get_latest_l2_block_id(&self) -> Result<u64, Error> {
         let block_number = self
             .taiko_geth_provider_ws
