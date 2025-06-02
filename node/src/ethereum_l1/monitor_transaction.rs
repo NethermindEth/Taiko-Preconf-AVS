@@ -318,7 +318,11 @@ impl TransactionMonitorThread {
             let check_tx = PendingTransactionBuilder::new(root_provider.clone(), tx_hash);
             let tx_status = self.wait_for_tx_receipt(check_tx, sending_attempt).await;
             match tx_status {
-                TxStatus::Confirmed(_) => return true,
+                TxStatus::Confirmed(_) => {
+                    self.send_tx_result_signal(TransactionResult::Success)
+                            .await;
+                    return true;
+                }
                 TxStatus::Failed(err_str) => {
                     if err_str.contains("0x3d32ffdb") {
                         warn!("⚠️ Transaction reverted TimestampTooLarge()");
