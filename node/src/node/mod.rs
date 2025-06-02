@@ -622,6 +622,12 @@ impl Node {
                     "Transaction estimation too early, skipping slot"
                 ));
             }
+            TransactionError::TimestampTooLarge => {
+                self.cancel_token.cancel();
+                return Err(anyhow::anyhow!(
+                    "Transaction reverted with TimestampTooLarge error"
+                ));
+            }
         }
 
         Ok(())
