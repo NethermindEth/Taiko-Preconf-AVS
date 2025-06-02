@@ -5,7 +5,7 @@ mod verifier;
 
 use crate::reorg_detector;
 use crate::{
-    ethereum_l1::{EthereumL1, transaction_error::TransactionError},
+    ethereum_l1::{EthereumL1, transaction_result::TransactionResult},
     metrics::Metrics,
     node::l2_head_verifier::L2HeadVerifier,
     shared::{l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
@@ -40,7 +40,7 @@ pub struct Node {
     thresholds: Thresholds,
     verifier: Option<verifier::Verifier>,
     taiko: Arc<Taiko>,
-    transaction_error_channel: Receiver<TransactionError>,
+    transaction_result_channel: Receiver<TransactionResult>,
     metrics: Arc<Metrics>,
     watchdog: u64,
     head_verifier: L2HeadVerifier,
@@ -60,7 +60,7 @@ impl Node {
         batch_builder_config: BatchBuilderConfig,
         thresholds: Thresholds,
         simulate_not_submitting_at_the_end_of_epoch: bool,
-        transaction_error_channel: Receiver<TransactionError>,
+        transaction_result_channel: Receiver<TransactionResult>,
         metrics: Arc<Metrics>,
     ) -> Result<Self, Error> {
         info!(
@@ -101,7 +101,7 @@ impl Node {
             thresholds,
             verifier: None,
             taiko,
-            transaction_error_channel,
+            transaction_result_channel,
             metrics,
             watchdog: 0,
             head_verifier,
@@ -312,7 +312,7 @@ impl Node {
         let (l2_slot_info, current_status, pending_tx_list) =
             self.get_slot_info_and_status().await?;
 
-        self.check_transaction_error_channel(&current_status)
+        self.check_transaction_result_channel(&current_status)
             .await?;
 
         if current_status.is_preconfirmation_start_slot() {
@@ -413,8 +413,8 @@ impl Node {
                     .try_submit_oldest_batch(current_status.is_preconfer())
                     .await
                 {
-                    if let Some(transaction_error) = err.downcast_ref::<TransactionError>() {
-                        self.handle_transaction_error(transaction_error, &current_status)
+                    if let Some(transaction_error) = err.downcast_ref::<TransactionResult>() {
+                        self.handle_transaction_result(transaction_error, &current_status)
                             .await?;
                     }
                     return Err(err);
@@ -546,13 +546,13 @@ impl Node {
         Ok(true)
     }
 
-    async fn check_transaction_error_channel(
+    async fn check_transaction_result_channel(
         &mut self,
         current_status: &OperatorStatus,
     ) -> Result<(), Error> {
-        match self.transaction_error_channel.try_recv() {
+        match self.transaction_result_channel.try_recv() {
             Ok(error) => {
-                return self.handle_transaction_error(&error, current_status).await;
+                return self.handle_transaction_result(&error, current_status).await;
             }
             Err(err) => match err {
                 TryRecvError::Empty => {
@@ -568,13 +568,13 @@ impl Node {
         Ok(())
     }
 
-    async fn handle_transaction_error(
+    async fn handle_transaction_result(
         &mut self,
-        error: &TransactionError,
+        result: &TransactionResult,
         current_status: &OperatorStatus,
     ) -> Result<(), Error> {
-        match error {
-            TransactionError::TransactionReverted | TransactionError::EstimationFailed => {
+        match result {
+            TransactionResult::TransactionReverted | TransactionResult::EstimationFailed => {
                 if current_status.is_preconfer() && current_status.is_submitter() {
                     let taiko_inbox_height = self
                         .ethereum_l1
@@ -594,33 +594,34 @@ impl Node {
                     warn!("Transaction reverted, not our epoch, skipping reorg");
                 }
             }
-            TransactionError::NotConfirmed => {
+            TransactionResult::NotConfirmed => {
                 self.cancel_token.cancel();
                 return Err(anyhow::anyhow!(
                     "Transaction not confirmed for a long time, exiting"
                 ));
             }
-            TransactionError::UnsupportedTransactionType => {
+            TransactionResult::UnsupportedTransactionType => {
                 self.cancel_token.cancel();
                 return Err(anyhow::anyhow!(
                     "Unsupported transaction type. You can send eip1559 or eip4844 transactions only"
                 ));
             }
-            TransactionError::GetBlockNumberFailed => {
+            TransactionResult::GetBlockNumberFailed => {
                 // TODO recreate L1 provider
                 self.cancel_token.cancel();
                 return Err(anyhow::anyhow!("Failed to get block number from L1"));
             }
-            TransactionError::EstimationTooEarly => {
+            TransactionResult::EstimationTooEarly => {
                 return Err(anyhow::anyhow!(
                     "Transaction estimation too early, skipping slot"
                 ));
             }
-            TransactionError::TimestampTooLarge => {
-                self.cancel_token.cancel();
-                return Err(anyhow::anyhow!(
-                    "Transaction reverted with TimestampTooLarge error"
-                ));
+            TransactionResult::TimestampTooLarge => {
+                return Ok(());
+            }
+            TransactionResult::Success => {
+                self.batch_manager.pop_front_batch();
+                return Ok(());
             }
         }
 

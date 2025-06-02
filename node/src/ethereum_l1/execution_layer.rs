@@ -1,4 +1,4 @@
-use super::{config::EthereumL1Config, transaction_error::TransactionError};
+use super::{config::EthereumL1Config, transaction_result::TransactionResult};
 use crate::{
     ethereum_l1::{
         l1_contracts_bindings::*, monitor_transaction::TransactionMonitor,
@@ -49,7 +49,7 @@ pub struct ContractAddresses {
 impl ExecutionLayer {
     pub async fn new(
         config: EthereumL1Config,
-        transaction_error_channel: Sender<TransactionError>,
+        transaction_result_channel: Sender<TransactionResult>,
         metrics: Arc<metrics::Metrics>,
     ) -> Result<Self, Error> {
         debug!(
@@ -90,7 +90,7 @@ impl ExecutionLayer {
             config.max_attempts_to_send_tx,
             config.max_attempts_to_wait_tx,
             config.delay_between_tx_attempts_sec,
-            transaction_error_channel,
+            transaction_result_channel,
             metrics.clone(),
         )
         .await?;
@@ -184,7 +184,7 @@ impl ExecutionLayer {
                 <= current_l1_slot_timestamp + DELAYED_L1_PROPOSAL_BUFFER
         {
             warn!("Last block timestamp is within the delayed L1 proposal buffer.");
-            return Err(anyhow::anyhow!(TransactionError::EstimationTooEarly));
+            return Err(anyhow::anyhow!(TransactionResult::EstimationTooEarly));
         }
 
         let mut tx_vec = Vec::new();

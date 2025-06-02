@@ -1,5 +1,5 @@
 use crate::ethereum_l1::{
-    l1_contracts_bindings::*, transaction_error::TransactionError, ws_provider::WsProvider,
+    l1_contracts_bindings::*, transaction_result::TransactionResult, ws_provider::WsProvider,
 };
 use alloy::{
     network::{TransactionBuilder, TransactionBuilder4844},
@@ -179,13 +179,13 @@ impl ProposeBatchBuilder {
         }
     }
 
-    fn convert_error_payload(err: ErrorPayload) -> TransactionError {
+    fn convert_error_payload(err: ErrorPayload) -> TransactionResult {
         let err_str = err.to_string();
         // TimestampTooLarge or ZeroAnchorBlockHash contract error
         if err_str.contains("0x3d32ffdb") || err_str.contains("0x2b44f010") {
-            return TransactionError::EstimationTooEarly;
+            return TransactionResult::EstimationTooEarly;
         }
-        TransactionError::EstimationFailed
+        TransactionResult::EstimationFailed
     }
 
     fn update_eip1559(

@@ -1,6 +1,6 @@
 use crate::metrics::Metrics;
 
-use super::{transaction_error::TransactionError, ws_provider::WsProvider};
+use super::{transaction_result::TransactionResult, ws_provider::WsProvider};
 use alloy::{
     consensus::{TxEip4844Variant, TxEnvelope, TxType},
     network::{Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
@@ -40,7 +40,7 @@ pub struct TransactionMonitorThread {
     provider: Arc<WsProvider>,
     config: TransactionMonitorConfig,
     nonce: u64,
-    error_notification_channel: Sender<TransactionError>,
+    tx_result_notification_channel: Sender<TransactionResult>,
     metrics: Arc<Metrics>,
 }
 
@@ -49,7 +49,7 @@ pub struct TransactionMonitor {
     provider: Arc<WsProvider>,
     config: TransactionMonitorConfig,
     join_handle: Mutex<Option<JoinHandle<()>>>,
-    error_notification_channel: Sender<TransactionError>,
+    tx_result_notification_channel: Sender<TransactionResult>,
     metrics: Arc<Metrics>,
 }
 
@@ -62,7 +62,7 @@ impl TransactionMonitor {
         max_attempts_to_send_tx: u64,
         max_attempts_to_wait_tx: u64,
         delay_between_tx_attempts_sec: u64,
-        error_notification_channel: Sender<TransactionError>,
+        tx_result_notification_channel: Sender<TransactionResult>,
         metrics: Arc<Metrics>,
     ) -> Result<Self, Error> {
         Ok(Self {
@@ -75,7 +75,7 @@ impl TransactionMonitor {
                 delay_between_tx_attempts: Duration::from_secs(delay_between_tx_attempts_sec),
             },
             join_handle: Mutex::new(None),
-            error_notification_channel,
+            tx_result_notification_channel,
             metrics,
         })
     }
@@ -100,7 +100,7 @@ impl TransactionMonitor {
             self.provider.clone(),
             self.config.clone(),
             nonce,
-            self.error_notification_channel.clone(),
+            self.tx_result_notification_channel.clone(),
             self.metrics.clone(),
         );
         let join_handle = monitor_thread.spawn_monitoring_task(tx);
@@ -122,14 +122,14 @@ impl TransactionMonitorThread {
         provider: Arc<WsProvider>,
         config: TransactionMonitorConfig,
         nonce: u64,
-        error_notification_channel: Sender<TransactionError>,
+        tx_result_notification_channel: Sender<TransactionResult>,
         metrics: Arc<Metrics>,
     ) -> Self {
         Self {
             provider,
             config,
             nonce,
-            error_notification_channel,
+            tx_result_notification_channel,
             metrics,
         }
     }
@@ -142,7 +142,7 @@ impl TransactionMonitorThread {
     async fn monitor_transaction(&self, mut tx: TransactionRequest) {
         tx.set_nonce(self.nonce);
         if !matches!(tx.buildable_type(), Some(TxType::Eip1559 | TxType::Eip4844)) {
-            self.send_error_signal(TransactionError::UnsupportedTransactionType)
+            self.send_tx_result_signal(TransactionResult::UnsupportedTransactionType)
                 .await;
             return;
         }
@@ -199,7 +199,7 @@ impl TransactionMonitorThread {
                 Ok(block_number) => block_number,
                 Err(e) => {
                     error!("Failed to get L1 block number: {}", e);
-                    self.send_error_signal(TransactionError::GetBlockNumberFailed)
+                    self.send_tx_result_signal(TransactionResult::GetBlockNumberFailed)
                         .await;
                     return;
                 }
@@ -301,7 +301,8 @@ impl TransactionMonitorThread {
                 self.nonce,
             );
 
-            self.send_error_signal(TransactionError::NotConfirmed).await;
+            self.send_tx_result_signal(TransactionResult::NotConfirmed)
+                .await;
         }
     }
 
@@ -321,11 +322,11 @@ impl TransactionMonitorThread {
                 TxStatus::Failed(err_str) => {
                     if err_str.contains("0x3d32ffdb") {
                         debug!("⚠️ Transaction reverted TimestampTooLarge()");
-                        self.send_error_signal(TransactionError::TimestampTooLarge)
+                        self.send_tx_result_signal(TransactionResult::TimestampTooLarge)
                             .await;
                         return true;
                     }
-                    self.send_error_signal(TransactionError::TransactionReverted)
+                    self.send_tx_result_signal(TransactionResult::TransactionReverted)
                         .await;
                     return true;
                 }
@@ -337,7 +338,7 @@ impl TransactionMonitorThread {
                 Ok(block_number) => block_number,
                 Err(e) => {
                     error!("Failed to get L1 block number: {}", e);
-                    self.send_error_signal(TransactionError::GetBlockNumberFailed)
+                    self.send_tx_result_signal(TransactionResult::GetBlockNumberFailed)
                         .await;
                     return true;
                 }
@@ -371,7 +372,7 @@ impl TransactionMonitorThread {
                         {
                             return None;
                         } else {
-                            self.send_error_signal(TransactionError::TransactionReverted)
+                            self.send_tx_result_signal(TransactionResult::TransactionReverted)
                                 .await;
                             return None;
                         }
@@ -379,15 +380,15 @@ impl TransactionMonitorThread {
                 }
                 // TODO if it is not revert then rebuild rpc client and retry on rpc error
                 error!("Failed to send transaction: {}", e);
-                self.send_error_signal(TransactionError::TransactionReverted)
+                self.send_tx_result_signal(TransactionResult::TransactionReverted)
                     .await;
                 None
             }
         }
     }
 
-    async fn send_error_signal(&self, error: TransactionError) {
-        if let Err(e) = self.error_notification_channel.send(error).await {
+    async fn send_tx_result_signal(&self, error: TransactionResult) {
+        if let Err(e) = self.tx_result_notification_channel.send(error).await {
             error!("Failed to send transaction error signal: {}", e);
         }
     }

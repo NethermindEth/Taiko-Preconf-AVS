@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use crate::{
-    ethereum_l1::{EthereumL1, slot_clock::SlotClock, transaction_error::TransactionError},
+    ethereum_l1::{EthereumL1, slot_clock::SlotClock, transaction_result::TransactionResult},
     shared::l2_block::L2Block,
 };
 use alloy::primitives::Address;
@@ -254,19 +254,21 @@ impl BatchBuilder {
                 )
                 .await
             {
-                if let Some(transaction_error) = err.downcast_ref::<TransactionError>() {
-                    if !matches!(transaction_error, TransactionError::EstimationTooEarly) {
+                if let Some(transaction_result) = err.downcast_ref::<TransactionResult>() {
+                    if !matches!(transaction_result, TransactionResult::EstimationTooEarly) {
                         debug!("BatchBuilder: Transaction error, removing all batches");
                         self.batches_to_send.clear();
                     }
                 }
                 return Err(err);
             }
-
-            self.batches_to_send.pop_front();
         }
 
         Ok(())
+    }
+
+    pub fn pop_front_batch(&mut self) -> Option<Batch> {
+        self.batches_to_send.pop_front()
     }
 
     pub fn is_time_shift_expired(&self, current_l2_slot_timestamp: u64) -> bool {

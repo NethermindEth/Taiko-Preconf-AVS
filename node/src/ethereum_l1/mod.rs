@@ -5,7 +5,7 @@ mod l1_contracts_bindings;
 mod monitor_transaction;
 mod propose_batch_builder;
 pub mod slot_clock;
-pub mod transaction_error;
+pub mod transaction_result;
 pub mod ws_provider;
 
 use anyhow::Error;
@@ -15,7 +15,7 @@ use execution_layer::ExecutionLayer;
 use slot_clock::SlotClock;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc::Sender;
-use transaction_error::TransactionError;
+use transaction_result::TransactionResult;
 
 use crate::metrics::Metrics;
 
@@ -29,7 +29,7 @@ impl EthereumL1 {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         config: EthereumL1Config,
-        transaction_error_channel: Sender<TransactionError>,
+        transaction_result_channel: Sender<TransactionResult>,
         metrics: Arc<Metrics>,
     ) -> Result<Self, Error> {
         tracing::info!("Creating EthereumL1 instance");
@@ -47,7 +47,7 @@ impl EthereumL1 {
         ));
 
         let execution_layer =
-            ExecutionLayer::new(config, transaction_error_channel, metrics).await?;
+            ExecutionLayer::new(config, transaction_result_channel, metrics).await?;
 
         Ok(Self {
             slot_clock,
