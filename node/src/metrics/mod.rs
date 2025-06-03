@@ -202,19 +202,14 @@ impl Metrics {
         let balance_str = balance.to_string();
         let len = balance_str.len();
 
+        // Handle very small numbers
         if len < 14 {
             return 0f64;
         }
 
-        let mut result = balance_str.clone();
-        if len <= 18 {
-            result = format!("{:019}", balance_str);
-        }
-
-        result.insert(len - 18, '.');
-        let result = result.split_at(len - 13).0.to_string();
-
-        result.parse::<f64>().unwrap_or(0f64)
+        // Convert to f64 and divide by 10^18 to get the correct decimal places
+        let value = balance_str.parse::<f64>().unwrap_or(0f64);
+        value / 1_000_000_000_000_000_000.0
     }
 
     pub fn gather(&self) -> String {
@@ -272,5 +267,46 @@ mod tests {
         assert!(output.contains("batch_propose_tries_count 1"));
         assert!(output.contains("batch_block_count_sum 5"));
         assert!(output.contains("batch_blob_size_sum 1000"));
+    }
+
+    #[test]
+    fn test_u256_to_f64() {
+        // Test 1 ETH (18 decimals)
+        let one_eth = alloy::primitives::U256::from(1000000000000000000u128);
+        assert_eq!(Metrics::u256_to_f64(one_eth), 1.0);
+
+        // Test 0.5 ETH
+        let half_eth = alloy::primitives::U256::from(500000000000000000u128);
+        assert_eq!(Metrics::u256_to_f64(half_eth), 0.5);
+
+        // Test 1234.56789 ETH
+        assert_eq!(
+            Metrics::u256_to_f64(alloy::primitives::U256::from(1234567890000000000000u128)),
+            1234.56789
+        );
+
+        // Test 0.1 ETH
+        let point_one_eth = alloy::primitives::U256::from(100000000000000000u128);
+        assert_eq!(Metrics::u256_to_f64(point_one_eth), 0.1);
+
+        // Test 0.00001 ETH
+        let small_eth = alloy::primitives::U256::from(10000000000000u128);
+        assert_eq!(Metrics::u256_to_f64(small_eth), 0.00001);
+
+        // Test 1000 ETH
+        let thousand_eth = alloy::primitives::U256::from(1000000000000000000000u128);
+        assert_eq!(Metrics::u256_to_f64(thousand_eth), 1000.0);
+
+        // Test very small number (should return 0)
+        let tiny = alloy::primitives::U256::from(1000u128);
+        assert_eq!(Metrics::u256_to_f64(tiny), 0.0);
+
+        // Test zero
+        let zero = alloy::primitives::U256::from(0u128);
+        assert_eq!(Metrics::u256_to_f64(zero), 0.0);
+
+        // Test number with more than 18 decimals
+        let large = alloy::primitives::U256::from(123456789012345678901234567890u128);
+        assert_eq!(Metrics::u256_to_f64(large), 123456789012.34567890);
     }
 }
