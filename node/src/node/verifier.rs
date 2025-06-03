@@ -29,7 +29,6 @@ pub struct Verifier {
     verification_slot: Slot,
     verifier_thread: Option<VerifierThread>,
     verifier_thread_handle: Option<JoinHandle<Result<VecDeque<Batch>, Error>>>,
-    preconfirmation_root: PreconfirmationRootBlock,
 }
 
 struct VerifierThread {
@@ -65,7 +64,6 @@ impl Verifier {
             }),
             verification_slot,
             verifier_thread_handle: None,
-            preconfirmation_root,
         })
     }
 
@@ -141,7 +139,7 @@ impl Verifier {
             self.start_verification_thread(taiko_inbox_height, metrics)
                 .await;
 
-            return Ok(VerificationResult::VerificationInProgress);
+            Ok(VerificationResult::VerificationInProgress)
         }
     }
 }
