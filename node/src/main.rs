@@ -105,18 +105,21 @@ async fn main() -> Result<(), Error> {
     let jwt_secret_bytes = utils::file_operations::read_jwt_secret(&config.jwt_secret_file_path)?;
     let taiko = Arc::new(
         taiko::Taiko::new(
-            &config.taiko_geth_ws_rpc_url,
-            &config.taiko_geth_auth_rpc_url,
-            &config.taiko_driver_url,
-            config.rpc_client_timeout,
-            config.max_bytes_per_tx_list,
-            config.throttling_factor,
-            config.min_bytes_per_tx_list,
-            &jwt_secret_bytes,
-            ethereum_l1.execution_layer.get_preconfer_address(),
             ethereum_l1.clone(),
-            config.taiko_anchor_address,
             metrics.clone(),
+            taiko::config::TaikoConfig {
+                taiko_geth_ws_url: config.taiko_geth_ws_rpc_url,
+                taiko_geth_auth_url: config.taiko_geth_auth_rpc_url,
+                driver_url: config.taiko_driver_url,
+                jwt_secret_bytes,
+                preconfer_address: ethereum_l1.execution_layer.get_preconfer_address(),
+                taiko_anchor_address: config.taiko_anchor_address,
+                max_bytes_per_tx_list: config.max_bytes_per_tx_list,
+                min_bytes_per_tx_list: config.min_bytes_per_tx_list,
+                throttling_factor: config.throttling_factor,
+                rpc_short_timeout: config.rpc_short_timeout,
+                rpc_long_timeout: config.rpc_long_timeout,
+            },
         )
         .await?,
     );
