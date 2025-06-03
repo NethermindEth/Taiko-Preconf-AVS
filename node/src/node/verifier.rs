@@ -29,7 +29,6 @@ pub struct Verifier {
     verification_slot: Slot,
     verifier_thread: Option<VerifierThread>,
     verifier_thread_handle: Option<JoinHandle<Result<VecDeque<Batch>, Error>>>,
-    preconfirmation_root: PreconfirmationRootBlock,
 }
 
 struct VerifierThread {
@@ -65,7 +64,6 @@ impl Verifier {
             }),
             verification_slot,
             verifier_thread_handle: None,
-            preconfirmation_root,
         })
     }
 
@@ -75,10 +73,6 @@ impl Verifier {
 
     pub fn get_verification_slot(&self) -> Slot {
         self.verification_slot
-    }
-
-    pub fn has_blocks_to_verify(&self) -> bool {
-        self.preconfirmation_root.number > 0
     }
 
     async fn start_verification_thread(&mut self, taiko_inbox_height: u64, metrics: Arc<Metrics>) {
@@ -127,28 +121,25 @@ impl Verifier {
                 Ok(VerificationResult::VerificationInProgress)
             }
         } else {
-            if self.has_blocks_to_verify() {
-                let head_slot = ethereum_l1.consensus_layer.get_head_slot_number().await?;
+            let head_slot = ethereum_l1.consensus_layer.get_head_slot_number().await?;
 
-                if !self.is_slot_valid(head_slot) {
-                    info!(
-                        "Slot {} is not valid for verification, target slot {}, skipping",
-                        head_slot,
-                        self.get_verification_slot()
-                    );
-                    return Ok(VerificationResult::SlotNotValid);
-                }
-
-                let taiko_inbox_height = ethereum_l1
-                    .execution_layer
-                    .get_l2_height_from_taiko_inbox()
-                    .await?;
-                self.start_verification_thread(taiko_inbox_height, metrics)
-                    .await;
-
-                return Ok(VerificationResult::VerificationInProgress);
+            if !self.is_slot_valid(head_slot) {
+                info!(
+                    "Slot {} is not valid for verification, target slot {}, skipping",
+                    head_slot,
+                    self.get_verification_slot()
+                );
+                return Ok(VerificationResult::SlotNotValid);
             }
-            Ok(VerificationResult::SuccessNoBatches)
+
+            let taiko_inbox_height = ethereum_l1
+                .execution_layer
+                .get_l2_height_from_taiko_inbox()
+                .await?;
+            self.start_verification_thread(taiko_inbox_height, metrics)
+                .await;
+
+            Ok(VerificationResult::VerificationInProgress)
         }
     }
 }
