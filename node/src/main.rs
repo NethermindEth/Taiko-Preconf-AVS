@@ -1,5 +1,6 @@
 mod crypto;
 mod ethereum_l1;
+mod funds_monitor;
 mod metrics;
 mod node;
 mod reorg_detector;
@@ -14,11 +15,9 @@ use std::sync::Arc;
 use tokio::{
     signal::unix::{SignalKind, signal},
     sync::mpsc,
-    time::{Duration, sleep},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
-use warp::Filter;
+use tracing::{error, info};
 
 #[cfg(feature = "test-gas")]
 mod test_gas;
@@ -181,97 +180,19 @@ async fn main() -> Result<(), Error> {
 
     node.entrypoint().await?;
 
-    update_metrics_loop(
+    let funds_monitor = funds_monitor::FundsMonitor::new(
         ethereum_l1.clone(),
-        taiko,
+        taiko.clone(),
         metrics.clone(),
         cancel_token.clone(),
     );
-    serve_metrics(metrics.clone(), cancel_token.clone());
+    funds_monitor.run();
+
+    metrics::server::serve_metrics(metrics.clone(), cancel_token.clone());
 
     wait_for_the_termination(cancel_token, config.l1_slot_duration_sec).await;
 
     Ok(())
-}
-
-fn update_metrics_loop(
-    ethereum_l1: Arc<ethereum_l1::EthereumL1>,
-    taiko: Arc<taiko::Taiko>,
-    metrics: Arc<Metrics>,
-    cancel_token: CancellationToken,
-) {
-    tokio::spawn(async move {
-        loop {
-            let eth_balance = match ethereum_l1.execution_layer.get_preconfer_wallet_eth().await {
-                Ok(balance) => {
-                    metrics.set_preconfer_eth_balance(balance);
-                    format!("{}", balance)
-                }
-                Err(e) => {
-                    warn!("Failed to get preconfer eth balance: {}", e);
-                    "-".to_string()
-                }
-            };
-            let taiko_balance = match ethereum_l1
-                .execution_layer
-                .get_preconfer_total_bonds()
-                .await
-            {
-                Ok(balance) => {
-                    metrics.set_preconfer_taiko_balance(balance);
-                    format!("{}", balance)
-                }
-                Err(e) => {
-                    warn!("Failed to get preconfer taiko balance: {}", e);
-                    "-".to_string()
-                }
-            };
-
-            let preconfer_address = ethereum_l1.execution_layer.get_preconfer_address_coinbase();
-
-            let l2_eth_balance = match taiko.get_balance(preconfer_address).await {
-                Ok(balance) => {
-                    metrics.set_preconfer_l2_eth_balance(balance);
-                    format!("{}", balance)
-                }
-                Err(e) => {
-                    warn!("Failed to get preconfer l2 eth balance: {}", e);
-                    "-".to_string()
-                }
-            };
-
-            info!(
-                "Balances - ETH: {}, TAIKO: {}, L2 ETH: {}",
-                eth_balance, taiko_balance, l2_eth_balance
-            );
-
-            tokio::select! {
-                _ = sleep(Duration::from_secs(60)) => {},
-                _ = cancel_token.cancelled() => {
-                    info!("Shutdown signal received, exiting metrics loop...");
-                    return;
-                }
-            }
-        }
-    });
-}
-
-fn serve_metrics(metrics: Arc<Metrics>, cancel_token: CancellationToken) {
-    tokio::spawn(async move {
-        let route = warp::path!("metrics").map(move || {
-            let output = metrics.gather();
-            warp::reply::with_header(output, "Content-Type", "text/plain; version=0.0.4")
-        });
-
-        let (addr, server) =
-            warp::serve(route).bind_with_graceful_shutdown(([0, 0, 0, 0], 9898), async move {
-                cancel_token.cancelled().await;
-                info!("Shutdown signal received, stopping metrics server...");
-            });
-
-        info!("Metrics server listening on {}", addr);
-        server.await;
-    });
 }
 
 async fn wait_for_the_termination(cancel_token: CancellationToken, shutdown_delay_secs: u64) {
