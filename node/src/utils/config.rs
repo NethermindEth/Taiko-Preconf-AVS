@@ -45,6 +45,7 @@ pub struct L1ContractAddresses {
     pub preconf_whitelist: String,
     pub preconf_router: String,
     pub taiko_wrapper: String,
+    pub bridge: String,
     #[cfg(feature = "extra-gas-percentage")]
     pub extra_gas_percentage: u64,
 }

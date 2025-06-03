@@ -548,6 +548,12 @@ impl ExecutionLayer {
             ))?;
         Ok(block.header.timestamp)
     }
+
+    pub fn transfer_eth_from_L2_to_L1(&self, amount: u64) -> Result<(), Error> {
+        let contract = bridge::IBridge::new(self.contract_addresses.bridge, &self.provider_ws);
+        let tx = contract.transfer(amount).send().await?;
+        Ok(())
+    }
 }
 
 pub trait PreconfOperator {
