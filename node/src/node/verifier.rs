@@ -77,10 +77,6 @@ impl Verifier {
         self.verification_slot
     }
 
-    pub fn has_blocks_to_verify(&self) -> bool {
-        self.preconfirmation_root.number > 0
-    }
-
     async fn start_verification_thread(&mut self, taiko_inbox_height: u64, metrics: Arc<Metrics>) {
         if let Some(mut verifier_thread) = self.verifier_thread.take() {
             self.verifier_thread_handle = Some(tokio::spawn(async move {
@@ -127,28 +123,25 @@ impl Verifier {
                 Ok(VerificationResult::VerificationInProgress)
             }
         } else {
-            if self.has_blocks_to_verify() {
-                let head_slot = ethereum_l1.consensus_layer.get_head_slot_number().await?;
+            let head_slot = ethereum_l1.consensus_layer.get_head_slot_number().await?;
 
-                if !self.is_slot_valid(head_slot) {
-                    info!(
-                        "Slot {} is not valid for verification, target slot {}, skipping",
-                        head_slot,
-                        self.get_verification_slot()
-                    );
-                    return Ok(VerificationResult::SlotNotValid);
-                }
-
-                let taiko_inbox_height = ethereum_l1
-                    .execution_layer
-                    .get_l2_height_from_taiko_inbox()
-                    .await?;
-                self.start_verification_thread(taiko_inbox_height, metrics)
-                    .await;
-
-                return Ok(VerificationResult::VerificationInProgress);
+            if !self.is_slot_valid(head_slot) {
+                info!(
+                    "Slot {} is not valid for verification, target slot {}, skipping",
+                    head_slot,
+                    self.get_verification_slot()
+                );
+                return Ok(VerificationResult::SlotNotValid);
             }
-            Ok(VerificationResult::SuccessNoBatches)
+
+            let taiko_inbox_height = ethereum_l1
+                .execution_layer
+                .get_l2_height_from_taiko_inbox()
+                .await?;
+            self.start_verification_thread(taiko_inbox_height, metrics)
+                .await;
+
+            return Ok(VerificationResult::VerificationInProgress);
         }
     }
 }
