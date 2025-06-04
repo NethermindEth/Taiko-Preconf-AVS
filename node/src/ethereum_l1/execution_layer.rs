@@ -171,7 +171,7 @@ impl ExecutionLayer {
         coinbase: Address,
         current_l1_slot_timestamp: u64,
     ) -> Result<(), Error> {
-        let sending_guard =  match self.transaction_monitor.get_sending_guard().await {
+        let sending_guard = match self.transaction_monitor.get_sending_guard().await {
             Some(guard) => guard,
             None => return Err(anyhow::anyhow!(TransactionResult::TransactionInProgress)),
         };

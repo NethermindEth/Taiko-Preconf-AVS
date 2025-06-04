@@ -14,8 +14,8 @@ use alloy::{
 use alloy_json_rpc::RpcError;
 use anyhow::Error;
 use std::{sync::Arc, time::Duration};
-use tokio::sync::Mutex;
 use tokio::sync::mpsc::Sender;
+use tokio::sync::{Mutex, MutexGuard};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
@@ -80,7 +80,7 @@ impl TransactionMonitor {
         })
     }
 
-    pub async fn get_sending_guard(&self) -> Option<tokio::sync::MutexGuard<Option<JoinHandle<()>>>> {
+    pub async fn get_sending_guard(&self) -> Option<MutexGuard<Option<JoinHandle<()>>>> {
         let guard = self.join_handle.lock().await;
         if let Some(join_handle) = guard.as_ref() {
             if !join_handle.is_finished() {
@@ -88,7 +88,7 @@ impl TransactionMonitor {
                 return None;
             }
         }
-        return Some(guard);
+        Some(guard)
     }
 
     /// Monitor a transaction until it is confirmed or fails.
@@ -97,7 +97,7 @@ impl TransactionMonitor {
         &self,
         tx: TransactionRequest,
         nonce: u64,
-        mut sending_guard: tokio::sync::MutexGuard< '_, Option<JoinHandle<()>>>,
+        mut sending_guard: MutexGuard<'_, Option<JoinHandle<()>>>,
     ) -> Result<(), Error> {
         let monitor_thread = TransactionMonitorThread::new(
             self.provider.clone(),
