@@ -171,6 +171,11 @@ impl ExecutionLayer {
         coinbase: Address,
         current_l1_slot_timestamp: u64,
     ) -> Result<(), Error> {
+        let sending_guard =  match self.transaction_monitor.get_sending_guard().await {
+            Some(guard) => guard,
+            None => return Err(anyhow::anyhow!(TransactionResult::TransactionInProgress)),
+        };
+
         let last_block_timestamp = l2_blocks
             .last()
             .ok_or(anyhow::anyhow!("No L2 blocks provided"))?
@@ -248,7 +253,7 @@ impl ExecutionLayer {
         let pending_nonce = self.get_preconfer_nonce_pending().await?;
         // Spawn a monitor for this transaction
         self.transaction_monitor
-            .monitor_new_transaction(tx, pending_nonce)
+            .send_new_transaction(tx, pending_nonce, sending_guard)
             .await
             .map_err(|e| Error::msg(format!("Sending batch to L1 failed: {}", e)))?;
 

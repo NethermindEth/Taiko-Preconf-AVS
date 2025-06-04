@@ -622,10 +622,16 @@ impl Node {
                     "Transaction estimation too early, skipping slot"
                 ));
             }
+            TransactionResult::TransactionInProgress => {
+                debug!("TransactionResult::TransactionInProgress");
+                return Ok(());
+            }
             TransactionResult::TimestampTooLarge => {
+                debug!("TransactionResult::TimestampTooLarge");
                 return Ok(());
             }
             TransactionResult::Success => {
+                debug!("TransactionResult::Success");
                 self.batch_manager.pop_front_batch();
                 return Ok(());
             }

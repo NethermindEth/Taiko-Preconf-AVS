@@ -80,22 +80,25 @@ impl TransactionMonitor {
         })
     }
 
+    pub async fn get_sending_guard(&self) -> Option<tokio::sync::MutexGuard<Option<JoinHandle<()>>>> {
+        let guard = self.join_handle.lock().await;
+        if let Some(join_handle) = guard.as_ref() {
+            if !join_handle.is_finished() {
+                debug!("Cannot monitor new transaction, previous transaction is in progress");
+                return None;
+            }
+        }
+        return Some(guard);
+    }
+
     /// Monitor a transaction until it is confirmed or fails.
     /// Spawns a new tokio task to monitor the transaction.
-    pub async fn monitor_new_transaction(
+    pub async fn send_new_transaction(
         &self,
         tx: TransactionRequest,
         nonce: u64,
+        mut sending_guard: tokio::sync::MutexGuard< '_, Option<JoinHandle<()>>>,
     ) -> Result<(), Error> {
-        let mut guard = self.join_handle.lock().await;
-        if let Some(join_handle) = guard.as_ref() {
-            if !join_handle.is_finished() {
-                return Err(Error::msg(
-                    "Cannot monitor new transaction, previous transaction is in progress",
-                ));
-            }
-        }
-
         let monitor_thread = TransactionMonitorThread::new(
             self.provider.clone(),
             self.config.clone(),
@@ -104,7 +107,7 @@ impl TransactionMonitor {
             self.metrics.clone(),
         );
         let join_handle = monitor_thread.spawn_monitoring_task(tx);
-        *guard = Some(join_handle);
+        *sending_guard = Some(join_handle);
         Ok(())
     }
 
