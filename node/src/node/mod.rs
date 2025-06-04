@@ -44,6 +44,7 @@ pub struct Node {
     metrics: Arc<Metrics>,
     watchdog: u64,
     head_verifier: L2HeadVerifier,
+    has_no_pending_transaction: bool,
 }
 
 impl Node {
@@ -105,6 +106,7 @@ impl Node {
             metrics,
             watchdog: 0,
             head_verifier,
+            has_no_pending_transaction: true,
         })
     }
 
@@ -407,7 +409,8 @@ impl Node {
             }
         }
 
-        if current_status.is_submitter() {
+        if current_status.is_submitter() && self.has_no_pending_transaction {
+            self.has_no_pending_transaction = false;
             // first check verifier
             if self.has_verified_unproposed_batches().await? {
                 if let Err(err) = self
@@ -415,6 +418,7 @@ impl Node {
                     .try_submit_oldest_batch(current_status.is_preconfer())
                     .await
                 {
+                    self.has_no_pending_transaction = true;
                     if let Some(transaction_error) = err.downcast_ref::<TransactionResult>() {
                         self.handle_transaction_result(transaction_error, &current_status)
                             .await?;
@@ -557,14 +561,19 @@ impl Node {
         current_status: &OperatorStatus,
     ) -> Result<(), Error> {
         match self.transaction_result_channel.try_recv() {
-            Ok(error) => {
-                return self.handle_transaction_result(&error, current_status).await;
+            Ok(result) => {
+                self.has_no_pending_transaction = true;
+                return self
+                    .handle_transaction_result(&result, current_status)
+                    .await;
             }
             Err(err) => match err {
                 TryRecvError::Empty => {
+                    self.has_no_pending_transaction = true;
                     // no errors, proceed with preconfirmation
                 }
                 TryRecvError::Disconnected => {
+                    self.has_no_pending_transaction = true;
                     self.cancel_token.cancel();
                     return Err(anyhow::anyhow!("Transaction error channel disconnected"));
                 }
@@ -621,10 +630,6 @@ impl Node {
                 return Err(anyhow::anyhow!(
                     "Transaction estimation too early, skipping slot"
                 ));
-            }
-            TransactionResult::TransactionInProgress => {
-                debug!("TransactionResult::TransactionInProgress");
-                return Ok(());
             }
             TransactionResult::TimestampTooLarge => {
                 debug!("TransactionResult::TimestampTooLarge");

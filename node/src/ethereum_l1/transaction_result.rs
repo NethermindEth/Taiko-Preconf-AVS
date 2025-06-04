@@ -8,7 +8,6 @@ pub enum TransactionResult {
     UnsupportedTransactionType,
     GetBlockNumberFailed,
     TimestampTooLarge,
-    TransactionInProgress,
 }
 
 impl std::fmt::Display for TransactionResult {
