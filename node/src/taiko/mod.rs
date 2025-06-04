@@ -51,12 +51,11 @@ use std::{
 use tokio::sync::RwLock;
 use tracing::{debug, info, trace, warn};
 
+pub mod blob;
 pub mod config;
 mod fixed_k_signer_chainbound;
 mod l2_contracts_bindings;
 pub mod preconf_blocks;
-pub mod taiko_blob;
-mod taiko_blob_coder;
 
 pub struct Taiko {
     taiko_geth_provider_ws: RwLock<WsProvider>,
