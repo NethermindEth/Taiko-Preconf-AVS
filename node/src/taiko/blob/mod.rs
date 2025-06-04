@@ -1,4 +1,3 @@
-use crate::crypto::kzg::{blob_to_kzg_commitment, compute_blob_kzg_proof};
 use alloy::{
     consensus::{Blob, BlobTransactionSidecar, Bytes48, EnvKzgSettings},
     eips::eip4844::BYTES_PER_BLOB,
@@ -9,6 +8,8 @@ use anyhow::Error;
 mod constants;
 mod taiko_blob_coder;
 mod taiko_blob_decoder;
+
+use crate::crypto::kzg::{blob_to_kzg_commitment, compute_blob_kzg_proof};
 use constants::MAX_BLOB_DATA_SIZE;
 use taiko_blob_coder::TaikoBlobCoder;
 

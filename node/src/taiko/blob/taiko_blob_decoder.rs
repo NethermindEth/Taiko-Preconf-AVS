@@ -1,6 +1,7 @@
-use super::constants::{BLOB_SIZE, ENCODING_VERSION, MAX_BLOB_DATA_SIZE, ROUNDS, VERSION_OFFSET};
 use alloy::consensus::Blob;
 use anyhow::{Error, anyhow};
+
+use super::constants::{BLOB_SIZE, ENCODING_VERSION, MAX_BLOB_DATA_SIZE, ROUNDS, VERSION_OFFSET};
 
 pub struct TaikoBlobDecoder {
     read_offset: usize,
