@@ -1,8 +1,10 @@
 pub(crate) mod batch_manager;
+mod blob_parser;
 mod l2_head_verifier;
 mod operator;
 mod verifier;
 
+use crate::node::blob_parser::BlobParser;
 use crate::reorg_detector;
 use crate::{
     ethereum_l1::{EthereumL1, transaction_error::TransactionError},
@@ -44,6 +46,7 @@ pub struct Node {
     metrics: Arc<Metrics>,
     watchdog: u64,
     head_verifier: L2HeadVerifier,
+    blob_parser: BlobParser,
 }
 
 impl Node {
@@ -91,6 +94,7 @@ impl Node {
             taiko.clone(),
         );
         let head_verifier = L2HeadVerifier::new();
+        let blob_parser = BlobParser::new(ethereum_l1.clone());
         Ok(Self {
             cancel_token,
             batch_manager,
@@ -105,6 +109,7 @@ impl Node {
             metrics,
             watchdog: 0,
             head_verifier,
+            blob_parser,
         })
     }
 
