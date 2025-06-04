@@ -1,11 +1,16 @@
 use crate::crypto::kzg::{blob_to_kzg_commitment, compute_blob_kzg_proof};
-use crate::taiko::taiko_blob_coder::{MAX_BLOB_DATA_SIZE, TaikoBlobCoder};
 use alloy::{
     consensus::{Blob, BlobTransactionSidecar, Bytes48, EnvKzgSettings},
     eips::eip4844::BYTES_PER_BLOB,
     primitives::FixedBytes,
 };
 use anyhow::Error;
+
+mod constants;
+mod taiko_blob_coder;
+mod taiko_blob_decoder;
+use constants::MAX_BLOB_DATA_SIZE;
+use taiko_blob_coder::TaikoBlobCoder;
 
 pub fn build_taiko_blob_sidecar(data: &[u8]) -> Result<BlobTransactionSidecar, Error> {
     // Split to blob chunks
@@ -37,6 +42,7 @@ pub fn build_taiko_blob_sidecar(data: &[u8]) -> Result<BlobTransactionSidecar, E
 
 mod tests {
     use super::*;
+    use taiko_blob_decoder::TaikoBlobDecoder;
 
     #[test]
     fn test_build_taiko_blob_sidecar() {
@@ -44,13 +50,12 @@ mod tests {
         let sidecar =
             build_taiko_blob_sidecar(&data).expect("assert: can build taiko blob sidecar");
         for s in sidecar.into_iter() {
-            println!("{:?}", s.kzg_commitment);
             assert!(s.verify_blob_kzg_proof().is_ok());
         }
     }
 
     #[test]
-    fn test_sidecar_builder_from_data() {
+    fn test_encode_and_decode_blob() {
         let data: Vec<u8> = vec![
             0xBE, 0x68, 0xB2, 0x32, 0x82, 0xC8, 0xEC, 0x40, 0x4B, 0x0F, 0xF8, 0x77, 0x33, 0x02,
             0xA0, 0x02, 0x02, 0xE1, 0xE9, 0xAA, 0x74, 0xEA, 0x50, 0x22, 0xD0, 0xAE, 0x47, 0x74,
@@ -81,5 +86,43 @@ mod tests {
                 .expect("assert: can decode static hex blob")
             )
         );
+
+        let decoded_data =
+            TaikoBlobDecoder::decode_blob(&encoded_blob).expect("assert: can decode taiko blob");
+        assert_eq!(data, decoded_data);
+    }
+
+    #[test]
+    fn test_encode_and_decode_blob_1() {
+        let data: Vec<u8> = vec![
+            0xFF, 0x79, 0xF6, 0xF8, 0x98, 0x5C, 0x13, 0x34, 0x24, 0x66, 0x0D, 0x94, 0x54, 0x2E,
+            0x0E, 0x51, 0x4B, 0x3D, 0xB2, 0x32, 0xEA, 0x45, 0x88, 0xCE, 0xB0, 0xA9, 0x1F, 0xAB,
+            0xAD, 0xB7, 0x28, 0xEE, 0xA6, 0x1D, 0xEB, 0xC9, 0xC1, 0xBD, 0xAF, 0x54, 0x09, 0x2C,
+            0x4E, 0xF1, 0x88, 0x79, 0xA6, 0x3E, 0xC1, 0x95, 0xD5, 0x26, 0xA7, 0x9A, 0x6F, 0x4C,
+            0x7E, 0x26, 0xCA, 0x7E, 0x6C, 0x7E, 0xFB, 0xE1, 0x0E, 0x0C, 0x17, 0x14, 0x05, 0xB6,
+            0x58, 0xE6, 0xAE, 0x24, 0xF2, 0x5A, 0x6F, 0x1F, 0xD3, 0x73, 0xC4, 0x80, 0xA8, 0xFB,
+            0x4B, 0x49, 0x0D, 0xE8, 0xB8, 0x86, 0x84, 0x26, 0x88, 0x94, 0x51, 0xDE, 0x15, 0x40,
+            0xEF, 0xCA, 0x37, 0x27, 0x2E, 0xC0, 0x2E, 0xAB, 0x18, 0x43, 0xD3, 0x95, 0xEB, 0xAA,
+            0x3B, 0x43, 0xDD, 0x62, 0x42, 0x89, 0x62, 0x0B, 0x5A, 0xF5, 0x38, 0xA9, 0xEC, 0x80,
+            0x3A, 0xCF, 0x10, 0xE0, 0xA3, 0x00, 0xE7, 0x0E, 0x40, 0xC3, 0x61, 0xCE, 0xCE, 0x65,
+            0xE4, 0xD2, 0xEE,
+        ];
+
+        let encoded_blob: Blob =
+            TaikoBlobCoder::encode_blob(&data).expect("assert: can encode taiko blob");
+
+        assert_eq!(
+            alloy::primitives::keccak256(encoded_blob),
+            FixedBytes::<32>::from_slice(
+                &alloy::hex::decode(
+                    "44cbc18d48a5803fef7debf4c5cd8a0c4e8dae92e9ac4502bf3a1af250e83d62"
+                )
+                .expect("assert: can decode static hex blob")
+            )
+        );
+
+        let decoded_data =
+            TaikoBlobDecoder::decode_blob(&encoded_blob).expect("assert: can decode taiko blob");
+        assert_eq!(data, decoded_data);
     }
 }
