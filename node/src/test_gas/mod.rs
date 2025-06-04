@@ -13,7 +13,7 @@ pub async fn test_gas_params(
     anchor_height_lag: u64,
     max_bytes_size_of_batch: u64,
     mut transaction_error_receiver: tokio::sync::mpsc::Receiver<
-        ethereum_l1::transaction_error::TransactionError,
+        ethereum_l1::transaction_result::TransactionResult,
     >,
 ) -> Result<(), Error> {
     let timestamp_sec = std::time::SystemTime::now()

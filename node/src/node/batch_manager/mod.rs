@@ -358,4 +358,8 @@ impl BatchManager {
     pub fn take_batches_to_send(&mut self) -> VecDeque<Batch> {
         self.batch_builder.take_batches_to_send()
     }
+
+    pub fn pop_front_batch(&mut self) -> Option<Batch> {
+        self.batch_builder.pop_front_batch()
+    }
 }
