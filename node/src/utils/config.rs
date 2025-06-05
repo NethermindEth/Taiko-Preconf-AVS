@@ -19,6 +19,7 @@ pub struct Config {
     pub rpc_short_timeout: Duration,
     pub rpc_long_timeout: Duration,
     pub taiko_anchor_address: String,
+    pub taiko_bridge_address: String,
     pub handover_window_slots: u64,
     pub handover_start_buffer_ms: u64,
     pub l1_height_lag: u64,
@@ -45,7 +46,6 @@ pub struct L1ContractAddresses {
     pub preconf_whitelist: String,
     pub preconf_router: String,
     pub taiko_wrapper: String,
-    pub bridge: String,
     #[cfg(feature = "extra-gas-percentage")]
     pub extra_gas_percentage: u64,
 }
@@ -103,15 +103,6 @@ impl Config {
             default_empty_address.clone()
         });
 
-        const BRIDGE_ADDRESS: &str = "BRIDGE_ADDRESS";
-        let bridge = std::env::var(BRIDGE_ADDRESS).unwrap_or_else(|_| {
-            warn!(
-                "No Bridge contract address found in {} env var, using default",
-                BRIDGE_ADDRESS
-            );
-            default_empty_address.clone()
-        });
-
         #[cfg(feature = "extra-gas-percentage")]
         let extra_gas_percentage = std::env::var("EXTRA_GAS_PERCENTAGE")
             .unwrap_or("5".to_string())
@@ -123,7 +114,6 @@ impl Config {
             preconf_whitelist,
             preconf_router,
             taiko_wrapper,
-            bridge,
             #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage,
         };
@@ -185,6 +175,15 @@ impl Config {
 
         let taiko_anchor_address = std::env::var("TAIKO_ANCHOR_ADDRESS")
             .unwrap_or("0x1670010000000000000000000000000000010001".to_string());
+
+        const BRIDGE_ADDRESS: &str = "BRIDGE_ADDRESS";
+        let taiko_bridge_address = std::env::var(BRIDGE_ADDRESS).unwrap_or_else(|_| {
+            warn!(
+                "No Bridge contract address found in {} env var, using default",
+                BRIDGE_ADDRESS
+            );
+            default_empty_address.clone()
+        });
 
         let handover_window_slots = std::env::var("HANDOVER_WINDOW_SLOTS")
             .unwrap_or("4".to_string())
@@ -311,6 +310,7 @@ impl Config {
             rpc_short_timeout,
             rpc_long_timeout,
             taiko_anchor_address,
+            taiko_bridge_address,
             handover_window_slots,
             handover_start_buffer_ms,
             l1_height_lag,
@@ -349,6 +349,7 @@ jwt secret file path: {}
 rpc short timeout: {}ms
 rpc long timeout: {}ms
 taiko anchor address: {}
+taiko bridge address: {}
 handover window slots: {}
 handover start buffer: {}ms
 l1 height lag: {}
@@ -383,6 +384,7 @@ simulate not submitting at the end of epoch: {}
             config.rpc_short_timeout.as_millis(),
             config.rpc_long_timeout.as_millis(),
             config.taiko_anchor_address,
+            config.taiko_bridge_address,
             config.handover_window_slots,
             config.handover_start_buffer_ms,
             config.l1_height_lag,

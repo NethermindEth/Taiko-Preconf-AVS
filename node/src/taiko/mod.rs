@@ -5,13 +5,6 @@ mod l2_contracts_bindings;
 mod l2_execution_layer;
 pub mod preconf_blocks;
 
-pub mod blob;
-pub mod config;
-mod fixed_k_signer_chainbound;
-mod l2_contracts_bindings;
-mod l2_execution_layer;
-pub mod preconf_blocks;
-
 use crate::{
     ethereum_l1::EthereumL1,
     metrics::Metrics,
@@ -73,10 +66,6 @@ impl Taiko {
         })
     }
 
-    pub fn chain_id(&self) -> u64 {
-        self.l2_contracts.chain_id()
-    }
-
     pub async fn get_pending_l2_tx_list_from_taiko_geth(
         &self,
         base_fee: u64,
@@ -89,8 +78,11 @@ impl Taiko {
             self.config.min_bytes_per_tx_list,
         );
         let params = vec![
-            Value::String(format!("0x{}", hex::encode(self.config.preconfer_address))), // beneficiary address
-            Value::from(base_fee),                                                      // baseFee
+            Value::String(format!(
+                "0x{}",
+                hex::encode(self.ethereum_l1.execution_layer.get_preconfer_address())
+            )), // beneficiary address
+            Value::from(base_fee), // baseFee
             Value::Number(
                 self.ethereum_l1
                     .execution_layer
@@ -98,9 +90,9 @@ impl Taiko {
                     .into(),
             ), // blockMaxGasLimit
             Value::Number(max_bytes_per_tx_list.into()), // maxBytesPerTxList (128KB by default)
-            Value::Array(vec![]),                        // locals (empty array)
-            Value::Number(1.into()),                     // maxTransactionsLists
-            Value::Number(0.into()),                     // minTip
+            Value::Array(vec![]),  // locals (empty array)
+            Value::Number(1.into()), // maxTransactionsLists
+            Value::Number(0.into()), // minTip
         ];
 
         let result = self
@@ -162,13 +154,6 @@ impl Taiko {
         hash: B256,
     ) -> Result<alloy::rpc::types::Transaction, Error> {
         self.l2_contracts.get_transaction_by_hash(hash).await
-    }
-
-    pub async fn get_latest_l2_block_id_hash_and_gas_used(
-        &self,
-    ) -> Result<(u64, B256, u64), Error> {
-        self.get_l2_block_id_hash_and_gas_used(BlockNumberOrTag::Latest)
-            .await
     }
 
     pub async fn get_l2_block_id_hash_and_gas_used(
@@ -277,7 +262,10 @@ impl Taiko {
             base_fee_per_gas: l2_slot_info.base_fee(),
             block_number: l2_slot_info.parent_id() + 1,
             extra_data: format!("0x{:0>64}", hex::encode(extra_data)),
-            fee_recipient: format!("0x{}", hex::encode(self.config.preconfer_address)),
+            fee_recipient: format!(
+                "0x{}",
+                hex::encode(self.ethereum_l1.execution_layer.get_preconfer_address())
+            ),
             gas_limit: 241_000_000u64,
             parent_hash: format!("0x{}", hex::encode(l2_slot_info.parent_hash())),
             timestamp: l2_block.timestamp_sec,
@@ -416,7 +404,15 @@ impl Taiko {
     }
 
     pub async fn transfer_eth_from_l2_to_l1(&self, amount: u64) -> Result<(), Error> {
-        self.l2_contracts.transfer_eth_from_l2_to_l1(amount).await
+        self.l2_contracts
+            .transfer_eth_from_l2_to_l1(
+                amount,
+                self.ethereum_l1.execution_layer.chain_id(),
+                self.ethereum_l1
+                    .execution_layer
+                    .get_preconfer_alloy_address(),
+            )
+            .await
     }
 }
 

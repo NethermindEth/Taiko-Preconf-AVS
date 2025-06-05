@@ -12,7 +12,7 @@ pub struct FundsMonitor {
     cancel_token: CancellationToken,
 }
 
-const MONITOR_INTERVAL_SEC: u64 = 60;
+const MONITOR_INTERVAL_SEC: u64 = 10;  //TODO
 
 impl FundsMonitor {
     pub fn new(
@@ -72,7 +72,7 @@ impl FundsMonitor {
             let preconfer_address = self
                 .ethereum_l1
                 .execution_layer
-                .get_preconfer_address_coinbase();
+                .get_preconfer_alloy_address();
 
             let l2_eth_balance = match self.taiko.get_balance(preconfer_address).await {
                 Ok(balance) => {
@@ -89,6 +89,11 @@ impl FundsMonitor {
                 "Balances - ETH: {}, L2 ETH: {}, TAIKO: {}",
                 eth_balance, l2_eth_balance, taiko_balance
             );
+
+            match self.taiko.transfer_eth_from_l2_to_l1(1000000).await {
+                Ok(_) => info!("Transferred 1000000 ETH from L2 to L1"),
+                Err(e) => warn!("Failed to transfer ETH from L2 to L1: {}", e),
+            }
 
             tokio::select! {
                 _ = sleep(Duration::from_secs(MONITOR_INTERVAL_SEC)) => {},

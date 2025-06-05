@@ -64,7 +64,7 @@ async fn main() -> Result<(), Error> {
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
         ethereum_l1::config::EthereumL1Config {
             execution_ws_rpc_url: config.l1_ws_rpc_url,
-            avs_node_ecdsa_private_key: config.avs_node_ecdsa_private_key,
+            avs_node_ecdsa_private_key: config.avs_node_ecdsa_private_key.clone(),
             contract_addresses: config.contract_addresses,
             consensus_rpc_url: config.l1_beacon_url,
             slot_duration_sec: config.l1_slot_duration_sec,
@@ -106,19 +106,20 @@ async fn main() -> Result<(), Error> {
         taiko::Taiko::new(
             ethereum_l1.clone(),
             metrics.clone(),
-            taiko::config::TaikoConfig {
-                taiko_geth_ws_url: config.taiko_geth_ws_rpc_url,
-                taiko_geth_auth_url: config.taiko_geth_auth_rpc_url,
-                driver_url: config.taiko_driver_url,
+            taiko::config::TaikoConfig::new(
+                config.taiko_geth_ws_rpc_url,
+                config.taiko_geth_auth_rpc_url,
+                config.taiko_driver_url,
                 jwt_secret_bytes,
-                preconfer_address: ethereum_l1.execution_layer.get_preconfer_address(),
-                taiko_anchor_address: config.taiko_anchor_address,
-                max_bytes_per_tx_list: config.max_bytes_per_tx_list,
-                min_bytes_per_tx_list: config.min_bytes_per_tx_list,
-                throttling_factor: config.throttling_factor,
-                rpc_short_timeout: config.rpc_short_timeout,
-                rpc_long_timeout: config.rpc_long_timeout,
-            },
+                config.taiko_anchor_address,
+                config.taiko_bridge_address,
+                config.max_bytes_per_tx_list,
+                config.min_bytes_per_tx_list,
+                config.throttling_factor,
+                config.rpc_short_timeout,
+                config.rpc_long_timeout,
+                config.avs_node_ecdsa_private_key,
+            )?,
         )
         .await?,
     );
@@ -166,7 +167,7 @@ async fn main() -> Result<(), Error> {
             max_time_shift_between_blocks_sec: config.max_time_shift_between_blocks_sec,
             max_anchor_height_offset: max_anchor_height_offset
                 - config.max_anchor_height_offset_reduction,
-            default_coinbase: ethereum_l1.execution_layer.get_preconfer_address_coinbase(),
+            default_coinbase: ethereum_l1.execution_layer.get_preconfer_alloy_address(),
         },
         Thresholds {
             eth: config.threshold_eth,

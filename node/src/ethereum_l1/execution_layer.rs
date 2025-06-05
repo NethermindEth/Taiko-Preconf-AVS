@@ -116,6 +116,10 @@ impl ExecutionLayer {
         })
     }
 
+    pub fn chain_id(&self) -> u64 {
+        self.chain_id
+    }
+
     async fn parse_contract_addresses(
         provider: Arc<WsProvider>,
         contract_addresses: &config::L1ContractAddresses,
@@ -124,7 +128,6 @@ impl ExecutionLayer {
         let preconf_whitelist = contract_addresses.preconf_whitelist.parse()?;
         let preconf_router = contract_addresses.preconf_router.parse()?;
         let taiko_wrapper = contract_addresses.taiko_wrapper.parse()?;
-        let bridge = contract_addresses.bridge.parse()?;
 
         let contract = taiko_inbox::ITaikoInbox::new(taiko_inbox, provider);
         let taiko_token = contract
@@ -139,7 +142,6 @@ impl ExecutionLayer {
             preconf_whitelist,
             preconf_router,
             taiko_wrapper,
-            bridge,
         })
     }
 
@@ -471,7 +473,7 @@ impl ExecutionLayer {
         self.pacaya_config.blockMaxGasLimit
     }
 
-    pub fn get_preconfer_address_coinbase(&self) -> Address {
+    pub fn get_preconfer_alloy_address(&self) -> Address {
         self.preconfer_address
     }
 
