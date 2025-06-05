@@ -32,6 +32,7 @@ pub enum OperationType {
     Reanchor,
 }
 
+#[derive(Clone)]
 pub struct TaikoConfig {
     pub taiko_geth_ws_url: String,
     pub taiko_geth_auth_url: String,
