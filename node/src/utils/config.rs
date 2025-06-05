@@ -168,7 +168,7 @@ impl Config {
         let rpc_driver_preconf_timeout = Duration::from_millis(rpc_driver_preconf_timeout);
 
         let rpc_driver_status_timeout = std::env::var("RPC_DRIVER_STATUS_TIMEOUT_MS")
-            .unwrap_or("60000".to_string())
+            .unwrap_or("1000".to_string())
             .parse::<u64>()
             .expect("RPC_DRIVER_STATUS_TIMEOUT_MS must be a number");
         let rpc_driver_status_timeout = Duration::from_millis(rpc_driver_status_timeout);
