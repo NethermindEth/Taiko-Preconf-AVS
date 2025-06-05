@@ -1,9 +1,8 @@
 use crate::utils::types::PreconferAddress;
 use alloy::{
-    consensus::Transaction,
-    primitives::{Address, B256, BlockNumber},
+    primitives::{Address, B256},
     providers::{
-        Identity, Provider, ProviderBuilder, RootProvider, WsConnect,
+        Identity, RootProvider,
         fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
     },
 };
@@ -32,6 +31,7 @@ pub enum OperationType {
     Reanchor,
 }
 
+#[derive(Clone)]
 pub struct TaikoConfig {
     pub taiko_geth_ws_url: String,
     pub taiko_geth_auth_url: String,
