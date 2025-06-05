@@ -392,26 +392,17 @@ mod tests {
                 highest_unsafe_l2_payload_block_id: 2,
             })
         }
-
-        async fn get_latest_l2_block_id(&self) -> Result<u64, Error> {
-            Ok(0)
-        }
     }
 
     struct TaikoMock {
         end_of_sequencing_block_hash: B256,
     }
-
     impl PreconfDriver for TaikoMock {
         async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {
             Ok(preconf_blocks::TaikoStatus {
                 end_of_sequencing_block_hash: self.end_of_sequencing_block_hash,
                 highest_unsafe_l2_payload_block_id: 0,
             })
-        }
-
-        async fn get_latest_l2_block_id(&self) -> Result<u64, Error> {
-            Ok(0)
         }
     }
 

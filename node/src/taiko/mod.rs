@@ -1,4 +1,9 @@
-#![allow(unused)] // TODO: remove this once using new rpc functions
+pub mod blob;
+pub mod config;
+mod fixed_k_signer_chainbound;
+mod l2_contracts_bindings;
+mod l2_execution_layer;
+pub mod preconf_blocks;
 
 pub mod blob;
 pub mod config;
@@ -15,48 +20,24 @@ use crate::{
         l2_slot_info::L2SlotInfo,
         l2_tx_lists::{self, PreBuiltTxList},
     },
-    taiko::l2_execution_layer::L2ExecutionLayer,
-    utils::{
-        rpc_client::{HttpRPCClient, JSONRPCClient},
-        types::*,
-    },
+    utils::rpc_client::{HttpRPCClient, JSONRPCClient},
 };
 use alloy::{
-    consensus::{
-        BlockHeader, SignableTransaction, Transaction as AnchorTransaction, TxEnvelope,
-        transaction::Recovered,
-    },
-    contract::Error as ContractError,
+    consensus::BlockHeader,
     eips::BlockNumberOrTag,
-    network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder},
-    primitives::{Address, B256, BlockNumber},
-    providers::{
-        Identity, Provider, ProviderBuilder, RootProvider, WsConnect,
-        fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
-    },
-    rpc::types::{Block as RpcBlock, BlockTransactionsKind, Transaction},
-    signers::{
-        Signature, SignerSync,
-        local::{LocalSigner, PrivateKeySigner},
-    },
-    transports::TransportErrorKind,
+    primitives::{Address, B256},
 };
 use anyhow::Error;
-use config::{
-    GOLDEN_TOUCH_ADDRESS, GOLDEN_TOUCH_PRIVATE_KEY, OperationType, TaikoConfig, WsProvider,
-};
-use ecdsa::SigningKey;
-use k256::Secp256k1;
-use l2_contracts_bindings::{LibSharedData, TaikoAnchor};
+use config::{OperationType, TaikoConfig};
+use l2_contracts_bindings::LibSharedData;
+use l2_execution_layer::L2ExecutionLayer;
 use serde_json::Value;
 use std::{
     cmp::{max, min},
-    str::FromStr,
     sync::Arc,
     time::Duration,
 };
-use tokio::sync::RwLock;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, trace};
 
 pub struct Taiko {
     l2_contracts: L2ExecutionLayer,
@@ -134,22 +115,6 @@ impl Taiko {
             Ok(Some(tx_lists.remove(0)))
         } else {
             Ok(None)
-        }
-    }
-
-    fn print_number_of_received_txs(result: &l2_tx_lists::RPCReplyL2TxLists) {
-        if let Some(tx_lists) = result.tx_lists.as_array() {
-            let mut hashes = Vec::new();
-            for tx_list in tx_lists {
-                if let Some(tx_list_array) = tx_list.as_array() {
-                    for tx in tx_list_array {
-                        if let Some(hash) = tx.get("hash") {
-                            hashes.push(hash.as_str().unwrap_or("").get(0..8).unwrap_or(""));
-                        }
-                    }
-                }
-            }
-            tracing::debug!("Received L2 txs: [{}]", hashes.join(" "));
         }
     }
 
@@ -457,16 +422,11 @@ impl Taiko {
 
 pub trait PreconfDriver {
     async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error>;
-    async fn get_latest_l2_block_id(&self) -> Result<u64, Error>;
 }
 
 impl PreconfDriver for Taiko {
     async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {
         Taiko::get_status(self).await
-    }
-
-    async fn get_latest_l2_block_id(&self) -> Result<u64, Error> {
-        Taiko::get_latest_l2_block_id(self).await
     }
 }
 

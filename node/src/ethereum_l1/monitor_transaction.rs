@@ -375,6 +375,11 @@ impl TransactionMonitorThread {
                                 .await;
                             return None;
                         }
+                    } else if err.message.contains("insufficient funds") {
+                        error!("Failed to send transaction: {}", e);
+                        self.send_error_signal(TransactionError::InsufficientFunds)
+                            .await;
+                        return None;
                     }
                 }
                 // TODO if it is not revert then rebuild rpc client and retry on rpc error
