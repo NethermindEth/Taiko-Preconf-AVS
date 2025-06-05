@@ -15,39 +15,22 @@ use crate::{
         l2_slot_info::L2SlotInfo,
         l2_tx_lists::{self, PreBuiltTxList},
     },
-    taiko::l2_execution_layer::L2ExecutionLayer,
     utils::{
         rpc_client::{HttpRPCClient, JSONRPCClient},
         types::*,
     },
 };
 use alloy::{
-    consensus::{
-        BlockHeader, SignableTransaction, Transaction as AnchorTransaction, TxEnvelope,
-        transaction::Recovered,
-    },
-    contract::Error as ContractError,
+    consensus::BlockHeader,
     eips::BlockNumberOrTag,
-    network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder},
-    primitives::{Address, B256, BlockNumber},
-    providers::{
-        Identity, Provider, ProviderBuilder, RootProvider, WsConnect,
-        fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
-    },
-    rpc::types::{Block as RpcBlock, BlockTransactionsKind, Transaction},
-    signers::{
-        Signature, SignerSync,
-        local::{LocalSigner, PrivateKeySigner},
-    },
-    transports::TransportErrorKind,
+    primitives::{Address, B256},
 };
 use anyhow::Error;
-use config::{
-    GOLDEN_TOUCH_ADDRESS, GOLDEN_TOUCH_PRIVATE_KEY, OperationType, TaikoConfig, WsProvider,
-};
+use config::{OperationType, TaikoConfig};
 use ecdsa::SigningKey;
 use k256::Secp256k1;
 use l2_contracts_bindings::{LibSharedData, TaikoAnchor};
+use l2_execution_layer::L2ExecutionLayer;
 use serde_json::Value;
 use std::{
     cmp::{max, min},
@@ -56,7 +39,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::RwLock;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, trace};
 
 pub struct Taiko {
     l2_contracts: L2ExecutionLayer,
