@@ -1,3 +1,5 @@
+#![allow(unused)] // TODO: remove this once blob module is used
+
 use alloy::{
     consensus::{Blob, BlobTransactionSidecar, Bytes48, EnvKzgSettings},
     eips::eip4844::BYTES_PER_BLOB,

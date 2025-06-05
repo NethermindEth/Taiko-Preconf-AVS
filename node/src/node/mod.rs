@@ -629,6 +629,12 @@ impl Node {
                     "Transaction reverted with TimestampTooLarge error"
                 ));
             }
+            TransactionError::InsufficientFunds => {
+                self.cancel_token.cancel();
+                return Err(anyhow::anyhow!(
+                    "Transaction reverted with InsufficientFunds error"
+                ));
+            }
         }
 
         Ok(())

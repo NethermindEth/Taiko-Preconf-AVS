@@ -1,4 +1,3 @@
-use crate::utils::types::*;
 use alloy::primitives::B256;
 use hex::FromHex;
 use serde::{Deserialize, Deserializer, Serialize};

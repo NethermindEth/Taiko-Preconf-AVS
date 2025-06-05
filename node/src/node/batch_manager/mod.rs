@@ -3,6 +3,7 @@ pub mod batch_builder;
 use crate::{
     ethereum_l1::EthereumL1,
     shared::{l2_block::L2Block, l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
+    taiko,
     taiko::preconf_blocks::BuildPreconfBlockResponse,
     taiko::{Taiko, config::OperationType},
 };
@@ -79,7 +80,7 @@ impl BatchManager {
 
         let coinbase = block.header.beneficiary();
 
-        let anchor_block_id = Taiko::decode_anchor_tx_data(anchor_tx.input())?;
+        let anchor_block_id = taiko::decode_anchor_id_from_tx_data(anchor_tx.input())?;
         debug!(
             "Recovering from L2 block {}, anchor block id {}, timestamp {}, coinbase {}, transactions {}",
             block_height,
@@ -124,7 +125,7 @@ impl BatchManager {
             .ok_or_else(|| anyhow::anyhow!("get_anchor_block_offset: No transactions in block"))?;
 
         let l2_anchor_tx = self.taiko.get_transaction_by_hash(*anchor_tx_hash).await?;
-        let l1_anchor_block_id = Taiko::decode_anchor_tx_data(l2_anchor_tx.input())?;
+        let l1_anchor_block_id = taiko::decode_anchor_id_from_tx_data(l2_anchor_tx.input())?;
 
         debug!(
             "get_l1_anchor_block_offset_for_l2_block: L2 block {l2_block_height} has L1 anchor block id {l1_anchor_block_id}"
