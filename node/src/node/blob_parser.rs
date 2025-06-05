@@ -27,7 +27,7 @@ impl BlobParser {
         let v = self
             .blob_to_vec(block, blob_hash, tx_list_offset, tx_list_size)
             .await?;
-        let txs = uncompress_and_decode(&v.as_slice())?;
+        let txs = uncompress_and_decode(v.as_slice())?;
         Ok(txs)
     }
 
@@ -73,7 +73,7 @@ impl BlobParser {
                     hash
                 };
                 if sidecar_blob_hash == hash {
-                    let data = decode_blob(&sidecar.blob.as_ref()).unwrap();
+                    let data = decode_blob(sidecar.blob.as_ref())?;
                     result.extend(data);
                     break;
                 }
