@@ -1,4 +1,7 @@
-use prometheus::{Counter, Encoder, Gauge, Histogram, HistogramOpts, Registry, TextEncoder};
+use prometheus::{
+    Counter, CounterVec, Encoder, Gauge, Histogram, HistogramOpts, HistogramVec, Opts, Registry,
+    TextEncoder,
+};
 use tracing::error;
 
 pub struct Metrics {
@@ -13,6 +16,9 @@ pub struct Metrics {
     batch_propose_tries: Histogram,
     batch_block_count: Histogram,
     batch_blob_size: Histogram,
+    rpc_driver_call_duration: HistogramVec,
+    rpc_driver_call: CounterVec,
+    rpc_driver_call_error: CounterVec,
     registry: Registry,
 }
 
@@ -134,6 +140,63 @@ impl Metrics {
             error!("Error: Failed to register batch_blob_size: {}", err);
         }
 
+        let opts = HistogramOpts::new(
+            "rpc_driver_call_duration_seconds",
+            "Duration of RPC calls to driver in seconds",
+        )
+        .buckets(vec![
+            0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 20.0, 30.0, 40.0,
+            59.0,
+        ]);
+
+        let rpc_driver_call_duration = match HistogramVec::new(opts, &["method"]) {
+            Ok(histogram) => histogram,
+            Err(err) => panic!(
+                "Failed to create rpc_driver_call_duration histogram: {}",
+                err
+            ),
+        };
+
+        if let Err(err) = registry.register(Box::new(rpc_driver_call_duration.clone())) {
+            error!(
+                "Error: Failed to register rpc_driver_call_duration: {}",
+                err
+            );
+        }
+
+        let rpc_driver_call = match CounterVec::new(
+            Opts::new("rpc_driver_call_counter", "Number of RPC calls to driver"),
+            &["method"],
+        ) {
+            Ok(counter) => counter,
+            Err(err) => panic!("Failed to create rpc_driver_call_counter counter: {}", err),
+        };
+
+        if let Err(err) = registry.register(Box::new(rpc_driver_call.clone())) {
+            error!("Error: Failed to register rpc_driver_call_counter: {}", err);
+        }
+
+        let rpc_driver_call_error = match CounterVec::new(
+            Opts::new(
+                "rpc_driver_call_error_counter",
+                "Number of RPC calls to driver that failed",
+            ),
+            &["method"],
+        ) {
+            Ok(counter) => counter,
+            Err(err) => panic!(
+                "Failed to create rpc_driver_call_error_counter counter: {}",
+                err
+            ),
+        };
+
+        if let Err(err) = registry.register(Box::new(rpc_driver_call_error.clone())) {
+            error!(
+                "Error: Failed to register rpc_driver_call_error_counter: {}",
+                err
+            );
+        }
+
         Self {
             preconfer_eth_balance,
             preconfer_taiko_balance,
@@ -146,6 +209,9 @@ impl Metrics {
             batch_propose_tries,
             batch_block_count,
             batch_blob_size,
+            rpc_driver_call_duration,
+            rpc_driver_call,
+            rpc_driver_call_error,
             registry,
         }
     }
@@ -196,6 +262,22 @@ impl Metrics {
     pub fn observe_batch_info(&self, block_count: u64, blob_size: u64) {
         self.batch_block_count.observe(block_count as f64);
         self.batch_blob_size.observe(blob_size as f64);
+    }
+
+    pub fn observe_rpc_driver_call_duration(&self, method: &str, duration: f64) {
+        self.rpc_driver_call_duration
+            .with_label_values(&[method])
+            .observe(duration);
+    }
+
+    pub fn inc_rpc_driver_call(&self, method: &str) {
+        self.rpc_driver_call.with_label_values(&[method]).inc();
+    }
+
+    pub fn inc_rpc_driver_call_error(&self, method: &str) {
+        self.rpc_driver_call_error
+            .with_label_values(&[method])
+            .inc();
     }
 
     fn u256_to_f64(balance: alloy::primitives::U256) -> f64 {

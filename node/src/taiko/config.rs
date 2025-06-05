@@ -6,7 +6,7 @@ use alloy::{
         fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
     },
 };
-use std::time::Duration;
+use std::{fmt, time::Duration};
 
 pub const GOLDEN_TOUCH_PRIVATE_KEY: B256 = B256::new([
     0x92, 0x95, 0x43, 0x68, 0xaf, 0xd3, 0xca, 0xa1, 0xf3, 0xce, 0x3e, 0xad, 0x00, 0x69, 0xc1, 0xaf,
@@ -29,6 +29,18 @@ pub type WsProvider = FillProvider<
 pub enum OperationType {
     Preconfirm,
     Reanchor,
+    Status,
+}
+
+impl fmt::Display for OperationType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            OperationType::Preconfirm => "Preconfirm",
+            OperationType::Reanchor => "Reanchor",
+            OperationType::Status => "Status",
+        };
+        write!(f, "{}", s)
+    }
 }
 
 #[derive(Clone)]
@@ -42,6 +54,7 @@ pub struct TaikoConfig {
     pub max_bytes_per_tx_list: u64,
     pub min_bytes_per_tx_list: u64,
     pub throttling_factor: u64,
-    pub rpc_short_timeout: Duration,
-    pub rpc_long_timeout: Duration,
+    pub rpc_geth_timeout: Duration,
+    pub rpc_driver_preconf_timeout: Duration,
+    pub rpc_driver_status_timeout: Duration,
 }
