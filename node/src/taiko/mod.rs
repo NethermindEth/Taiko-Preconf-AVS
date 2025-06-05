@@ -1,5 +1,3 @@
-#![allow(unused)] // TODO: remove this once using new rpc functions
-
 pub mod blob;
 pub mod config;
 mod fixed_k_signer_chainbound;
@@ -15,10 +13,7 @@ use crate::{
         l2_slot_info::L2SlotInfo,
         l2_tx_lists::{self, PreBuiltTxList},
     },
-    utils::{
-        rpc_client::{HttpRPCClient, JSONRPCClient},
-        types::*,
-    },
+    utils::rpc_client::{HttpRPCClient, JSONRPCClient},
 };
 use alloy::{
     consensus::BlockHeader,
@@ -27,18 +22,14 @@ use alloy::{
 };
 use anyhow::Error;
 use config::{OperationType, TaikoConfig};
-use ecdsa::SigningKey;
-use k256::Secp256k1;
-use l2_contracts_bindings::{LibSharedData, TaikoAnchor};
+use l2_contracts_bindings::LibSharedData;
 use l2_execution_layer::L2ExecutionLayer;
 use serde_json::Value;
 use std::{
     cmp::{max, min},
-    str::FromStr,
     sync::Arc,
     time::Duration,
 };
-use tokio::sync::RwLock;
 use tracing::{debug, trace};
 
 pub struct Taiko {
@@ -73,10 +64,6 @@ impl Taiko {
             metrics,
             config: taiko_config,
         })
-    }
-
-    pub fn chain_id(&self) -> u64 {
-        self.l2_contracts.chain_id()
     }
 
     pub async fn get_pending_l2_tx_list_from_taiko_geth(
@@ -117,22 +104,6 @@ impl Taiko {
             Ok(Some(tx_lists.remove(0)))
         } else {
             Ok(None)
-        }
-    }
-
-    fn print_number_of_received_txs(result: &l2_tx_lists::RPCReplyL2TxLists) {
-        if let Some(tx_lists) = result.tx_lists.as_array() {
-            let mut hashes = Vec::new();
-            for tx_list in tx_lists {
-                if let Some(tx_list_array) = tx_list.as_array() {
-                    for tx in tx_list_array {
-                        if let Some(hash) = tx.get("hash") {
-                            hashes.push(hash.as_str().unwrap_or("").get(0..8).unwrap_or(""));
-                        }
-                    }
-                }
-            }
-            tracing::debug!("Received L2 txs: [{}]", hashes.join(" "));
         }
     }
 
@@ -180,13 +151,6 @@ impl Taiko {
         hash: B256,
     ) -> Result<alloy::rpc::types::Transaction, Error> {
         self.l2_contracts.get_transaction_by_hash(hash).await
-    }
-
-    pub async fn get_latest_l2_block_id_hash_and_gas_used(
-        &self,
-    ) -> Result<(u64, B256, u64), Error> {
-        self.get_l2_block_id_hash_and_gas_used(BlockNumberOrTag::Latest)
-            .await
     }
 
     pub async fn get_l2_block_id_hash_and_gas_used(
@@ -436,16 +400,11 @@ impl Taiko {
 
 pub trait PreconfDriver {
     async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error>;
-    async fn get_latest_l2_block_id(&self) -> Result<u64, Error>;
 }
 
 impl PreconfDriver for Taiko {
     async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {
         Taiko::get_status(self).await
-    }
-
-    async fn get_latest_l2_block_id(&self) -> Result<u64, Error> {
-        Taiko::get_latest_l2_block_id(self).await
     }
 }
 

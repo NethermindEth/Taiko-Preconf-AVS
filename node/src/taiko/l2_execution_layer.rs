@@ -1,30 +1,20 @@
 use std::str::FromStr;
 
 use super::{
-    config::{
-        GOLDEN_TOUCH_ADDRESS, GOLDEN_TOUCH_PRIVATE_KEY, OperationType, TaikoConfig, WsProvider,
-    },
+    config::{GOLDEN_TOUCH_ADDRESS, GOLDEN_TOUCH_PRIVATE_KEY, TaikoConfig, WsProvider},
     fixed_k_signer_chainbound,
     l2_contracts_bindings::{LibSharedData, TaikoAnchor},
 };
 use alloy::{
     consensus::{
-        BlockHeader, SignableTransaction, Transaction as AnchorTransaction, TxEnvelope,
-        transaction::Recovered,
+        SignableTransaction, Transaction as AnchorTransaction, TxEnvelope, transaction::Recovered,
     },
     contract::Error as ContractError,
     eips::BlockNumberOrTag,
-    network::{Ethereum, EthereumWallet, NetworkWallet, TransactionBuilder},
-    primitives::{Address, B256, BlockNumber},
-    providers::{
-        Identity, Provider, ProviderBuilder, RootProvider, WsConnect,
-        fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
-    },
-    rpc::types::{Block as RpcBlock, BlockTransactionsKind, Transaction},
-    signers::{
-        Signature, SignerSync,
-        local::{LocalSigner, PrivateKeySigner},
-    },
+    primitives::{Address, B256},
+    providers::{Provider, ProviderBuilder, WsConnect},
+    rpc::types::{Block as RpcBlock, Transaction},
+    signers::Signature,
     transports::TransportErrorKind,
 };
 use alloy_json_rpc::RpcError;
@@ -55,7 +45,7 @@ impl L2ExecutionLayer {
         info!("L2 Chain ID: {}", chain_id);
 
         let taiko_anchor_address = Address::from_str(&taiko_config.taiko_anchor_address)?;
-        let mut taiko_anchor = RwLock::new(TaikoAnchor::new(
+        let taiko_anchor = RwLock::new(TaikoAnchor::new(
             taiko_anchor_address,
             provider_ws.read().await.clone(),
         ));
@@ -66,10 +56,6 @@ impl L2ExecutionLayer {
             chain_id,
             config: taiko_config,
         })
-    }
-
-    pub fn chain_id(&self) -> u64 {
-        self.chain_id
     }
 
     pub async fn get_l2_block_hash(&self, number: u64) -> Result<B256, Error> {
@@ -281,7 +267,7 @@ impl L2ExecutionLayer {
 
     pub async fn get_last_synced_anchor_block_id_from_geth(&self) -> Result<u64, Error> {
         let block = self.get_latest_l2_block_with_txs().await?;
-        let (anchor_tx, txs) = match block.transactions.as_transactions() {
+        let (anchor_tx, _) = match block.transactions.as_transactions() {
             Some(txs) => txs
                 .split_first()
                 .ok_or_else(|| anyhow::anyhow!("Cannot get anchor transaction from block"))?,
@@ -307,7 +293,7 @@ impl L2ExecutionLayer {
         match result {
             Ok(result) => Ok(result),
             Err(e) => {
-                let check = self.recreate_ws_provider().await;
+                self.recreate_ws_provider().await?;
                 Err(anyhow::anyhow!(
                     "{}. Recreating WebSocket provider. Transport error: {}",
                     error_message,
@@ -327,7 +313,7 @@ impl L2ExecutionLayer {
         match result {
             Ok(result) => Ok(result),
             Err(ContractError::TransportError(e)) => {
-                let check = self.recreate_ws_provider().await;
+                self.recreate_ws_provider().await?;
                 Err(anyhow::anyhow!(
                     "{}. Recreating WebSocket provider. Transport error: {}",
                     error_message,
