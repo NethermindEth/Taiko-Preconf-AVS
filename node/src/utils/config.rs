@@ -103,6 +103,15 @@ impl Config {
             default_empty_address.clone()
         });
 
+        const BRIDGE_ADDRESS: &str = "BRIDGE_ADDRESS";
+        let bridge = std::env::var(BRIDGE_ADDRESS).unwrap_or_else(|_| {
+            warn!(
+                "No Bridge contract address found in {} env var, using default",
+                BRIDGE_ADDRESS
+            );
+            default_empty_address.clone()
+        });
+
         #[cfg(feature = "extra-gas-percentage")]
         let extra_gas_percentage = std::env::var("EXTRA_GAS_PERCENTAGE")
             .unwrap_or("5".to_string())
@@ -114,6 +123,7 @@ impl Config {
             preconf_whitelist,
             preconf_router,
             taiko_wrapper,
+            bridge,
             #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage,
         };
