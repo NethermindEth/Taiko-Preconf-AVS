@@ -36,6 +36,7 @@ pub struct ExecutionLayer {
     transaction_monitor: TransactionMonitor,
     metrics: Arc<metrics::Metrics>,
     taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::TaikoWrapperInstance<Arc<WsProvider>>,
+    chain_id: u64,
 }
 
 pub struct ContractAddresses {
@@ -44,6 +45,7 @@ pub struct ContractAddresses {
     pub preconf_whitelist: Address,
     pub preconf_router: Address,
     pub taiko_wrapper: Address,
+    pub bridge: Address,
 }
 
 impl ExecutionLayer {
@@ -98,6 +100,9 @@ impl ExecutionLayer {
         let pacaya_config =
             Self::fetch_pacaya_config(&contract_addresses.taiko_inbox, &provider_ws).await?;
 
+        let chain_id = provider_ws.get_chain_id().await?;
+        info!("L1 Chain ID: {}", chain_id);
+
         Ok(Self {
             provider_ws,
             preconfer_address,
@@ -108,6 +113,7 @@ impl ExecutionLayer {
             transaction_monitor,
             metrics,
             taiko_wrapper_contract,
+            chain_id,
         })
     }
 
@@ -119,6 +125,7 @@ impl ExecutionLayer {
         let preconf_whitelist = contract_addresses.preconf_whitelist.parse()?;
         let preconf_router = contract_addresses.preconf_router.parse()?;
         let taiko_wrapper = contract_addresses.taiko_wrapper.parse()?;
+        let bridge = contract_addresses.bridge.parse()?;
 
         let contract = taiko_inbox::ITaikoInbox::new(taiko_inbox, provider);
         let taiko_token = contract
@@ -133,6 +140,7 @@ impl ExecutionLayer {
             preconf_whitelist,
             preconf_router,
             taiko_wrapper,
+            bridge,
         })
     }
 
@@ -363,6 +371,7 @@ impl ExecutionLayer {
                 preconf_whitelist: Address::ZERO,
                 preconf_router: Address::ZERO,
                 taiko_wrapper: Address::ZERO,
+                bridge: Address::ZERO,
             },
             pacaya_config: taiko_inbox::ITaikoInbox::Config {
                 chainId: 1,
@@ -411,6 +420,7 @@ impl ExecutionLayer {
             .await
             .unwrap(),
             metrics,
+            chain_id: 1,
         })
     }
 
@@ -549,9 +559,30 @@ impl ExecutionLayer {
         Ok(block.header.timestamp)
     }
 
-    pub fn transfer_eth_from_L2_to_L1(&self, amount: u64) -> Result<(), Error> {
+    pub fn transfer_eth_from_L2_to_L1(
+        &self,
+        amount: u64,
+    ) -> Result<(), Error> {
+        let base_fee = 1000000;
+        let gas_limit = 1000000; //TODO: eth estimate gas limit
+        let fee = base_fee * gas_limit;
+        // let value = amount + fee;  is it correct?
+
         let contract = bridge::IBridge::new(self.contract_addresses.bridge, &self.provider_ws);
-        let tx = contract.transfer(amount).send().await?;
+        let message = bridge::IBridge::Message {
+            id: 0,
+            fee: fee.into(),
+            gasLimit: gas_limit.into(),
+            from: self.preconfer_address,
+            srcChainId: self.pacaya_config.chainId,
+            srcOwner: self.preconfer_address,
+            destChainId: self.chain_id,
+            destOwner: self.preconfer_address,
+            to: self.preconfer_address,
+            value: amount.into(),
+            data: vec![],
+        };
+        // let tx = contract.transfer(amount).send().await?;
         Ok(())
     }
 }
