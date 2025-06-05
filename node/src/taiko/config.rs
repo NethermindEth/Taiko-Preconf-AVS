@@ -40,6 +40,7 @@ pub struct TaikoConfig {
     pub jwt_secret_bytes: [u8; 32],
     pub preconfer_address: PreconferAddress,
     pub taiko_anchor_address: String,
+    pub taiko_bridge_address: String,
     pub max_bytes_per_tx_list: u64,
     pub min_bytes_per_tx_list: u64,
     pub throttling_factor: u64,

@@ -449,6 +449,10 @@ impl Taiko {
             .get_last_synced_anchor_block_id_from_geth()
             .await
     }
+
+    pub async fn transfer_eth_from_l2_to_l1(&self, amount: u64) -> Result<(), Error> {
+        self.l2_contracts.transfer_eth_from_l2_to_l1(amount).await
+    }
 }
 
 pub trait PreconfDriver {

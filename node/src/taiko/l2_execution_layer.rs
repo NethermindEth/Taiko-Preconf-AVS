@@ -5,7 +5,7 @@ use super::{
         GOLDEN_TOUCH_ADDRESS, GOLDEN_TOUCH_PRIVATE_KEY, OperationType, TaikoConfig, WsProvider,
     },
     fixed_k_signer_chainbound,
-    l2_contracts_bindings::{LibSharedData, TaikoAnchor},
+    l2_contracts_bindings::{LibSharedData, TaikoAnchor, bridge},
 };
 use alloy::{
     consensus::{
@@ -295,6 +295,53 @@ impl L2ExecutionLayer {
         let tx_data =
             <TaikoAnchor::anchorV3Call as alloy::sol_types::SolCall>::abi_decode_validate(data)?;
         Ok(tx_data._anchorBlockId)
+    }
+
+    pub async fn transfer_eth_from_l2_to_l1(
+        &self,
+        amount: u64,
+        dest_chain_id: u64,
+        preconfer_address: Address,
+    ) -> Result<(), Error> {
+        let base_fee = 10000000u64;
+        let gas_limit = 1000000u32; //TODO: eth estimate gas limit
+        let fee = base_fee * gas_limit as u64;
+        // let value = amount + fee;  is it correct?
+
+        let amount = alloy::primitives::Uint::<256, 4>::from(amount);
+
+        info!(
+            "srcChainId: {}, dstChainId: {}",
+            self.chain_id, dest_chain_id
+        );
+
+        let contract = bridge::IBridge::new(self.contract_addresses.bridge, &self.provider_ws);
+        let mut message = bridge::IBridge::Message {
+            id: 0,
+            fee: fee,
+            gasLimit: gas_limit,
+            from: self.preconfer_address,
+            srcChainId: self.chain_id,
+            srcOwner: self.preconfer_address,
+            destChainId: dest_chain_id,
+            destOwner: self.preconfer_address,
+            to: self.preconfer_address,
+            value: amount,
+            data: Bytes::new(),
+        };
+        // let tx = contract.transfer(amount).send().await?;
+        let gas_estimate = contract.sendMessage(message.clone()).estimate_gas().await?;
+        info!("Gas estimate: {}", gas_estimate);
+
+        message.gasLimit = gas_estimate
+            .try_into()
+            .map_err(|_| Error::msg(format!("Gas estimate {} exceeds u32::MAX", gas_estimate)))?;
+
+        let tx = contract.sendMessage(message).send().await?;
+        let receipt = tx.get_receipt().await?;
+        info!("Receipt: {:?}", receipt);
+
+        Ok(())
     }
 
     /// Warning: be sure not to `read` from the rwlock

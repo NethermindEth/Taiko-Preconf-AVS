@@ -45,7 +45,6 @@ pub struct ContractAddresses {
     pub preconf_whitelist: Address,
     pub preconf_router: Address,
     pub taiko_wrapper: Address,
-    pub bridge: Address,
 }
 
 impl ExecutionLayer {
@@ -557,33 +556,6 @@ impl ExecutionLayer {
                 block_number_or_tag
             ))?;
         Ok(block.header.timestamp)
-    }
-
-    pub fn transfer_eth_from_L2_to_L1(
-        &self,
-        amount: u64,
-    ) -> Result<(), Error> {
-        let base_fee = 1000000;
-        let gas_limit = 1000000; //TODO: eth estimate gas limit
-        let fee = base_fee * gas_limit;
-        // let value = amount + fee;  is it correct?
-
-        let contract = bridge::IBridge::new(self.contract_addresses.bridge, &self.provider_ws);
-        let message = bridge::IBridge::Message {
-            id: 0,
-            fee: fee.into(),
-            gasLimit: gas_limit.into(),
-            from: self.preconfer_address,
-            srcChainId: self.pacaya_config.chainId,
-            srcOwner: self.preconfer_address,
-            destChainId: self.chain_id,
-            destOwner: self.preconfer_address,
-            to: self.preconfer_address,
-            value: amount.into(),
-            data: vec![],
-        };
-        // let tx = contract.transfer(amount).send().await?;
-        Ok(())
     }
 }
 

@@ -118,14 +118,3 @@ pub mod taiko_wrapper {
         "src/ethereum_l1/abi/TaikoWrapper.json"
     );
 }
-
-pub mod bridge {
-    use super::*;
-
-    sol!(
-        #[allow(missing_docs)]
-        #[sol(rpc)]
-        IBridge,
-        "src/ethereum_l1/abi/IBridge.json"
-    );
-}
