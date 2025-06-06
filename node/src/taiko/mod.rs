@@ -346,7 +346,13 @@ impl Taiko {
         let max_duration = Duration::from_millis(heartbeat_ms / 2); // half of the heartbeat duration, leave time for other operations
 
         client
-            .retry_request_with_timeout(method, endpoint, payload, max_duration, operation_type)
+            .retry_request_with_timeout(
+                method,
+                endpoint,
+                payload,
+                max_duration,
+                &operation_type.to_string(),
+            )
             .await
     }
 

@@ -11,7 +11,7 @@ use serde_json::Value;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::RwLock;
 
-use crate::{metrics::Metrics, utils::operation_type::OperationType};
+use crate::metrics::Metrics;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {
@@ -200,14 +200,13 @@ impl HttpRPCClient {
         endpoint: &str,
         payload: &T,
         max_duration: Duration,
-        operation_type: OperationType,
+        metric_label: &str,
     ) -> Result<Value, Error>
     where
         T: serde::Serialize,
     {
         let start_time = std::time::Instant::now();
-        let operation_type = operation_type.to_string();
-        self.metrics.inc_rpc_driver_call(&operation_type);
+        self.metrics.inc_rpc_driver_call(metric_label);
 
         // Try until we exceed the max duration
         while start_time.elapsed() < max_duration {
@@ -216,7 +215,7 @@ impl HttpRPCClient {
             match response {
                 Ok(ref data) => {
                     self.metrics.observe_rpc_driver_call_duration(
-                        &operation_type,
+                        metric_label,
                         start_time.elapsed().as_secs_f64(),
                     );
                     return Ok(data.clone());
@@ -235,10 +234,10 @@ impl HttpRPCClient {
 
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     if let Err(err) = self.recreate_client().await {
-                        self.metrics.inc_rpc_driver_call_error(&operation_type);
-                        let operation_type = format!("{}-error", operation_type);
+                        self.metrics.inc_rpc_driver_call_error(metric_label);
+                        let metric_label_error = format!("{}-error", metric_label);
                         self.metrics.observe_rpc_driver_call_duration(
-                            &operation_type,
+                            &metric_label_error,
                             start_time.elapsed().as_secs_f64(),
                         );
                         return Err(err);
@@ -247,10 +246,12 @@ impl HttpRPCClient {
             }
         }
 
-        self.metrics.inc_rpc_driver_call_error(&operation_type);
-        let operation_type = format!("{}-error", operation_type);
-        self.metrics
-            .observe_rpc_driver_call_duration(&operation_type, start_time.elapsed().as_secs_f64());
+        self.metrics.inc_rpc_driver_call_error(metric_label);
+        let metric_label_error = format!("{}-error", metric_label);
+        self.metrics.observe_rpc_driver_call_duration(
+            &metric_label_error,
+            start_time.elapsed().as_secs_f64(),
+        );
 
         Err(anyhow::anyhow!(
             "Failed to call driver RPC for API '{}' within the duration ({}ms)",
