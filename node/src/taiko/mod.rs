@@ -3,6 +3,7 @@ pub mod config;
 mod fixed_k_signer_chainbound;
 mod l2_contracts_bindings;
 mod l2_execution_layer;
+pub mod operation_type;
 pub mod preconf_blocks;
 
 use crate::{
@@ -13,10 +14,7 @@ use crate::{
         l2_slot_info::L2SlotInfo,
         l2_tx_lists::{self, PreBuiltTxList},
     },
-    utils::{
-        operation_type::OperationType,
-        rpc_client::{HttpRPCClient, JSONRPCClient},
-    },
+    utils::rpc_client::{HttpRPCClient, JSONRPCClient},
 };
 use alloy::{
     consensus::BlockHeader,
@@ -27,6 +25,7 @@ use anyhow::Error;
 use config::TaikoConfig;
 use l2_contracts_bindings::LibSharedData;
 use l2_execution_layer::L2ExecutionLayer;
+use operation_type::OperationType;
 use serde_json::Value;
 use std::{
     cmp::{max, min},
