@@ -199,10 +199,14 @@ impl Config {
             .parse::<u64>()
             .expect("L1_HEIGHT_LAG must be a number");
 
-        let max_bytes_size_of_batch = std::env::var("MAX_BYTES_SIZE_OF_BATCH")
-            .unwrap_or("390132".to_string()) // 130044 * 3
+        let blobs_per_batch = std::env::var("BLOBS_PER_BATCH")
+            .unwrap_or("3".to_string())
             .parse::<u64>()
-            .expect("MAX_BYTES_SIZE_OF_BATCH must be a number");
+            .expect("BLOBS_PER_BATCH must be a number");
+
+        let max_bytes_size_of_batch = u64::try_from(MAX_BLOB_DATA_SIZE)
+            .expect("MAX_BLOB_DATA_SIZE must be a u64 number")
+            * blobs_per_batch;
 
         let max_blocks_per_batch = std::env::var("MAX_BLOCKS_PER_BATCH")
             .unwrap_or("0".to_string())
