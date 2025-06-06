@@ -14,6 +14,7 @@ mod taiko_blob_decoder;
 use crate::crypto::kzg::{blob_to_kzg_commitment, compute_blob_kzg_proof};
 use constants::MAX_BLOB_DATA_SIZE;
 use taiko_blob_coder::TaikoBlobCoder;
+use taiko_blob_decoder::TaikoBlobDecoder;
 
 pub fn build_taiko_blob_sidecar(data: &[u8]) -> Result<BlobTransactionSidecar, Error> {
     // Split to blob chunks
@@ -41,6 +42,10 @@ pub fn build_taiko_blob_sidecar(data: &[u8]) -> Result<BlobTransactionSidecar, E
         commitments,
         proofs,
     })
+}
+
+pub fn decode_blob(blob: &Blob) -> Result<Vec<u8>, Error> {
+    TaikoBlobDecoder::decode_blob(blob)
 }
 
 mod tests {

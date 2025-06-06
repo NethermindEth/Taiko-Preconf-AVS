@@ -1,4 +1,5 @@
 pub(crate) mod batch_manager;
+mod blob_parser;
 mod l2_head_verifier;
 mod operator;
 mod verifier;

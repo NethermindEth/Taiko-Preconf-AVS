@@ -1,9 +1,15 @@
 use alloy::{
+    consensus::TxEnvelope,
     consensus::transaction::{Recovered, SignerRecoverable},
     rpc::types::Transaction,
 };
+
+use alloy_rlp::Decodable;
 use anyhow::Error;
-use flate2::{Compression, write::ZlibEncoder};
+use flate2::{
+    Compression,
+    write::{ZlibDecoder, ZlibEncoder},
+};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::io::Write;
@@ -56,6 +62,36 @@ pub struct PreBuiltTxList {
     pub tx_list: Vec<Transaction>,
     pub estimated_gas_used: u64,
     pub bytes_length: u64,
+}
+
+pub fn uncompress_and_decode(data: &[u8]) -> Result<Vec<Transaction>, Error> {
+    // First decompress using zlib
+    let mut decoder = ZlibDecoder::new(Vec::new());
+    decoder.write_all(data)?;
+    let decompressed_data = decoder.finish()?;
+
+    // Decode into inner transactions
+    let tx_list: Vec<TxEnvelope> = Decodable::decode(&mut decompressed_data.as_slice())
+        .map_err(|e| anyhow::anyhow!("Failed to decode RLP: {}", e))?;
+
+    // Convert to transactions
+    let txs: Result<Vec<_>, _> = tx_list
+        .into_iter()
+        .map(|tx| {
+            let signer = tx
+                .recover_signer()
+                .map_err(|e| anyhow::anyhow!("Failed to recover signer: {}", e))?;
+            Ok(Transaction {
+                inner: Recovered::new_unchecked(tx, signer),
+                block_hash: None,
+                block_number: None,
+                transaction_index: None,
+                effective_gas_price: None,
+            })
+        })
+        .collect();
+
+    txs
 }
 
 // RLP encode and zlib compress
