@@ -265,19 +265,42 @@ impl Metrics {
     }
 
     pub fn observe_rpc_driver_call_duration(&self, method: &str, duration: f64) {
-        self.rpc_driver_call_duration
-            .with_label_values(&[method])
-            .observe(duration);
+        if let Ok(metric) = self
+            .rpc_driver_call_duration
+            .get_metric_with_label_values(&[method])
+        {
+            metric.observe(duration);
+        } else {
+            error!(
+                "Failed to observe RPC driver call duration for method: {}",
+                method
+            );
+        }
     }
 
     pub fn inc_rpc_driver_call(&self, method: &str) {
-        self.rpc_driver_call.with_label_values(&[method]).inc();
+        if let Ok(metric) = self.rpc_driver_call.get_metric_with_label_values(&[method]) {
+            metric.inc();
+        } else {
+            error!(
+                "Failed to increment RPC driver call counter for method: {}",
+                method
+            );
+        }
     }
 
     pub fn inc_rpc_driver_call_error(&self, method: &str) {
-        self.rpc_driver_call_error
-            .with_label_values(&[method])
-            .inc();
+        if let Ok(metric) = self
+            .rpc_driver_call_error
+            .get_metric_with_label_values(&[method])
+        {
+            metric.inc();
+        } else {
+            error!(
+                "Failed to increment RPC driver call error counter for method: {}",
+                method
+            );
+        }
     }
 
     fn u256_to_f64(balance: alloy::primitives::U256) -> f64 {
