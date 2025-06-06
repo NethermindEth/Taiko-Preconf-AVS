@@ -230,7 +230,7 @@ impl HttpRPCClient {
         Err(anyhow::anyhow!(
             "Failed to call driver RPC for API '{}' within the duration ({}ms)",
             endpoint,
-            max_duration.as_millis()
+            start_time.elapsed().as_millis()
         ))
     }
 

@@ -3,6 +3,7 @@ pub mod config;
 mod fixed_k_signer_chainbound;
 mod l2_contracts_bindings;
 mod l2_execution_layer;
+pub mod operation_type;
 pub mod preconf_blocks;
 
 use crate::{
@@ -21,9 +22,10 @@ use alloy::{
     primitives::{Address, B256},
 };
 use anyhow::Error;
-use config::{OperationType, TaikoConfig};
+use config::TaikoConfig;
 use l2_contracts_bindings::LibSharedData;
 use l2_execution_layer::L2ExecutionLayer;
+use operation_type::OperationType;
 use serde_json::Value;
 use std::{
     cmp::{max, min},
@@ -35,7 +37,8 @@ use tracing::{debug, trace};
 pub struct Taiko {
     l2_contracts: L2ExecutionLayer,
     taiko_geth_auth_rpc: JSONRPCClient,
-    driver_rpc: HttpRPCClient,
+    driver_preconf_rpc: HttpRPCClient,
+    driver_status_rpc: HttpRPCClient,
     ethereum_l1: Arc<EthereumL1>,
     metrics: Arc<Metrics>,
     config: TaikoConfig,
@@ -52,12 +55,17 @@ impl Taiko {
             l2_contracts: L2ExecutionLayer::new(taiko_config.clone()).await?,
             taiko_geth_auth_rpc: JSONRPCClient::new_with_timeout_and_jwt(
                 &taiko_config.taiko_geth_auth_url,
-                taiko_config.rpc_short_timeout,
+                taiko_config.rpc_l2_execution_layer_timeout,
                 &taiko_config.jwt_secret_bytes,
             )?,
-            driver_rpc: HttpRPCClient::new_with_jwt(
+            driver_preconf_rpc: HttpRPCClient::new_with_jwt(
                 &taiko_config.driver_url,
-                taiko_config.rpc_short_timeout,
+                taiko_config.rpc_driver_preconf_timeout,
+                &taiko_config.jwt_secret_bytes,
+            )?,
+            driver_status_rpc: HttpRPCClient::new_with_jwt(
+                &taiko_config.driver_url,
+                taiko_config.rpc_driver_status_timeout,
                 &taiko_config.jwt_secret_bytes,
             )?,
             ethereum_l1,
@@ -273,16 +281,15 @@ impl Taiko {
 
         const API_ENDPOINT: &str = "preconfBlocks";
 
-        let response = match operation_type {
-            OperationType::Preconfirm => {
-                self.call_driver_short_timeout(http::Method::POST, API_ENDPOINT, &request_body)
-                    .await?
-            }
-            OperationType::Reanchor => {
-                self.call_driver_long_timeout(http::Method::POST, API_ENDPOINT, &request_body)
-                    .await?
-            }
-        };
+        let response = self
+            .call_driver(
+                &self.driver_preconf_rpc,
+                http::Method::POST,
+                API_ENDPOINT,
+                &request_body,
+                operation_type,
+            )
+            .await?;
 
         trace!("Response from preconfBlocks: {:?}", response);
 
@@ -305,7 +312,13 @@ impl Taiko {
         let request_body = serde_json::json!({});
 
         let response = self
-            .call_driver_short_timeout(http::Method::GET, API_ENDPOINT, &request_body)
+            .call_driver(
+                &self.driver_status_rpc,
+                http::Method::GET,
+                API_ENDPOINT,
+                &request_body,
+                OperationType::Status,
+            )
             .await?;
 
         trace!("Response from taiko status: {:?}", response);
@@ -315,11 +328,13 @@ impl Taiko {
         Ok(status)
     }
 
-    async fn call_driver_short_timeout<T>(
+    async fn call_driver<T>(
         &self,
+        client: &HttpRPCClient,
         method: http::Method,
         endpoint: &str,
         payload: &T,
+        operation_type: OperationType,
     ) -> Result<Value, Error>
     where
         T: serde::Serialize,
@@ -327,34 +342,31 @@ impl Taiko {
         let heartbeat_ms = self.ethereum_l1.slot_clock.get_preconf_heartbeat_ms();
         let max_duration = Duration::from_millis(heartbeat_ms / 2); // half of the heartbeat duration, leave time for other operations
 
-        self.driver_rpc
+        let metric_label = operation_type.to_string();
+        self.metrics.inc_rpc_driver_call(&metric_label);
+        let start_time = std::time::Instant::now();
+
+        match client
             .retry_request_with_timeout(method, endpoint, payload, max_duration)
             .await
-    }
-
-    async fn call_driver_long_timeout<T>(
-        &self,
-        method: http::Method,
-        endpoint: &str,
-        payload: &T,
-    ) -> Result<Value, Error>
-    where
-        T: serde::Serialize,
-    {
-        let driver_rpc = HttpRPCClient::new_with_jwt(
-            &self.config.driver_url,
-            self.config.rpc_long_timeout,
-            &self.config.jwt_secret_bytes,
-        )?;
-
-        driver_rpc
-            .retry_request_with_timeout(
-                method,
-                endpoint,
-                payload,
-                self.ethereum_l1.slot_clock.get_epoch_duration() / 2,
-            )
-            .await
+        {
+            Ok(response) => {
+                self.metrics.observe_rpc_driver_call_duration(
+                    &metric_label,
+                    start_time.elapsed().as_secs_f64(),
+                );
+                Ok(response)
+            }
+            Err(e) => {
+                self.metrics.inc_rpc_driver_call_error(&metric_label);
+                let metric_label_error = format!("{}-error", metric_label);
+                self.metrics.observe_rpc_driver_call_duration(
+                    &metric_label_error,
+                    start_time.elapsed().as_secs_f64(),
+                );
+                Err(e)
+            }
+        }
     }
 
     fn get_base_fee_config(&self) -> LibSharedData::BaseFeeConfig {
