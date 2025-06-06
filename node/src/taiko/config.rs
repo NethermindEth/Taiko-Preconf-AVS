@@ -49,6 +49,7 @@ pub struct TaikoConfig {
 }
 
 impl TaikoConfig {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         taiko_geth_ws_url: String,
         taiko_geth_auth_url: String,

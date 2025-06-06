@@ -372,7 +372,6 @@ impl ExecutionLayer {
                 preconf_whitelist: Address::ZERO,
                 preconf_router: Address::ZERO,
                 taiko_wrapper: Address::ZERO,
-                bridge: Address::ZERO,
             },
             pacaya_config: taiko_inbox::ITaikoInbox::Config {
                 chainId: 1,

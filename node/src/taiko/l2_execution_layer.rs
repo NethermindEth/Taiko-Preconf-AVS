@@ -279,7 +279,7 @@ impl L2ExecutionLayer {
     ) -> Result<(), Error> {
         const GAS_LIMIT: u32 = 1_000_000u32; // 831917 from estimation
         const RELAYER_MAX_PROOF_BYTES: usize = 200_000;
-        let fee = base_fee * GAS_LIMIT as u64;
+        let fee = base_fee * u64::from(GAS_LIMIT);
 
         let ws = WsConnect::new(self.config.taiko_geth_ws_url.to_string());
         let signer: PrivateKeySigner = self.config.avs_node_ecdsa_private_key.parse()?;
@@ -320,7 +320,7 @@ impl L2ExecutionLayer {
             .try_into()
             .map_err(|_| Error::msg(format!("Gas estimate {} exceeds u32::MAX", gas_estimate)))?;
 
-        let fee = base_fee * gas_estimate_safe as u64;
+        let fee = base_fee * u64::from(gas_estimate_safe);
         message.gasLimit = gas_estimate_safe;
         message.fee = fee;
         message.value = Uint::<256, 4>::from(amount + fee);
