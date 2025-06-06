@@ -7,7 +7,7 @@ use alloy::{
 };
 use anyhow::Error;
 
-mod constants;
+pub mod constants;
 mod taiko_blob_coder;
 mod taiko_blob_decoder;
 
