@@ -206,7 +206,8 @@ impl Config {
 
         let max_bytes_size_of_batch = u64::try_from(MAX_BLOB_DATA_SIZE)
             .expect("MAX_BLOB_DATA_SIZE must be a u64 number")
-            * blobs_per_batch;
+            .checked_mul(blobs_per_batch)
+            .expect("panic: overflow while computing BLOBS_PER_BATCH * MAX_BLOB_DATA_SIZE. Try to reduce BLOBS_PER_BATCH");
 
         let max_blocks_per_batch = std::env::var("MAX_BLOCKS_PER_BATCH")
             .unwrap_or("0".to_string())
