@@ -12,7 +12,7 @@ pub struct FundsMonitor {
     cancel_token: CancellationToken,
 }
 
-const MONITOR_INTERVAL_SEC: u64 = 10;  //TODO
+const MONITOR_INTERVAL_SEC: u64 = 10; //TODO
 
 impl FundsMonitor {
     pub fn new(

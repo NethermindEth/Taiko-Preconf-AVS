@@ -9,7 +9,7 @@ use alloy::{
     },
     contract::Error as ContractError,
     eips::BlockNumberOrTag,
-    primitives::{Address, B256, Bytes},
+    primitives::{Address, B256, Bytes, U256, Uint},
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::{Block as RpcBlock, Transaction},
     signers::{Signature, local::PrivateKeySigner},
@@ -89,7 +89,7 @@ impl L2ExecutionLayer {
             .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))
     }
 
-    pub async fn get_balance(&self, address: Address) -> Result<alloy::primitives::U256, Error> {
+    pub async fn get_balance(&self, address: Address) -> Result<U256, Error> {
         let balance = self.provider_ws.read().await.get_balance(address).await;
         self.check_for_ws_provider_failure(balance, "Failed to get L2 balance")
             .await
@@ -275,13 +275,11 @@ impl L2ExecutionLayer {
         amount: u64,
         dest_chain_id: u64,
         preconfer_address: Address,
+        base_fee: u64,
     ) -> Result<(), Error> {
-        let base_fee = 10000000u64;
-        let gas_limit = 1000000u32; //TODO: eth estimate gas limit
-        let fee = base_fee * gas_limit as u64;
-        // let value = amount + fee;  is it correct?
-
-        let amount = alloy::primitives::Uint::<256, 4>::from(amount);
+        const GAS_LIMIT: u32 = 1_000_000u32; // 831917 from estimation
+        const RELAYER_MAX_PROOF_BYTES: usize = 200_000;
+        let fee = base_fee * GAS_LIMIT as u64;
 
         let ws = WsConnect::new(self.config.taiko_geth_ws_url.to_string());
         let signer: PrivateKeySigner = self.config.avs_node_ecdsa_private_key.parse()?;
@@ -299,24 +297,33 @@ impl L2ExecutionLayer {
         let contract = bridge::IBridge::new(self.config.taiko_bridge_address, provider_ws);
         let mut message = bridge::IBridge::Message {
             id: 0,
-            fee: fee,
-            gasLimit: gas_limit,
+            fee,
+            gasLimit: GAS_LIMIT,
             from: preconfer_address,
             srcChainId: self.chain_id,
             srcOwner: preconfer_address,
             destChainId: dest_chain_id,
             destOwner: preconfer_address,
             to: preconfer_address,
-            value: amount,
+            value: Uint::<256, 4>::from(1), // for estimate_gas, changed later
             data: Bytes::new(),
         };
-        // let tx = contract.transfer(amount).send().await?;
-        let gas_estimate = contract.sendMessage(message.clone()).estimate_gas().await?;
-        info!("Gas estimate: {}", gas_estimate);
 
-        message.gasLimit = gas_estimate
+        // processMessage is called on L1, here we just estimate the gas
+        let gas_estimate = contract
+            .processMessage(message.clone(), Bytes::from([0u8; RELAYER_MAX_PROOF_BYTES]))
+            .estimate_gas()
+            .await?;
+        debug!("processMessage gas estimate: {}", gas_estimate);
+        let gas_estimate_safe = gas_estimate
+            .saturating_add(100_000)
             .try_into()
             .map_err(|_| Error::msg(format!("Gas estimate {} exceeds u32::MAX", gas_estimate)))?;
+
+        let fee = base_fee * gas_estimate_safe as u64;
+        message.gasLimit = gas_estimate_safe;
+        message.fee = fee;
+        message.value = Uint::<256, 4>::from(amount + fee);
 
         let tx = contract.sendMessage(message).send().await?;
         let receipt = tx.get_receipt().await?;

@@ -559,6 +559,19 @@ impl ExecutionLayer {
             ))?;
         Ok(block.header.timestamp)
     }
+
+    pub async fn get_base_fee(&self) -> Result<u64, Error> {
+        let block = self
+            .provider_ws
+            .get_block_by_number(BlockNumberOrTag::Latest)
+            .await?
+            .ok_or(anyhow::anyhow!("Failed to get latest block"))?;
+        let base_fee = block
+            .header
+            .base_fee_per_gas
+            .ok_or(anyhow::anyhow!("Base fee is None"))?;
+        Ok(base_fee)
+    }
 }
 
 pub trait PreconfOperator {

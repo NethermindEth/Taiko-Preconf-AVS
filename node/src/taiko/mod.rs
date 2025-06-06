@@ -33,7 +33,7 @@ use std::{
 use tracing::{debug, trace};
 
 pub struct Taiko {
-    l2_contracts: L2ExecutionLayer,
+    l2_execution_layer: L2ExecutionLayer,
     taiko_geth_auth_rpc: JSONRPCClient,
     driver_rpc: HttpRPCClient,
     ethereum_l1: Arc<EthereumL1>,
@@ -49,7 +49,7 @@ impl Taiko {
         taiko_config: TaikoConfig,
     ) -> Result<Self, Error> {
         Ok(Self {
-            l2_contracts: L2ExecutionLayer::new(taiko_config.clone()).await?,
+            l2_execution_layer: L2ExecutionLayer::new(taiko_config.clone()).await?,
             taiko_geth_auth_rpc: JSONRPCClient::new_with_timeout_and_jwt(
                 &taiko_config.taiko_geth_auth_url,
                 taiko_config.rpc_short_timeout,
@@ -111,11 +111,11 @@ impl Taiko {
     }
 
     pub async fn get_balance(&self, address: Address) -> Result<alloy::primitives::U256, Error> {
-        self.l2_contracts.get_balance(address).await
+        self.l2_execution_layer.get_balance(address).await
     }
 
     pub async fn get_latest_l2_block_id(&self) -> Result<u64, Error> {
-        self.l2_contracts.get_latest_l2_block_id().await
+        self.l2_execution_layer.get_latest_l2_block_id().await
     }
 
     pub async fn get_l2_block_by_number(
@@ -123,7 +123,7 @@ impl Taiko {
         number: u64,
         full_txs: bool,
     ) -> Result<alloy::rpc::types::Block, Error> {
-        self.l2_contracts
+        self.l2_execution_layer
             .get_l2_block_by_number(number, full_txs)
             .await
     }
@@ -153,14 +153,14 @@ impl Taiko {
         &self,
         hash: B256,
     ) -> Result<alloy::rpc::types::Transaction, Error> {
-        self.l2_contracts.get_transaction_by_hash(hash).await
+        self.l2_execution_layer.get_transaction_by_hash(hash).await
     }
 
     pub async fn get_l2_block_id_hash_and_gas_used(
         &self,
         block: BlockNumberOrTag,
     ) -> Result<(u64, B256, u64), Error> {
-        let block = self.l2_contracts.get_l2_block_header(block).await?;
+        let block = self.l2_execution_layer.get_l2_block_header(block).await?;
 
         Ok((
             block.header.number(),
@@ -170,7 +170,7 @@ impl Taiko {
     }
 
     pub async fn get_l2_block_hash(&self, number: u64) -> Result<B256, Error> {
-        self.l2_contracts.get_l2_block_hash(number).await
+        self.l2_execution_layer.get_l2_block_hash(number).await
     }
 
     pub async fn get_l2_slot_info(&self) -> Result<L2SlotInfo, Error> {
@@ -241,7 +241,7 @@ impl Taiko {
         debug!("processing {} txs", l2_block.prebuilt_tx_list.tx_list.len());
 
         let anchor_tx = self
-            .l2_contracts
+            .l2_execution_layer
             .construct_anchor_tx(
                 *l2_slot_info.parent_hash(),
                 anchor_origin_height,
@@ -381,7 +381,7 @@ impl Taiko {
         base_fee_config: LibSharedData::BaseFeeConfig,
         l2_slot_timestamp: u64,
     ) -> Result<u64, Error> {
-        self.l2_contracts
+        self.l2_execution_layer
             .get_base_fee(
                 parent_hash,
                 parent_gas_used,
@@ -392,25 +392,28 @@ impl Taiko {
     }
 
     pub async fn get_last_synced_anchor_block_id_from_taiko_anchor(&self) -> Result<u64, Error> {
-        self.l2_contracts
+        self.l2_execution_layer
             .get_last_synced_anchor_block_id_from_taiko_anchor()
             .await
     }
 
     pub async fn get_last_synced_anchor_block_id_from_geth(&self) -> Result<u64, Error> {
-        self.l2_contracts
+        self.l2_execution_layer
             .get_last_synced_anchor_block_id_from_geth()
             .await
     }
 
     pub async fn transfer_eth_from_l2_to_l1(&self, amount: u64) -> Result<(), Error> {
-        self.l2_contracts
+        let base_fee = self.ethereum_l1.execution_layer.get_base_fee().await?;
+        // let l2_slot_info = self.get_l2_slot_info().await?;
+        self.l2_execution_layer
             .transfer_eth_from_l2_to_l1(
                 amount,
                 self.ethereum_l1.execution_layer.chain_id(),
                 self.ethereum_l1
                     .execution_layer
                     .get_preconfer_alloy_address(),
+                base_fee,
             )
             .await
     }
