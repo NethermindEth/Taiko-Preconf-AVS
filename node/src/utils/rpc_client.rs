@@ -222,7 +222,7 @@ impl HttpRPCClient {
                     );
 
                     tokio::time::sleep(Duration::from_millis(100)).await;
-                    self.recreate_client().await?
+                    self.recreate_client().await?;
                 }
             }
         }
