@@ -2,6 +2,8 @@ use alloy::primitives::U256;
 use std::time::Duration;
 use tracing::{info, warn};
 
+use crate::taiko::blob::constants::MAX_BLOB_DATA_SIZE;
+
 pub struct Config {
     pub taiko_geth_ws_rpc_url: String,
     pub taiko_geth_auth_rpc_url: String,
@@ -269,7 +271,7 @@ impl Config {
                 .expect("SIMULATE_NOT_SUBMITTING_AT_THE_END_OF_EPOCH must be a boolean");
 
         let max_bytes_per_tx_list = std::env::var("MAX_BYTES_PER_TX_LIST")
-            .unwrap_or("131072".to_string())
+            .unwrap_or(MAX_BLOB_DATA_SIZE.to_string())
             .parse::<u64>()
             .expect("MAX_BYTES_PER_TX_LIST must be a number");
 
