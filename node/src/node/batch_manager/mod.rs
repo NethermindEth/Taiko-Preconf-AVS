@@ -3,9 +3,8 @@ pub mod batch_builder;
 use crate::{
     ethereum_l1::EthereumL1,
     shared::{l2_block::L2Block, l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
-    taiko,
-    taiko::preconf_blocks::BuildPreconfBlockResponse,
-    taiko::{Taiko, config::OperationType},
+    taiko::{self, Taiko, preconf_blocks::BuildPreconfBlockResponse},
+    utils::operation_type::OperationType,
 };
 use alloy::{consensus::BlockHeader, consensus::Transaction, primitives::Address};
 use anyhow::Error;

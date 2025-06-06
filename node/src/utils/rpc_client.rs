@@ -11,7 +11,7 @@ use serde_json::Value;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::RwLock;
 
-use crate::{metrics::Metrics, taiko::config::OperationType};
+use crate::{metrics::Metrics, utils::operation_type::OperationType};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {

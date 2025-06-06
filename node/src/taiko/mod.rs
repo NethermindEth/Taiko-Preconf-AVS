@@ -13,7 +13,10 @@ use crate::{
         l2_slot_info::L2SlotInfo,
         l2_tx_lists::{self, PreBuiltTxList},
     },
-    utils::rpc_client::{HttpRPCClient, JSONRPCClient},
+    utils::{
+        operation_type::OperationType,
+        rpc_client::{HttpRPCClient, JSONRPCClient},
+    },
 };
 use alloy::{
     consensus::BlockHeader,
@@ -21,7 +24,7 @@ use alloy::{
     primitives::{Address, B256},
 };
 use anyhow::Error;
-use config::{OperationType, TaikoConfig};
+use config::TaikoConfig;
 use l2_contracts_bindings::LibSharedData;
 use l2_execution_layer::L2ExecutionLayer;
 use serde_json::Value;
