@@ -63,13 +63,11 @@ impl Taiko {
                 &taiko_config.driver_url,
                 taiko_config.rpc_driver_preconf_timeout,
                 &taiko_config.jwt_secret_bytes,
-                metrics.clone(),
             )?,
             driver_status_rpc: HttpRPCClient::new_with_jwt(
                 &taiko_config.driver_url,
                 taiko_config.rpc_driver_status_timeout,
                 &taiko_config.jwt_secret_bytes,
-                metrics.clone(),
             )?,
             ethereum_l1,
             metrics,
@@ -345,15 +343,31 @@ impl Taiko {
         let heartbeat_ms = self.ethereum_l1.slot_clock.get_preconf_heartbeat_ms();
         let max_duration = Duration::from_millis(heartbeat_ms / 2); // half of the heartbeat duration, leave time for other operations
 
-        client
-            .retry_request_with_timeout(
-                method,
-                endpoint,
-                payload,
-                max_duration,
-                &operation_type.to_string(),
-            )
+        let metric_label = operation_type.to_string();
+        self.metrics.inc_rpc_driver_call(&metric_label);
+        let start_time = std::time::Instant::now();
+
+        match client
+            .retry_request_with_timeout(method, endpoint, payload, max_duration)
             .await
+        {
+            Ok(response) => {
+                self.metrics.observe_rpc_driver_call_duration(
+                    &metric_label,
+                    start_time.elapsed().as_secs_f64(),
+                );
+                Ok(response)
+            }
+            Err(e) => {
+                self.metrics.inc_rpc_driver_call_error(&metric_label);
+                let metric_label_error = format!("{}-error", metric_label);
+                self.metrics.observe_rpc_driver_call_duration(
+                    &metric_label_error,
+                    start_time.elapsed().as_secs_f64(),
+                );
+                Err(e)
+            }
+        }
     }
 
     fn get_base_fee_config(&self) -> LibSharedData::BaseFeeConfig {
