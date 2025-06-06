@@ -55,24 +55,15 @@ impl BlobParser {
 
         let mut result: Vec<u8> = Vec::new();
 
-        if sidecars.len() > 9 {
-            return Err(anyhow::anyhow!(
-                "too many sidecars {} expected at most 9",
-                sidecars.len()
-            ));
-        }
-        let mut cache: [Option<B256>; 9] = [None; 9];
+        let sidecar_hashes: Vec<B256> = sidecars
+            .data
+            .iter()
+            .map(|sidecar| kzg_to_versioned_hash(sidecar.kzg_commitment.as_slice()))
+            .collect();
 
         for hash in blob_hash {
             for (i, sidecar) in sidecars.data.iter().enumerate() {
-                let sidecar_blob_hash = if let Some(hash) = cache[i] {
-                    hash
-                } else {
-                    let hash = kzg_to_versioned_hash(sidecar.kzg_commitment.as_slice());
-                    cache[i] = Some(hash);
-                    hash
-                };
-                if sidecar_blob_hash == hash {
+                if sidecar_hashes[i] == hash {
                     let data = decode_blob(sidecar.blob.as_ref())?;
                     result.extend(data);
                     break;
@@ -80,9 +71,19 @@ impl BlobParser {
             }
         }
 
-        let result = result
-            [tx_list_offset.try_into()?..(tx_list_offset + tx_list_size).try_into()?]
-            .to_vec();
+        let tx_list_left: usize = tx_list_offset.try_into()?;
+        let tx_list_right: usize = tx_list_left + usize::try_from(tx_list_size)?;
+
+        if tx_list_right > result.len() {
+            return Err(anyhow::anyhow!(
+                "Invalid tx list offset or size: tx_list_offset {} tx_list_size {} blob_data_size {}",
+                tx_list_offset,
+                tx_list_size,
+                result.len()
+            ));
+        }
+
+        let result = result[tx_list_left..tx_list_right].to_vec();
 
         Ok(result)
     }
