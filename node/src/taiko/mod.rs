@@ -56,7 +56,7 @@ impl Taiko {
             l2_contracts: L2ExecutionLayer::new(taiko_config.clone()).await?,
             taiko_geth_auth_rpc: JSONRPCClient::new_with_timeout_and_jwt(
                 &taiko_config.taiko_geth_auth_url,
-                taiko_config.rpc_geth_timeout,
+                taiko_config.rpc_l2_execution_layer_timeout,
                 &taiko_config.jwt_secret_bytes,
             )?,
             driver_preconf_rpc: HttpRPCClient::new_with_jwt(

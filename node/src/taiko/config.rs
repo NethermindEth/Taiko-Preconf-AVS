@@ -37,7 +37,7 @@ pub struct TaikoConfig {
     pub max_bytes_per_tx_list: u64,
     pub min_bytes_per_tx_list: u64,
     pub throttling_factor: u64,
-    pub rpc_geth_timeout: Duration,
+    pub rpc_l2_execution_layer_timeout: Duration,
     pub rpc_driver_preconf_timeout: Duration,
     pub rpc_driver_status_timeout: Duration,
 }

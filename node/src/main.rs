@@ -117,7 +117,7 @@ async fn main() -> Result<(), Error> {
                 max_bytes_per_tx_list: config.max_bytes_per_tx_list,
                 min_bytes_per_tx_list: config.min_bytes_per_tx_list,
                 throttling_factor: config.throttling_factor,
-                rpc_geth_timeout: config.rpc_geth_timeout,
+                rpc_l2_execution_layer_timeout: config.rpc_l2_execution_layer_timeout,
                 rpc_driver_preconf_timeout: config.rpc_driver_preconf_timeout,
                 rpc_driver_status_timeout: config.rpc_driver_status_timeout,
             },

@@ -16,7 +16,7 @@ pub struct Config {
     pub msg_expiry_sec: u64,
     pub contract_addresses: L1ContractAddresses,
     pub jwt_secret_file_path: String,
-    pub rpc_geth_timeout: Duration,
+    pub rpc_l2_execution_layer_timeout: Duration,
     pub rpc_driver_preconf_timeout: Duration,
     pub rpc_driver_status_timeout: Duration,
     pub taiko_anchor_address: String,
@@ -173,11 +173,11 @@ impl Config {
             .expect("RPC_DRIVER_STATUS_TIMEOUT_MS must be a number");
         let rpc_driver_status_timeout = Duration::from_millis(rpc_driver_status_timeout);
 
-        let rpc_geth_timeout_ms = std::env::var("RPC_GETH_TIMEOUT_MS")
+        let rpc_l2_execution_layer_timeout = std::env::var("RPC_L2_EXECUTION_LAYER_TIMEOUT_MS")
             .unwrap_or("1000".to_string())
             .parse::<u64>()
-            .expect("RPC_GETH_TIMEOUT_MS must be a number");
-        let rpc_geth_timeout = Duration::from_millis(rpc_geth_timeout_ms);
+            .expect("RPC_L2_EXECUTION_LAYER_TIMEOUT_MS must be a number");
+        let rpc_l2_execution_layer_timeout = Duration::from_millis(rpc_l2_execution_layer_timeout);
 
         let taiko_anchor_address = std::env::var("TAIKO_ANCHOR_ADDRESS")
             .unwrap_or("0x1670010000000000000000000000000000010001".to_string());
@@ -304,7 +304,7 @@ impl Config {
             msg_expiry_sec,
             contract_addresses,
             jwt_secret_file_path,
-            rpc_geth_timeout,
+            rpc_l2_execution_layer_timeout,
             rpc_driver_preconf_timeout,
             rpc_driver_status_timeout,
             taiko_anchor_address,
@@ -343,7 +343,7 @@ L2 slot duration (heart beat): {}
 Preconf registry expiry: {}s
 Contract addresses: {:#?}
 jwt secret file path: {}
-rpc geth timeout: {}ms
+rpc L2 EL timeout: {}ms
 rpc driver preconf timeout: {}ms
 rpc driver status timeout: {}ms
 taiko anchor address: {}
@@ -378,7 +378,7 @@ simulate not submitting at the end of epoch: {}
             config.msg_expiry_sec,
             config.contract_addresses,
             config.jwt_secret_file_path,
-            config.rpc_geth_timeout.as_millis(),
+            config.rpc_l2_execution_layer_timeout.as_millis(),
             config.rpc_driver_preconf_timeout.as_millis(),
             config.rpc_driver_status_timeout.as_millis(),
             config.taiko_anchor_address,
