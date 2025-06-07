@@ -118,3 +118,14 @@ pub mod taiko_wrapper {
         "src/ethereum_l1/abi/TaikoWrapper.json"
     );
 }
+
+pub mod forced_inclusion_store {
+    use super::*;
+
+    sol!(
+        #[allow(missing_docs)]
+        #[sol(rpc)]
+        IForcedInclusionStore,
+        "src/ethereum_l1/abi/IForcedInclusionStore.json"
+    );
+}

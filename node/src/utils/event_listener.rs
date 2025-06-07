@@ -14,6 +14,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
+#[allow(clippy::too_many_arguments)]
 pub async fn listen_for_event<T>(
     ws_rpc_url: String,
     contract_address: Address,

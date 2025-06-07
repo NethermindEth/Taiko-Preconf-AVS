@@ -1,5 +1,6 @@
 mod crypto;
 mod ethereum_l1;
+mod forced_inclusion_monitor;
 mod metrics;
 mod node;
 mod reorg_detector;
@@ -60,6 +61,13 @@ async fn main() -> Result<(), Error> {
         cancel_token.clone(),
     )?);
     reorg_detector.start().await?;
+
+    let forced_inclusion_monitor = Arc::new(forced_inclusion_monitor::ForcedInclusionMonitor::new(
+        config.l1_ws_rpc_url.clone(),
+        config.contract_addresses.forced_inclusion_store.clone(),
+        cancel_token.clone(),
+    )?);
+    forced_inclusion_monitor.start().await?;
 
     let (transaction_error_sender, transaction_error_receiver) = mpsc::channel(100);
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
