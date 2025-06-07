@@ -1,6 +1,5 @@
 use alloy::primitives::{Address, B256};
 use anyhow::{Error, anyhow};
-use batch_proposed::BatchProposed;
 use batch_proposed_receiver::BatchProposedEventReceiver;
 use l2_block_receiver::{L2BlockInfo, L2BlockReceiver};
 use std::{str::FromStr, sync::Arc};
@@ -9,7 +8,8 @@ use tokio::sync::mpsc::{self, Receiver};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
-mod batch_proposed;
+use crate::ethereum_l1::l1_contracts_bindings::taiko_inbox::ITaikoInbox;
+
 mod batch_proposed_receiver;
 mod l2_block_receiver;
 
@@ -102,7 +102,7 @@ impl ReorgDetector {
     }
 
     async fn handle_incoming_messages(
-        mut batch_proposed_rx: Receiver<BatchProposed>,
+        mut batch_proposed_rx: Receiver<ITaikoInbox::BatchProposed>,
         mut l2_block_rx: Receiver<L2BlockInfo>,
         taiko_geth_status: Arc<Mutex<TaikoGethStatus>>,
         cancel_token: CancellationToken,
@@ -118,7 +118,7 @@ impl ReorgDetector {
                 Some(batch) = batch_proposed_rx.recv() => {
                     info!(
                         "BatchProposed event → lastBlockId = {}",
-                        batch.event_data().info.lastBlockId
+                        batch.info.lastBlockId
                     );
                 }
                 Some(block) = l2_block_rx.recv() => {
