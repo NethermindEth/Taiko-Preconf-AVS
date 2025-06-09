@@ -6,7 +6,7 @@ use alloy::{eips::eip4844::kzg_to_versioned_hash, primitives::B256, rpc::types::
 use anyhow::Error;
 
 use crate::shared::l2_tx_lists::uncompress_and_decode;
-use crate::{ethereum_l1::EthereumL1, taiko::blob::decode_blob};
+use crate::{ethereum_l1::EthereumL1, utils::blob::decode_blob};
 
 pub struct BlobParser {
     ethereum_l1: Arc<EthereumL1>,
@@ -96,7 +96,7 @@ mod tests {
         shared::l2_tx_lists::{
             decompose_pending_lists_json_from_geth, encode_and_compress, uncompress_and_decode,
         },
-        taiko::blob::build_taiko_blob_sidecar,
+        utils::blob::build_taiko_blob_sidecar,
     };
 
     #[test]

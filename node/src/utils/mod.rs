@@ -1,3 +1,4 @@
+pub mod blob;
 pub mod config;
 pub mod file_operations;
 pub mod rpc_client;

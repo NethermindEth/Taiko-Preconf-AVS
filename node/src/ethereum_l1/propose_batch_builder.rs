@@ -338,7 +338,7 @@ impl ProposeBatchBuilder {
         let bytes_x = Bytes::new();
 
         // Build sidecar
-        let sidecar = crate::taiko::blob::build_taiko_blob_sidecar(tx_list)?;
+        let sidecar = crate::utils::blob::build_taiko_blob_sidecar(tx_list)?;
         let num_blobs = u8::try_from(sidecar.blobs.len())?;
 
         let batch_params = BatchParams {

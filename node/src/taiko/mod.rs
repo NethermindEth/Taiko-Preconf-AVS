@@ -1,4 +1,3 @@
-pub mod blob;
 pub mod config;
 mod fixed_k_signer_chainbound;
 mod l2_contracts_bindings;
