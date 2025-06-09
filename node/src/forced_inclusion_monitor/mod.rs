@@ -1,4 +1,4 @@
-use alloy::primitives::{Address, B256};
+use alloy::primitives::Address;
 use alloy::rpc::types::Transaction;
 use alloy::sol_types::SolEvent;
 use anyhow::{Error, anyhow};
@@ -12,10 +12,10 @@ use tokio::sync::mpsc::{self, Receiver};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
+use crate::ethereum_l1::EthereumL1;
 use crate::ethereum_l1::l1_contracts_bindings::forced_inclusion_store::IForcedInclusionStore::{
     ForcedInclusion, ForcedInclusionConsumed, ForcedInclusionStored,
 };
-use crate::ethereum_l1::{EthereumL1, execution_layer};
 
 use crate::node::blob_parser::extract_transactions_from_blob;
 use crate::utils::event_listener::listen_for_event;
@@ -32,9 +32,11 @@ struct ForcedInclusionData {
 
 impl ForcedInclusionData {
     fn is_decoding_in_progress(&self) -> bool {
-        self.blob_decoding_handle.is_some()
-            && !self.blob_decoding_handle.as_ref().unwrap().is_finished()
+        self.blob_decoding_handle
+            .as_ref()
+            .is_some_and(|h| !h.is_finished())
     }
+
     fn is_data_ready(&self) -> bool {
         self.txs_list.is_some()
     }
@@ -292,43 +294,8 @@ impl ForcedInclusionMonitor {
         }
     }
 
-    pub fn decode_forced_inclusion(
-        block: u64,
-        blob_hash: B256,
-        tx_list_offset: u32,
-        tx_list_size: u32,
-        ethereum_l1: Arc<EthereumL1>,
-        next_forced_inclusion_data: Arc<Mutex<ForcedInclusionData>>,
-        decoding_token: CancellationToken,
-    ) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            // Replace with your real decoding logic
-            tokio::select! {
-                _ = decoding_token.cancelled() => {
-                    info!("Previous decoding task was cancelled.");
-                }
-                _ = async {
-                    info!("Decoding new ForcedInclusion...");
-                    let txs = match extract_transactions_from_blob(
-                        ethereum_l1,
-                        block,
-                        [blob_hash].to_vec(),
-                        tx_list_offset,
-                        tx_list_size
-                    ).await {
-                        Ok(txs) => Some(txs),
-                        Err(e) => {
-                            error!("Error decoding ForcedInclusion: {}", e);
-                            None
-                        }
-                    };
-                    next_forced_inclusion_data.lock().await.txs_list = txs;
-                    info!("Decoding complete.");
-                } => {}
-            }
-        })
-    }
-
+    // TODO: remove
+    #[allow(dead_code)]
     pub async fn get_next_forced_inclusion_data(&self) -> Option<Vec<Transaction>> {
         let mut next_forced_inclusion_data_lock = self.next_forced_inclusion_data.lock().await;
         if !next_forced_inclusion_data_lock.is_data_ready() {
