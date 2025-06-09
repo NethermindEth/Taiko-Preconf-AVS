@@ -96,7 +96,7 @@ mod tests {
         shared::l2_tx_lists::{
             decompose_pending_lists_json_from_geth, encode_and_compress, uncompress_and_decode,
         },
-        utils::blob::build_taiko_blob_sidecar,
+        utils::blob::build_blob_sidecar,
     };
 
     #[test]
@@ -106,7 +106,7 @@ mod tests {
         let pending_lists = decompose_pending_lists_json_from_geth(value).unwrap();
         let txs = pending_lists[0].tx_list.clone();
         let compress = encode_and_compress(&txs).unwrap();
-        let blob = build_taiko_blob_sidecar(&compress).unwrap();
+        let blob = build_blob_sidecar(&compress).unwrap();
         assert_eq!(blob.blobs.len(), 1);
         let blob_data = decode_blob(&blob.blobs[0]).unwrap();
         assert_eq!(blob_data, compress);
