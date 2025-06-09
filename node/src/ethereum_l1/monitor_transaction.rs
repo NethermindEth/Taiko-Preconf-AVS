@@ -1,6 +1,6 @@
 use crate::metrics::Metrics;
 
-use super::{transaction_error::TransactionError, ws_provider::WsProvider};
+use super::{tools, transaction_error::TransactionError, ws_provider::WsProvider};
 use alloy::{
     consensus::{TxEip4844Variant, TxEnvelope, TxType},
     network::{Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
@@ -375,7 +375,7 @@ impl TransactionMonitorThread {
                                 .await;
                             return None;
                         }
-                    } else if err.message.contains("insufficient funds") {
+                    } else if tools::check_for_insufficient_funds(&err.message) {
                         error!("Failed to send transaction: {}", e);
                         self.send_error_signal(TransactionError::InsufficientFunds)
                             .await;
