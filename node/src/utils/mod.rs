@@ -1,3 +1,4 @@
+pub mod blob;
 pub mod config;
 pub mod event_listener;
 pub mod file_operations;

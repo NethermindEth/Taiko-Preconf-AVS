@@ -2,7 +2,7 @@ use alloy::primitives::U256;
 use std::time::Duration;
 use tracing::{info, warn};
 
-use crate::taiko::blob::constants::MAX_BLOB_DATA_SIZE;
+use crate::utils::blob::constants::MAX_BLOB_DATA_SIZE;
 
 pub struct Config {
     pub taiko_geth_ws_rpc_url: String,

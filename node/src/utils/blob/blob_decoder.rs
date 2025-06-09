@@ -3,15 +3,15 @@ use anyhow::{Error, anyhow};
 
 use super::constants::{BLOB_SIZE, ENCODING_VERSION, MAX_BLOB_DATA_SIZE, ROUNDS, VERSION_OFFSET};
 
-pub struct TaikoBlobDecoder {
+pub struct BlobDecoder {
     read_offset: usize,
     data_offset: usize,
     data: [u8; MAX_BLOB_DATA_SIZE],
 }
 
-impl TaikoBlobDecoder {
+impl BlobDecoder {
     pub fn decode_blob(blob: &Blob) -> Result<Vec<u8>, Error> {
-        TaikoBlobDecoder::new().decode(blob)
+        BlobDecoder::new().decode(blob)
     }
 
     fn new() -> Self {
