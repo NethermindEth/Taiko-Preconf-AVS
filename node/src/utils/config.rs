@@ -2,6 +2,8 @@ use alloy::primitives::U256;
 use std::time::Duration;
 use tracing::{info, warn};
 
+use crate::utils::blob::constants::MAX_BLOB_DATA_SIZE;
+
 pub struct Config {
     pub taiko_geth_ws_rpc_url: String,
     pub taiko_geth_auth_rpc_url: String,
@@ -197,10 +199,15 @@ impl Config {
             .parse::<u64>()
             .expect("L1_HEIGHT_LAG must be a number");
 
-        let max_bytes_size_of_batch = std::env::var("MAX_BYTES_SIZE_OF_BATCH")
-            .unwrap_or("390132".to_string()) // 130044 * 3
+        let blobs_per_batch = std::env::var("BLOBS_PER_BATCH")
+            .unwrap_or("3".to_string())
             .parse::<u64>()
-            .expect("MAX_BYTES_SIZE_OF_BATCH must be a number");
+            .expect("BLOBS_PER_BATCH must be a number");
+
+        let max_bytes_size_of_batch = u64::try_from(MAX_BLOB_DATA_SIZE)
+            .expect("MAX_BLOB_DATA_SIZE must be a u64 number")
+            .checked_mul(blobs_per_batch)
+            .expect("panic: overflow while computing BLOBS_PER_BATCH * MAX_BLOB_DATA_SIZE. Try to reduce BLOBS_PER_BATCH");
 
         let max_blocks_per_batch = std::env::var("MAX_BLOCKS_PER_BATCH")
             .unwrap_or("0".to_string())
@@ -269,7 +276,7 @@ impl Config {
                 .expect("SIMULATE_NOT_SUBMITTING_AT_THE_END_OF_EPOCH must be a boolean");
 
         let max_bytes_per_tx_list = std::env::var("MAX_BYTES_PER_TX_LIST")
-            .unwrap_or("131072".to_string())
+            .unwrap_or(MAX_BLOB_DATA_SIZE.to_string())
             .parse::<u64>()
             .expect("MAX_BYTES_PER_TX_LIST must be a number");
 
