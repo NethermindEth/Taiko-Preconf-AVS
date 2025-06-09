@@ -1,10 +1,10 @@
 pub(crate) mod batch_manager;
-mod blob_parser;
+pub mod blob_parser;
 mod l2_head_verifier;
 mod operator;
 mod verifier;
 
-use crate::reorg_detector;
+use crate::chain_monitor;
 use crate::{
     ethereum_l1::{EthereumL1, transaction_error::TransactionError},
     metrics::Metrics,
@@ -15,8 +15,8 @@ use crate::{
 use alloy::primitives::U256;
 use anyhow::Error;
 use batch_manager::{BatchBuilderConfig, BatchManager};
+use chain_monitor::ChainMonitor;
 use operator::{Operator, Status as OperatorStatus};
-use reorg_detector::ReorgDetector;
 use std::sync::Arc;
 use tokio::{
     sync::mpsc::{Receiver, error::TryRecvError},
@@ -34,7 +34,7 @@ pub struct Thresholds {
 pub struct Node {
     cancel_token: CancellationToken,
     ethereum_l1: Arc<EthereumL1>,
-    reorg_detector: Arc<ReorgDetector>,
+    chain_monitor: Arc<ChainMonitor>,
     preconf_heartbeat_ms: u64,
     operator: Operator,
     batch_manager: BatchManager,
@@ -53,7 +53,7 @@ impl Node {
         cancel_token: CancellationToken,
         taiko: Arc<Taiko>,
         ethereum_l1: Arc<EthereumL1>,
-        reorg_detector: Arc<ReorgDetector>,
+        chain_monitor: Arc<ChainMonitor>,
         preconf_heartbeat_ms: u64,
         handover_window_slots: u64,
         handover_start_buffer_ms: u64,
@@ -96,7 +96,7 @@ impl Node {
             cancel_token,
             batch_manager,
             ethereum_l1,
-            reorg_detector,
+            chain_monitor,
             preconf_heartbeat_ms,
             operator,
             thresholds,
@@ -713,9 +713,7 @@ impl Node {
         self.verifier = None;
         self.batch_manager.reset_builder();
 
-        self.reorg_detector
-            .set_expected_reorg(parent_block_id)
-            .await;
+        self.chain_monitor.set_expected_reorg(parent_block_id).await;
 
         let start_block_id = parent_block_id + 1;
         let blocks = self

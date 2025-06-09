@@ -1,6 +1,8 @@
-use alloy::primitives::Address;
+use alloy::primitives::{Address, B256};
+use alloy::rpc::types::Transaction;
 use alloy::sol_types::SolEvent;
 use anyhow::{Error, anyhow};
+use tokio::task::JoinHandle;
 
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -8,28 +10,110 @@ use std::{str::FromStr, sync::Arc};
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::{self, Receiver};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info};
+use tracing::{debug, error, info, warn};
 
 use crate::ethereum_l1::l1_contracts_bindings::forced_inclusion_store::IForcedInclusionStore::{
     ForcedInclusion, ForcedInclusionConsumed, ForcedInclusionStored,
 };
+use crate::ethereum_l1::{EthereumL1, execution_layer};
+
+use crate::node::blob_parser::extract_transactions_from_blob;
 use crate::utils::event_listener::listen_for_event;
 
 const MESSAGE_QUEUE_SIZE: usize = 20;
 const SLEEP_DURATION: Duration = Duration::from_secs(15);
+
+struct ForcedInclusionData {
+    index: usize,
+    txs_list: Option<Vec<Transaction>>,
+    blob_decoding_handle: Option<JoinHandle<()>>,
+    blob_decoding_token: Option<CancellationToken>,
+}
+
+impl ForcedInclusionData {
+    fn is_decoding_in_progress(&self) -> bool {
+        self.blob_decoding_handle.is_some()
+            && !self.blob_decoding_handle.as_ref().unwrap().is_finished()
+    }
+    fn is_data_ready(&self) -> bool {
+        self.txs_list.is_some()
+    }
+
+    async fn cancel_current_task(&mut self) {
+        if let Some(blob_decoding_handle) = self.blob_decoding_handle.take() {
+            if let Some(blob_decoding_token) = self.blob_decoding_token.take() {
+                debug!("Cancelling blob decoding task for index {}", self.index);
+                blob_decoding_token.cancel();
+                while !blob_decoding_handle.is_finished() {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                self.blob_decoding_handle = None;
+                self.blob_decoding_token = None;
+                debug!("Blob decoding task cancelled");
+            }
+        }
+    }
+
+    async fn reset(&mut self) {
+        self.cancel_current_task().await;
+        self.index = 0;
+        self.txs_list = None;
+    }
+
+    fn decode(
+        &mut self,
+        forced_inclusion: ForcedInclusion,
+        ethereum_l1: Arc<EthereumL1>,
+        next_forced_inclusion_data: Arc<Mutex<ForcedInclusionData>>,
+    ) {
+        let decoding_token = CancellationToken::new();
+        self.blob_decoding_token = Some(decoding_token.clone());
+
+        let handle = tokio::spawn(async move {
+            // Replace with your real decoding logic
+            tokio::select! {
+                _ = decoding_token.cancelled() => {
+                    info!("decoding task was cancelled.");
+                }
+                _ = async {
+                    info!("Decoding new ForcedInclusion...");
+                    let txs = match extract_transactions_from_blob(
+                        ethereum_l1,
+                        forced_inclusion.blobCreatedIn,
+                        [forced_inclusion.blobHash].to_vec(),
+                        forced_inclusion.blobByteOffset,
+                        forced_inclusion.blobByteSize
+                    ).await {
+                        Ok(txs) => Some(txs),
+                        Err(e) => {
+                            error!("Error decoding ForcedInclusion: {}", e);
+                            None
+                        }
+                    };
+                    next_forced_inclusion_data.lock().await.txs_list = txs;
+                    info!("Decoding complete.");
+                } => {}
+            }
+        });
+        self.blob_decoding_handle = Some(handle);
+    }
+}
 
 pub struct ForcedInclusionMonitor {
     ws_rpc_url: String,
     force_inclusion_store: Address,
     cancel_token: CancellationToken,
     queue: Arc<Mutex<VecDeque<ForcedInclusion>>>,
+    next_forced_inclusion_data: Arc<Mutex<ForcedInclusionData>>,
+    ethereum_l1: Arc<EthereumL1>,
 }
 
 impl ForcedInclusionMonitor {
-    pub fn new(
+    pub async fn new(
         ws_rpc_url: String,
         force_inclusion_store: String,
         cancel_token: CancellationToken,
+        ethereum_l1: Arc<EthereumL1>,
     ) -> Result<Self, Error> {
         debug!(
             "Creating ForceInclusionMonitor (L1: {}, Store: {})",
@@ -39,11 +123,23 @@ impl ForcedInclusionMonitor {
         let force_inclusion_store = Address::from_str(&force_inclusion_store)
             .map_err(|e| anyhow!("Invalid ForceInclusionStore address: {:?}", e))?;
 
+        let force_inclinclusion_data = ethereum_l1
+            .execution_layer
+            .get_forced_incusion_store_data()
+            .await?;
+
         Ok(Self {
             ws_rpc_url,
             force_inclusion_store,
             cancel_token,
-            queue: Arc::new(Mutex::new(VecDeque::new())),
+            queue: Arc::new(Mutex::new(force_inclinclusion_data)),
+            next_forced_inclusion_data: Arc::new(Mutex::new(ForcedInclusionData {
+                index: 0,
+                txs_list: None,
+                blob_decoding_handle: None,
+                blob_decoding_token: None,
+            })),
+            ethereum_l1,
         })
     }
 
@@ -63,6 +159,8 @@ impl ForcedInclusionMonitor {
 
         //Message dispatcher
         tokio::spawn(Self::handle_incoming_messages(
+            self.ethereum_l1.clone(),
+            self.next_forced_inclusion_data.clone(),
             self.queue.clone(),
             forced_inclusion_stored_rx,
             forced_inclusion_consumed_rx,
@@ -123,6 +221,8 @@ impl ForcedInclusionMonitor {
     }
 
     async fn handle_incoming_messages(
+        ethereum_l1: Arc<EthereumL1>,
+        next_forced_inclusion_data: Arc<Mutex<ForcedInclusionData>>,
         queue: Arc<Mutex<VecDeque<ForcedInclusion>>>,
         mut forced_inclusion_stored_rx: Receiver<ForcedInclusionStored>,
         mut forced_inclusion_consumed_rx: Receiver<ForcedInclusionConsumed>,
@@ -141,6 +241,21 @@ impl ForcedInclusionMonitor {
                         "ForcedInclusionStored event → lastBlockId = {}",
                         stored.forcedInclusion.blobCreatedIn
                     );
+                    let mut next_forced_inclusion_data_lock = next_forced_inclusion_data.lock().await;
+                    // start a new decoding thread
+                    if !next_forced_inclusion_data_lock.is_data_ready() && !next_forced_inclusion_data_lock.is_decoding_in_progress() {
+                        if next_forced_inclusion_data_lock.index != 0 || next_forced_inclusion_data_lock.txs_list.is_some() {
+                            warn!("Unexpected store value at index {}", next_forced_inclusion_data_lock.index);
+                            next_forced_inclusion_data_lock.index = 0;
+                            next_forced_inclusion_data_lock.txs_list = None;
+                        }
+
+                        next_forced_inclusion_data_lock.decode(
+                            stored.forcedInclusion.clone(),
+                            ethereum_l1.clone(),
+                            next_forced_inclusion_data.clone(),
+                        );
+                    }
                     queue.lock().await.push_back(stored.forcedInclusion);
                 }
                 Some(consumed) = forced_inclusion_consumed_rx.recv() => {
@@ -148,10 +263,97 @@ impl ForcedInclusionMonitor {
                         "ForcedInclusionConsumed event → lastBlockId = {}",
                         consumed.forcedInclusion.blobCreatedIn
                     );
-                    queue.lock().await.pop_front();
+                    if let Some(front) = queue.lock().await.pop_front() {
+                        if front.blobCreatedIn != consumed.forcedInclusion.blobCreatedIn ||
+                           front.createdAtBatchId != consumed.forcedInclusion.createdAtBatchId ||
+                           front.feeInGwei != consumed.forcedInclusion.feeInGwei ||
+                           front.blobByteOffset != consumed.forcedInclusion.blobByteOffset ||
+                           front.blobByteSize != consumed.forcedInclusion.blobByteSize ||
+                           front.blobHash != consumed.forcedInclusion.blobHash {
+                            error!("Expected Consumed ForcedInclusion at block {}, got block {}", front.blobCreatedIn, consumed.forcedInclusion.blobCreatedIn);
+                            cancel_token.cancel();
+                        }
+                    } else {
+                        error!("Queue is empty, expected Consumed ForcedInclusion at block {}", consumed.forcedInclusion.blobCreatedIn);
+                        cancel_token.cancel();
+                    }
+                    let mut next_forced_inclusion_data_lock = next_forced_inclusion_data.lock().await;
+                    if next_forced_inclusion_data_lock.index == 0 {
+                        next_forced_inclusion_data_lock.reset().await;
+                        next_forced_inclusion_data_lock.decode(
+                            consumed.forcedInclusion,
+                            ethereum_l1.clone(),
+                            next_forced_inclusion_data.clone(),);
+                    } else {
+                        next_forced_inclusion_data_lock.index -= 1;
+                    }
                 }
-
             }
         }
+    }
+
+    pub fn decode_forced_inclusion(
+        block: u64,
+        blob_hash: B256,
+        tx_list_offset: u32,
+        tx_list_size: u32,
+        ethereum_l1: Arc<EthereumL1>,
+        next_forced_inclusion_data: Arc<Mutex<ForcedInclusionData>>,
+        decoding_token: CancellationToken,
+    ) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            // Replace with your real decoding logic
+            tokio::select! {
+                _ = decoding_token.cancelled() => {
+                    info!("Previous decoding task was cancelled.");
+                }
+                _ = async {
+                    info!("Decoding new ForcedInclusion...");
+                    let txs = match extract_transactions_from_blob(
+                        ethereum_l1,
+                        block,
+                        [blob_hash].to_vec(),
+                        tx_list_offset,
+                        tx_list_size
+                    ).await {
+                        Ok(txs) => Some(txs),
+                        Err(e) => {
+                            error!("Error decoding ForcedInclusion: {}", e);
+                            None
+                        }
+                    };
+                    next_forced_inclusion_data.lock().await.txs_list = txs;
+                    info!("Decoding complete.");
+                } => {}
+            }
+        })
+    }
+
+    pub async fn get_next_forced_inclusion_data(&self) -> Option<Vec<Transaction>> {
+        let mut next_forced_inclusion_data_lock = self.next_forced_inclusion_data.lock().await;
+        if !next_forced_inclusion_data_lock.is_data_ready() {
+            return None;
+        }
+        let result = next_forced_inclusion_data_lock.txs_list.clone();
+
+        if next_forced_inclusion_data_lock.is_decoding_in_progress() {
+            error!("Unexpected: ForcedInclusion decoding is still in progress");
+            self.cancel_token.cancel();
+        }
+
+        let next_index = next_forced_inclusion_data_lock.index + 1;
+        if let Some(force_inclusion) = self.queue.lock().await.get(next_index) {
+            next_forced_inclusion_data_lock.txs_list = None;
+            next_forced_inclusion_data_lock.decode(
+                force_inclusion.clone(),
+                self.ethereum_l1.clone(),
+                self.next_forced_inclusion_data.clone(),
+            )
+        } else {
+            next_forced_inclusion_data_lock.index = 0;
+            next_forced_inclusion_data_lock.txs_list = None;
+        }
+
+        result
     }
 }
