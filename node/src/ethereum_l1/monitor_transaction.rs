@@ -324,6 +324,10 @@ impl TransactionMonitorThread {
                         self.send_error_signal(TransactionError::TimestampTooLarge)
                             .await;
                         return true;
+                    } else if tools::check_for_insufficient_funds(&err_str) {
+                        self.send_error_signal(TransactionError::InsufficientFunds)
+                            .await;
+                        return true;
                     }
                     self.send_error_signal(TransactionError::TransactionReverted)
                         .await;
