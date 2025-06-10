@@ -107,7 +107,7 @@ impl Config {
 
         #[cfg(feature = "extra-gas-percentage")]
         let extra_gas_percentage = std::env::var("EXTRA_GAS_PERCENTAGE")
-            .unwrap_or("10".to_string())
+            .unwrap_or("20".to_string())
             .parse::<u64>()
             .expect("EXTRA_GAS_PERCENTAGE must be a number");
 
