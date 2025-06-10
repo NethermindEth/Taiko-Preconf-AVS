@@ -42,7 +42,10 @@ pub fn decode_blob(blob: &Blob) -> Result<Vec<u8>, Error> {
     BlobDecoder::decode_blob(blob)
 }
 
+#[cfg(test)]
 mod tests {
+    use super::*;
+    use alloy::primitives::FixedBytes;
 
     #[test]
     fn test_build_blob_sidecar() {
