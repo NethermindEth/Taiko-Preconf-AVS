@@ -583,22 +583,11 @@ impl Node {
         match error {
             TransactionError::TransactionReverted | TransactionError::EstimationFailed => {
                 if current_status.is_preconfer() && current_status.is_submitter() {
-                    let taiko_inbox_height = self
-                        .ethereum_l1
-                        .execution_layer
-                        .get_l2_height_from_taiko_inbox()
-                        .await?;
-                    if let Err(err) = self
-                        .reanchor_blocks(taiko_inbox_height, "Transaction reverted")
-                        .await
-                    {
-                        error!("Failed to reanchor blocks: {}", err);
-                        self.cancel_token.cancel();
-                        return Err(anyhow::anyhow!("Failed to reanchor blocks: {}", err));
-                    }
-                    return Err(anyhow::anyhow!("Reanchoring done"));
+                    warn!("Transaction reverted, Restarting...");
+                    self.cancel_token.cancel();
+                    return Err(anyhow::anyhow!("Transaction reverted"));
                 } else {
-                    warn!("Transaction reverted, not our epoch, skipping reorg");
+                    warn!("Transaction reverted, not our epoch, skipping");
                 }
             }
             TransactionError::NotConfirmed => {
