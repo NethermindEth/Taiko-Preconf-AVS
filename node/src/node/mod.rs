@@ -581,7 +581,7 @@ impl Node {
         current_status: &OperatorStatus,
     ) -> Result<(), Error> {
         match error {
-            TransactionError::TransactionReverted | TransactionError::EstimationFailed => {
+            TransactionError::ReanchorRequired => {
                 if current_status.is_preconfer() && current_status.is_submitter() {
                     let taiko_inbox_height = self
                         .ethereum_l1
@@ -634,6 +634,14 @@ impl Node {
                 return Err(anyhow::anyhow!(
                     "Transaction reverted with InsufficientFunds error"
                 ));
+            }
+            TransactionError::EstimationFailed => {
+                self.cancel_token.cancel();
+                return Err(anyhow::anyhow!("Transaction estimation failed, exiting"));
+            }
+            TransactionError::TransactionReverted => {
+                self.cancel_token.cancel();
+                return Err(anyhow::anyhow!("Transaction reverted, exiting"));
             }
         }
 
