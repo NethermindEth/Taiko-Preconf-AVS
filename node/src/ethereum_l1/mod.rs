@@ -5,6 +5,7 @@ mod l1_contracts_bindings;
 mod monitor_transaction;
 mod propose_batch_builder;
 pub mod slot_clock;
+mod tools;
 pub mod transaction_error;
 pub mod ws_provider;
 
