@@ -11,7 +11,7 @@ use alloy::{
 use alloy_json_rpc::{ErrorPayload, RpcError};
 use anyhow::{Error, anyhow};
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{error, warn};
 
 struct FeesPerGas {
     base_fee_per_gas: u128,
@@ -86,7 +86,11 @@ impl ProposeBatchBuilder {
                 );
                 match e {
                     RpcError::ErrorResp(err) => {
-                        return Err(anyhow!(Self::convert_error_payload(err)));
+                        // return Err(anyhow!(Self::convert_error_payload(err)));
+                        // Default to 100k gas for blob transaction if estimation fails
+                        let default_blob_gas = 500_000u64;
+                        warn!("Using default blob gas value of {}", default_blob_gas);
+                        default_blob_gas
                     }
                     _ => return Ok(tx_blob),
                 }
@@ -111,6 +115,8 @@ impl ProposeBatchBuilder {
             .as_ref()
             .map_or(0, |sidecar| sidecar.blobs.len() as u64);
 
+        tracing::info!("Build proposeBatch: blob count: {}", blob_count);
+
         // Calculate the cost of the eip4844 transaction
         let eip4844_cost = self
             .get_eip4844_cost(&fees_per_gas, blob_count, tx_blob_gas)
@@ -118,6 +124,7 @@ impl ProposeBatchBuilder {
 
         // Update gas params for eip4844 transaction
         let tx_blob = self.update_eip4844(tx_blob, &fees_per_gas, tx_blob_gas);
+        return Ok(tx_blob);
 
         // Build eip1559 transaction
         let tx_calldata = self

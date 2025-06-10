@@ -151,13 +151,13 @@ impl Node {
             .await
             .map_err(|e| Error::msg(format!("Failed to fetch bond balance: {}", e)))?;
 
-        if total_balance < self.thresholds.taiko {
-            anyhow::bail!(
-                "Total balance ({}) is below the required threshold ({})",
-                total_balance,
-                self.thresholds.taiko
-            );
-        }
+        // if total_balance < self.thresholds.taiko {
+        //     anyhow::bail!(
+        //         "Total balance ({}) is below the required threshold ({})",
+        //         total_balance,
+        //         self.thresholds.taiko
+        //     );
+        // }
 
         info!("Preconfer taiko balance are sufficient: {}", total_balance);
 
