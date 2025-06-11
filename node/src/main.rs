@@ -116,8 +116,9 @@ async fn main() -> Result<(), Error> {
                 config.max_bytes_per_tx_list,
                 config.min_bytes_per_tx_list,
                 config.throttling_factor,
-                config.rpc_short_timeout,
-                config.rpc_long_timeout,
+                config.rpc_l2_execution_layer_timeout,
+                config.rpc_driver_preconf_timeout,
+                config.rpc_driver_status_timeout,
                 config.avs_node_ecdsa_private_key,
             )?,
         )

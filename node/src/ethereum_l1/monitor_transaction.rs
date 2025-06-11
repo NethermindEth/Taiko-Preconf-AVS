@@ -1,10 +1,10 @@
 use crate::metrics::Metrics;
 
-use super::{transaction_error::TransactionError, ws_provider::WsProvider};
+use super::{tools, transaction_error::TransactionError, ws_provider::WsProvider};
 use alloy::{
-    consensus::{TxEip4844Variant, TxEnvelope, TxType},
+    consensus::TxType,
     network::{Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
-    primitives::{Address, B256, TxKind},
+    primitives::B256,
     providers::{
         PendingTransactionBuilder, PendingTransactionError, Provider, RootProvider, WatchTxError,
         ext::DebugApi,
@@ -324,6 +324,15 @@ impl TransactionMonitorThread {
                         self.send_error_signal(TransactionError::TimestampTooLarge)
                             .await;
                         return true;
+                    } else if tools::check_for_insufficient_funds(&err_str) {
+                        self.send_error_signal(TransactionError::InsufficientFunds)
+                            .await;
+                        return true;
+                    } else if tools::check_for_reanchor_required(&err_str) {
+                        warn!("Reanchor required: {}", err_str);
+                        self.send_error_signal(TransactionError::ReanchorRequired)
+                            .await;
+                        return true;
                     }
                     self.send_error_signal(TransactionError::TransactionReverted)
                         .await;
@@ -375,9 +384,14 @@ impl TransactionMonitorThread {
                                 .await;
                             return None;
                         }
-                    } else if err.message.contains("insufficient funds") {
+                    } else if tools::check_for_insufficient_funds(&err.message) {
                         error!("Failed to send transaction: {}", e);
                         self.send_error_signal(TransactionError::InsufficientFunds)
+                            .await;
+                        return None;
+                    } else if tools::check_for_reanchor_required(&err.message) {
+                        warn!("Reanchor required: {}", err.message);
+                        self.send_error_signal(TransactionError::ReanchorRequired)
                             .await;
                         return None;
                     }
@@ -533,65 +547,7 @@ impl TransactionMonitorThread {
     }
 
     fn get_tx_request_for_call(tx_details: Transaction) -> TransactionRequest {
-        match tx_details.inner.inner() {
-            TxEnvelope::Eip1559(tx) => {
-                let to = match tx.tx().to {
-                    TxKind::Call(to) => to,
-                    _ => Address::default(),
-                };
-                TransactionRequest::default()
-                    .with_from(tx_details.inner.signer())
-                    .with_to(to)
-                    .with_input(tx.tx().input.clone())
-                    .with_value(tx.tx().value)
-                    .with_gas_limit(tx.tx().gas_limit)
-                    .with_max_priority_fee_per_gas(tx.tx().max_priority_fee_per_gas)
-                    .with_max_fee_per_gas(tx.tx().max_fee_per_gas)
-            }
-            TxEnvelope::Legacy(tx) => {
-                let to = match tx.tx().to {
-                    TxKind::Call(to) => to,
-                    _ => Address::default(),
-                };
-                TransactionRequest::default()
-                    .with_from(tx_details.inner.signer())
-                    .with_to(to)
-                    .with_input(tx.tx().input.clone())
-                    .with_value(tx.tx().value)
-                    .with_gas_limit(tx.tx().gas_limit)
-            }
-            TxEnvelope::Eip2930(tx) => {
-                let to = match tx.tx().to {
-                    TxKind::Call(to) => to,
-                    _ => Address::default(),
-                };
-                TransactionRequest::default()
-                    .with_from(tx_details.inner.signer())
-                    .with_to(to)
-                    .with_input(tx.tx().input.clone())
-                    .with_value(tx.tx().value)
-                    .with_gas_limit(tx.tx().gas_limit)
-            }
-            TxEnvelope::Eip4844(tx) => {
-                let tx = tx.tx();
-                match tx {
-                    TxEip4844Variant::TxEip4844(tx) => TransactionRequest::default()
-                        .with_from(tx_details.inner.signer())
-                        .with_to(tx.to)
-                        .with_input(tx.input.clone())
-                        .with_value(tx.value)
-                        .with_gas_limit(tx.gas_limit),
-                    TxEip4844Variant::TxEip4844WithSidecar(tx) => TransactionRequest::default()
-                        .with_from(tx_details.inner.signer())
-                        .with_to(tx.tx().to)
-                        .with_input(tx.tx().input.clone())
-                        .with_value(tx.tx().value)
-                        .with_gas_limit(tx.tx().gas_limit)
-                        .with_blob_sidecar(tx.sidecar.clone()),
-                }
-            }
-            _ => TransactionRequest::default(),
-        }
+        TransactionRequest::from_transaction(tx_details)
     }
 
     fn set_tx_parameters(

@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use alloy::rpc::types::beacon::sidecar::BeaconBlobBundle;
 use anyhow::Error;
 use reqwest;
 
@@ -15,6 +16,14 @@ impl ConsensusLayer {
             client,
             url: reqwest::Url::parse(rpc_url)?,
         })
+    }
+
+    pub async fn get_blob_sidecars(&self, slot: u64) -> Result<BeaconBlobBundle, Error> {
+        let res = self
+            .get(format!("/eth/v1/beacon/blob_sidecars/{slot}").as_str())
+            .await?;
+        let sidecar: BeaconBlobBundle = serde_json::from_value(res)?;
+        Ok(sidecar)
     }
 
     pub async fn get_genesis_time(&self) -> Result<u64, Error> {

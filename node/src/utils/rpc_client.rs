@@ -230,7 +230,7 @@ impl HttpRPCClient {
         Err(anyhow::anyhow!(
             "Failed to call driver RPC for API '{}' within the duration ({}ms)",
             endpoint,
-            max_duration.as_millis()
+            start_time.elapsed().as_millis()
         ))
     }
 
@@ -255,7 +255,13 @@ impl HttpRPCClient {
             .json(payload)
             .send()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to send HTTP request: {e}"))?;
+            .map_err(|e| {
+                if e.is_timeout() {
+                    anyhow::anyhow!("HttpRPCClient: request timed out: {e}")
+                } else {
+                    anyhow::anyhow!("HttpRPCClient: failed to send HTTP request: {e}")
+                }
+            })?;
 
         if response.status() == http::StatusCode::UNAUTHORIZED {
             tracing::debug!("HttpRPCClient 401 error, recreating client");

@@ -7,15 +7,16 @@ use alloy::{
 };
 use anyhow::Error;
 
-mod constants;
-mod taiko_blob_coder;
-mod taiko_blob_decoder;
+mod blob_coder;
+mod blob_decoder;
+pub mod constants;
 
 use crate::crypto::kzg::{blob_to_kzg_commitment, compute_blob_kzg_proof};
+use blob_coder::BlobCoder;
+use blob_decoder::BlobDecoder;
 use constants::MAX_BLOB_DATA_SIZE;
-use taiko_blob_coder::TaikoBlobCoder;
 
-pub fn build_taiko_blob_sidecar(data: &[u8]) -> Result<BlobTransactionSidecar, Error> {
+pub fn build_blob_sidecar(data: &[u8]) -> Result<BlobTransactionSidecar, Error> {
     // Split to blob chunks
     let chunks: Vec<&[u8]> = data.chunks(MAX_BLOB_DATA_SIZE).collect();
 
@@ -25,7 +26,7 @@ pub fn build_taiko_blob_sidecar(data: &[u8]) -> Result<BlobTransactionSidecar, E
 
     for raw_data_blob in chunks {
         // Encode blob data
-        let encoded_blob: Blob = TaikoBlobCoder::encode_blob(raw_data_blob)?;
+        let encoded_blob: Blob = BlobCoder::encode_blob(raw_data_blob)?;
         // Compute commitment and proof
         let kzg_settings = EnvKzgSettings::Default.get();
         let commitment = blob_to_kzg_commitment(encoded_blob, kzg_settings)?;
@@ -43,15 +44,18 @@ pub fn build_taiko_blob_sidecar(data: &[u8]) -> Result<BlobTransactionSidecar, E
     })
 }
 
+pub fn decode_blob(blob: &Blob) -> Result<Vec<u8>, Error> {
+    BlobDecoder::decode_blob(blob)
+}
+
 mod tests {
     use super::*;
-    use taiko_blob_decoder::TaikoBlobDecoder;
+    use blob_decoder::BlobDecoder;
 
     #[test]
-    fn test_build_taiko_blob_sidecar() {
+    fn test_build_blob_sidecar() {
         let data = vec![3u8; 400];
-        let sidecar =
-            build_taiko_blob_sidecar(&data).expect("assert: can build taiko blob sidecar");
+        let sidecar = build_blob_sidecar(&data).expect("assert: can build taiko blob sidecar");
         for s in sidecar.into_iter() {
             assert!(s.verify_blob_kzg_proof().is_ok());
         }
@@ -78,7 +82,7 @@ mod tests {
         ];
 
         let encoded_blob: Blob =
-            TaikoBlobCoder::encode_blob(&data).expect("assert: can encode taiko blob");
+            BlobCoder::encode_blob(&data).expect("assert: can encode taiko blob");
 
         assert_eq!(
             alloy::primitives::keccak256(encoded_blob),
@@ -91,7 +95,7 @@ mod tests {
         );
 
         let decoded_data =
-            TaikoBlobDecoder::decode_blob(&encoded_blob).expect("assert: can decode taiko blob");
+            BlobDecoder::decode_blob(&encoded_blob).expect("assert: can decode taiko blob");
         assert_eq!(data, decoded_data);
     }
 
@@ -112,7 +116,7 @@ mod tests {
         ];
 
         let encoded_blob: Blob =
-            TaikoBlobCoder::encode_blob(&data).expect("assert: can encode taiko blob");
+            BlobCoder::encode_blob(&data).expect("assert: can encode taiko blob");
 
         assert_eq!(
             alloy::primitives::keccak256(encoded_blob),
@@ -125,7 +129,7 @@ mod tests {
         );
 
         let decoded_data =
-            TaikoBlobDecoder::decode_blob(&encoded_blob).expect("assert: can decode taiko blob");
+            BlobDecoder::decode_blob(&encoded_blob).expect("assert: can decode taiko blob");
         assert_eq!(data, decoded_data);
     }
 }

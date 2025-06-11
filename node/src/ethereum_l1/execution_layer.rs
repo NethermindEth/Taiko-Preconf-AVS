@@ -539,8 +539,8 @@ impl ExecutionLayer {
             .map_err(|e| Error::msg(format!("Failed to convert nonce: {}", e)))
     }
 
-    pub async fn get_block_timestamp_by_id(&self, block_id: u64) -> Result<u64, Error> {
-        self.get_block_timestamp_by_number_or_tag(BlockNumberOrTag::Number(block_id))
+    pub async fn get_block_timestamp_by_number(&self, block: u64) -> Result<u64, Error> {
+        self.get_block_timestamp_by_number_or_tag(BlockNumberOrTag::Number(block))
             .await
     }
 

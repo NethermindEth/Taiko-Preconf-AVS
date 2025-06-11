@@ -27,11 +27,6 @@ pub type WsProvider = FillProvider<
     RootProvider,
 >;
 
-pub enum OperationType {
-    Preconfirm,
-    Reanchor,
-}
-
 #[derive(Clone)]
 pub struct TaikoConfig {
     pub taiko_geth_ws_url: String,
@@ -43,8 +38,9 @@ pub struct TaikoConfig {
     pub max_bytes_per_tx_list: u64,
     pub min_bytes_per_tx_list: u64,
     pub throttling_factor: u64,
-    pub rpc_short_timeout: Duration,
-    pub rpc_long_timeout: Duration,
+    pub rpc_l2_execution_layer_timeout: Duration,
+    pub rpc_driver_preconf_timeout: Duration,
+    pub rpc_driver_status_timeout: Duration,
     pub avs_node_ecdsa_private_key: String,
 }
 
@@ -60,8 +56,9 @@ impl TaikoConfig {
         max_bytes_per_tx_list: u64,
         min_bytes_per_tx_list: u64,
         throttling_factor: u64,
-        rpc_short_timeout: Duration,
-        rpc_long_timeout: Duration,
+        rpc_l2_execution_layer_timeout: Duration,
+        rpc_driver_preconf_timeout: Duration,
+        rpc_driver_status_timeout: Duration,
         avs_node_ecdsa_private_key: String,
     ) -> Result<Self, Error> {
         Ok(Self {
@@ -74,8 +71,9 @@ impl TaikoConfig {
             max_bytes_per_tx_list,
             min_bytes_per_tx_list,
             throttling_factor,
-            rpc_short_timeout,
-            rpc_long_timeout,
+            rpc_l2_execution_layer_timeout,
+            rpc_driver_preconf_timeout,
+            rpc_driver_status_timeout,
             avs_node_ecdsa_private_key,
         })
     }

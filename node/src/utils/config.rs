@@ -2,6 +2,8 @@ use alloy::primitives::U256;
 use std::time::Duration;
 use tracing::{info, warn};
 
+use crate::utils::blob::constants::MAX_BLOB_DATA_SIZE;
+
 pub struct Config {
     pub taiko_geth_ws_rpc_url: String,
     pub taiko_geth_auth_rpc_url: String,
@@ -16,8 +18,9 @@ pub struct Config {
     pub msg_expiry_sec: u64,
     pub contract_addresses: L1ContractAddresses,
     pub jwt_secret_file_path: String,
-    pub rpc_short_timeout: Duration,
-    pub rpc_long_timeout: Duration,
+    pub rpc_l2_execution_layer_timeout: Duration,
+    pub rpc_driver_preconf_timeout: Duration,
+    pub rpc_driver_status_timeout: Duration,
     pub taiko_anchor_address: String,
     pub taiko_bridge_address: String,
     pub handover_window_slots: u64,
@@ -105,7 +108,7 @@ impl Config {
 
         #[cfg(feature = "extra-gas-percentage")]
         let extra_gas_percentage = std::env::var("EXTRA_GAS_PERCENTAGE")
-            .unwrap_or("5".to_string())
+            .unwrap_or("20".to_string())
             .parse::<u64>()
             .expect("EXTRA_GAS_PERCENTAGE must be a number");
 
@@ -161,17 +164,23 @@ impl Config {
             "/tmp/jwtsecret".to_string()
         });
 
-        let rpc_short_timeout = std::env::var("RPC_SHORT_TIMEOUT_MS")
+        let rpc_driver_preconf_timeout = std::env::var("RPC_DRIVER_PRECONF_TIMEOUT_MS")
+            .unwrap_or("60000".to_string())
+            .parse::<u64>()
+            .expect("RPC_DRIVER_PRECONF_TIMEOUT_MS must be a number");
+        let rpc_driver_preconf_timeout = Duration::from_millis(rpc_driver_preconf_timeout);
+
+        let rpc_driver_status_timeout = std::env::var("RPC_DRIVER_STATUS_TIMEOUT_MS")
             .unwrap_or("1000".to_string())
             .parse::<u64>()
-            .expect("RPC_SHORT_TIMEOUT_MS must be a number");
-        let rpc_short_timeout = Duration::from_millis(rpc_short_timeout);
+            .expect("RPC_DRIVER_STATUS_TIMEOUT_MS must be a number");
+        let rpc_driver_status_timeout = Duration::from_millis(rpc_driver_status_timeout);
 
-        let rpc_long_timeout = std::env::var("RPC_LONG_TIMEOUT_MS")
-            .unwrap_or("10000".to_string())
+        let rpc_l2_execution_layer_timeout = std::env::var("RPC_L2_EXECUTION_LAYER_TIMEOUT_MS")
+            .unwrap_or("1000".to_string())
             .parse::<u64>()
-            .expect("RPC_LONG_TIMEOUT_MS must be a number");
-        let rpc_long_timeout = Duration::from_millis(rpc_long_timeout);
+            .expect("RPC_L2_EXECUTION_LAYER_TIMEOUT_MS must be a number");
+        let rpc_l2_execution_layer_timeout = Duration::from_millis(rpc_l2_execution_layer_timeout);
 
         let taiko_anchor_address = std::env::var("TAIKO_ANCHOR_ADDRESS")
             .unwrap_or("0x1670010000000000000000000000000000010001".to_string());
@@ -200,10 +209,15 @@ impl Config {
             .parse::<u64>()
             .expect("L1_HEIGHT_LAG must be a number");
 
-        let max_bytes_size_of_batch = std::env::var("MAX_BYTES_SIZE_OF_BATCH")
-            .unwrap_or("390132".to_string()) // 130044 * 3
+        let blobs_per_batch = std::env::var("BLOBS_PER_BATCH")
+            .unwrap_or("3".to_string())
             .parse::<u64>()
-            .expect("MAX_BYTES_SIZE_OF_BATCH must be a number");
+            .expect("BLOBS_PER_BATCH must be a number");
+
+        let max_bytes_size_of_batch = u64::try_from(MAX_BLOB_DATA_SIZE)
+            .expect("MAX_BLOB_DATA_SIZE must be a u64 number")
+            .checked_mul(blobs_per_batch)
+            .expect("panic: overflow while computing BLOBS_PER_BATCH * MAX_BLOB_DATA_SIZE. Try to reduce BLOBS_PER_BATCH");
 
         let max_blocks_per_batch = std::env::var("MAX_BLOCKS_PER_BATCH")
             .unwrap_or("0".to_string())
@@ -234,7 +248,7 @@ impl Config {
             .expect("MIN_PRIORITY_FEE_PER_GAS_WEI must be a number");
 
         let tx_fees_increase_percentage = std::env::var("TX_FEES_INCREASE_PERCENTAGE")
-            .unwrap_or("20".to_string())
+            .unwrap_or("10".to_string())
             .parse::<u64>()
             .expect("TX_FEES_INCREASE_PERCENTAGE must be a number");
 
@@ -272,7 +286,7 @@ impl Config {
                 .expect("SIMULATE_NOT_SUBMITTING_AT_THE_END_OF_EPOCH must be a boolean");
 
         let max_bytes_per_tx_list = std::env::var("MAX_BYTES_PER_TX_LIST")
-            .unwrap_or("131072".to_string())
+            .unwrap_or(MAX_BLOB_DATA_SIZE.to_string())
             .parse::<u64>()
             .expect("MAX_BYTES_PER_TX_LIST must be a number");
 
@@ -307,8 +321,9 @@ impl Config {
             msg_expiry_sec,
             contract_addresses,
             jwt_secret_file_path,
-            rpc_short_timeout,
-            rpc_long_timeout,
+            rpc_l2_execution_layer_timeout,
+            rpc_driver_preconf_timeout,
+            rpc_driver_status_timeout,
             taiko_anchor_address,
             taiko_bridge_address,
             handover_window_slots,
@@ -346,8 +361,9 @@ L2 slot duration (heart beat): {}
 Preconf registry expiry: {}s
 Contract addresses: {:#?}
 jwt secret file path: {}
-rpc short timeout: {}ms
-rpc long timeout: {}ms
+rpc L2 EL timeout: {}ms
+rpc driver preconf timeout: {}ms
+rpc driver status timeout: {}ms
 taiko anchor address: {}
 taiko bridge address: {}
 handover window slots: {}
@@ -381,8 +397,9 @@ simulate not submitting at the end of epoch: {}
             config.msg_expiry_sec,
             config.contract_addresses,
             config.jwt_secret_file_path,
-            config.rpc_short_timeout.as_millis(),
-            config.rpc_long_timeout.as_millis(),
+            config.rpc_l2_execution_layer_timeout.as_millis(),
+            config.rpc_driver_preconf_timeout.as_millis(),
+            config.rpc_driver_status_timeout.as_millis(),
             config.taiko_anchor_address,
             config.taiko_bridge_address,
             config.handover_window_slots,

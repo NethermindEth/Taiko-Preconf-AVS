@@ -1,5 +1,5 @@
-use crate::ethereum_l1::{
-    l1_contracts_bindings::*, transaction_error::TransactionError, ws_provider::WsProvider,
+use super::{
+    l1_contracts_bindings::*, tools, transaction_error::TransactionError, ws_provider::WsProvider,
 };
 use alloy::{
     network::{TransactionBuilder, TransactionBuilder4844},
@@ -182,8 +182,14 @@ impl ProposeBatchBuilder {
     fn convert_error_payload(err: ErrorPayload) -> TransactionError {
         let err_str = err.to_string();
         // TimestampTooLarge or ZeroAnchorBlockHash contract error
-        if err_str.contains("0x3d32ffdb") || err_str.contains("0x2b44f010") {
+        if tools::check_for_too_early_estimation(&err_str) {
             return TransactionError::EstimationTooEarly;
+        }
+        if tools::check_for_insufficient_funds(&err_str) {
+            return TransactionError::InsufficientFunds;
+        }
+        if tools::check_for_reanchor_required(&err_str) {
+            return TransactionError::ReanchorRequired;
         }
         TransactionError::EstimationFailed
     }
@@ -338,7 +344,7 @@ impl ProposeBatchBuilder {
         let bytes_x = Bytes::new();
 
         // Build sidecar
-        let sidecar = crate::taiko::blob::build_taiko_blob_sidecar(tx_list)?;
+        let sidecar = crate::utils::blob::build_blob_sidecar(tx_list)?;
         let num_blobs = u8::try_from(sidecar.blobs.len())?;
 
         let batch_params = BatchParams {

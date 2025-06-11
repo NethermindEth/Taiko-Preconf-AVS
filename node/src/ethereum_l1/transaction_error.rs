@@ -8,6 +8,7 @@ pub enum TransactionError {
     GetBlockNumberFailed,
     TimestampTooLarge,
     InsufficientFunds,
+    ReanchorRequired,
 }
 
 impl std::fmt::Display for TransactionError {

@@ -6,15 +6,15 @@ use anyhow::{Error, anyhow};
 
 use super::constants::{ENCODING_VERSION, MAX_BLOB_DATA_SIZE, ROUNDS};
 
-pub struct TaikoBlobCoder {
+pub struct BlobCoder {
     read_offset: usize,
     blob_offset: usize,
     blob: [u8; BYTES_PER_BLOB],
 }
 
-impl TaikoBlobCoder {
+impl BlobCoder {
     pub fn encode_blob(data: &[u8]) -> Result<Blob, Error> {
-        TaikoBlobCoder::new().encode_data(data)
+        BlobCoder::new().encode_data(data)
     }
 
     fn new() -> Self {
