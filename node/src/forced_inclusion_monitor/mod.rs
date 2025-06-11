@@ -171,7 +171,7 @@ impl ForcedInclusionMonitor {
                             next_forced_inclusion_data_lock.index = 0;
                             next_forced_inclusion_data_lock.txs_list = None;
                         }
-
+                        debug!("Decoding ForcedInclusion at block {}", stored.forcedInclusion.blobCreatedIn);
                         next_forced_inclusion_data_lock.decode(
                             stored.forcedInclusion.clone(),
                             ethereum_l1.clone(),
@@ -202,6 +202,7 @@ impl ForcedInclusionMonitor {
                             ethereum_l1.clone(),
                             next_forced_inclusion_data.clone(),);
                     } else {
+                        debug!("reduce index from {} to {}", next_forced_inclusion_data_lock.index, next_forced_inclusion_data_lock.index - 1);
                         next_forced_inclusion_data_lock.index -= 1;
                     }
                 }
@@ -214,6 +215,7 @@ impl ForcedInclusionMonitor {
     pub async fn get_next_forced_inclusion_data(&self) -> Option<Vec<Transaction>> {
         let mut next_forced_inclusion_data_lock = self.next_forced_inclusion_data.lock().await;
         if !next_forced_inclusion_data_lock.is_data_ready() {
+            debug!("next_forced_inclusion_data is not ready");
             return None;
         }
         let result = next_forced_inclusion_data_lock.txs_list.clone();
@@ -224,6 +226,7 @@ impl ForcedInclusionMonitor {
         }
 
         let next_index = next_forced_inclusion_data_lock.index + 1;
+        debug!("next_forced_inclusion_data index: {}", next_index);
         if let Some(force_inclusion) = self.queue.lock().await.get(next_index) {
             next_forced_inclusion_data_lock.txs_list = None;
             next_forced_inclusion_data_lock.decode(
@@ -232,6 +235,7 @@ impl ForcedInclusionMonitor {
                 self.next_forced_inclusion_data.clone(),
             )
         } else {
+            debug!("forced_inclusion queue is empty");
             next_forced_inclusion_data_lock.index = 0;
             next_forced_inclusion_data_lock.txs_list = None;
         }

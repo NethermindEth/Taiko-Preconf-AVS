@@ -80,6 +80,7 @@ impl ForcedInclusionData {
                             None
                         }
                     };
+                    debug!("Decoded txs {:?}", txs);
                     next_forced_inclusion_data.lock().await.txs_list = txs;
                     info!("Decoding complete.");
                 } => {}
