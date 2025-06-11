@@ -10,7 +10,6 @@ mod utils;
 
 use anyhow::Error;
 use metrics::Metrics;
-use node::Thresholds;
 use std::sync::Arc;
 use tokio::{
     signal::unix::{SignalKind, signal},
@@ -170,10 +169,6 @@ async fn main() -> Result<(), Error> {
                 - config.max_anchor_height_offset_reduction,
             default_coinbase: ethereum_l1.execution_layer.get_preconfer_alloy_address(),
         },
-        Thresholds {
-            eth: config.threshold_eth,
-            taiko: config.threshold_taiko,
-        },
         config.simulate_not_submitting_at_the_end_of_epoch,
         transaction_error_receiver,
         metrics.clone(),
@@ -186,6 +181,11 @@ async fn main() -> Result<(), Error> {
         ethereum_l1.clone(),
         taiko.clone(),
         metrics.clone(),
+        funds_monitor::Thresholds {
+            eth: config.threshold_eth,
+            taiko: config.threshold_taiko,
+        },
+        config.amount_to_bridge_from_l2_to_l1,
         cancel_token.clone(),
     );
     funds_monitor.run();
