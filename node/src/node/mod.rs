@@ -667,7 +667,7 @@ impl Node {
         batches_number: u64,
     ) -> Result<(), Error> {
         let l1_slot = self.ethereum_l1.slot_clock.get_current_slot()?;
-        info!(
+        info!(target: "heartbeat",
             "| Epoch: {:<6} | Slot: {:<2} | L2 Slot: {:<2} | {}{} Batches: {batches_number} | {} |",
             self.ethereum_l1.slot_clock.get_epoch_from_slot(l1_slot),
             self.ethereum_l1.slot_clock.slot_of_epoch(l1_slot),
@@ -686,9 +686,11 @@ impl Node {
             },
             if let Ok(l2_slot_info) = l2_slot_info {
                 format!(
-                    " Fee: {:<7} | L2 height: {:<6} |",
+                    " Fee: {:<7} | L2: {:<6} | Time: {:<10} | Hash: {} |",
                     l2_slot_info.base_fee(),
-                    l2_slot_info.parent_id()
+                    l2_slot_info.parent_id(),
+                    l2_slot_info.slot_timestamp(),
+                    &l2_slot_info.parent_hash().to_string()[..8]
                 )
             } else {
                 " L2 slot info unknown |".to_string()
