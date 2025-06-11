@@ -118,7 +118,7 @@ impl Config {
 
         #[cfg(feature = "extra-gas-percentage")]
         let extra_gas_percentage = std::env::var("EXTRA_GAS_PERCENTAGE")
-            .unwrap_or("5".to_string())
+            .unwrap_or("20".to_string())
             .parse::<u64>()
             .expect("EXTRA_GAS_PERCENTAGE must be a number");
 
@@ -250,7 +250,7 @@ impl Config {
             .expect("MIN_PRIORITY_FEE_PER_GAS_WEI must be a number");
 
         let tx_fees_increase_percentage = std::env::var("TX_FEES_INCREASE_PERCENTAGE")
-            .unwrap_or("20".to_string())
+            .unwrap_or("10".to_string())
             .parse::<u64>()
             .expect("TX_FEES_INCREASE_PERCENTAGE must be a number");
 

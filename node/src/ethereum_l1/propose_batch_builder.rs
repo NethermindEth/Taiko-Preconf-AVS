@@ -1,5 +1,5 @@
-use crate::ethereum_l1::{
-    l1_contracts_bindings::*, transaction_error::TransactionError, ws_provider::WsProvider,
+use super::{
+    l1_contracts_bindings::*, tools, transaction_error::TransactionError, ws_provider::WsProvider,
 };
 use alloy::{
     network::{TransactionBuilder, TransactionBuilder4844},
@@ -184,6 +184,9 @@ impl ProposeBatchBuilder {
         // TimestampTooLarge or ZeroAnchorBlockHash contract error
         if err_str.contains("0x3d32ffdb") || err_str.contains("0x2b44f010") {
             return TransactionError::EstimationTooEarly;
+        }
+        if tools::check_for_insufficient_funds(&err_str) {
+            return TransactionError::InsufficientFunds;
         }
         TransactionError::EstimationFailed
     }
