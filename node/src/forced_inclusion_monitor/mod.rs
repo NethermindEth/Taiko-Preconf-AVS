@@ -22,7 +22,7 @@ use forced_inclusion_data::ForcedInclusionData;
 use crate::utils::event_listener::listen_for_event;
 
 const MESSAGE_QUEUE_SIZE: usize = 20;
-const SLEEP_DURATION: Duration = Duration::from_secs(15);
+const RECONNECTION_DELAY: Duration = Duration::from_secs(15);
 
 pub struct ForcedInclusionMonitor {
     ws_rpc_url: String,
@@ -70,8 +70,6 @@ impl ForcedInclusionMonitor {
 
     /// Spawns the event listeners and the message handler.
     pub async fn start(&self) -> Result<(), Error> {
-        debug!("Starting ReorgDetector");
-
         //ForcedInclusionStored events
         let (forced_inclusion_stored_tx, forced_inclusion_stored_rx) =
             mpsc::channel(MESSAGE_QUEUE_SIZE);
@@ -114,7 +112,7 @@ impl ForcedInclusionMonitor {
                 |log| Ok(ForcedInclusionStored::decode_log(&log.inner)?.data),
                 forced_inclusion_stored_tx,
                 cancel_token,
-                SLEEP_DURATION,
+                RECONNECTION_DELAY,
             )
             .await;
         });
@@ -139,7 +137,7 @@ impl ForcedInclusionMonitor {
                 |log| Ok(ForcedInclusionConsumed::decode_log(&log.inner)?.data),
                 forced_inclusion_consumed_tx,
                 cancel_token,
-                SLEEP_DURATION,
+                RECONNECTION_DELAY,
             )
             .await;
         });
@@ -167,7 +165,6 @@ impl ForcedInclusionMonitor {
                         stored.forcedInclusion.blobCreatedIn
                     );
                     let mut next_forced_inclusion_data_lock = next_forced_inclusion_data.lock().await;
-                    // start a new decoding thread
                     if !next_forced_inclusion_data_lock.is_data_ready() && !next_forced_inclusion_data_lock.is_decoding_in_progress() {
                         if next_forced_inclusion_data_lock.index != 0 || next_forced_inclusion_data_lock.txs_list.is_some() {
                             warn!("Unexpected store value at index {}", next_forced_inclusion_data_lock.index);
@@ -189,12 +186,7 @@ impl ForcedInclusionMonitor {
                         consumed.forcedInclusion.blobCreatedIn
                     );
                     if let Some(front) = queue.lock().await.pop_front() {
-                        if front.blobCreatedIn != consumed.forcedInclusion.blobCreatedIn ||
-                           front.createdAtBatchId != consumed.forcedInclusion.createdAtBatchId ||
-                           front.feeInGwei != consumed.forcedInclusion.feeInGwei ||
-                           front.blobByteOffset != consumed.forcedInclusion.blobByteOffset ||
-                           front.blobByteSize != consumed.forcedInclusion.blobByteSize ||
-                           front.blobHash != consumed.forcedInclusion.blobHash {
+                        if front != consumed.forcedInclusion {
                             error!("Expected Consumed ForcedInclusion at block {}, got block {}", front.blobCreatedIn, consumed.forcedInclusion.blobCreatedIn);
                             cancel_token.cancel();
                         }

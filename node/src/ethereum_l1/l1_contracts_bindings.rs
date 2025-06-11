@@ -143,4 +143,15 @@ pub mod forced_inclusion_store {
             function getForcedInclusion(uint256 index) external view returns (ForcedInclusion memory);
         }
     );
+
+    impl PartialEq for IForcedInclusionStore::ForcedInclusion {
+        fn eq(&self, other: &Self) -> bool {
+            self.blobHash == other.blobHash
+                && self.feeInGwei == other.feeInGwei
+                && self.createdAtBatchId == other.createdAtBatchId
+                && self.blobByteOffset == other.blobByteOffset
+                && self.blobByteSize == other.blobByteSize
+                && self.blobCreatedIn == other.blobCreatedIn
+        }
+    }
 }
