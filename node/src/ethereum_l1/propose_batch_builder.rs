@@ -66,6 +66,7 @@ impl ProposeBatchBuilder {
         last_anchor_origin_height: u64,
         last_block_timestamp: u64,
         coinbase: Address,
+        forced_inclusion: Option<BatchParams>,
     ) -> Result<TransactionRequest, Error> {
         // Build eip4844 transaction
         let tx_blob = self
@@ -77,6 +78,7 @@ impl ProposeBatchBuilder {
                 last_anchor_origin_height,
                 last_block_timestamp,
                 coinbase,
+                &forced_inclusion,
             )
             .await?;
         let tx_blob_gas = match self.provider_ws.estimate_gas(tx_blob.clone()).await {
@@ -131,6 +133,7 @@ impl ProposeBatchBuilder {
                 last_anchor_origin_height,
                 last_block_timestamp,
                 coinbase,
+                &forced_inclusion,
             )
             .await?;
         let tx_calldata_gas = match self.provider_ws.estimate_gas(tx_calldata.clone()).await {
@@ -284,11 +287,16 @@ impl ProposeBatchBuilder {
         last_anchor_origin_height: u64,
         last_block_timestamp: u64,
         coinbase: Address,
+        forced_inclusion: &Option<BatchParams>,
     ) -> Result<TransactionRequest, Error> {
         let tx_list_len = u32::try_from(tx_list.len())?;
         let tx_list = Bytes::from(tx_list);
 
-        let bytes_x = Bytes::new();
+        let bytes_x = if let Some(forced_inclusion) = forced_inclusion {
+            Bytes::from(BatchParams::abi_encode(forced_inclusion))
+        } else {
+            Bytes::new()
+        };
 
         let batch_params = BatchParams {
             proposer: from,
@@ -340,10 +348,15 @@ impl ProposeBatchBuilder {
         last_anchor_origin_height: u64,
         last_block_timestamp: u64,
         coinbase: Address,
+        forced_inclusion: &Option<BatchParams>,
     ) -> Result<TransactionRequest, Error> {
         let tx_list_len = u32::try_from(tx_list.len())?;
 
-        let bytes_x = Bytes::new();
+        let bytes_x = if let Some(forced_inclusion) = forced_inclusion {
+            Bytes::from(BatchParams::abi_encode(forced_inclusion))
+        } else {
+            Bytes::new()
+        };
 
         // Build sidecar
         let sidecar = crate::utils::blob::build_blob_sidecar(tx_list)?;

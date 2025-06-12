@@ -180,6 +180,7 @@ impl ExecutionLayer {
         last_anchor_origin_height: u64,
         coinbase: Address,
         current_l1_slot_timestamp: u64,
+        forced_inclusion: Option<BatchParams>,
     ) -> Result<(), Error> {
         let last_block_timestamp = l2_blocks
             .last()
@@ -252,6 +253,7 @@ impl ExecutionLayer {
                 last_anchor_origin_height,
                 last_block_timestamp,
                 coinbase,
+                forced_inclusion,
             )
             .await?;
 
