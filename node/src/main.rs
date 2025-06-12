@@ -1,8 +1,9 @@
+mod chain_monitor;
 mod crypto;
 mod ethereum_l1;
+mod forced_inclusion_monitor;
 mod metrics;
 mod node;
-mod reorg_detector;
 mod shared;
 mod taiko;
 mod utils;
@@ -53,18 +54,20 @@ async fn main() -> Result<(), Error> {
         info!("Cancellation token triggered, initiating shutdown...");
     }));
 
-    let reorg_detector = Arc::new(reorg_detector::ReorgDetector::new(
+    let chain_monitor = Arc::new(chain_monitor::ChainMonitor::new(
         config.l1_ws_rpc_url.clone(),
         config.taiko_geth_ws_rpc_url.clone(),
         config.contract_addresses.taiko_inbox.clone(),
         cancel_token.clone(),
     )?);
-    reorg_detector.start().await?;
+    chain_monitor.start().await?;
+
+    let forced_inclusion_store = config.contract_addresses.forced_inclusion_store.clone();
 
     let (transaction_error_sender, transaction_error_receiver) = mpsc::channel(100);
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
         ethereum_l1::config::EthereumL1Config {
-            execution_ws_rpc_url: config.l1_ws_rpc_url,
+            execution_ws_rpc_url: config.l1_ws_rpc_url.clone(),
             avs_node_ecdsa_private_key: config.avs_node_ecdsa_private_key,
             contract_addresses: config.contract_addresses,
             consensus_rpc_url: config.l1_beacon_url,
@@ -83,6 +86,17 @@ async fn main() -> Result<(), Error> {
     .await?;
 
     let ethereum_l1 = Arc::new(ethereum_l1);
+
+    let forced_inclusion_monitor = Arc::new(
+        forced_inclusion_monitor::ForcedInclusionMonitor::new(
+            config.l1_ws_rpc_url,
+            forced_inclusion_store,
+            cancel_token.clone(),
+            ethereum_l1.clone(),
+        )
+        .await?,
+    );
+    forced_inclusion_monitor.start().await?;
 
     #[cfg(feature = "test-gas")]
     let args = Args::parse();
@@ -156,7 +170,7 @@ async fn main() -> Result<(), Error> {
         cancel_token.clone(),
         taiko.clone(),
         ethereum_l1.clone(),
-        reorg_detector.clone(),
+        chain_monitor.clone(),
         config.preconf_heartbeat_ms,
         config.handover_window_slots,
         config.handover_start_buffer_ms,

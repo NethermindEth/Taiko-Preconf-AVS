@@ -48,6 +48,7 @@ pub struct L1ContractAddresses {
     pub preconf_whitelist: String,
     pub preconf_router: String,
     pub taiko_wrapper: String,
+    pub forced_inclusion_store: String,
     #[cfg(feature = "extra-gas-percentage")]
     pub extra_gas_percentage: u64,
 }
@@ -105,6 +106,16 @@ impl Config {
             default_empty_address.clone()
         });
 
+        const FORCED_INCLUSION_STORE_ADDRESS: &str = "FORCED_INCLUSION_STORE_ADDRESS";
+        let forced_inclusion_store =
+            std::env::var(FORCED_INCLUSION_STORE_ADDRESS).unwrap_or_else(|_| {
+                warn!(
+                    "No ForcedInclusionStore contract address found in {} env var, using default",
+                    FORCED_INCLUSION_STORE_ADDRESS
+                );
+                default_empty_address.clone()
+            });
+
         #[cfg(feature = "extra-gas-percentage")]
         let extra_gas_percentage = std::env::var("EXTRA_GAS_PERCENTAGE")
             .unwrap_or("50".to_string())
@@ -116,6 +127,7 @@ impl Config {
             preconf_whitelist,
             preconf_router,
             taiko_wrapper,
+            forced_inclusion_store,
             #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage,
         };

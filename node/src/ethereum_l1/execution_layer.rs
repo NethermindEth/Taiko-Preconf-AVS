@@ -1,8 +1,15 @@
 use super::{config::EthereumL1Config, transaction_error::TransactionError};
 use crate::{
     ethereum_l1::{
-        l1_contracts_bindings::*, monitor_transaction::TransactionMonitor,
-        propose_batch_builder::ProposeBatchBuilder, ws_provider::WsProvider,
+        l1_contracts_bindings::{
+            forced_inclusion_store::{
+                IForcedInclusionStore, IForcedInclusionStore::ForcedInclusion,
+            },
+            *,
+        },
+        monitor_transaction::TransactionMonitor,
+        propose_batch_builder::ProposeBatchBuilder,
+        ws_provider::WsProvider,
     },
     metrics,
     shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress},
@@ -11,12 +18,13 @@ use crate::{
 use alloy::{
     eips::BlockNumberOrTag,
     network::EthereumWallet,
-    primitives::{Address, B256},
+    primitives::{Address, B256, U256},
     providers::{Provider, ProviderBuilder, WsConnect},
     signers::local::PrivateKeySigner,
 };
 use anyhow::Error;
 use std::{
+    collections::VecDeque,
     str::FromStr,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -44,6 +52,7 @@ pub struct ContractAddresses {
     pub preconf_whitelist: Address,
     pub preconf_router: Address,
     pub taiko_wrapper: Address,
+    pub forced_inclusion_store: Address,
 }
 
 impl ExecutionLayer {
@@ -119,6 +128,7 @@ impl ExecutionLayer {
         let preconf_whitelist = contract_addresses.preconf_whitelist.parse()?;
         let preconf_router = contract_addresses.preconf_router.parse()?;
         let taiko_wrapper = contract_addresses.taiko_wrapper.parse()?;
+        let forced_inclusion_store = contract_addresses.forced_inclusion_store.parse()?;
 
         let contract = taiko_inbox::ITaikoInbox::new(taiko_inbox, provider);
         let taiko_token = contract
@@ -133,6 +143,7 @@ impl ExecutionLayer {
             preconf_whitelist,
             preconf_router,
             taiko_wrapper,
+            forced_inclusion_store,
         })
     }
 
@@ -363,6 +374,7 @@ impl ExecutionLayer {
                 preconf_whitelist: Address::ZERO,
                 preconf_router: Address::ZERO,
                 taiko_wrapper: Address::ZERO,
+                forced_inclusion_store: Address::ZERO,
             },
             pacaya_config: taiko_inbox::ITaikoInbox::Config {
                 chainId: 1,
@@ -547,6 +559,36 @@ impl ExecutionLayer {
                 block_number_or_tag
             ))?;
         Ok(block.header.timestamp)
+    }
+
+    pub async fn get_forced_incusion_store_data(&self) -> Result<VecDeque<ForcedInclusion>, Error> {
+        let contract = IForcedInclusionStore::new(
+            self.contract_addresses.forced_inclusion_store,
+            self.provider_ws.clone(),
+        );
+        let head = contract.head().call().await?;
+        let tail = contract.tail().call().await?;
+        let cur_block_hash = if let Some(cur_block) = self
+            .provider_ws
+            .get_block_by_number(BlockNumberOrTag::Latest)
+            .await?
+        {
+            cur_block.header.hash
+        } else {
+            return Err(anyhow::anyhow!("Failed to get current block hash"));
+        };
+
+        let mut forced_inclusion_store = VecDeque::with_capacity((tail - head).try_into()?);
+        for i in head..tail {
+            let fi = contract
+                .getForcedInclusion(U256::from(i))
+                .block(cur_block_hash.into())
+                .call()
+                .await?;
+            forced_inclusion_store.push_back(fi);
+        }
+
+        Ok(forced_inclusion_store)
     }
 }
 
