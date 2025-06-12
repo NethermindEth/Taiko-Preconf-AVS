@@ -416,9 +416,9 @@ impl Node {
             }
         }
 
-        if current_status.is_submitter() {
+        if current_status.is_submitter() && !transaction_in_progress {
             // first check verifier
-            if self.has_verified_unproposed_batches().await? && !transaction_in_progress {
+            if self.has_verified_unproposed_batches().await? {
                 if let Err(err) = self
                     .batch_manager
                     .try_submit_oldest_batch(current_status.is_preconfer())
