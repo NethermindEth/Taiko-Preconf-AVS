@@ -272,7 +272,7 @@ impl L2ExecutionLayer {
 
     pub async fn transfer_eth_from_l2_to_l1(
         &self,
-        amount: u64,
+        amount: u128,
         dest_chain_id: u64,
         preconfer_address: Address,
         base_fee: u64,
@@ -323,7 +323,7 @@ impl L2ExecutionLayer {
         let fee = base_fee * u64::from(gas_estimate_safe);
         message.gasLimit = gas_estimate_safe;
         message.fee = fee;
-        message.value = Uint::<256, 4>::from(amount + fee);
+        message.value = Uint::<256, 4>::from(amount + u128::from(fee));
 
         let tx = contract.sendMessage(message).send().await?;
         let receipt = tx.get_receipt().await?;

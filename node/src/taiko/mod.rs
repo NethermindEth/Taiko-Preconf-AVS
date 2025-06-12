@@ -414,7 +414,7 @@ impl Taiko {
             .await
     }
 
-    pub async fn transfer_eth_from_l2_to_l1(&self, amount: u64) -> Result<(), Error> {
+    pub async fn transfer_eth_from_l2_to_l1(&self, amount: u128) -> Result<(), Error> {
         let base_fee = self.ethereum_l1.execution_layer.get_base_fee().await?;
         // let l2_slot_info = self.get_l2_slot_info().await?;
         self.l2_execution_layer

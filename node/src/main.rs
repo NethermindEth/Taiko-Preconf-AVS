@@ -181,10 +181,8 @@ async fn main() -> Result<(), Error> {
         ethereum_l1.clone(),
         taiko.clone(),
         metrics.clone(),
-        funds_monitor::Thresholds {
-            eth: config.threshold_eth,
-            taiko: config.threshold_taiko,
-        },
+        config.threshold_eth,
+        config.threshold_taiko,
         config.amount_to_bridge_from_l2_to_l1,
         cancel_token.clone(),
     );
