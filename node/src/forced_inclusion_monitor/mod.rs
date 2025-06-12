@@ -222,7 +222,7 @@ impl ForcedInclusionMonitor {
     #[allow(dead_code)]
     pub async fn get_next_forced_inclusion_data(&self) -> Option<ForcedInclusionInfo> {
         let mut next_forced_inclusion_data_lock = self.forced_inclusion_data.lock().await;
-        if !next_forced_inclusion_data_lock.is_data_exsist() {
+        if !next_forced_inclusion_data_lock.is_data_exist() {
             debug!("next_forced_inclusion_data does not exist");
             return None;
         }

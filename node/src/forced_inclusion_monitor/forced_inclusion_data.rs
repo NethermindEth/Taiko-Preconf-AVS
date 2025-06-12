@@ -31,7 +31,7 @@ impl ForcedInclusionData {
         self.txs_list.is_some()
     }
 
-    pub fn is_data_exsist(&self) -> bool {
+    pub fn is_data_exist(&self) -> bool {
         self.index < self.queue.len()
     }
 
