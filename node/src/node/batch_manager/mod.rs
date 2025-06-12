@@ -2,6 +2,7 @@ pub mod batch_builder;
 
 use crate::{
     ethereum_l1::EthereumL1,
+    forced_inclusion_monitor::ForcedInclusionMonitor,
     shared::{l2_block::L2Block, l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
     taiko::{
         self, Taiko, operation_type::OperationType, preconf_blocks::BuildPreconfBlockResponse,
@@ -48,6 +49,7 @@ pub struct BatchManager {
     ethereum_l1: Arc<EthereumL1>,
     pub taiko: Arc<Taiko>,
     l1_height_lag: u64,
+    forced_inclusion_monitor: Arc<ForcedInclusionMonitor>,
 }
 
 impl BatchManager {
@@ -56,12 +58,14 @@ impl BatchManager {
         config: BatchBuilderConfig,
         ethereum_l1: Arc<EthereumL1>,
         taiko: Arc<Taiko>,
+        forced_inclusion_monitor: Arc<ForcedInclusionMonitor>,
     ) -> Self {
         Self {
             batch_builder: BatchBuilder::new(config, ethereum_l1.slot_clock.clone()),
             ethereum_l1,
             taiko,
             l1_height_lag,
+            forced_inclusion_monitor,
         }
     }
 
@@ -153,8 +157,14 @@ impl BatchManager {
         l2_slot_info: L2SlotInfo,
     ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
         let l2_block = L2Block::new_from(pending_tx_list, l2_slot_info.slot_timestamp());
-        self.add_new_l2_block(l2_block, l2_slot_info, false, OperationType::Reanchor)
-            .await
+        self.add_new_l2_block(
+            l2_block,
+            l2_slot_info,
+            false,
+            OperationType::Reanchor,
+            false,
+        )
+        .await
     }
 
     pub async fn preconfirm_block(
@@ -162,6 +172,7 @@ impl BatchManager {
         pending_tx_list: Option<PreBuiltTxList>,
         l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
+        can_do_forced_inclusion: bool,
     ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
         let result = if let Some(pending_tx_list) = pending_tx_list {
             // Handle the pending tx list from taiko geth
@@ -176,6 +187,7 @@ impl BatchManager {
                 l2_slot_info,
                 end_of_sequencing,
                 OperationType::Preconfirm,
+                can_do_forced_inclusion,
             )
             .await?
         } else if self.is_empty_block_required(l2_slot_info.slot_timestamp()) {
@@ -187,6 +199,7 @@ impl BatchManager {
                 l2_slot_info,
                 end_of_sequencing,
                 OperationType::Preconfirm,
+                can_do_forced_inclusion,
             )
             .await?
         } else if end_of_sequencing {
@@ -197,6 +210,7 @@ impl BatchManager {
                 l2_slot_info,
                 end_of_sequencing,
                 OperationType::Preconfirm,
+                can_do_forced_inclusion,
             )
             .await?
         } else {
@@ -222,6 +236,7 @@ impl BatchManager {
         l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
         operation_type: OperationType,
+        can_do_forced_inclusion: bool,
     ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
         info!(
             "Adding new L2 block id: {}, timestamp: {}, parent gas used: {}",
@@ -229,14 +244,74 @@ impl BatchManager {
             l2_slot_info.slot_timestamp(),
             l2_slot_info.parent_gas_used()
         );
-        let anchor_block_id: u64 = self.consume_l2_block(l2_block.clone()).await?;
+        let (anchor_block_id, new_batch_created) = self.consume_l2_block(l2_block.clone()).await?;
+
+        if can_do_forced_inclusion && new_batch_created {
+            // get current forced inclusion
+            let start = std::time::Instant::now();
+            let forced_inclusion = self
+                .forced_inclusion_monitor
+                .get_next_forced_inclusion_data()
+                .await;
+            debug!(
+                "Got forced inclusion in {} milliseconds",
+                start.elapsed().as_millis()
+            );
+            if let Some(forced_inclusion) = forced_inclusion {
+                let forced_inclusion_batch = self
+                    .ethereum_l1
+                    .execution_layer
+                    .build_forced_inclusion_batch(
+                        self.batch_builder.get_config().default_coinbase,
+                        anchor_block_id,
+                        l2_slot_info.slot_timestamp(),
+                        &forced_inclusion,
+                    );
+                // preconfirm
+                let forced_inclusion_block = L2Block {
+                    prebuilt_tx_list: PreBuiltTxList {
+                        tx_list: forced_inclusion.txs,
+                        estimated_gas_used: 0,
+                        bytes_length: 0,
+                    },
+                    timestamp_sec: l2_slot_info.slot_timestamp(),
+                };
+                match self
+                    .taiko
+                    .advance_head_to_new_l2_block(
+                        forced_inclusion_block,
+                        anchor_block_id,
+                        &l2_slot_info,
+                        end_of_sequencing,
+                        operation_type.clone(),
+                    )
+                    .await
+                {
+                    Ok(preconfed_block) => debug!(
+                        "Preconfirmed forced inclusion L2 block: {:?}",
+                        preconfed_block
+                    ),
+                    Err(err) => {
+                        error!(
+                            "Failed to advance head to new forced inclusion L2 block: {}",
+                            err
+                        );
+                        self.remove_last_l2_block();
+                        return Ok(None);
+                    }
+                }
+                // set it to batch builder
+                self.batch_builder
+                    .set_forced_inclusion(forced_inclusion_batch);
+            }
+        }
 
         match self
             .taiko
             .advance_head_to_new_l2_block(
                 l2_block,
                 anchor_block_id,
-                l2_slot_info,
+                &l2_slot_info,
                 end_of_sequencing,
                 operation_type,
             )
@@ -251,29 +326,33 @@ impl BatchManager {
         }
     }
 
-    pub async fn consume_l2_block(&mut self, l2_block: L2Block) -> Result<u64, Error> {
+    pub async fn consume_l2_block(&mut self, l2_block: L2Block) -> Result<(u64, bool), Error> {
         // If the L2 block can be added to the current batch, do so
-        let anchor_block_id = if self.batch_builder.can_consume_l2_block(&l2_block) {
-            self.batch_builder
-                .add_l2_block_and_get_current_anchor_block_id(l2_block)?
-        } else {
-            // Otherwise, calculate the anchor block ID and create a new batch
-            let anchor_block_id = self.calculate_anchor_block_id().await?;
-            let anchor_block_timestamp_sec = self
-                .ethereum_l1
-                .execution_layer
-                .get_block_timestamp_by_number(anchor_block_id)
-                .await?;
-            // Add the L2 block to the new batch
-            self.batch_builder.create_new_batch_and_add_l2_block(
-                anchor_block_id,
-                anchor_block_timestamp_sec,
-                l2_block,
-                None,
-            );
-            anchor_block_id
-        };
-        Ok(anchor_block_id)
+        let (anchor_block_id, new_batch_created) =
+            if self.batch_builder.can_consume_l2_block(&l2_block) {
+                (
+                    self.batch_builder
+                        .add_l2_block_and_get_current_anchor_block_id(l2_block)?,
+                    false,
+                )
+            } else {
+                // Otherwise, calculate the anchor block ID and create a new batch
+                let anchor_block_id = self.calculate_anchor_block_id().await?;
+                let anchor_block_timestamp_sec = self
+                    .ethereum_l1
+                    .execution_layer
+                    .get_block_timestamp_by_number(anchor_block_id)
+                    .await?;
+                // Add the L2 block to the new batch
+                self.batch_builder.create_new_batch_and_add_l2_block(
+                    anchor_block_id,
+                    anchor_block_timestamp_sec,
+                    l2_block,
+                    None,
+                );
+                (anchor_block_id, true)
+            };
+        Ok((anchor_block_id, new_batch_created))
     }
 
     fn remove_last_l2_block(&mut self) {
@@ -345,6 +424,7 @@ impl BatchManager {
             ethereum_l1: self.ethereum_l1.clone(),
             taiko: self.taiko.clone(),
             l1_height_lag: self.l1_height_lag,
+            forced_inclusion_monitor: self.forced_inclusion_monitor.clone(),
         }
     }
 

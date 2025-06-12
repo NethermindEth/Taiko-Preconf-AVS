@@ -2,15 +2,14 @@ use super::{config::EthereumL1Config, transaction_error::TransactionError};
 use crate::{
     ethereum_l1::{
         l1_contracts_bindings::{
-            forced_inclusion_store::{
-                IForcedInclusionStore, IForcedInclusionStore::ForcedInclusion,
-            },
+            forced_inclusion_store::IForcedInclusionStore::{self, ForcedInclusion},
             *,
         },
         monitor_transaction::TransactionMonitor,
         propose_batch_builder::ProposeBatchBuilder,
         ws_provider::WsProvider,
     },
+    forced_inclusion_monitor::ForcedInclusionInfo,
     metrics,
     shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress},
     utils::{config, types::*},
@@ -589,6 +588,22 @@ impl ExecutionLayer {
         }
 
         Ok(forced_inclusion_store)
+    }
+
+    pub fn build_forced_inclusion_batch(
+        &self,
+        coinbase: Address,
+        last_anchor_origin_height: u64,
+        last_l2_block_timestamp: u64,
+        info: &ForcedInclusionInfo,
+    ) -> BatchParams {
+        ProposeBatchBuilder::build_forced_inclusion_batch(
+            self.preconfer_address,
+            coinbase,
+            last_anchor_origin_height,
+            last_l2_block_timestamp,
+            info,
+        )
     }
 }
 

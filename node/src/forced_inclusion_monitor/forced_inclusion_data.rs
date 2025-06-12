@@ -1,10 +1,11 @@
 use alloy::rpc::types::Transaction;
 use tokio::task::JoinHandle;
 
+use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::ethereum_l1::EthereumL1;
 use crate::ethereum_l1::l1_contracts_bindings::forced_inclusion_store::IForcedInclusionStore::ForcedInclusion;
@@ -16,6 +17,7 @@ pub struct ForcedInclusionData {
     pub txs_list: Option<Vec<Transaction>>,
     pub blob_decoding_handle: Option<JoinHandle<()>>,
     pub blob_decoding_token: Option<CancellationToken>,
+    pub queue: VecDeque<ForcedInclusion>,
 }
 
 impl ForcedInclusionData {
@@ -27,6 +29,10 @@ impl ForcedInclusionData {
 
     pub fn is_data_ready(&self) -> bool {
         self.txs_list.is_some()
+    }
+
+    pub fn is_data_exsist(&self) -> bool {
+        self.index < self.queue.len()
     }
 
     async fn cancel_current_task(&mut self) {
@@ -50,12 +56,28 @@ impl ForcedInclusionData {
         self.txs_list = None;
     }
 
-    pub fn decode(
+    pub fn try_decode(
         &mut self,
-        forced_inclusion: ForcedInclusion,
         ethereum_l1: Arc<EthereumL1>,
         next_forced_inclusion_data: Arc<Mutex<ForcedInclusionData>>,
-    ) {
+    ) -> bool {
+        if self.is_decoding_in_progress() {
+            warn!("ForcedInclusion decoding is already in progress");
+            return false;
+        }
+
+        let forced_inclusion = match self.queue.get(self.index) {
+            Some(forced_inclusion) => forced_inclusion.clone(),
+            None => {
+                debug!(
+                    "No forced_inclusion at index {} length {}",
+                    self.index,
+                    self.queue.len()
+                );
+                return false;
+            }
+        };
+
         let decoding_token = CancellationToken::new();
         self.blob_decoding_token = Some(decoding_token.clone());
 
@@ -87,5 +109,7 @@ impl ForcedInclusionData {
             }
         });
         self.blob_decoding_handle = Some(handle);
+
+        true
     }
 }
