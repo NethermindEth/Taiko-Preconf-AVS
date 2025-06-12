@@ -314,6 +314,14 @@ impl Node {
         let (l2_slot_info, current_status, pending_tx_list) =
             self.get_slot_info_and_status().await?;
 
+        // Get the transaction status before checking the error channel
+        // to avoid race condition
+        let transaction_in_progress = self
+            .ethereum_l1
+            .execution_layer
+            .is_transaction_in_progress()
+            .await?;
+
         self.check_transaction_error_channel(&current_status)
             .await?;
 
@@ -410,7 +418,7 @@ impl Node {
 
         if current_status.is_submitter() {
             // first check verifier
-            if self.has_verified_unproposed_batches().await? {
+            if self.has_verified_unproposed_batches().await? && !transaction_in_progress {
                 if let Err(err) = self
                     .batch_manager
                     .try_submit_oldest_batch(current_status.is_preconfer())
