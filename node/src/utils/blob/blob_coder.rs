@@ -1,8 +1,5 @@
-use alloy::{
-    consensus::{Blob, SidecarCoder, utils::WholeFe},
-    eips::eip4844::{BYTES_PER_BLOB, FIELD_ELEMENT_BYTES_USIZE, builder::PartialSidecar},
-};
-use anyhow::{Error, anyhow};
+use alloy::{consensus::Blob, eips::eip4844::BYTES_PER_BLOB};
+use anyhow::Error;
 
 use super::constants::{ENCODING_VERSION, MAX_BLOB_DATA_SIZE, ROUNDS};
 
