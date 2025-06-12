@@ -313,7 +313,7 @@ async fn wait_for_the_termination(cancel_token: CancellationToken, shutdown_dela
 }
 
 fn init_logging() {
-    use tracing_subscriber::{EnvFilter, fmt};
+    use tracing_subscriber::{EnvFilter, filter::FilterFn, fmt, prelude::*};
 
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         EnvFilter::new("debug")
@@ -359,5 +359,45 @@ fn init_logging() {
             )
     });
 
-    fmt().with_env_filter(filter).init();
+    // Create a custom formatter for heartbeat logs
+    let heartbeat_format = fmt::format()
+        .with_timer(fmt::time::time())
+        .with_target(false)
+        .with_level(false)
+        .with_thread_ids(false)
+        .with_thread_names(false)
+        .with_file(false)
+        .with_line_number(false);
+
+    // Create a standard formatter for all other logs
+    let standard_format = fmt::format()
+        .with_timer(fmt::time::time())
+        .with_target(true)
+        .with_level(true)
+        .with_thread_ids(false)
+        .with_thread_names(false)
+        .with_file(false)
+        .with_line_number(false);
+
+    // Create a layered subscriber that uses different formatters based on the target
+    let subscriber = tracing_subscriber::registry()
+        .with(filter)
+        .with(
+            fmt::Layer::default()
+                .with_writer(std::io::stdout)
+                .event_format(standard_format)
+                .with_filter(FilterFn::new(|metadata: &tracing::Metadata<'_>| {
+                    !metadata.target().contains("heartbeat")
+                })),
+        )
+        .with(
+            fmt::Layer::default()
+                .with_writer(std::io::stdout)
+                .event_format(heartbeat_format)
+                .with_filter(FilterFn::new(|metadata: &tracing::Metadata<'_>| {
+                    metadata.target().contains("heartbeat")
+                })),
+        );
+
+    subscriber.init();
 }
