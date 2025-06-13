@@ -185,7 +185,7 @@ impl Config {
         let taiko_anchor_address = std::env::var("TAIKO_ANCHOR_ADDRESS")
             .unwrap_or("0x1670010000000000000000000000000000010001".to_string());
 
-        const BRIDGE_ADDRESS: &str = "BRIDGE_ADDRESS";
+        const BRIDGE_ADDRESS: &str = "TAIKO_BRIDGE_L2_ADDRESS";
         let taiko_bridge_address = std::env::var(BRIDGE_ADDRESS).unwrap_or_else(|_| {
             warn!(
                 "No Bridge contract address found in {} env var, using default",
