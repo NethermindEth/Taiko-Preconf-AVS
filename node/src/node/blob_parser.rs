@@ -13,8 +13,17 @@ pub async fn extract_transactions_from_blob(
     tx_list_offset: u32,
     tx_list_size: u32,
 ) -> Result<Vec<Transaction>, Error> {
+    let start = std::time::Instant::now();
     let v = blob_to_vec(ethereum_l1, block, blob_hash, tx_list_offset, tx_list_size).await?;
+    tracing::debug!(
+        "extract_transactions_from_blob: Blob conversion took {} ms",
+        start.elapsed().as_millis()
+    );
     let txs = uncompress_and_decode(v.as_slice())?;
+    tracing::debug!(
+        "extract_transactions_from_blob: Decompression and decoding took {} ms",
+        start.elapsed().as_millis()
+    );
     Ok(txs)
 }
 

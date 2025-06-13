@@ -227,7 +227,7 @@ impl Taiko {
         &self,
         l2_block: L2Block,
         anchor_origin_height: u64,
-        l2_slot_info: L2SlotInfo,
+        l2_slot_info: &L2SlotInfo,
         end_of_sequencing: bool,
         operation_type: OperationType,
     ) -> Result<Option<preconf_blocks::BuildPreconfBlockResponse>, Error> {

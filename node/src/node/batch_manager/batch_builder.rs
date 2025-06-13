@@ -1,7 +1,10 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use crate::{
-    ethereum_l1::{EthereumL1, slot_clock::SlotClock, transaction_error::TransactionError},
+    ethereum_l1::{
+        EthereumL1, l1_contracts_bindings::BatchParams, slot_clock::SlotClock,
+        transaction_error::TransactionError,
+    },
     shared::l2_block::L2Block,
 };
 use alloy::primitives::Address;
@@ -12,6 +15,7 @@ use super::BatchBuilderConfig;
 
 #[derive(Default)]
 pub struct Batch {
+    pub forced_inclusion: Option<BatchParams>,
     pub l2_blocks: Vec<L2Block>,
     pub total_bytes: u64,
     pub coinbase: Address,
@@ -86,6 +90,7 @@ impl BatchBuilder {
     ) {
         self.finalize_current_batch();
         self.current_batch = Some(Batch {
+            forced_inclusion: None,
             total_bytes: l2_block.prebuilt_tx_list.bytes_length,
             l2_blocks: vec![l2_block],
             anchor_block_id,
@@ -147,6 +152,8 @@ impl BatchBuilder {
         {
             self.finalize_current_batch();
             self.current_batch = Some(Batch {
+                // TODO fix recover, None is not correct
+                forced_inclusion: None,
                 total_bytes: 0,
                 l2_blocks: vec![],
                 anchor_block_id,
@@ -251,6 +258,7 @@ impl BatchBuilder {
                     batch.anchor_block_id,
                     batch.coinbase,
                     self.slot_clock.get_current_slot_begin_timestamp()?,
+                    batch.forced_inclusion.clone(),
                 )
                 .await
             {
@@ -340,6 +348,16 @@ impl BatchBuilder {
     pub fn prepend_batches(&mut self, mut batches: VecDeque<Batch>) {
         batches.append(&mut self.batches_to_send);
         self.batches_to_send = batches;
+    }
+
+    pub fn set_forced_inclusion(&mut self, forced_inclusion: BatchParams) -> bool {
+        match self.current_batch {
+            Some(ref mut batch) => {
+                batch.forced_inclusion = Some(forced_inclusion);
+                true
+            }
+            None => false,
+        }
     }
 }
 
