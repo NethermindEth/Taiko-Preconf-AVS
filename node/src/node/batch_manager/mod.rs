@@ -257,6 +257,8 @@ impl BatchManager {
                 "Got forced inclusion in {} milliseconds",
                 start.elapsed().as_millis()
             );
+
+            // TODO ForcedInclusion handle the situation where we have only forced inclusion in the batch builder
             if let Some(forced_inclusion) = forced_inclusion {
                 let forced_inclusion_batch = self
                     .ethereum_l1
