@@ -310,10 +310,13 @@ impl L2ExecutionLayer {
         };
 
         // processMessage is called on L1, here we just estimate the gas
-        let gas_estimate = contract
-            .processMessage(message.clone(), Bytes::from([0u8; RELAYER_MAX_PROOF_BYTES]))
-            .estimate_gas()
-            .await?;
+        let gas_estimate = 831917u64;
+
+        // to muszę wywoałać na L1
+        // contract
+        //     .processMessage(message.clone(), Bytes::from([0u8; RELAYER_MAX_PROOF_BYTES]))
+        //     .estimate_gas()
+        //     .await?;
         debug!("processMessage gas estimate: {}", gas_estimate);
         let gas_estimate_safe = gas_estimate
             .saturating_add(100_000)
@@ -323,9 +326,13 @@ impl L2ExecutionLayer {
         let fee = base_fee * u64::from(gas_estimate_safe);
         message.gasLimit = gas_estimate_safe;
         message.fee = fee;
-        message.value = Uint::<256, 4>::from(amount + u128::from(fee));
+        message.value = Uint::<256, 4>::from(amount);
 
-        let tx = contract.sendMessage(message).send().await?;
+        let tx = contract
+            .sendMessage(message)
+            .value(Uint::<256, 4>::from(amount + u128::from(fee)))
+            .send()
+            .await?;
         let receipt = tx.get_receipt().await?;
         info!("Receipt: {:?}", receipt);
 
