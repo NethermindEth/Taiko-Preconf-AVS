@@ -73,7 +73,10 @@ impl ExecutionLayer {
             ProviderBuilder::new()
                 .wallet(wallet)
                 .connect_ws(ws.clone())
-                .await?,
+                .await
+                .map_err(|e| {
+                    Error::msg(format!("Execution layer: Failed to connect to WS: {}", e))
+                })?,
         );
 
         let contract_addresses =
