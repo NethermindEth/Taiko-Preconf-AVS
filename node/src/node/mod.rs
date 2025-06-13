@@ -397,15 +397,32 @@ impl Node {
                     "Unexpected L2 head detected. Restarting node..."
                 ));
             }
-            if let Some(block) = self
+            let (forced_inclusion_block, block) = self
                 .preconfirm_block(
                     pending_tx_list,
                     l2_slot_info,
                     current_status.is_end_of_sequencing(),
                     current_status.is_submitter() && self.verifier.is_none(),
                 )
-                .await?
-            {
+                .await?;
+            if let Some(forced_inclusion_block) = forced_inclusion_block {
+                if !self
+                    .head_verifier
+                    .verify_next_and_set(
+                        forced_inclusion_block.number,
+                        forced_inclusion_block.hash,
+                        forced_inclusion_block.parent_hash,
+                    )
+                    .await
+                {
+                    self.head_verifier.log_error().await;
+                    self.cancel_token.cancel();
+                    return Err(anyhow::anyhow!(
+                        "Unexpected L2 head after forced inclusion preconfirmation. Restarting node..."
+                    ));
+                }
+            }
+            if let Some(block) = block {
                 if !self
                     .head_verifier
                     .verify_next_and_set(block.number, block.hash, block.parent_hash)
@@ -414,7 +431,7 @@ impl Node {
                     self.head_verifier.log_error().await;
                     self.cancel_token.cancel();
                     return Err(anyhow::anyhow!(
-                        "Unexpected L2 head after preconfirmation. Restarting node..."
+                        "Unexpected L2 head after forced inclusion preconfirmation. Restarting node..."
                     ));
                 }
             }
@@ -666,7 +683,13 @@ impl Node {
         l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
         can_do_forced_inclusion: bool,
-    ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
+    ) -> Result<
+        (
+            Option<BuildPreconfBlockResponse>,
+            Option<BuildPreconfBlockResponse>,
+        ),
+        Error,
+    > {
         self.batch_manager
             .preconfirm_block(
                 pending_tx_list,

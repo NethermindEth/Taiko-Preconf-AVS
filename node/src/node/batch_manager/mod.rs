@@ -157,14 +157,27 @@ impl BatchManager {
         l2_slot_info: L2SlotInfo,
     ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
         let l2_block = L2Block::new_from(pending_tx_list, l2_slot_info.slot_timestamp());
-        self.add_new_l2_block(
-            l2_block,
-            l2_slot_info,
-            false,
-            OperationType::Reanchor,
-            false,
-        )
-        .await
+        let id = l2_slot_info.parent_id();
+        let (forced_inclusion_block, block) = self
+            .add_new_l2_block(
+                l2_block,
+                l2_slot_info,
+                false,
+                OperationType::Reanchor,
+                false,
+            )
+            .await?;
+        if forced_inclusion_block.is_some() {
+            error!(
+                "Forced inclusion block unexpectedly created parent_id {}",
+                id
+            );
+            return Err(anyhow::anyhow!(
+                "Forced inclusion block unexpectedly created parent_id {}",
+                id
+            ));
+        };
+        Ok(block)
     }
 
     pub async fn preconfirm_block(
@@ -173,7 +186,13 @@ impl BatchManager {
         l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
         can_do_forced_inclusion: bool,
-    ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
+    ) -> Result<
+        (
+            Option<BuildPreconfBlockResponse>,
+            Option<BuildPreconfBlockResponse>,
+        ),
+        Error,
+    > {
         let result = if let Some(pending_tx_list) = pending_tx_list {
             // Handle the pending tx list from taiko geth
             debug!(
@@ -215,7 +234,7 @@ impl BatchManager {
             .await?
         } else {
             trace!("No pending txs, skipping preconfirmation");
-            None
+            (None, None)
         };
 
         if self
@@ -237,7 +256,13 @@ impl BatchManager {
         end_of_sequencing: bool,
         operation_type: OperationType,
         can_do_forced_inclusion: bool,
-    ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
+    ) -> Result<
+        (
+            Option<BuildPreconfBlockResponse>,
+            Option<BuildPreconfBlockResponse>,
+        ),
+        Error,
+    > {
         info!(
             "Adding new L2 block id: {}, timestamp: {}, parent gas used: {}",
             l2_slot_info.parent_id() + 1,
@@ -247,6 +272,7 @@ impl BatchManager {
         // insert l2 block into batch builder
         let (anchor_block_id, new_batch_created) = self.consume_l2_block(l2_block.clone()).await?;
 
+        let mut forced_inclusion_block_response = None;
         if can_do_forced_inclusion && new_batch_created {
             // get current forced inclusion
             let start = std::time::Instant::now();
@@ -279,7 +305,7 @@ impl BatchManager {
                     },
                     timestamp_sec: l2_slot_info.slot_timestamp(),
                 };
-                match self
+                forced_inclusion_block_response = match self
                     .taiko
                     .advance_head_to_new_l2_block(
                         forced_inclusion_block,
@@ -290,17 +316,20 @@ impl BatchManager {
                     )
                     .await
                 {
-                    Ok(preconfed_block) => debug!(
-                        "Preconfirmed forced inclusion L2 block: {:?}",
+                    Ok(preconfed_block) => {
+                        debug!(
+                            "Preconfirmed forced inclusion L2 block: {:?}",
+                            preconfed_block
+                        );
                         preconfed_block
-                    ),
+                    }
                     Err(err) => {
                         error!(
                             "Failed to advance head to new forced inclusion L2 block: {}",
                             err
                         );
                         self.remove_last_l2_block();
-                        return Ok(None);
+                        return Ok((None, None));
                     }
                 };
                 // set it to batch builder
@@ -311,13 +340,13 @@ impl BatchManager {
                     .taiko
                     .get_l2_slot_info_by_parent_block(alloy::eips::BlockNumberOrTag::Latest)
                     .await?;
-                }
-                info!(
-                    "Adding new L2 block id: {}, timestamp: {}, parent gas used: {}",
-                    l2_slot_info.parent_id() + 1,
-                    l2_slot_info.slot_timestamp(),
-                    l2_slot_info.parent_gas_used()
-                );
+            }
+            info!(
+                "Adding new L2 block id: {}, timestamp: {}, parent gas used: {}",
+                l2_slot_info.parent_id() + 1,
+                l2_slot_info.slot_timestamp(),
+                l2_slot_info.parent_gas_used()
+            );
         }
 
         match self
@@ -331,11 +360,11 @@ impl BatchManager {
             )
             .await
         {
-            Ok(preconfed_block) => Ok(preconfed_block),
+            Ok(preconfed_block) => Ok((forced_inclusion_block_response, preconfed_block)),
             Err(err) => {
                 error!("Failed to advance head to new L2 block: {}", err);
                 self.remove_last_l2_block();
-                Ok(None)
+                Ok((forced_inclusion_block_response, None))
             }
         }
     }
