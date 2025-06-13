@@ -233,7 +233,7 @@ impl BatchManager {
     async fn add_new_l2_block(
         &mut self,
         l2_block: L2Block,
-        l2_slot_info: L2SlotInfo,
+        mut l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
         operation_type: OperationType,
         can_do_forced_inclusion: bool,
@@ -244,6 +244,7 @@ impl BatchManager {
             l2_slot_info.slot_timestamp(),
             l2_slot_info.parent_gas_used()
         );
+        // insert l2 block into batch builder
         let (anchor_block_id, new_batch_created) = self.consume_l2_block(l2_block.clone()).await?;
 
         if can_do_forced_inclusion && new_batch_created {
@@ -284,7 +285,7 @@ impl BatchManager {
                         forced_inclusion_block,
                         anchor_block_id,
                         &l2_slot_info,
-                        end_of_sequencing,
+                        false,
                         operation_type.clone(),
                     )
                     .await
@@ -301,11 +302,22 @@ impl BatchManager {
                         self.remove_last_l2_block();
                         return Ok(None);
                     }
-                }
+                };
                 // set it to batch builder
                 self.batch_builder
                     .set_forced_inclusion(forced_inclusion_batch);
-            }
+                // update slot info for next block
+                l2_slot_info = self
+                    .taiko
+                    .get_l2_slot_info_by_parent_block(alloy::eips::BlockNumberOrTag::Latest)
+                    .await?;
+                }
+                info!(
+                    "Adding new L2 block id: {}, timestamp: {}, parent gas used: {}",
+                    l2_slot_info.parent_id() + 1,
+                    l2_slot_info.slot_timestamp(),
+                    l2_slot_info.parent_gas_used()
+                );
         }
 
         match self
