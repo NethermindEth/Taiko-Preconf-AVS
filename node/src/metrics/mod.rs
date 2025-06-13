@@ -4,6 +4,8 @@ use prometheus::{
 };
 use tracing::error;
 
+pub mod server;
+
 pub struct Metrics {
     preconfer_eth_balance: Gauge,
     preconfer_taiko_balance: Gauge,
