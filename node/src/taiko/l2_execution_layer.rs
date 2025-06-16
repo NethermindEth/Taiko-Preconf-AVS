@@ -1,7 +1,7 @@
 use super::{
     config::{GOLDEN_TOUCH_ADDRESS, GOLDEN_TOUCH_PRIVATE_KEY, TaikoConfig, WsProvider},
     fixed_k_signer_chainbound,
-    l2_contracts_bindings::{LibSharedData, TaikoAnchor, bridge},
+    l2_contracts_bindings::{Bridge, LibSharedData, TaikoAnchor},
 };
 use alloy::{
     consensus::{
@@ -275,11 +275,9 @@ impl L2ExecutionLayer {
         amount: u128,
         dest_chain_id: u64,
         preconfer_address: Address,
-        base_fee: u64,
+        _base_fee: u64,
     ) -> Result<(), Error> {
-        const GAS_LIMIT: u32 = 1_000_000u32; // 831917 from estimation
-        const RELAYER_MAX_PROOF_BYTES: usize = 200_000;
-        let fee = base_fee * u64::from(GAS_LIMIT);
+        const FEE: u64 = 10000;
 
         let ws = WsConnect::new(self.config.taiko_geth_ws_url.to_string());
         let signer: PrivateKeySigner = self.config.avs_node_ecdsa_private_key.parse()?;
@@ -290,51 +288,38 @@ impl L2ExecutionLayer {
             .map_err(|e| anyhow::anyhow!("Taiko::new: Failed to create WebSocket provider: {e}"))?;
 
         info!(
-            "srcChainId: {}, dstChainId: {}",
+            "Transfer ETH from L2 to L1: srcChainId: {}, dstChainId: {}",
             self.chain_id, dest_chain_id
         );
 
-        let contract = bridge::IBridge::new(self.config.taiko_bridge_address, provider_ws);
-        let mut message = bridge::IBridge::Message {
+        let contract = Bridge::new(self.config.taiko_bridge_address, provider_ws);
+        let gas_limit = contract
+            .getMessageMinGasLimit(Uint::<256, 4>::from(0))
+            .call()
+            .await?;
+        debug!("Bridge message gas limit: {}", gas_limit);
+
+        let message = Bridge::Message {
             id: 0,
-            fee,
-            gasLimit: GAS_LIMIT,
+            fee: FEE,
+            gasLimit: gas_limit + 1,
             from: preconfer_address,
             srcChainId: self.chain_id,
             srcOwner: preconfer_address,
             destChainId: dest_chain_id,
             destOwner: preconfer_address,
             to: preconfer_address,
-            value: Uint::<256, 4>::from(1), // for estimate_gas, changed later
+            value: Uint::<256, 4>::from(amount),
             data: Bytes::new(),
         };
 
-        // processMessage is called on L1, here we just estimate the gas
-        let gas_estimate = 831917u64;
-
-        // to muszę wywoałać na L1
-        // contract
-        //     .processMessage(message.clone(), Bytes::from([0u8; RELAYER_MAX_PROOF_BYTES]))
-        //     .estimate_gas()
-        //     .await?;
-        debug!("processMessage gas estimate: {}", gas_estimate);
-        let gas_estimate_safe = gas_estimate
-            .saturating_add(100_000)
-            .try_into()
-            .map_err(|_| Error::msg(format!("Gas estimate {} exceeds u32::MAX", gas_estimate)))?;
-
-        let fee = base_fee * u64::from(gas_estimate_safe);
-        message.gasLimit = gas_estimate_safe;
-        message.fee = fee;
-        message.value = Uint::<256, 4>::from(amount);
-
         let tx = contract
             .sendMessage(message)
-            .value(Uint::<256, 4>::from(amount + u128::from(fee)))
+            .value(Uint::<256, 4>::from(amount + u128::from(FEE)))
             .send()
             .await?;
-        let receipt = tx.get_receipt().await?;
-        info!("Receipt: {:?}", receipt);
+
+        info!("Bridge sendMessage tx hash: {}", tx.tx_hash());
 
         Ok(())
     }
