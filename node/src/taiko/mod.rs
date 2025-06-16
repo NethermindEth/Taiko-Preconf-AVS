@@ -209,7 +209,7 @@ impl Taiko {
             )
             .await?;
 
-        debug!(
+        trace!(
             timestamp = %l2_slot_timestamp,
             parent_hash = %parent_hash,
             parent_gas_used = %parent_gas_used_u32,
@@ -234,7 +234,10 @@ impl Taiko {
         end_of_sequencing: bool,
         operation_type: OperationType,
     ) -> Result<Option<preconf_blocks::BuildPreconfBlockResponse>, Error> {
-        tracing::debug!("Submitting new L2 blocks to the Taiko driver");
+        tracing::debug!(
+            "Submitting new L2 block to the Taiko driver with {} txs",
+            l2_block.prebuilt_tx_list.tx_list.len()
+        );
 
         let anchor_block_state_root = self
             .ethereum_l1
@@ -244,8 +247,6 @@ impl Taiko {
 
         let base_fee_config = self.get_base_fee_config();
         let sharing_pctg = base_fee_config.sharingPctg;
-
-        debug!("processing {} txs", l2_block.prebuilt_tx_list.tx_list.len());
 
         let anchor_tx = self
             .l2_execution_layer
