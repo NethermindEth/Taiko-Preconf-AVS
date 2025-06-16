@@ -503,6 +503,7 @@ impl Node {
                     .reanchor_blocks(
                         taiko_inbox_height,
                         "Anchor offset is too high for unsafe L2 blocks",
+                        false,
                     )
                     .await
                 {
@@ -558,7 +559,7 @@ impl Node {
                         return Ok(false);
                     }
                     VerificationResult::ReanchorNeeded(block, reason) => {
-                        if let Err(err) = self.reanchor_blocks(block, &reason).await {
+                        if let Err(err) = self.reanchor_blocks(block, &reason, false).await {
                             error!("Failed to reanchor blocks: {}", err);
                             self.cancel_token.cancel();
                             return Err(err);
@@ -612,18 +613,35 @@ impl Node {
         match error {
             TransactionError::ReanchorRequired => {
                 if current_status.is_preconfer() && current_status.is_submitter() {
-                    let taiko_inbox_height = self
+                    let taiko_inbox_height = match self
                         .ethereum_l1
                         .execution_layer
                         .get_l2_height_from_taiko_inbox()
-                        .await?;
-                    if let Err(err) = self
-                        .reanchor_blocks(taiko_inbox_height, "Transaction reverted")
                         .await
                     {
-                        error!("Failed to reanchor blocks: {}", err);
+                        Ok(height) => height,
+                        Err(err) => {
+                            error!(
+                                "ReanchorRequired: Failed to get L2 height from Taiko inbox: {}",
+                                err
+                            );
+                            self.cancel_token.cancel();
+                            return Err(anyhow::anyhow!(
+                                "ReanchorRequired: Failed to get L2 height from Taiko inbox: {}",
+                                err
+                            ));
+                        }
+                    };
+                    if let Err(err) = self
+                        .reanchor_blocks(taiko_inbox_height, "Transaction reverted", false)
+                        .await
+                    {
+                        error!("ReanchorRequired: Failed to reanchor blocks: {}", err);
                         self.cancel_token.cancel();
-                        return Err(anyhow::anyhow!("Failed to reanchor blocks: {}", err));
+                        return Err(anyhow::anyhow!(
+                            "ReanchorRequired: Failed to reanchor blocks: {}",
+                            err
+                        ));
                     }
                     return Err(anyhow::anyhow!("Reanchoring done"));
                 } else {
@@ -671,6 +689,44 @@ impl Node {
             TransactionError::TransactionReverted => {
                 self.cancel_token.cancel();
                 return Err(anyhow::anyhow!("Transaction reverted, exiting"));
+            }
+            TransactionError::OldestForcedInclusionDue => {
+                let taiko_inbox_height = match self
+                    .ethereum_l1
+                    .execution_layer
+                    .get_l2_height_from_taiko_inbox()
+                    .await
+                {
+                    Ok(height) => height,
+                    Err(err) => {
+                        error!(
+                            "OldestForcedInclusionDue: Failed to get L2 height from Taiko inbox: {}",
+                            err
+                        );
+                        self.cancel_token.cancel();
+                        return Err(anyhow::anyhow!(
+                            "OldestForcedInclusionDue: Failed to get L2 height from Taiko inbox: {}",
+                            err
+                        ));
+                    }
+                };
+                if let Err(err) = self
+                    .reanchor_blocks(taiko_inbox_height, "OldestForcedInclusionDue", true)
+                    .await
+                {
+                    error!(
+                        "OldestForcedInclusionDue: Failed to reanchor blocks: {}",
+                        err
+                    );
+                    self.cancel_token.cancel();
+                    return Err(anyhow::anyhow!(
+                        "OldestForcedInclusionDue: Failed to reanchor blocks: {}",
+                        err
+                    ));
+                }
+                return Err(anyhow::anyhow!(
+                    "Need to include forced inclusion, reanchoring done, skipping slot"
+                ));
             }
         }
 
@@ -745,10 +801,15 @@ impl Node {
         Ok(())
     }
 
-    async fn reanchor_blocks(&mut self, parent_block_id: u64, reason: &str) -> Result<(), Error> {
+    async fn reanchor_blocks(
+        &mut self,
+        parent_block_id: u64,
+        reason: &str,
+        can_do_forced_inclusion: bool,
+    ) -> Result<(), Error> {
         warn!(
-            "⛓️‍💥 Reanchoring blocks for parent block: {} reason: {}",
-            parent_block_id, reason
+            "⛓️‍💥 Reanchoring blocks for parent block: {} reason: {} can_do_forced_inclusion: {}",
+            parent_block_id, reason, can_do_forced_inclusion
         );
 
         let start_time = std::time::Instant::now();
@@ -763,6 +824,8 @@ impl Node {
         // Update self state
         self.verifier = None;
         self.batch_manager.reset_builder();
+
+        // TODO reset forced_inclusion_monitor
 
         self.chain_monitor.set_expected_reorg(parent_block_id).await;
 
@@ -809,7 +872,7 @@ impl Node {
 
             let block = self
                 .batch_manager
-                .reanchor_block(pending_tx_list, l2_slot_info)
+                .reanchor_block(pending_tx_list, l2_slot_info, can_do_forced_inclusion)
                 .await;
             // if reanchor_block fails restart the node
             if let Ok(Some(block)) = block {

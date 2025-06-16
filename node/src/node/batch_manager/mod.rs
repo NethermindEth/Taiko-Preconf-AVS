@@ -155,6 +155,7 @@ impl BatchManager {
         &mut self,
         pending_tx_list: PreBuiltTxList,
         l2_slot_info: L2SlotInfo,
+        can_do_forced_inclusion: bool,
     ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
         let l2_block = L2Block::new_from(pending_tx_list, l2_slot_info.slot_timestamp());
         let id = l2_slot_info.parent_id();
@@ -164,7 +165,7 @@ impl BatchManager {
                 l2_slot_info,
                 false,
                 OperationType::Reanchor,
-                false,
+                can_do_forced_inclusion,
             )
             .await?;
         if forced_inclusion_block.is_some() {

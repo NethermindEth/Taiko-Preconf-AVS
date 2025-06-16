@@ -9,6 +9,7 @@ pub enum TransactionError {
     TimestampTooLarge,
     InsufficientFunds,
     ReanchorRequired,
+    OldestForcedInclusionDue,
 }
 
 impl std::fmt::Display for TransactionError {
