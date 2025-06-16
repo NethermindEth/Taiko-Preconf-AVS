@@ -1,5 +1,6 @@
 mod crypto;
 mod ethereum_l1;
+mod funds_monitor;
 mod metrics;
 mod node;
 mod reorg_detector;
@@ -9,16 +10,13 @@ mod utils;
 
 use anyhow::Error;
 use metrics::Metrics;
-use node::Thresholds;
 use std::sync::Arc;
 use tokio::{
     signal::unix::{SignalKind, signal},
     sync::mpsc,
-    time::{Duration, sleep},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
-use warp::Filter;
+use tracing::{error, info};
 
 #[cfg(feature = "test-gas")]
 mod test_gas;
@@ -65,7 +63,7 @@ async fn main() -> Result<(), Error> {
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
         ethereum_l1::config::EthereumL1Config {
             execution_ws_rpc_url: config.l1_ws_rpc_url,
-            avs_node_ecdsa_private_key: config.avs_node_ecdsa_private_key,
+            avs_node_ecdsa_private_key: config.avs_node_ecdsa_private_key.clone(),
             contract_addresses: config.contract_addresses,
             consensus_rpc_url: config.l1_beacon_url,
             slot_duration_sec: config.l1_slot_duration_sec,
@@ -107,20 +105,21 @@ async fn main() -> Result<(), Error> {
         taiko::Taiko::new(
             ethereum_l1.clone(),
             metrics.clone(),
-            taiko::config::TaikoConfig {
-                taiko_geth_ws_url: config.taiko_geth_ws_rpc_url,
-                taiko_geth_auth_url: config.taiko_geth_auth_rpc_url,
-                driver_url: config.taiko_driver_url,
+            taiko::config::TaikoConfig::new(
+                config.taiko_geth_ws_rpc_url,
+                config.taiko_geth_auth_rpc_url,
+                config.taiko_driver_url,
                 jwt_secret_bytes,
-                preconfer_address: ethereum_l1.execution_layer.get_preconfer_address(),
-                taiko_anchor_address: config.taiko_anchor_address,
-                max_bytes_per_tx_list: config.max_bytes_per_tx_list,
-                min_bytes_per_tx_list: config.min_bytes_per_tx_list,
-                throttling_factor: config.throttling_factor,
-                rpc_l2_execution_layer_timeout: config.rpc_l2_execution_layer_timeout,
-                rpc_driver_preconf_timeout: config.rpc_driver_preconf_timeout,
-                rpc_driver_status_timeout: config.rpc_driver_status_timeout,
-            },
+                config.taiko_anchor_address,
+                config.taiko_bridge_address,
+                config.max_bytes_per_tx_list,
+                config.min_bytes_per_tx_list,
+                config.throttling_factor,
+                config.rpc_l2_execution_layer_timeout,
+                config.rpc_driver_preconf_timeout,
+                config.rpc_driver_status_timeout,
+                config.avs_node_ecdsa_private_key,
+            )?,
         )
         .await?,
     );
@@ -168,11 +167,7 @@ async fn main() -> Result<(), Error> {
             max_time_shift_between_blocks_sec: config.max_time_shift_between_blocks_sec,
             max_anchor_height_offset: max_anchor_height_offset
                 - config.max_anchor_height_offset_reduction,
-            default_coinbase: ethereum_l1.execution_layer.get_preconfer_address_coinbase(),
-        },
-        Thresholds {
-            eth: config.threshold_eth,
-            taiko: config.threshold_taiko,
+            default_coinbase: ethereum_l1.execution_layer.get_preconfer_alloy_address(),
         },
         config.simulate_not_submitting_at_the_end_of_epoch,
         transaction_error_receiver,
@@ -182,97 +177,22 @@ async fn main() -> Result<(), Error> {
 
     node.entrypoint().await?;
 
-    update_metrics_loop(
+    let funds_monitor = funds_monitor::FundsMonitor::new(
         ethereum_l1.clone(),
-        taiko,
+        taiko.clone(),
         metrics.clone(),
+        config.threshold_eth,
+        config.threshold_taiko,
+        config.amount_to_bridge_from_l2_to_l1,
         cancel_token.clone(),
     );
-    serve_metrics(metrics.clone(), cancel_token.clone());
+    funds_monitor.run();
+
+    metrics::server::serve_metrics(metrics.clone(), cancel_token.clone());
 
     wait_for_the_termination(cancel_token, config.l1_slot_duration_sec).await;
 
     Ok(())
-}
-
-fn update_metrics_loop(
-    ethereum_l1: Arc<ethereum_l1::EthereumL1>,
-    taiko: Arc<taiko::Taiko>,
-    metrics: Arc<Metrics>,
-    cancel_token: CancellationToken,
-) {
-    tokio::spawn(async move {
-        loop {
-            let eth_balance = match ethereum_l1.execution_layer.get_preconfer_wallet_eth().await {
-                Ok(balance) => {
-                    metrics.set_preconfer_eth_balance(balance);
-                    format!("{}", balance)
-                }
-                Err(e) => {
-                    warn!("Failed to get preconfer eth balance: {}", e);
-                    "-".to_string()
-                }
-            };
-            let taiko_balance = match ethereum_l1
-                .execution_layer
-                .get_preconfer_total_bonds()
-                .await
-            {
-                Ok(balance) => {
-                    metrics.set_preconfer_taiko_balance(balance);
-                    format!("{}", balance)
-                }
-                Err(e) => {
-                    warn!("Failed to get preconfer taiko balance: {}", e);
-                    "-".to_string()
-                }
-            };
-
-            let preconfer_address = ethereum_l1.execution_layer.get_preconfer_address_coinbase();
-
-            let l2_eth_balance = match taiko.get_balance(preconfer_address).await {
-                Ok(balance) => {
-                    metrics.set_preconfer_l2_eth_balance(balance);
-                    format!("{}", balance)
-                }
-                Err(e) => {
-                    warn!("Failed to get preconfer l2 eth balance: {}", e);
-                    "-".to_string()
-                }
-            };
-
-            info!(
-                "Balances - ETH: {}, TAIKO: {}, L2 ETH: {}",
-                eth_balance, taiko_balance, l2_eth_balance
-            );
-
-            tokio::select! {
-                _ = sleep(Duration::from_secs(60)) => {},
-                _ = cancel_token.cancelled() => {
-                    info!("Shutdown signal received, exiting metrics loop...");
-                    return;
-                }
-            }
-        }
-    });
-}
-
-fn serve_metrics(metrics: Arc<Metrics>, cancel_token: CancellationToken) {
-    tokio::spawn(async move {
-        let route = warp::path!("metrics").map(move || {
-            let output = metrics.gather();
-            warp::reply::with_header(output, "Content-Type", "text/plain; version=0.0.4")
-        });
-
-        let (addr, server) =
-            warp::serve(route).bind_with_graceful_shutdown(([0, 0, 0, 0], 9898), async move {
-                cancel_token.cancelled().await;
-                info!("Shutdown signal received, stopping metrics server...");
-            });
-
-        info!("Metrics server listening on {}", addr);
-        server.await;
-    });
 }
 
 async fn wait_for_the_termination(cancel_token: CancellationToken, shutdown_delay_secs: u64) {

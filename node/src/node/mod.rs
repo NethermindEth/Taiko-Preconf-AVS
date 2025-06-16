@@ -12,7 +12,6 @@ use crate::{
     shared::{l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
     taiko::{Taiko, preconf_blocks::BuildPreconfBlockResponse},
 };
-use alloy::primitives::U256;
 use anyhow::Error;
 use batch_manager::{BatchBuilderConfig, BatchManager};
 use operator::{Operator, Status as OperatorStatus};
@@ -26,11 +25,6 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 use verifier::VerificationResult;
 
-pub struct Thresholds {
-    pub eth: U256,
-    pub taiko: U256,
-}
-
 pub struct Node {
     cancel_token: CancellationToken,
     ethereum_l1: Arc<EthereumL1>,
@@ -38,7 +32,6 @@ pub struct Node {
     preconf_heartbeat_ms: u64,
     operator: Operator,
     batch_manager: BatchManager,
-    thresholds: Thresholds,
     verifier: Option<verifier::Verifier>,
     taiko: Arc<Taiko>,
     transaction_error_channel: Receiver<TransactionError>,
@@ -59,7 +52,6 @@ impl Node {
         handover_start_buffer_ms: u64,
         l1_height_lag: u64,
         batch_builder_config: BatchBuilderConfig,
-        thresholds: Thresholds,
         simulate_not_submitting_at_the_end_of_epoch: bool,
         transaction_error_channel: Receiver<TransactionError>,
         metrics: Arc<Metrics>,
@@ -99,7 +91,6 @@ impl Node {
             reorg_detector,
             preconf_heartbeat_ms,
             operator,
-            thresholds,
             verifier: None,
             taiko,
             transaction_error_channel,
@@ -142,42 +133,6 @@ impl Node {
 
     async fn warmup(&mut self) -> Result<(), Error> {
         info!("Warmup node");
-
-        // Check TAIKO TOKEN balance
-        let total_balance = self
-            .ethereum_l1
-            .execution_layer
-            .get_preconfer_total_bonds()
-            .await
-            .map_err(|e| Error::msg(format!("Failed to fetch bond balance: {}", e)))?;
-
-        if total_balance < self.thresholds.taiko {
-            anyhow::bail!(
-                "Total balance ({}) is below the required threshold ({})",
-                total_balance,
-                self.thresholds.taiko
-            );
-        }
-
-        info!("Preconfer taiko balance are sufficient: {}", total_balance);
-
-        // Check ETH balance
-        let balance = self
-            .ethereum_l1
-            .execution_layer
-            .get_preconfer_wallet_eth()
-            .await
-            .map_err(|e| Error::msg(format!("Failed to fetch ETH balance: {}", e)))?;
-
-        if balance < self.thresholds.eth {
-            anyhow::bail!(
-                "ETH balance ({}) is below the required threshold ({})",
-                balance,
-                self.thresholds.eth
-            );
-        }
-
-        info!("ETH balance is sufficient ({})", balance);
 
         // Wait for Taiko Geth to synchronize with L1
         let (mut taiko_inbox_height, mut taiko_geth_height) =

@@ -1,4 +1,3 @@
-use crate::utils::types::PreconferAddress;
 use alloy::{
     primitives::{Address, B256},
     providers::{
@@ -6,6 +5,8 @@ use alloy::{
         fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
     },
 };
+use anyhow::Error;
+use std::str::FromStr;
 use std::time::Duration;
 
 pub const GOLDEN_TOUCH_PRIVATE_KEY: B256 = B256::new([
@@ -32,12 +33,48 @@ pub struct TaikoConfig {
     pub taiko_geth_auth_url: String,
     pub driver_url: String,
     pub jwt_secret_bytes: [u8; 32],
-    pub preconfer_address: PreconferAddress,
-    pub taiko_anchor_address: String,
+    pub taiko_anchor_address: Address,
+    pub taiko_bridge_address: Address,
     pub max_bytes_per_tx_list: u64,
     pub min_bytes_per_tx_list: u64,
     pub throttling_factor: u64,
     pub rpc_l2_execution_layer_timeout: Duration,
     pub rpc_driver_preconf_timeout: Duration,
     pub rpc_driver_status_timeout: Duration,
+    pub avs_node_ecdsa_private_key: String,
+}
+
+impl TaikoConfig {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        taiko_geth_ws_url: String,
+        taiko_geth_auth_url: String,
+        driver_url: String,
+        jwt_secret_bytes: [u8; 32],
+        taiko_anchor_address: String,
+        taiko_bridge_address: String,
+        max_bytes_per_tx_list: u64,
+        min_bytes_per_tx_list: u64,
+        throttling_factor: u64,
+        rpc_l2_execution_layer_timeout: Duration,
+        rpc_driver_preconf_timeout: Duration,
+        rpc_driver_status_timeout: Duration,
+        avs_node_ecdsa_private_key: String,
+    ) -> Result<Self, Error> {
+        Ok(Self {
+            taiko_geth_ws_url,
+            taiko_geth_auth_url,
+            driver_url,
+            jwt_secret_bytes,
+            taiko_anchor_address: Address::from_str(&taiko_anchor_address)?,
+            taiko_bridge_address: Address::from_str(&taiko_bridge_address)?,
+            max_bytes_per_tx_list,
+            min_bytes_per_tx_list,
+            throttling_factor,
+            rpc_l2_execution_layer_timeout,
+            rpc_driver_preconf_timeout,
+            rpc_driver_status_timeout,
+            avs_node_ecdsa_private_key,
+        })
+    }
 }

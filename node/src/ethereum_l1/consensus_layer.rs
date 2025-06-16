@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{error::Error as std_error, time::Duration};
 
 use alloy::rpc::types::beacon::sidecar::BeaconBlobBundle;
 use anyhow::Error;
@@ -69,7 +69,11 @@ impl ConsensusLayer {
                 if e.is_timeout() {
                     anyhow::anyhow!("Consensus layer request timed out: {}", path)
                 } else {
-                    anyhow::anyhow!("Consensus layer request failed with error: {}", e)
+                    anyhow::anyhow!(
+                        "Consensus layer request failed with error: {}. Source: {:?}",
+                        e,
+                        e.source()
+                    )
                 }
             })?;
 

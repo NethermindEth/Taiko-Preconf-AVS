@@ -1,4 +1,3 @@
-use alloy::primitives::U256;
 use std::time::Duration;
 use tracing::{info, warn};
 
@@ -22,6 +21,7 @@ pub struct Config {
     pub rpc_driver_preconf_timeout: Duration,
     pub rpc_driver_status_timeout: Duration,
     pub taiko_anchor_address: String,
+    pub taiko_bridge_address: String,
     pub handover_window_slots: u64,
     pub handover_start_buffer_ms: u64,
     pub l1_height_lag: u64,
@@ -34,8 +34,9 @@ pub struct Config {
     pub max_attempts_to_send_tx: u64,
     pub max_attempts_to_wait_tx: u64,
     pub delay_between_tx_attempts_sec: u64,
-    pub threshold_eth: U256,
-    pub threshold_taiko: U256,
+    pub threshold_eth: u128,
+    pub threshold_taiko: u128,
+    pub amount_to_bridge_from_l2_to_l1: u128,
     pub simulate_not_submitting_at_the_end_of_epoch: bool,
     pub max_bytes_per_tx_list: u64,
     pub throttling_factor: u64,
@@ -184,6 +185,15 @@ impl Config {
         let taiko_anchor_address = std::env::var("TAIKO_ANCHOR_ADDRESS")
             .unwrap_or("0x1670010000000000000000000000000000010001".to_string());
 
+        const BRIDGE_ADDRESS: &str = "TAIKO_BRIDGE_L2_ADDRESS";
+        let taiko_bridge_address = std::env::var(BRIDGE_ADDRESS).unwrap_or_else(|_| {
+            warn!(
+                "No Bridge contract address found in {} env var, using default",
+                BRIDGE_ADDRESS
+            );
+            default_empty_address.clone()
+        });
+
         let handover_window_slots = std::env::var("HANDOVER_WINDOW_SLOTS")
             .unwrap_or("4".to_string())
             .parse::<u64>()
@@ -260,14 +270,22 @@ impl Config {
         // 0.5 ETH
         let threshold_eth =
             std::env::var("THRESHOLD_ETH").unwrap_or("500000000000000000".to_string());
-        let threshold_eth =
-            U256::from_str_radix(&threshold_eth, 10).expect("THRESHOLD_ETH must be a number");
+        let threshold_eth = threshold_eth
+            .parse::<u128>()
+            .expect("THRESHOLD_ETH must be a number");
 
         // 1000 TAIKO
         let threshold_taiko =
             std::env::var("THRESHOLD_TAIKO").unwrap_or("10000000000000000000000".to_string());
-        let threshold_taiko =
-            U256::from_str_radix(&threshold_taiko, 10).expect("THRESHOLD_TAIKO must be a number");
+        let threshold_taiko = threshold_taiko
+            .parse::<u128>()
+            .expect("THRESHOLD_TAIKO must be a number");
+
+        // 0.1 ETH
+        let amount_to_bridge_from_l2_to_l1 = std::env::var("AMOUNT_TO_BRIDGE_FROM_L2_TO_L1")
+            .unwrap_or("100000000000000000".to_string())
+            .parse::<u128>()
+            .expect("AMOUNT_TO_BRIDGE_FROM_L2_TO_L1 must be a number");
 
         let simulate_not_submitting_at_the_end_of_epoch =
             std::env::var("SIMULATE_NOT_SUBMITTING_AT_THE_END_OF_EPOCH")
@@ -315,6 +333,7 @@ impl Config {
             rpc_driver_preconf_timeout,
             rpc_driver_status_timeout,
             taiko_anchor_address,
+            taiko_bridge_address,
             handover_window_slots,
             handover_start_buffer_ms,
             l1_height_lag,
@@ -329,6 +348,7 @@ impl Config {
             delay_between_tx_attempts_sec,
             threshold_eth,
             threshold_taiko,
+            amount_to_bridge_from_l2_to_l1,
             simulate_not_submitting_at_the_end_of_epoch,
             max_bytes_per_tx_list,
             throttling_factor,
@@ -354,6 +374,7 @@ rpc L2 EL timeout: {}ms
 rpc driver preconf timeout: {}ms
 rpc driver status timeout: {}ms
 taiko anchor address: {}
+taiko bridge address: {}
 handover window slots: {}
 handover start buffer: {}ms
 l1 height lag: {}
@@ -371,6 +392,7 @@ max attempts to wait tx: {}
 delay between tx attempts: {}s
 threshold_eth: {}
 threshold_taiko: {}
+amount to bridge from l2 to l1: {}
 simulate not submitting at the end of epoch: {}
 "#,
             config.taiko_geth_ws_rpc_url,
@@ -389,6 +411,7 @@ simulate not submitting at the end of epoch: {}
             config.rpc_driver_preconf_timeout.as_millis(),
             config.rpc_driver_status_timeout.as_millis(),
             config.taiko_anchor_address,
+            config.taiko_bridge_address,
             config.handover_window_slots,
             config.handover_start_buffer_ms,
             config.l1_height_lag,
@@ -406,6 +429,7 @@ simulate not submitting at the end of epoch: {}
             config.delay_between_tx_attempts_sec,
             threshold_eth,
             threshold_taiko,
+            config.amount_to_bridge_from_l2_to_l1,
             config.simulate_not_submitting_at_the_end_of_epoch,
         );
 

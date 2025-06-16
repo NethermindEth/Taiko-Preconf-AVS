@@ -36,6 +36,7 @@ pub struct ExecutionLayer {
     transaction_monitor: TransactionMonitor,
     metrics: Arc<metrics::Metrics>,
     taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::TaikoWrapperInstance<Arc<WsProvider>>,
+    chain_id: u64,
 }
 
 pub struct ContractAddresses {
@@ -72,7 +73,10 @@ impl ExecutionLayer {
             ProviderBuilder::new()
                 .wallet(wallet)
                 .connect_ws(ws.clone())
-                .await?,
+                .await
+                .map_err(|e| {
+                    Error::msg(format!("Execution layer: Failed to connect to WS: {}", e))
+                })?,
         );
 
         let contract_addresses =
@@ -98,6 +102,9 @@ impl ExecutionLayer {
         let pacaya_config =
             Self::fetch_pacaya_config(&contract_addresses.taiko_inbox, &provider_ws).await?;
 
+        let chain_id = provider_ws.get_chain_id().await?;
+        info!("L1 Chain ID: {}", chain_id);
+
         Ok(Self {
             provider_ws,
             preconfer_address,
@@ -108,7 +115,12 @@ impl ExecutionLayer {
             transaction_monitor,
             metrics,
             taiko_wrapper_contract,
+            chain_id,
         })
+    }
+
+    pub fn chain_id(&self) -> u64 {
+        self.chain_id
     }
 
     async fn parse_contract_addresses(
@@ -411,6 +423,7 @@ impl ExecutionLayer {
             .await
             .unwrap(),
             metrics,
+            chain_id: 1,
         })
     }
 
@@ -462,7 +475,7 @@ impl ExecutionLayer {
         self.pacaya_config.blockMaxGasLimit
     }
 
-    pub fn get_preconfer_address_coinbase(&self) -> Address {
+    pub fn get_preconfer_alloy_address(&self) -> Address {
         self.preconfer_address
     }
 
