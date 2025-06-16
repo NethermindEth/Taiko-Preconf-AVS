@@ -275,7 +275,6 @@ impl L2ExecutionLayer {
         amount: u128,
         dest_chain_id: u64,
         preconfer_address: Address,
-        _base_fee: u64,
     ) -> Result<(), Error> {
         const FEE: u64 = 10000;
 
