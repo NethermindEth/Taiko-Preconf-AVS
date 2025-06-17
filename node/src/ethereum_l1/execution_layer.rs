@@ -97,12 +97,18 @@ impl ExecutionLayer {
             transaction_error_channel,
             metrics.clone(),
         )
-        .await?;
+        .await
+        .map_err(|e| Error::msg(format!("Failed to create TransactionMonitor: {}", e)))?;
 
         let pacaya_config =
-            Self::fetch_pacaya_config(&contract_addresses.taiko_inbox, &provider_ws).await?;
+            Self::fetch_pacaya_config(&contract_addresses.taiko_inbox, &provider_ws)
+                .await
+                .map_err(|e| Error::msg(format!("Failed to fetch pacaya config: {}", e)))?;
 
-        let chain_id = provider_ws.get_chain_id().await?;
+        let chain_id = provider_ws
+            .get_chain_id()
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get chain ID: {}", e)))?;
         info!("L1 Chain ID: {}", chain_id);
 
         Ok(Self {

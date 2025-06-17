@@ -39,7 +39,12 @@ impl L2ExecutionLayer {
                 })?,
         );
 
-        let chain_id = provider_ws.read().await.get_chain_id().await?;
+        let chain_id = provider_ws
+            .read()
+            .await
+            .get_chain_id()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to get chain ID: {}", e))?;
         info!("L2 Chain ID: {}", chain_id);
 
         let taiko_anchor = RwLock::new(TaikoAnchor::new(

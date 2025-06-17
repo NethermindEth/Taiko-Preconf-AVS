@@ -43,7 +43,7 @@ pub struct Config {
     pub min_bytes_per_tx_list: u64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct L1ContractAddresses {
     pub taiko_inbox: String,
     pub preconf_whitelist: String,

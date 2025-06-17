@@ -51,20 +51,12 @@ async fn main() -> Result<(), Error> {
         info!("Cancellation token triggered, initiating shutdown...");
     }));
 
-    let reorg_detector = Arc::new(reorg_detector::ReorgDetector::new(
-        config.l1_ws_rpc_url.clone(),
-        config.taiko_geth_ws_rpc_url.clone(),
-        config.contract_addresses.taiko_inbox.clone(),
-        cancel_token.clone(),
-    )?);
-    reorg_detector.start().await?;
-
     let (transaction_error_sender, transaction_error_receiver) = mpsc::channel(100);
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
         ethereum_l1::config::EthereumL1Config {
-            execution_ws_rpc_url: config.l1_ws_rpc_url,
+            execution_ws_rpc_url: config.l1_ws_rpc_url.clone(),
             avs_node_ecdsa_private_key: config.avs_node_ecdsa_private_key.clone(),
-            contract_addresses: config.contract_addresses,
+            contract_addresses: config.contract_addresses.clone(),
             consensus_rpc_url: config.l1_beacon_url,
             slot_duration_sec: config.l1_slot_duration_sec,
             slots_per_epoch: config.l1_slots_per_epoch,
@@ -78,7 +70,8 @@ async fn main() -> Result<(), Error> {
         transaction_error_sender,
         metrics.clone(),
     )
-    .await?;
+    .await
+    .map_err(|e| anyhow::anyhow!("Failed to create EthereumL1: {}", e))?;
 
     let ethereum_l1 = Arc::new(ethereum_l1);
 
@@ -106,7 +99,7 @@ async fn main() -> Result<(), Error> {
             ethereum_l1.clone(),
             metrics.clone(),
             taiko::config::TaikoConfig::new(
-                config.taiko_geth_ws_rpc_url,
+                config.taiko_geth_ws_rpc_url.clone(),
                 config.taiko_geth_auth_rpc_url,
                 config.taiko_driver_url,
                 jwt_secret_bytes,
@@ -121,7 +114,8 @@ async fn main() -> Result<(), Error> {
                 config.avs_node_ecdsa_private_key,
             )?,
         )
-        .await?,
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to create Taiko: {}", e))?,
     );
 
     let max_anchor_height_offset = ethereum_l1
@@ -151,6 +145,20 @@ async fn main() -> Result<(), Error> {
         config.max_blocks_per_batch
     };
 
+    let reorg_detector = Arc::new(
+        reorg_detector::ReorgDetector::new(
+            config.l1_ws_rpc_url,
+            config.taiko_geth_ws_rpc_url,
+            config.contract_addresses.taiko_inbox,
+            cancel_token.clone(),
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to create ReorgDetector: {}", e))?,
+    );
+    reorg_detector
+        .start()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to start ReorgDetector: {}", e))?;
+
     let node = node::Node::new(
         cancel_token.clone(),
         taiko.clone(),
@@ -173,9 +181,12 @@ async fn main() -> Result<(), Error> {
         transaction_error_receiver,
         metrics.clone(),
     )
-    .await?;
+    .await
+    .map_err(|e| anyhow::anyhow!("Failed to create Node: {}", e))?;
 
-    node.entrypoint().await?;
+    node.entrypoint()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to start Node: {}", e))?;
 
     let funds_monitor = funds_monitor::FundsMonitor::new(
         ethereum_l1.clone(),

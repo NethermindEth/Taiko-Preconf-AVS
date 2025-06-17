@@ -51,22 +51,33 @@ impl Taiko {
         taiko_config: TaikoConfig,
     ) -> Result<Self, Error> {
         Ok(Self {
-            l2_execution_layer: L2ExecutionLayer::new(taiko_config.clone()).await?,
+            l2_execution_layer: L2ExecutionLayer::new(taiko_config.clone())
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to create L2ExecutionLayer: {}", e))?,
             taiko_geth_auth_rpc: JSONRPCClient::new_with_timeout_and_jwt(
                 &taiko_config.taiko_geth_auth_url,
                 taiko_config.rpc_l2_execution_layer_timeout,
                 &taiko_config.jwt_secret_bytes,
-            )?,
+            )
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to create JSONRPCClient for taiko geth auth: {}", e)
+            })?,
             driver_preconf_rpc: HttpRPCClient::new_with_jwt(
                 &taiko_config.driver_url,
                 taiko_config.rpc_driver_preconf_timeout,
                 &taiko_config.jwt_secret_bytes,
-            )?,
+            )
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to create HttpRPCClient for driver preconf: {}", e)
+            })?,
             driver_status_rpc: HttpRPCClient::new_with_jwt(
                 &taiko_config.driver_url,
                 taiko_config.rpc_driver_status_timeout,
                 &taiko_config.jwt_secret_bytes,
-            )?,
+            )
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to create HttpRPCClient for driver status: {}", e)
+            })?,
             ethereum_l1,
             metrics,
             config: taiko_config,

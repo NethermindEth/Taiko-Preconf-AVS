@@ -76,7 +76,8 @@ impl Node {
             handover_start_buffer_ms,
             simulate_not_submitting_at_the_end_of_epoch,
             cancel_token.clone(),
-        )?;
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to create Operator: {}", e))?;
         let batch_manager = BatchManager::new(
             l1_height_lag,
             batch_builder_config,
