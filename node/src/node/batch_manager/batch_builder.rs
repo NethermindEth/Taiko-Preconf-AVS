@@ -22,9 +22,11 @@ pub struct Batch {
     pub anchor_block_timestamp_sec: u64,
 }
 
+pub type BatchesToSend = VecDeque<(Option<BatchParams>, Batch)>;
+
 pub struct BatchBuilder {
     config: BatchBuilderConfig,
-    batches_to_send: VecDeque<(Option<BatchParams>,Batch)>,
+    batches_to_send: BatchesToSend,
     current_batch: Option<Batch>,
     current_forced_inclusion: Option<BatchParams>,
     slot_clock: Arc<SlotClock>,
@@ -78,7 +80,8 @@ impl BatchBuilder {
 
     pub fn finalize_current_batch(&mut self) {
         if let Some(batch) = self.current_batch.take() {
-            self.batches_to_send.push_back((self.current_forced_inclusion.take(), batch));
+            self.batches_to_send
+                .push_back((self.current_forced_inclusion.take(), batch));
         }
     }
 
@@ -233,7 +236,7 @@ impl BatchBuilder {
             self.finalize_current_batch();
         }
 
-        if let Some((forced_inclusion,batch)) = self.batches_to_send.front() {
+        if let Some((forced_inclusion, batch)) = self.batches_to_send.front() {
             if ethereum_l1
                 .execution_layer
                 .is_transaction_in_progress()
@@ -348,15 +351,14 @@ impl BatchBuilder {
         self.batches_to_send.len() as u64
     }
 
-    pub fn take_batches_to_send(&mut self) -> VecDeque<(Option<BatchParams>, Batch)> {
+    pub fn take_batches_to_send(&mut self) -> BatchesToSend {
         std::mem::take(&mut self.batches_to_send)
     }
 
-    pub fn prepend_batches(&mut self, mut batches: VecDeque<(Option<BatchParams>, Batch)>) {
+    pub fn prepend_batches(&mut self, mut batches: BatchesToSend) {
         batches.append(&mut self.batches_to_send);
         self.batches_to_send = batches;
     }
-
 }
 
 #[cfg(test)]

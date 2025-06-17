@@ -1,17 +1,18 @@
 pub mod batch_builder;
 
 use crate::{
-    ethereum_l1::{l1_contracts_bindings::BatchParams, EthereumL1},
+    ethereum_l1::EthereumL1,
     forced_inclusion_monitor::ForcedInclusionMonitor,
+    node::batch_manager::batch_builder::BatchesToSend,
     shared::{l2_block::L2Block, l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
     taiko::{
-        self, operation_type::OperationType, preconf_blocks::BuildPreconfBlockResponse, Taiko
+        self, Taiko, operation_type::OperationType, preconf_blocks::BuildPreconfBlockResponse,
     },
 };
 use alloy::{consensus::BlockHeader, consensus::Transaction, primitives::Address};
 use anyhow::Error;
-use batch_builder::{Batch, BatchBuilder};
-use std::{collections::VecDeque, sync::Arc, time::Duration};
+use batch_builder::BatchBuilder;
+use std::{sync::Arc, time::Duration};
 use tracing::{debug, error, info, trace, warn};
 
 // TODO move to config
@@ -130,7 +131,10 @@ impl BatchManager {
                         &forced_inclusion,
                     );
                 // set it to batch builder
-                if !self.batch_builder.set_forced_inclusion(Some(forced_inclusion_batch)) {
+                if !self
+                    .batch_builder
+                    .set_forced_inclusion(Some(forced_inclusion_batch))
+                {
                     error!("Failed to set forced inclusion batch");
                     return Err(anyhow::anyhow!("Failed to set forced inclusion batch"));
                 }
@@ -376,8 +380,10 @@ impl BatchManager {
                     }
                 };
                 // set it to batch builder
-                if !self.batch_builder
-                    .set_forced_inclusion(Some(forced_inclusion_batch)) {
+                if !self
+                    .batch_builder
+                    .set_forced_inclusion(Some(forced_inclusion_batch))
+                {
                     error!("Failed to set forced inclusion to batch");
                     self.remove_last_l2_block();
                     return Ok((None, None));
@@ -518,7 +524,7 @@ impl BatchManager {
         }
     }
 
-    pub fn prepend_batches(&mut self, batches: VecDeque<(Option<BatchParams>, Batch)>) {
+    pub fn prepend_batches(&mut self, batches: BatchesToSend) {
         self.batch_builder.prepend_batches(batches);
     }
 
@@ -526,7 +532,7 @@ impl BatchManager {
         self.batch_builder.finalize_current_batch();
     }
 
-    pub fn take_batches_to_send(&mut self) -> VecDeque<(Option<BatchParams>, Batch)> {
+    pub fn take_batches_to_send(&mut self) -> BatchesToSend {
         self.batch_builder.take_batches_to_send()
     }
 }
