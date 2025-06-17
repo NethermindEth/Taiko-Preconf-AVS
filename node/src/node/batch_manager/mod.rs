@@ -113,9 +113,10 @@ impl BatchManager {
             .ok_or_else(|| anyhow::anyhow!("Failed to compare block with forced inclusion"))?;
 
         if forced_inclusion {
-            // TODO ForcedInclusion handle situation when Forced Inclusion is a last block in recovery
-            // TODO ForcedInclusion what if two forced inclusions are in a row
-            self.batch_builder.finalize_current_batch();
+            if !self.batch_builder.try_finalize_current_batch() {
+                error!("Failed to finalize current batch, no current_batch");
+                return Err(anyhow::anyhow!("Failed to finalize current batch, no current_batch"));
+            }
             let forced_inclusion = self
                 .forced_inclusion_monitor
                 .get_next_forced_inclusion_data()

@@ -65,8 +65,8 @@ impl BatchBuilder {
             .as_ref()
             .is_some_and(|batch| {
                 let number_of_blocks = if let Ok(n) = u16::try_from(batch.l2_blocks.len() + 1) {n} else {
-            return false;
-        };
+                    return false;
+                };
                 // Check if the total bytes of the current batch after adding the new L2 block
                 // is less than or equal to the max bytes size of the batch
                 self.config.is_within_bytes_limit(batch.total_bytes + l2_block.prebuilt_tx_list.bytes_length)
@@ -83,6 +83,14 @@ impl BatchBuilder {
             self.batches_to_send
                 .push_back((self.current_forced_inclusion.take(), batch));
         }
+    }
+
+    pub fn try_finalize_current_batch(&mut self) -> bool {
+        if self.current_batch.is_none() {
+            return false;
+        }
+        self.finalize_current_batch();
+        true
     }
 
     pub fn set_forced_inclusion(&mut self, forced_inclusion_batch: Option<BatchParams>) -> bool {
