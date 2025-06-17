@@ -196,6 +196,9 @@ impl ProposeBatchBuilder {
         if tools::check_for_reanchor_required(&err_str) {
             return TransactionError::ReanchorRequired;
         }
+        if tools::check_oldest_forced_inclusion_due(&err_str) {
+            return TransactionError::OldestForcedInclusionDue;
+        }
         TransactionError::EstimationFailed
     }
 

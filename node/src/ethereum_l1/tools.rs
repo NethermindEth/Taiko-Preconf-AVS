@@ -18,3 +18,8 @@ pub fn check_for_reanchor_required(err_str: &str) -> bool {
 pub fn check_for_too_early_estimation(err_str: &str) -> bool {
     err_str.contains("0x3d32ffdb") || err_str.contains("0x2b44f010")
 }
+
+// 0x1e66a770 -> OldestForcedInclusionDue()
+pub fn check_oldest_forced_inclusion_due(err_str: &str) -> bool {
+    err_str.contains("0x1e66a770")
+}
