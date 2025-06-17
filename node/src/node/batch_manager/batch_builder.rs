@@ -85,6 +85,10 @@ impl BatchBuilder {
         }
     }
 
+    pub fn has_current_forced_inclusion(&self) -> bool {
+        self.current_forced_inclusion.is_some()
+    }
+
     pub fn try_finalize_current_batch(&mut self) -> bool {
         if self.current_batch.is_none() {
             return false;
