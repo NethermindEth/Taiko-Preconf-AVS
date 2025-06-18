@@ -5,6 +5,7 @@ mod operator;
 mod verifier;
 
 use crate::chain_monitor;
+use crate::forced_inclusion_monitor::ForcedInclusionMonitor;
 use crate::{
     ethereum_l1::{EthereumL1, transaction_error::TransactionError},
     metrics::Metrics,
@@ -63,6 +64,7 @@ impl Node {
         simulate_not_submitting_at_the_end_of_epoch: bool,
         transaction_error_channel: Receiver<TransactionError>,
         metrics: Arc<Metrics>,
+        forced_inclusion_monitor: Arc<ForcedInclusionMonitor>,
     ) -> Result<Self, Error> {
         info!(
             "Batch builder config:\n\
@@ -90,6 +92,7 @@ impl Node {
             batch_builder_config,
             ethereum_l1.clone(),
             taiko.clone(),
+            forced_inclusion_monitor,
         );
         let head_verifier = L2HeadVerifier::new();
         Ok(Self {
@@ -394,14 +397,32 @@ impl Node {
                     "Unexpected L2 head detected. Restarting node..."
                 ));
             }
-            if let Some(block) = self
+            let (forced_inclusion_block, block) = self
                 .preconfirm_block(
                     pending_tx_list,
                     l2_slot_info,
                     current_status.is_end_of_sequencing(),
+                    current_status.is_submitter() && self.verifier.is_none(),
                 )
-                .await?
-            {
+                .await?;
+            if let Some(forced_inclusion_block) = forced_inclusion_block {
+                if !self
+                    .head_verifier
+                    .verify_next_and_set(
+                        forced_inclusion_block.number,
+                        forced_inclusion_block.hash,
+                        forced_inclusion_block.parent_hash,
+                    )
+                    .await
+                {
+                    self.head_verifier.log_error().await;
+                    self.cancel_token.cancel();
+                    return Err(anyhow::anyhow!(
+                        "Unexpected L2 head after forced inclusion preconfirmation. Restarting node..."
+                    ));
+                }
+            }
+            if let Some(block) = block {
                 if !self
                     .head_verifier
                     .verify_next_and_set(block.number, block.hash, block.parent_hash)
@@ -410,7 +431,7 @@ impl Node {
                     self.head_verifier.log_error().await;
                     self.cancel_token.cancel();
                     return Err(anyhow::anyhow!(
-                        "Unexpected L2 head after preconfirmation. Restarting node..."
+                        "Unexpected L2 head after forced inclusion preconfirmation. Restarting node..."
                     ));
                 }
             }
@@ -661,9 +682,21 @@ impl Node {
         pending_tx_list: Option<PreBuiltTxList>,
         l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
-    ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
+        can_do_forced_inclusion: bool,
+    ) -> Result<
+        (
+            Option<BuildPreconfBlockResponse>,
+            Option<BuildPreconfBlockResponse>,
+        ),
+        Error,
+    > {
         self.batch_manager
-            .preconfirm_block(pending_tx_list, l2_slot_info, end_of_sequencing)
+            .preconfirm_block(
+                pending_tx_list,
+                l2_slot_info,
+                end_of_sequencing,
+                can_do_forced_inclusion,
+            )
             .await
     }
 
