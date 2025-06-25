@@ -182,6 +182,8 @@ impl BatchManager {
                 block.header.timestamp,
                 coinbase,
             )?;
+        } else {
+            debug!("Forced inclusion handled block id: {}", block.header.number);
         }
         Ok(())
     }
