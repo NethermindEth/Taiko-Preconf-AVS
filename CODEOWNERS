@@ -1,0 +1,23 @@
+# CODEOWNERS File Template
+# 
+# This file defines code ownership for this repository.
+# Code owners are automatically requested for review when someone opens a pull request.
+#
+# 📖 Learn more: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# =============================================================================
+# GLOBAL OWNERS
+# =============================================================================
+# These owners will be requested for review on ALL pull requests
+
+* @mskrzypkows @mikhailUshakoff
+
+# =============================================================================
+# PATH-BASED OWNERSHIP
+# =============================================================================
+
+# Documentation
+docs/ @linoscope @smartprogrammer93
+
+# Workflows
+.github/workflows/*docker*.yml @nmjustinchan @derrix060
