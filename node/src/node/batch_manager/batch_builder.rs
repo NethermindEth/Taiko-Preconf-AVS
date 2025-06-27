@@ -261,9 +261,8 @@ impl BatchBuilder {
                     u16::try_from(
                         self.current_batch
                             .as_ref()
-                            .expect("assert: current batch is available")
-                            .l2_blocks
-                            .len(),
+                            .map(|b| b.l2_blocks.len())
+                            .unwrap_or(0)
                     )? + 1,
                 ))
         {
