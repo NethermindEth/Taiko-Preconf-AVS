@@ -411,11 +411,14 @@ impl Node {
         }
 
         if !current_status.is_submitter() && !current_status.is_preconfer() {
-            if self.batch_manager.has_batches() {
-                self.batch_manager.reset_builder();
+            if self.batch_manager.has_batches() || self.batch_manager.has_current_forced_inclusion()
+            {
                 error!(
-                    "Some batches were not successfully sent in the submitter window. Resetting batch builder."
+                    "Resetting batch builder. has batches: {}, has current forced inclusion: {}",
+                    self.batch_manager.has_batches(),
+                    self.batch_manager.has_current_forced_inclusion()
                 );
+                self.batch_manager.reset_builder(true).await;
             }
             if self.verifier.is_some() {
                 error!("Verifier is not None after submitter window.");
@@ -779,9 +782,9 @@ impl Node {
 
         // Update self state
         self.verifier = None;
-        self.batch_manager.reset_builder();
-
-        // TODO reset forced_inclusion_monitor
+        self.batch_manager
+            .reset_builder(can_do_forced_inclusion)
+            .await;
 
         self.chain_monitor.set_expected_reorg(parent_block_id).await;
 

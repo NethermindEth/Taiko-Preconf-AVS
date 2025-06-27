@@ -710,6 +710,10 @@ impl BatchManager {
         !self.batch_builder.is_empty()
     }
 
+    pub fn has_current_forced_inclusion(&self) -> bool {
+        self.batch_builder.has_current_forced_inclusion()
+    }
+
     pub fn get_number_of_batches(&self) -> u64 {
         self.batch_builder.get_number_of_batches()
     }
@@ -718,12 +722,15 @@ impl BatchManager {
         self.batch_builder.get_number_of_batches_ready_to_send()
     }
 
-    pub fn reset_builder(&mut self) {
+    pub async fn reset_builder(&mut self, reset_forced_inclusion_monitor: bool) {
         warn!("Resetting batch builder");
         self.batch_builder = batch_builder::BatchBuilder::new(
             self.batch_builder.get_config().clone(),
             self.ethereum_l1.slot_clock.clone(),
         );
+        if reset_forced_inclusion_monitor {
+            self.forced_inclusion_monitor.reset().await;
+        }
     }
 
     pub fn clone_without_batches(&self) -> Self {

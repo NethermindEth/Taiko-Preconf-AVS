@@ -218,6 +218,16 @@ impl ForcedInclusionMonitor {
         }
     }
 
+    pub async fn reset(&self) {
+        info!("ForcedInclusion reset");
+        let mut next_forced_inclusion_data_lock = self.forced_inclusion_data.lock().await;
+        if next_forced_inclusion_data_lock.index != 0 {
+            next_forced_inclusion_data_lock.reset().await;
+            next_forced_inclusion_data_lock
+                .try_decode(self.ethereum_l1.clone(), self.forced_inclusion_data.clone());
+        }
+    }
+
     pub async fn is_same_txs_list(&self, input: &Vec<Transaction>) -> Option<bool> {
         let next_forced_inclusion_data_lock = self.forced_inclusion_data.lock().await;
         if !next_forced_inclusion_data_lock.is_data_exist() {
