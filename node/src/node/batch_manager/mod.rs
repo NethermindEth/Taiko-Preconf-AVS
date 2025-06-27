@@ -413,9 +413,45 @@ impl BatchManager {
         }
     }
 
-    async fn add_new_l2_block(
+    async fn add_only_l2_block(
         &mut self,
         l2_block: L2Block,
+        l2_slot_info: L2SlotInfo,
+        end_of_sequencing: bool,
+        operation_type: OperationType,
+    ) -> Result<
+        (
+            Option<BuildPreconfBlockResponse>,
+            Option<BuildPreconfBlockResponse>,
+        ),
+        Error,
+    > {
+        // insert l2 block into batch builder
+        let (anchor_block_id, _) = self.consume_l2_block(l2_block.clone()).await?;
+
+        match self
+            .taiko
+            .advance_head_to_new_l2_block(
+                l2_block,
+                anchor_block_id,
+                &l2_slot_info,
+                end_of_sequencing,
+                operation_type,
+            )
+            .await
+        {
+            Ok(preconfed_block) => Ok((None, preconfed_block)),
+            Err(err) => {
+                error!("Failed to advance head to new L2 block: {}", err);
+                self.remove_last_l2_block();
+                Ok((None, None))
+            }
+        }
+    }
+
+    async fn add_new_l2_block_with_optional_forced_inclusion(
+        &mut self,
+        mut l2_block: L2Block,
         mut l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
         operation_type: OperationType,
@@ -427,17 +463,19 @@ impl BatchManager {
         ),
         Error,
     > {
-        info!(
-            "Adding new L2 block id: {}, timestamp: {}, parent gas used: {}",
-            l2_slot_info.parent_id() + 1,
-            l2_slot_info.slot_timestamp(),
-            l2_slot_info.parent_gas_used()
-        );
-        // insert l2 block into batch builder
-        let (anchor_block_id, new_batch_created) = self.consume_l2_block(l2_block.clone()).await?;
+        // calculate the anchor block ID and create a new batch
+        let anchor_block_id = self.calculate_anchor_block_id().await?;
+        let anchor_block_timestamp_sec = self
+            .ethereum_l1
+            .execution_layer
+            .get_block_timestamp_by_number(anchor_block_id)
+            .await?;
+        // Create new batch
+        self.batch_builder
+            .create_new_batch(anchor_block_id, anchor_block_timestamp_sec);
 
         let mut forced_inclusion_block_response = None;
-        if can_do_forced_inclusion && new_batch_created {
+        if can_do_forced_inclusion {
             // get current forced inclusion
             let start = std::time::Instant::now();
             let forced_inclusion = self
@@ -492,7 +530,7 @@ impl BatchManager {
                             "Failed to advance head to new forced inclusion L2 block: {}",
                             err
                         );
-                        self.remove_last_l2_block();
+                        self.batch_builder.remove_current_batch();
                         return Ok((None, None));
                     }
                 };
@@ -502,7 +540,7 @@ impl BatchManager {
                     .set_forced_inclusion(Some(forced_inclusion_batch))
                 {
                     error!("Failed to set forced inclusion to batch");
-                    self.remove_last_l2_block();
+                    self.batch_builder.remove_current_batch();
                     return Ok((None, None));
                 }
                 // update slot info for next block
@@ -510,6 +548,21 @@ impl BatchManager {
                     .taiko
                     .get_l2_slot_info_by_parent_block(alloy::eips::BlockNumberOrTag::Latest)
                     .await?;
+                // we need to update tx list because some txs might be in forced inclusion
+                let pending_tx_list = match self
+                    .taiko
+                    .get_pending_l2_tx_list_from_taiko_geth(l2_slot_info.base_fee(), 0)
+                    .await?
+                {
+                    Some(pending_tx_list) => pending_tx_list,
+                    None => {
+                        error!(
+                            "Failed to get pending tx list from taiko geth after forced inclusion"
+                        );
+                        return Ok((forced_inclusion_block_response, None));
+                    }
+                };
+                l2_block = L2Block::new_from(pending_tx_list, l2_slot_info.slot_timestamp());
             }
             info!(
                 "Adding new L2 block id: {}, timestamp: {}, parent gas used: {}",
@@ -519,7 +572,7 @@ impl BatchManager {
             );
         }
 
-        match self
+        return match self
             .taiko
             .advance_head_to_new_l2_block(
                 l2_block,
@@ -536,6 +589,45 @@ impl BatchManager {
                 self.remove_last_l2_block();
                 Ok((forced_inclusion_block_response, None))
             }
+        };
+    }
+
+    async fn add_new_l2_block(
+        &mut self,
+        l2_block: L2Block,
+        l2_slot_info: L2SlotInfo,
+        end_of_sequencing: bool,
+        operation_type: OperationType,
+        can_do_forced_inclusion: bool,
+    ) -> Result<
+        (
+            Option<BuildPreconfBlockResponse>,
+            Option<BuildPreconfBlockResponse>,
+        ),
+        Error,
+    > {
+        info!(
+            "Adding new L2 block id: {}, timestamp: {}, parent gas used: {}",
+            l2_slot_info.parent_id() + 1,
+            l2_slot_info.slot_timestamp(),
+            l2_slot_info.parent_gas_used()
+        );
+
+        // Check that we will create a new bacth
+        if self.batch_builder.can_consume_l2_block(&l2_block) {
+            return self
+                .add_only_l2_block(l2_block, l2_slot_info, end_of_sequencing, operation_type)
+                .await;
+        } else {
+            return self
+                .add_new_l2_block_with_optional_forced_inclusion(
+                    l2_block,
+                    l2_slot_info,
+                    end_of_sequencing,
+                    operation_type,
+                    can_do_forced_inclusion,
+                )
+                .await;
         }
     }
 

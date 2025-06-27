@@ -80,8 +80,10 @@ impl BatchBuilder {
 
     pub fn finalize_current_batch(&mut self) {
         if let Some(batch) = self.current_batch.take() {
-            self.batches_to_send
-                .push_back((self.current_forced_inclusion.take(), batch));
+            if !batch.l2_blocks.is_empty() {
+                self.batches_to_send
+                    .push_back((self.current_forced_inclusion.take(), batch));
+            }
         }
     }
 
@@ -90,7 +92,12 @@ impl BatchBuilder {
     }
 
     pub fn try_finalize_current_batch(&mut self) -> bool {
-        if self.current_batch.is_none() {
+        if self.current_batch.is_none()
+            || self
+                .current_batch
+                .as_ref()
+                .is_some_and(|b| b.l2_blocks.is_empty())
+        {
             return false;
         }
         self.finalize_current_batch();
@@ -103,6 +110,21 @@ impl BatchBuilder {
         }
         self.current_forced_inclusion = forced_inclusion_batch;
         true
+    }
+
+    pub fn create_new_batch(&mut self, anchor_block_id: u64, anchor_block_timestamp_sec: u64) {
+        self.finalize_current_batch();
+        self.current_batch = Some(Batch {
+            total_bytes: 0,
+            l2_blocks: vec![],
+            anchor_block_id,
+            anchor_block_timestamp_sec,
+            coinbase: self.config.default_coinbase,
+        });
+    }
+
+    pub fn remove_current_batch(&mut self) {
+        self.current_batch = None;
     }
 
     pub fn create_new_batch_and_add_l2_block(
