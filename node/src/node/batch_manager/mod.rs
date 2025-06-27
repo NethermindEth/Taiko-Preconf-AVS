@@ -565,10 +565,11 @@ impl BatchManager {
                 l2_block = L2Block::new_from(pending_tx_list, l2_slot_info.slot_timestamp());
             }
             info!(
-                "Adding new L2 block id: {}, timestamp: {}, parent gas used: {}",
+                "Adding new L2 block after FI id: {}, timestamp: {}, parent gas used: {}, pending txs: {}",
                 l2_slot_info.parent_id() + 1,
                 l2_slot_info.slot_timestamp(),
-                l2_slot_info.parent_gas_used()
+                l2_slot_info.parent_gas_used(),
+                l2_block.prebuilt_tx_list.tx_list.len(),
             );
         }
 
