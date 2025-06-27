@@ -94,10 +94,12 @@ pub async fn listen_for_event<T>(
             }
         }
 
-        warn!(
-            "{event_name} event stream ended or errored; reconnecting in {:?}",
-            reconnect_timeout
-        );
-        sleep(reconnect_timeout).await;
+        if !cancel_token.is_cancelled() {
+            warn!(
+                "{event_name} event stream ended or errored; reconnecting in {:?}",
+                reconnect_timeout
+            );
+            sleep(reconnect_timeout).await;
+        }
     }
 }
