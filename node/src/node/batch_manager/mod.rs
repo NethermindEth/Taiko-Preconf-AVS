@@ -556,10 +556,10 @@ impl BatchManager {
                 {
                     Some(pending_tx_list) => pending_tx_list,
                     None => {
-                        error!(
-                            "Failed to get pending tx list from taiko geth after forced inclusion"
+                        warn!(
+                            "Failed to get pending tx list from taiko geth after forced inclusion. Add empty tx list"
                         );
-                        return Ok((forced_inclusion_block_response, None));
+                        PreBuiltTxList::empty()
                     }
                 };
                 l2_block = L2Block::new_from(pending_tx_list, l2_slot_info.slot_timestamp());
