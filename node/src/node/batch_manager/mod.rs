@@ -574,7 +574,14 @@ impl BatchManager {
         }
 
         // insert l2 block into batch builder
-        let anchor_block_id = self.consume_l2_block(l2_block.clone()).await?;
+        let anchor_block_id = match self.consume_l2_block(l2_block.clone()).await {
+            Ok(anchor_block_id) => anchor_block_id,
+            Err(err) => {
+                error!("Failed to consume L2 block: {}", err);
+                self.batch_builder.remove_current_batch();
+                return Ok((forced_inclusion_block_response, None));
+            }
+        };
 
         return match self
             .taiko
