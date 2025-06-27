@@ -427,7 +427,7 @@ impl BatchManager {
         Error,
     > {
         // insert l2 block into batch builder
-        let (anchor_block_id, _) = self.consume_l2_block(l2_block.clone()).await?;
+        let anchor_block_id = self.consume_l2_block(l2_block.clone()).await?;
 
         match self
             .taiko
@@ -475,7 +475,7 @@ impl BatchManager {
             .create_new_batch(anchor_block_id, anchor_block_timestamp_sec);
 
         let mut forced_inclusion_block_response = None;
-        if can_do_forced_inclusion {
+        if can_do_forced_inclusion && !self.has_current_forced_inclusion() {
             // get current forced inclusion
             let start = std::time::Instant::now();
             let forced_inclusion = self
@@ -573,6 +573,9 @@ impl BatchManager {
             );
         }
 
+        // insert l2 block into batch builder
+        let anchor_block_id = self.consume_l2_block(l2_block.clone()).await?;
+
         return match self
             .taiko
             .advance_head_to_new_l2_block(
@@ -587,7 +590,7 @@ impl BatchManager {
             Ok(preconfed_block) => Ok((forced_inclusion_block_response, preconfed_block)),
             Err(err) => {
                 error!("Failed to advance head to new L2 block: {}", err);
-                self.remove_last_l2_block();
+                self.batch_builder.remove_current_batch();
                 Ok((forced_inclusion_block_response, None))
             }
         };
@@ -632,36 +635,28 @@ impl BatchManager {
         }
     }
 
-    pub async fn consume_l2_block(&mut self, l2_block: L2Block) -> Result<(u64, bool), Error> {
+    pub async fn consume_l2_block(&mut self, l2_block: L2Block) -> Result<u64, Error> {
         // If the L2 block can be added to the current batch, do so
-        let (anchor_block_id, new_batch_created) =
-            if self.batch_builder.can_consume_l2_block(&l2_block) {
-                (
-                    self.batch_builder
-                        .add_l2_block_and_get_current_anchor_block_id(l2_block)?,
-                    false,
-                )
-            } else {
-                // Otherwise, calculate the anchor block ID and create a new batch
-                let anchor_block_id = self.calculate_anchor_block_id().await?;
-                let anchor_block_timestamp_sec = self
-                    .ethereum_l1
-                    .execution_layer
-                    .get_block_timestamp_by_number(anchor_block_id)
-                    .await?;
-                // Add the L2 block to the new batch
-                self.batch_builder.create_new_batch_and_add_l2_block(
-                    anchor_block_id,
-                    anchor_block_timestamp_sec,
-                    l2_block,
-                    None,
-                );
-                (
-                    anchor_block_id,
-                    !self.batch_builder.has_current_forced_inclusion(),
-                )
-            };
-        Ok((anchor_block_id, new_batch_created))
+        if self.batch_builder.can_consume_l2_block(&l2_block) {
+            self.batch_builder
+                .add_l2_block_and_get_current_anchor_block_id(l2_block)
+        } else {
+            // Otherwise, calculate the anchor block ID and create a new batch
+            let anchor_block_id = self.calculate_anchor_block_id().await?;
+            let anchor_block_timestamp_sec = self
+                .ethereum_l1
+                .execution_layer
+                .get_block_timestamp_by_number(anchor_block_id)
+                .await?;
+            // Add the L2 block to the new batch
+            self.batch_builder.create_new_batch_and_add_l2_block(
+                anchor_block_id,
+                anchor_block_timestamp_sec,
+                l2_block,
+                None,
+            );
+            Ok(anchor_block_id)
+        }
     }
 
     fn remove_last_l2_block(&mut self) {

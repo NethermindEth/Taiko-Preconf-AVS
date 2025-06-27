@@ -262,7 +262,7 @@ impl BatchBuilder {
                         self.current_batch
                             .as_ref()
                             .map(|b| b.l2_blocks.len())
-                            .unwrap_or(0)
+                            .unwrap_or(0),
                     )? + 1,
                 ))
         {
