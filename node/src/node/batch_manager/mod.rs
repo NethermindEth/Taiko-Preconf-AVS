@@ -159,7 +159,6 @@ impl BatchManager {
             .await?;
 
         let txs = txs.to_vec();
-        // TODO possibly it is better to remove that check now
         // TODO ForcedInclusion what if forced inclusion is a last block in recovery
         // TODO FoecedInclusion what if end_of_sequencing is true
         let forced_inclusion_handled = self
