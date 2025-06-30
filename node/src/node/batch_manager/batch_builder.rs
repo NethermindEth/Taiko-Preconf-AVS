@@ -9,7 +9,7 @@ use crate::{
 };
 use alloy::primitives::Address;
 use anyhow::Error;
-use tracing::{debug, trace, warn};
+use tracing::{debug, error, trace, warn};
 
 use super::BatchBuilderConfig;
 
@@ -91,17 +91,26 @@ impl BatchBuilder {
         self.current_forced_inclusion.is_some()
     }
 
-    pub fn try_finalize_current_batch(&mut self) -> bool {
-        if self.current_batch.is_none()
-            || self
-                .current_batch
-                .as_ref()
-                .is_some_and(|b| b.l2_blocks.is_empty())
-        {
-            return false;
+    pub fn try_finalize_current_batch(&mut self) -> Result<(), Error> {
+        let is_empty = self
+            .current_batch
+            .as_ref()
+            .is_none_or(|b| b.l2_blocks.is_empty());
+
+        if is_empty {
+            error!(
+                "Failed to finalize current batch, current_batch {} forced_inclusion {}",
+                self.current_batch.is_some(),
+                self.current_forced_inclusion.is_some()
+            );
+            return Err(anyhow::anyhow!(
+                "Failed to finalize current batch, current_batch {} forced_inclusion {}",
+                self.current_batch.is_some(),
+                self.current_forced_inclusion.is_some()
+            ));
         }
         self.finalize_current_batch();
-        true
+        Ok(())
     }
 
     pub fn set_forced_inclusion(&mut self, forced_inclusion_batch: Option<BatchParams>) -> bool {
