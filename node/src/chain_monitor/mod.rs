@@ -136,9 +136,6 @@ impl ChainMonitor {
                             };
                             if !reorg_expected {
                                 tracing::warn!("⛔ Geth reorg detected: Received L2 block with unexpected number. Expected: block_id {} hash {}", status.height, status.hash);
-                                //TODO uncomment
-                                //cancel_token.cancel();
-                                //break;
                             } else {
                                 tracing::debug!("Geth reorg detected: Received L2 block with expected number. Expected: block_id {} hash {}", status.height, status.hash);
                             }

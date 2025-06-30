@@ -16,9 +16,6 @@ use batch_builder::BatchBuilder;
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, error, info, trace, warn};
 
-// TODO move to config
-const MIN_SLOTS_TO_PROPOSE: u64 = 5; // Minimum number of slots required to propose a batch on L1
-
 /// Configuration for batching L2 transactions
 #[derive(Clone)]
 pub struct BatchBuilderConfig {
@@ -223,7 +220,7 @@ impl BatchManager {
     }
 
     pub fn is_anchor_block_offset_valid(&self, anchor_block_offset: u64) -> bool {
-        anchor_block_offset + MIN_SLOTS_TO_PROPOSE
+        anchor_block_offset
             < self
                 .ethereum_l1
                 .execution_layer
