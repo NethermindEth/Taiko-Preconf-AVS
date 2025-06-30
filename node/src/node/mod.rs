@@ -250,7 +250,6 @@ impl Node {
                 .get_preconfer_nonce_pending()
                 .await?;
             debug!("Nonce Latest: {nonce_latest}, Nonce Pending: {nonce_pending}");
-            // TODO handle when not equal
             if nonce_latest == nonce_pending {
                 // Just create a new verifier, we will check it in preconfirmation loop
                 self.verifier = Some(
@@ -263,6 +262,12 @@ impl Node {
                     )
                     .await?,
                 );
+            } else {
+                error!(
+                    "Error: Pending nonce is not equal to latest nonce. Nonce Latest: {nonce_latest}, Nonce Pending: {nonce_pending}"
+                );
+                self.cancel_token.cancel();
+                return Err(Error::msg("Pending nonce is not equal to latest nonce"));
             }
         }
 
