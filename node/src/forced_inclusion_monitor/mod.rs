@@ -218,8 +218,50 @@ impl ForcedInclusionMonitor {
         }
     }
 
-    // TODO: remove
-    #[allow(dead_code)]
+    pub async fn reset(&self) {
+        info!("ForcedInclusion reset");
+        let mut next_forced_inclusion_data_lock = self.forced_inclusion_data.lock().await;
+        if next_forced_inclusion_data_lock.index != 0 {
+            next_forced_inclusion_data_lock.reset().await;
+            next_forced_inclusion_data_lock
+                .try_decode(self.ethereum_l1.clone(), self.forced_inclusion_data.clone());
+        }
+    }
+
+    pub async fn is_same_txs_list(&self, input: &Vec<Transaction>) -> Option<bool> {
+        let next_forced_inclusion_data_lock = self.forced_inclusion_data.lock().await;
+        if !next_forced_inclusion_data_lock.is_data_exist() {
+            debug!("next_forced_inclusion_data does not exist");
+            return Some(false);
+        }
+
+        if !next_forced_inclusion_data_lock.is_data_ready() {
+            debug!("next_forced_inclusion_data is not ready");
+            return None;
+        }
+
+        if next_forced_inclusion_data_lock.is_decoding_in_progress() {
+            error!("Unexpected: ForcedInclusion decoding is still in progress but data is ready");
+            self.cancel_token.cancel();
+            return Some(false);
+        }
+
+        if next_forced_inclusion_data_lock.txs_list.is_none() {
+            error!("Unexpected: No transactions list found");
+            self.cancel_token.cancel();
+            return Some(false);
+        }
+
+        if let Some(txs) = &next_forced_inclusion_data_lock.txs_list {
+            if txs == input {
+                return Some(true);
+            } else {
+                return Some(false);
+            }
+        }
+        None
+    }
+
     pub async fn get_next_forced_inclusion_data(&self) -> Option<ForcedInclusionInfo> {
         let mut next_forced_inclusion_data_lock = self.forced_inclusion_data.lock().await;
         if !next_forced_inclusion_data_lock.is_data_exist() {

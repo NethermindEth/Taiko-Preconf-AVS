@@ -64,6 +64,16 @@ pub struct PreBuiltTxList {
     pub bytes_length: u64,
 }
 
+impl PreBuiltTxList {
+    pub fn empty() -> Self {
+        PreBuiltTxList {
+            tx_list: Vec::new(),
+            estimated_gas_used: 0,
+            bytes_length: 0,
+        }
+    }
+}
+
 pub fn uncompress_and_decode(data: &[u8]) -> Result<Vec<Transaction>, Error> {
     // First decompress using zlib
     let mut decoder = ZlibDecoder::new(Vec::new());
