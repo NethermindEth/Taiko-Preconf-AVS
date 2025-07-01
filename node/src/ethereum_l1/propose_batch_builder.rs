@@ -429,7 +429,7 @@ impl ProposeBatchBuilder {
                 createdIn: info.created_in,
             },
             blocks: vec![BlockParams {
-                numTransactions: 4096, // TODO ForcedInclusion align with TaikoWrapper.MIN_TXS_PER_FORCED_INCLUSION
+                numTransactions: 4096, // TaikoWrapper.MIN_TXS_PER_FORCED_INCLUSION
                 timeShift: 0,
                 signalSlots: vec![],
             }],

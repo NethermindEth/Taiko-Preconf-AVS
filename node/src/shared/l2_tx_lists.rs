@@ -17,7 +17,6 @@ use std::io::Write;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub struct RPCReplyL2TxLists {
-    pub tx_lists: Value, // TODO: decode and create tx_list_bytes on AVS node side
     #[serde(deserialize_with = "deserialize_tx_lists_bytes")]
     pub tx_list_bytes: Vec<Vec<u8>>,
     #[serde(deserialize_with = "deserialize_parent_meta_hash")]

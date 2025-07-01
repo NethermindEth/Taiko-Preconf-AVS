@@ -16,9 +16,6 @@ use batch_builder::BatchBuilder;
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, error, info, trace, warn};
 
-// TODO move to config
-const MIN_SLOTS_TO_PROPOSE: u64 = 5; // Minimum number of slots required to propose a batch on L1
-
 /// Configuration for batching L2 transactions
 #[derive(Clone)]
 pub struct BatchBuilderConfig {
@@ -92,12 +89,7 @@ impl BatchManager {
         let forced_inclusion = self.is_forced_inclusion(txs).await?;
 
         if forced_inclusion {
-            if !self.batch_builder.try_finalize_current_batch() {
-                error!("Failed to finalize current batch, no current_batch");
-                return Err(anyhow::anyhow!(
-                    "Failed to finalize current batch, no current_batch"
-                ));
-            }
+            self.batch_builder.try_finalize_current_batch()?;
             let forced_inclusion = self
                 .forced_inclusion_monitor
                 .get_next_forced_inclusion_data()
@@ -162,9 +154,6 @@ impl BatchManager {
             .await?;
 
         let txs = txs.to_vec();
-        // TODO possibly it is better to remove that check now
-        // TODO ForcedInclusion what if forced inclusion is a last block in recovery
-        // TODO FoecedInclusion what if end_of_sequencing is true
         let forced_inclusion_handled = self
             .check_and_handle_forced_inclusion(
                 &txs,
@@ -223,7 +212,7 @@ impl BatchManager {
     }
 
     pub fn is_anchor_block_offset_valid(&self, anchor_block_offset: u64) -> bool {
-        anchor_block_offset + MIN_SLOTS_TO_PROPOSE
+        anchor_block_offset
             < self
                 .ethereum_l1
                 .execution_layer
@@ -350,7 +339,6 @@ impl BatchManager {
             start.elapsed().as_millis()
         );
 
-        // TODO ForcedInclusion handle the situation where we have only forced inclusion in the batch builder
         if let Some(forced_inclusion) = forced_inclusion {
             let forced_inclusion_batch = self
                 .ethereum_l1
@@ -487,7 +475,6 @@ impl BatchManager {
                 start.elapsed().as_millis()
             );
 
-            // TODO ForcedInclusion handle the situation where we have only forced inclusion in the batch builder
             if let Some(forced_inclusion) = forced_inclusion {
                 let forced_inclusion_batch = self
                     .ethereum_l1
@@ -750,8 +737,8 @@ impl BatchManager {
         self.batch_builder.prepend_batches(batches);
     }
 
-    pub fn finalize_current_batch(&mut self) {
-        self.batch_builder.finalize_current_batch();
+    pub fn try_finalize_current_batch(&mut self) -> Result<(), Error> {
+        self.batch_builder.try_finalize_current_batch()
     }
 
     pub fn take_batches_to_send(&mut self) -> BatchesToSend {

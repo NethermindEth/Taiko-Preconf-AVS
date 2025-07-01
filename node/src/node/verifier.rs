@@ -204,12 +204,9 @@ impl VerifierThread {
         );
 
         metrics.inc_by_batch_recovered(self.batch_manager.get_number_of_batches());
-        Ok(self.finalize_and_take_batches_to_send())
-    }
 
-    fn finalize_and_take_batches_to_send(&mut self) -> BatchesToSend {
-        self.batch_manager.finalize_current_batch();
-        self.batch_manager.take_batches_to_send()
+        self.batch_manager.try_finalize_current_batch()?;
+        Ok(self.batch_manager.take_batches_to_send())
     }
 
     async fn handle_unprocessed_blocks(

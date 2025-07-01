@@ -1,5 +1,5 @@
 /// Ethereum ECDSA signer with fixed K value, implemented by Chainbound https://chainbound.io/
-// TODO: add reference to the original implementation
+// https://github.com/chainbound/taiko-mk1/blob/74a780af3463efecaded93d36620bd310bf6a834/crates/primitives/src/taiko/deterministic_signer.rs
 use anyhow::Error;
 use std::str::FromStr;
 
