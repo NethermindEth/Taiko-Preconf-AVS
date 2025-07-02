@@ -44,7 +44,7 @@ impl BatchBuilderConfig {
 }
 
 // Temporary struct while we don't have forced inclusion flag in extra data
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum CachedForcedInclusion {
     Empty,
     NoData,
@@ -78,7 +78,20 @@ impl BatchManager {
         }
     }
 
+    fn compare_transactions_list(tx1: &[GethTransaction], tx2: &[GethTransaction]) -> bool {
+        tx1.len() == tx2.len()
+            && tx1
+                .iter()
+                .zip(tx2.iter())
+                .all(|(a, b)| a.inner.hash() == b.inner.hash())
+    }
+
     pub async fn is_forced_inclusion(&mut self, txs: &Vec<GethTransaction>) -> Result<bool, Error> {
+        debug!(
+            "cached_forced_inclusion_txs {:?}",
+            self.cached_forced_inclusion_txs
+        );
+        debug!("txs: {:?}", txs);
         match &self.cached_forced_inclusion_txs {
             CachedForcedInclusion::NoData => Ok(false),
             CachedForcedInclusion::Empty => {
@@ -87,7 +100,8 @@ impl BatchManager {
                     .decode_current_forced_inclusion()
                     .await?
                 {
-                    let res = &fi.txs == txs;
+                    let res = BatchManager::compare_transactions_list(&fi.txs, txs);
+                    debug!("Empty compare_transactions_list: {}", res);
                     self.cached_forced_inclusion_txs = CachedForcedInclusion::Txs(fi.txs);
                     Ok(res)
                 } else {
@@ -95,7 +109,11 @@ impl BatchManager {
                     Ok(false)
                 }
             }
-            CachedForcedInclusion::Txs(cached_txs) => Ok(cached_txs == txs),
+            CachedForcedInclusion::Txs(cached_txs) => {
+                let res = BatchManager::compare_transactions_list(cached_txs, txs);
+                debug!("Txs compare_transactions_list: {}", res);
+                Ok(res)
+            }
         }
     }
 
