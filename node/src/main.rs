@@ -2,7 +2,6 @@ mod chain_monitor;
 mod crypto;
 mod ethereum_l1;
 mod forced_inclusion;
-mod forced_inclusion_monitor;
 mod funds_monitor;
 mod metrics;
 mod node;

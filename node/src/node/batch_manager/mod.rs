@@ -82,7 +82,11 @@ impl BatchManager {
         match &self.cached_forced_inclusion_txs {
             CachedForcedInclusion::NoData => Ok(false),
             CachedForcedInclusion::Empty => {
-                if let Some(fi) = self.forced_inclusion.decode_current_forced_inclusion().await? {
+                if let Some(fi) = self
+                    .forced_inclusion
+                    .decode_current_forced_inclusion()
+                    .await?
+                {
                     let res = &fi.txs == txs;
                     self.cached_forced_inclusion_txs = CachedForcedInclusion::Txs(fi.txs);
                     Ok(res)
@@ -406,9 +410,9 @@ impl BatchManager {
             }
             Ok(preconfed_block)
         } else {
-            error!("No forced inclusion to preconfirm in forced_inclusion_monitor");
+            error!("No forced inclusion to preconfirm in forced_inclusion");
             Err(anyhow::anyhow!(
-                "No forced inclusion to preconfirm in forced_inclusion_monitor"
+                "No forced inclusion to preconfirm in forced_inclusion"
             ))
         }
     }
