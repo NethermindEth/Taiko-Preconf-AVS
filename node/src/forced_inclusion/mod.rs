@@ -42,6 +42,7 @@ impl ForcedInclusion {
         &self,
     ) -> Result<Option<ForcedInclusionInfo>, Error> {
         let i = self.index.load(Ordering::SeqCst);
+        tracing::debug!("Decode forced inclusion at index {}", i);
         let tail = self
             .ethereum_l1
             .execution_layer

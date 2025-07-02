@@ -613,7 +613,12 @@ impl ExecutionLayer {
             .getForcedInclusion(U256::from(index))
             .call()
             .await
-            .map_err(|e| Error::msg(format!("Failed to get forced inclusion: {}", e)))
+            .map_err(|e| {
+                Error::msg(format!(
+                    "Failed to get forced inclusion at index {}: {}",
+                    index, e
+                ))
+            })
     }
 
     pub fn build_forced_inclusion_batch(

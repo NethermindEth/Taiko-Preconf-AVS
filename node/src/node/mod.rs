@@ -256,7 +256,9 @@ impl Node {
                     verifier::Verifier::new_with_taiko_height(
                         taiko_geth_height,
                         self.taiko.clone(),
-                        self.batch_manager.clone_without_batches(),
+                        self.batch_manager
+                            .update_forced_inclusion_and_clone_without_batches()
+                            .await?,
                         0,
                         self.cancel_token.clone(),
                     )
@@ -315,7 +317,9 @@ impl Node {
                 let verifier_result = verifier::Verifier::new_with_taiko_height(
                     taiko_geth_height,
                     self.taiko.clone(),
-                    self.batch_manager.clone_without_batches(),
+                    self.batch_manager
+                        .update_forced_inclusion_and_clone_without_batches()
+                        .await?,
                     verification_slot,
                     self.cancel_token.clone(),
                 )
