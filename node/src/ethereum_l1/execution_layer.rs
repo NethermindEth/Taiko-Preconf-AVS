@@ -9,7 +9,7 @@ use crate::{
         propose_batch_builder::ProposeBatchBuilder,
         ws_provider::WsProvider,
     },
-    forced_inclusion_monitor::ForcedInclusionInfo,
+    forced_inclusion::ForcedInclusionInfo,
     metrics,
     shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress},
     utils::{config, types::*},
@@ -21,9 +21,8 @@ use alloy::{
     providers::{Provider, ProviderBuilder, WsConnect},
     signers::local::PrivateKeySigner,
 };
-use anyhow::Error;
+use anyhow::{Error, anyhow};
 use std::{
-    collections::VecDeque,
     str::FromStr,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -581,34 +580,40 @@ impl ExecutionLayer {
         Ok(block.header.timestamp)
     }
 
-    pub async fn get_forced_incusion_store_data(&self) -> Result<VecDeque<ForcedInclusion>, Error> {
+    pub async fn get_forced_inclusion_head(&self) -> Result<u64, Error> {
         let contract = IForcedInclusionStore::new(
             self.contract_addresses.forced_inclusion_store,
             self.provider_ws.clone(),
         );
-        let head = contract.head().call().await?;
-        let tail = contract.tail().call().await?;
-        let cur_block_hash = if let Some(cur_block) = self
-            .provider_ws
-            .get_block_by_number(BlockNumberOrTag::Latest)
-            .await?
-        {
-            cur_block.header.hash
-        } else {
-            return Err(anyhow::anyhow!("Failed to get current block hash"));
-        };
+        contract
+            .head()
+            .call()
+            .await
+            .map_err(|e| anyhow!("Failed to get forced inclusion head: {}", e))
+    }
 
-        let mut forced_inclusion_store = VecDeque::with_capacity((tail - head).try_into()?);
-        for i in head..tail {
-            let fi = contract
-                .getForcedInclusion(U256::from(i))
-                .block(cur_block_hash.into())
-                .call()
-                .await?;
-            forced_inclusion_store.push_back(fi);
-        }
+    pub async fn get_forced_inclusion_tail(&self) -> Result<u64, Error> {
+        let contract = IForcedInclusionStore::new(
+            self.contract_addresses.forced_inclusion_store,
+            self.provider_ws.clone(),
+        );
+        contract
+            .tail()
+            .call()
+            .await
+            .map_err(|e| anyhow!("Failed to get forced inclusion tail: {}", e))
+    }
 
-        Ok(forced_inclusion_store)
+    pub async fn get_forced_inclusion(&self, index: u64) -> Result<ForcedInclusion, Error> {
+        let contract = IForcedInclusionStore::new(
+            self.contract_addresses.forced_inclusion_store,
+            self.provider_ws.clone(),
+        );
+        contract
+            .getForcedInclusion(U256::from(index))
+            .call()
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get forced inclusion: {}", e)))
     }
 
     pub fn build_forced_inclusion_batch(

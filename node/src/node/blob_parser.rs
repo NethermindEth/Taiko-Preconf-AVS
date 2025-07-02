@@ -21,7 +21,7 @@ pub async fn extract_transactions_from_blob(
     );
     let txs = uncompress_and_decode(v.as_slice())?;
     tracing::debug!(
-        "extract_transactions_from_blob: Decompression and decoding took {} ms",
+        "extract_transactions_from_blob: Total with decompression and decoding took {} ms",
         start.elapsed().as_millis()
     );
     Ok(txs)

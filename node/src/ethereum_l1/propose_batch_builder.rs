@@ -1,4 +1,4 @@
-use crate::forced_inclusion_monitor::ForcedInclusionInfo;
+use crate::forced_inclusion::ForcedInclusionInfo;
 
 use super::{
     l1_contracts_bindings::*, tools, transaction_error::TransactionError, ws_provider::WsProvider,

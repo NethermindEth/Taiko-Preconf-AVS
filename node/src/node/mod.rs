@@ -5,7 +5,7 @@ mod operator;
 mod verifier;
 
 use crate::chain_monitor;
-use crate::forced_inclusion_monitor::ForcedInclusionMonitor;
+use crate::forced_inclusion::ForcedInclusion;
 use crate::{
     ethereum_l1::{EthereumL1, transaction_error::TransactionError},
     metrics::Metrics,
@@ -56,7 +56,7 @@ impl Node {
         simulate_not_submitting_at_the_end_of_epoch: bool,
         transaction_error_channel: Receiver<TransactionError>,
         metrics: Arc<Metrics>,
-        forced_inclusion_monitor: Arc<ForcedInclusionMonitor>,
+        forced_inclusion: Arc<ForcedInclusion>,
     ) -> Result<Self, Error> {
         info!(
             "Batch builder config:\n\
@@ -85,7 +85,7 @@ impl Node {
             batch_builder_config,
             ethereum_l1.clone(),
             taiko.clone(),
-            forced_inclusion_monitor,
+            forced_inclusion,
         );
         let head_verifier = L2HeadVerifier::new();
         Ok(Self {
@@ -423,7 +423,7 @@ impl Node {
                     self.batch_manager.has_batches(),
                     self.batch_manager.has_current_forced_inclusion()
                 );
-                self.batch_manager.reset_builder(true).await;
+                self.batch_manager.reset_builder().await?;
             }
             if self.verifier.is_some() {
                 error!("Verifier is not None after submitter window.");
@@ -787,9 +787,7 @@ impl Node {
 
         // Update self state
         self.verifier = None;
-        self.batch_manager
-            .reset_builder(can_do_forced_inclusion)
-            .await;
+        self.batch_manager.reset_builder().await?;
 
         self.chain_monitor.set_expected_reorg(parent_block_id).await;
 

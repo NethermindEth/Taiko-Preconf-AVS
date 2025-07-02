@@ -1,6 +1,7 @@
 mod chain_monitor;
 mod crypto;
 mod ethereum_l1;
+mod forced_inclusion;
 mod forced_inclusion_monitor;
 mod funds_monitor;
 mod metrics;
@@ -76,16 +77,7 @@ async fn main() -> Result<(), Error> {
 
     let ethereum_l1 = Arc::new(ethereum_l1);
 
-    let forced_inclusion_monitor = Arc::new(
-        forced_inclusion_monitor::ForcedInclusionMonitor::new(
-            config.l1_ws_rpc_url.clone(),
-            config.contract_addresses.forced_inclusion_store.clone(),
-            cancel_token.clone(),
-            ethereum_l1.clone(),
-        )
-        .await?,
-    );
-    forced_inclusion_monitor.start().await?;
+    let forced_inclusion = Arc::new(forced_inclusion::ForcedInclusion::new(ethereum_l1.clone()));
 
     #[cfg(feature = "test-gas")]
     let args = Args::parse();
@@ -192,7 +184,7 @@ async fn main() -> Result<(), Error> {
         config.simulate_not_submitting_at_the_end_of_epoch,
         transaction_error_receiver,
         metrics.clone(),
-        forced_inclusion_monitor.clone(),
+        forced_inclusion,
     )
     .await
     .map_err(|e| anyhow::anyhow!("Failed to create Node: {}", e))?;

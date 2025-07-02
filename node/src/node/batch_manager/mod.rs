@@ -2,7 +2,7 @@ pub mod batch_builder;
 
 use crate::{
     ethereum_l1::EthereumL1,
-    forced_inclusion_monitor::ForcedInclusionMonitor,
+    forced_inclusion::ForcedInclusion,
     node::batch_manager::batch_builder::BatchesToSend,
     shared::{l2_block::L2Block, l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
     taiko::{
@@ -13,7 +13,7 @@ use alloy::rpc::types::Transaction as GethTransaction;
 use alloy::{consensus::BlockHeader, consensus::Transaction, primitives::Address};
 use anyhow::Error;
 use batch_builder::BatchBuilder;
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
 
 /// Configuration for batching L2 transactions
@@ -43,12 +43,21 @@ impl BatchBuilderConfig {
     }
 }
 
+// Temporary struct while we don't have forced inclusion flag in extra data
+#[derive(PartialEq)]
+enum CachedForcedInclusion {
+    Empty,
+    NoData,
+    Txs(Vec<GethTransaction>),
+}
+
 pub struct BatchManager {
     batch_builder: BatchBuilder,
     ethereum_l1: Arc<EthereumL1>,
     pub taiko: Arc<Taiko>,
     l1_height_lag: u64,
-    forced_inclusion_monitor: Arc<ForcedInclusionMonitor>,
+    forced_inclusion: Arc<ForcedInclusion>,
+    cached_forced_inclusion_txs: CachedForcedInclusion,
 }
 
 impl BatchManager {
@@ -57,26 +66,33 @@ impl BatchManager {
         config: BatchBuilderConfig,
         ethereum_l1: Arc<EthereumL1>,
         taiko: Arc<Taiko>,
-        forced_inclusion_monitor: Arc<ForcedInclusionMonitor>,
+        forced_inclusion: Arc<ForcedInclusion>,
     ) -> Self {
         Self {
             batch_builder: BatchBuilder::new(config, ethereum_l1.slot_clock.clone()),
             ethereum_l1,
             taiko,
             l1_height_lag,
-            forced_inclusion_monitor,
+            forced_inclusion,
+            cached_forced_inclusion_txs: CachedForcedInclusion::Empty,
         }
     }
 
-    pub async fn is_forced_inclusion(&self, txs: &Vec<GethTransaction>) -> Result<bool, Error> {
-        let mut forced_inclusion = self.forced_inclusion_monitor.is_same_txs_list(txs).await;
-        while forced_inclusion.is_none() {
-            debug!("Waiting for forced inclusion decoding to finish");
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            forced_inclusion = self.forced_inclusion_monitor.is_same_txs_list(txs).await;
+    pub async fn is_forced_inclusion(&mut self, txs: &Vec<GethTransaction>) -> Result<bool, Error> {
+        match &self.cached_forced_inclusion_txs {
+            CachedForcedInclusion::NoData => Ok(false),
+            CachedForcedInclusion::Empty => {
+                if let Some(fi) = self.forced_inclusion.decode_current_forced_inclusion().await? {
+                    let res = &fi.txs == txs;
+                    self.cached_forced_inclusion_txs = CachedForcedInclusion::Txs(fi.txs);
+                    Ok(res)
+                } else {
+                    self.cached_forced_inclusion_txs = CachedForcedInclusion::NoData;
+                    Ok(false)
+                }
+            }
+            CachedForcedInclusion::Txs(cached_txs) => Ok(cached_txs == txs),
         }
-        forced_inclusion
-            .ok_or_else(|| anyhow::anyhow!("Failed to compare block with forced inclusion"))
     }
 
     pub async fn check_and_handle_forced_inclusion(
@@ -90,10 +106,8 @@ impl BatchManager {
 
         if forced_inclusion {
             self.batch_builder.try_finalize_current_batch()?;
-            let forced_inclusion = self
-                .forced_inclusion_monitor
-                .get_next_forced_inclusion_data()
-                .await;
+            let forced_inclusion = self.forced_inclusion.consume_forced_inclusion().await?;
+            self.cached_forced_inclusion_txs = CachedForcedInclusion::Empty;
             if let Some(forced_inclusion) = forced_inclusion {
                 let forced_inclusion_batch = self
                     .ethereum_l1
@@ -330,10 +344,8 @@ impl BatchManager {
         let anchor_block_id = self.calculate_anchor_block_id().await?;
 
         let start = std::time::Instant::now();
-        let forced_inclusion = self
-            .forced_inclusion_monitor
-            .get_next_forced_inclusion_data()
-            .await;
+        let forced_inclusion = self.forced_inclusion.consume_forced_inclusion().await?;
+        self.cached_forced_inclusion_txs = CachedForcedInclusion::Empty;
         debug!(
             "Got forced inclusion in {} milliseconds",
             start.elapsed().as_millis()
@@ -466,10 +478,8 @@ impl BatchManager {
         if can_do_forced_inclusion && !self.has_current_forced_inclusion() {
             // get current forced inclusion
             let start = std::time::Instant::now();
-            let forced_inclusion = self
-                .forced_inclusion_monitor
-                .get_next_forced_inclusion_data()
-                .await;
+            let forced_inclusion = self.forced_inclusion.consume_forced_inclusion().await?;
+            self.cached_forced_inclusion_txs = CachedForcedInclusion::Empty;
             debug!(
                 "Got forced inclusion in {} milliseconds",
                 start.elapsed().as_millis()
@@ -712,15 +722,17 @@ impl BatchManager {
         self.batch_builder.get_number_of_batches_ready_to_send()
     }
 
-    pub async fn reset_builder(&mut self, reset_forced_inclusion_monitor: bool) {
+    pub async fn reset_builder(&mut self) -> Result<(), Error> {
         warn!("Resetting batch builder");
+        self.cached_forced_inclusion_txs = CachedForcedInclusion::Empty;
+        self.forced_inclusion.sync_queue_index_with_head().await?;
+
         self.batch_builder = batch_builder::BatchBuilder::new(
             self.batch_builder.get_config().clone(),
             self.ethereum_l1.slot_clock.clone(),
         );
-        if reset_forced_inclusion_monitor {
-            self.forced_inclusion_monitor.reset().await;
-        }
+
+        Ok(())
     }
 
     pub fn clone_without_batches(&self) -> Self {
@@ -729,7 +741,8 @@ impl BatchManager {
             ethereum_l1: self.ethereum_l1.clone(),
             taiko: self.taiko.clone(),
             l1_height_lag: self.l1_height_lag,
-            forced_inclusion_monitor: self.forced_inclusion_monitor.clone(),
+            forced_inclusion: self.forced_inclusion.clone(),
+            cached_forced_inclusion_txs: CachedForcedInclusion::Empty,
         }
     }
 
