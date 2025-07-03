@@ -241,9 +241,10 @@ impl ExecutionLayer {
         let tx_lists_bytes = encode_and_compress(&tx_vec)?;
 
         info!(
-            "📦 Proposing batch with {} blocks and {} bytes length",
+            "📦 Proposing batch with {} blocks and {} bytes length | forced inclusion: {}",
             blocks.len(),
             tx_lists_bytes.len(),
+            forced_inclusion.is_some(),
         );
 
         self.metrics
