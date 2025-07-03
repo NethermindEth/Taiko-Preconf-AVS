@@ -97,7 +97,9 @@ impl BatchBuilder {
             .as_ref()
             .is_none_or(|b| b.l2_blocks.is_empty());
 
-        if is_empty {
+        let has_forced_inclusion = self.current_forced_inclusion.is_some();
+
+        if has_forced_inclusion && is_empty {
             error!(
                 "Failed to finalize current batch, current_batch {} forced_inclusion {}",
                 self.current_batch.is_some(),
