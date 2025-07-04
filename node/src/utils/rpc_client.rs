@@ -1,3 +1,4 @@
+use super::retry::backoff_retry_with_timeout;
 use anyhow::Error;
 use http::{HeaderMap, HeaderValue};
 use jsonrpsee::{
@@ -132,6 +133,24 @@ impl JSONRPCClient {
         }
     }
 
+    pub async fn call_method_with_retry(
+        &self,
+        method: &str,
+        params: Vec<Value>,
+    ) -> Result<Value, Error> {
+        let result = backoff_retry_with_timeout(
+            || async { self.call_method(method, params.clone()).await },
+            Duration::from_millis(10),
+            Duration::from_secs(1),
+            self.timeout,
+        )
+        .await;
+
+        result.map_err(|e| {
+            anyhow::anyhow!("JSONRPCClient: Failed to call method {method} with retry: {e}")
+        })
+    }
+
     async fn recreate_client(&self) -> Result<(), Error> {
         let new_client = (if let Some(jwt_secret) = self.jwt_secret {
             Self::create_client_with_jwt(&self.url, self.timeout, &jwt_secret)
@@ -212,39 +231,30 @@ impl HttpRPCClient {
     where
         T: serde::Serialize,
     {
-        let start_time = std::time::Instant::now();
+        let result = backoff_retry_with_timeout(
+            || async {
+                let response = self.request_json(method.clone(), endpoint, payload).await;
 
-        // Try until we exceed the max duration
-        while start_time.elapsed() < max_duration {
-            let response = self.request_json(method.clone(), endpoint, payload).await;
-
-            match response {
-                Ok(ref data) => {
-                    return Ok(data.clone());
-                }
-                Err(ref e) => {
-                    let elapsed = start_time.elapsed();
-                    let remaining = max_duration.checked_sub(elapsed).unwrap_or_default();
-
+                if let Err(ref e) = response {
                     tracing::error!(
-                        "Failed to call driver RPC for API '{}': {}. Retrying... ({}ms elapsed, {}ms remaining)",
+                        "Failed to call driver RPC for API '{}': {}. Retrying...",
                         endpoint,
-                        e,
-                        elapsed.as_millis(),
-                        remaining.as_millis()
+                        e
                     );
-
-                    tokio::time::sleep(Duration::from_millis(100)).await;
                     self.recreate_client().await?;
                 }
-            }
-        }
 
-        Err(anyhow::anyhow!(
-            "Failed to call driver RPC for API '{}' within the duration ({}ms)",
-            endpoint,
-            start_time.elapsed().as_millis()
-        ))
+                response
+            },
+            Duration::from_millis(10),
+            Duration::from_secs(1),
+            max_duration,
+        )
+        .await;
+
+        result.map_err(|err| {
+            anyhow::anyhow!("Failed to call driver RPC for API '{}': {}", endpoint, err)
+        })
     }
 
     /// Send a request to the specified endpoint with the given method and payload
