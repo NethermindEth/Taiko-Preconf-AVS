@@ -13,4 +13,5 @@ pub struct EthereumL1Config {
     pub max_attempts_to_send_tx: u64,
     pub max_attempts_to_wait_tx: u64,
     pub delay_between_tx_attempts_sec: u64,
+    pub web3signer_url: String,
 }
