@@ -255,14 +255,14 @@ impl BatchManager {
         &mut self,
         pending_tx_list: PreBuiltTxList,
         l2_slot_info: L2SlotInfo,
-        can_do_forced_inclusion: bool,
+        allow_forced_inclusion: bool,
     ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
         let forced_inclusion = self.is_forced_inclusion(&pending_tx_list.tx_list).await?;
         debug!("Reanchor block: is forced inclusion: {}", forced_inclusion);
 
         let l2_block = L2Block::new_from(pending_tx_list, l2_slot_info.slot_timestamp());
 
-        if forced_inclusion && can_do_forced_inclusion {
+        if forced_inclusion && allow_forced_inclusion {
             // skip forced inclusion block because we had OldestForcedInclusionDue
             return Ok(None);
         }
@@ -277,7 +277,7 @@ impl BatchManager {
                     l2_slot_info,
                     false,
                     OperationType::Reanchor,
-                    can_do_forced_inclusion,
+                    allow_forced_inclusion,
                 )
                 .await?;
             block
@@ -291,7 +291,7 @@ impl BatchManager {
         pending_tx_list: Option<PreBuiltTxList>,
         l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
-        can_do_forced_inclusion: bool,
+        allow_forced_inclusion: bool,
     ) -> Result<
         (
             Option<BuildPreconfBlockResponse>,
@@ -312,7 +312,7 @@ impl BatchManager {
                 l2_slot_info,
                 end_of_sequencing,
                 OperationType::Preconfirm,
-                can_do_forced_inclusion,
+                allow_forced_inclusion,
             )
             .await?
         } else if self.is_empty_block_required(l2_slot_info.slot_timestamp()) {
@@ -324,7 +324,7 @@ impl BatchManager {
                 l2_slot_info,
                 end_of_sequencing,
                 OperationType::Preconfirm,
-                can_do_forced_inclusion,
+                allow_forced_inclusion,
             )
             .await?
         } else if end_of_sequencing {
@@ -335,7 +335,7 @@ impl BatchManager {
                 l2_slot_info,
                 end_of_sequencing,
                 OperationType::Preconfirm,
-                can_do_forced_inclusion,
+                allow_forced_inclusion,
             )
             .await?
         } else {
@@ -474,7 +474,7 @@ impl BatchManager {
         mut l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
         operation_type: OperationType,
-        can_do_forced_inclusion: bool,
+        allow_forced_inclusion: bool,
     ) -> Result<
         (
             Option<BuildPreconfBlockResponse>,
@@ -494,7 +494,7 @@ impl BatchManager {
             .create_new_batch(anchor_block_id, anchor_block_timestamp_sec);
 
         let mut forced_inclusion_block_response = None;
-        if can_do_forced_inclusion && !self.has_current_forced_inclusion() {
+        if allow_forced_inclusion && !self.has_current_forced_inclusion() {
             // get current forced inclusion
             let start = std::time::Instant::now();
             let forced_inclusion = self.forced_inclusion.consume_forced_inclusion().await?;
@@ -625,7 +625,7 @@ impl BatchManager {
         l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
         operation_type: OperationType,
-        can_do_forced_inclusion: bool,
+        allow_forced_inclusion: bool,
     ) -> Result<
         (
             Option<BuildPreconfBlockResponse>,
@@ -652,7 +652,7 @@ impl BatchManager {
                     l2_slot_info,
                     end_of_sequencing,
                     operation_type,
-                    can_do_forced_inclusion,
+                    allow_forced_inclusion,
                 )
                 .await;
         }

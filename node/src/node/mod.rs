@@ -706,7 +706,7 @@ impl Node {
         pending_tx_list: Option<PreBuiltTxList>,
         l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
-        can_do_forced_inclusion: bool,
+        allow_forced_inclusion: bool,
     ) -> Result<
         (
             Option<BuildPreconfBlockResponse>,
@@ -719,7 +719,7 @@ impl Node {
                 pending_tx_list,
                 l2_slot_info,
                 end_of_sequencing,
-                can_do_forced_inclusion,
+                allow_forced_inclusion,
             )
             .await
     }
@@ -773,11 +773,11 @@ impl Node {
         &mut self,
         parent_block_id: u64,
         reason: &str,
-        can_do_forced_inclusion: bool,
+        allow_forced_inclusion: bool,
     ) -> Result<(), Error> {
         warn!(
-            "⛓️‍💥 Reanchoring blocks for parent block: {} reason: {} can_do_forced_inclusion: {}",
-            parent_block_id, reason, can_do_forced_inclusion
+            "⛓️‍💥 Reanchoring blocks for parent block: {} reason: {} allow_forced_inclusion: {}",
+            parent_block_id, reason, allow_forced_inclusion
         );
 
         let start_time = std::time::Instant::now();
@@ -838,7 +838,7 @@ impl Node {
 
             let block = self
                 .batch_manager
-                .reanchor_block(pending_tx_list, l2_slot_info, can_do_forced_inclusion)
+                .reanchor_block(pending_tx_list, l2_slot_info, allow_forced_inclusion)
                 .await;
             // if reanchor_block fails restart the node
             if let Ok(Some(block)) = block {
