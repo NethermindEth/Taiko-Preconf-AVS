@@ -3,6 +3,7 @@ use super::{
     fixed_k_signer_chainbound,
     l2_contracts_bindings::{Bridge, LibSharedData, TaikoAnchor},
 };
+use crate::shared::web3signer::Web3Signer;
 use alloy::{
     consensus::{
         SignableTransaction, Transaction as AnchorTransaction, TxEnvelope, transaction::Recovered,
@@ -12,11 +13,12 @@ use alloy::{
     primitives::{Address, B256, Bytes, U256, Uint},
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::{Block as RpcBlock, Transaction},
-    signers::{Signature, local::PrivateKeySigner},
+    signers::Signature,
     transports::TransportErrorKind,
 };
 use alloy_json_rpc::RpcError;
 use anyhow::Error;
+use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 
@@ -283,10 +285,11 @@ impl L2ExecutionLayer {
     ) -> Result<(), Error> {
         const FEE: u64 = 10000;
 
+        const SIGNER_TIMEOUT: Duration = Duration::from_secs(10);
+        let web3signer = Web3Signer::new(self.config.web3signer_url.as_str(), SIGNER_TIMEOUT)?;
+
         let ws = WsConnect::new(self.config.taiko_geth_ws_url.to_string());
-        let signer: PrivateKeySigner = self.config.avs_node_ecdsa_private_key.parse()?;
         let provider_ws = ProviderBuilder::new()
-            .wallet(signer)
             .connect_ws(ws.clone())
             .await
             .map_err(|e| anyhow::anyhow!("Taiko::new: Failed to create WebSocket provider: {e}"))?;
@@ -296,7 +299,7 @@ impl L2ExecutionLayer {
             self.chain_id, dest_chain_id
         );
 
-        let contract = Bridge::new(self.config.taiko_bridge_address, provider_ws);
+        let contract = Bridge::new(self.config.taiko_bridge_address, provider_ws.clone());
         let gas_limit = contract
             .getMessageMinGasLimit(Uint::<256, 4>::from(0))
             .call()
@@ -317,13 +320,15 @@ impl L2ExecutionLayer {
             data: Bytes::new(),
         };
 
-        let tx = contract
+        let tx_send_message = contract
             .sendMessage(message)
-            .value(Uint::<256, 4>::from(amount + u128::from(FEE)))
-            .send()
-            .await?;
+            .value(Uint::<256, 4>::from(amount + u128::from(FEE)));
 
-        info!("Bridge sendMessage tx hash: {}", tx.tx_hash());
+        let tx_request = tx_send_message.into_transaction_request();
+        let signed_tx = web3signer.sign_transaction(tx_request).await?;
+        let pending_tx = provider_ws.send_raw_transaction(&signed_tx).await?;
+
+        info!("Bridge sendMessage tx hash: {}", pending_tx.tx_hash());
 
         Ok(())
     }

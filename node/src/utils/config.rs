@@ -4,10 +4,10 @@ use tracing::{info, warn};
 use crate::utils::blob::constants::MAX_BLOB_DATA_SIZE;
 
 pub struct Config {
+    pub preconf_address: String,
     pub taiko_geth_ws_rpc_url: String,
     pub taiko_geth_auth_rpc_url: String,
     pub taiko_driver_url: String,
-    pub avs_node_ecdsa_private_key: String,
     pub mev_boost_url: String,
     pub l1_ws_rpc_url: String,
     pub l1_beacon_url: String,
@@ -61,15 +61,14 @@ impl Config {
 
         let default_empty_address = "0x0000000000000000000000000000000000000000".to_string();
 
-        const AVS_NODE_ECDSA_PRIVATE_KEY: &str = "AVS_NODE_ECDSA_PRIVATE_KEY";
-        let avs_node_ecdsa_private_key =
-            std::env::var(AVS_NODE_ECDSA_PRIVATE_KEY).unwrap_or_else(|_| {
-                warn!(
-                    "No AVS node ECDSA private key found in {} env var, using default",
-                    AVS_NODE_ECDSA_PRIVATE_KEY
-                );
-                "0x4c0883a69102937d6231471b5dbb6204fe512961708279f2e3e8a5d4b8e3e3e8".to_string()
-            });
+        const PRECONF_ADDRESS: &str = "PRECONF_ADDRESS";
+        let preconf_address = std::env::var(PRECONF_ADDRESS).unwrap_or_else(|_| {
+            warn!(
+                "No Preconf address found in {} env var, using default",
+                PRECONF_ADDRESS
+            );
+            default_empty_address.clone()
+        });
 
         const TAIKO_INBOX_ADDRESS: &str = "TAIKO_INBOX_ADDRESS";
         let taiko_inbox = std::env::var(TAIKO_INBOX_ADDRESS).unwrap_or_else(|_| {
@@ -311,6 +310,7 @@ impl Config {
             .expect("MIN_BYTES_PER_TX_LIST must be a number");
 
         let config = Self {
+            preconf_address,
             taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
                 .unwrap_or("ws://127.0.0.1:1234".to_string()),
             taiko_geth_auth_rpc_url: std::env::var("TAIKO_GETH_AUTH_RPC_URL")
@@ -318,7 +318,6 @@ impl Config {
             taiko_driver_url: std::env::var("TAIKO_DRIVER_URL")
                 .unwrap_or("http://127.0.0.1:1236".to_string()),
 
-            avs_node_ecdsa_private_key,
             mev_boost_url: std::env::var("MEV_BOOST_URL")
                 .unwrap_or("http://127.0.0.1:8080".to_string()),
             l1_ws_rpc_url: std::env::var("L1_WS_RPC_URL").unwrap_or("wss://127.0.0.1".to_string()),
@@ -361,6 +360,7 @@ impl Config {
         info!(
             r#"
 Configuration:
+preconfer address: {}
 Taiko geth WS RPC URL: {},
 Taiko geth auth RPC URL: {},
 Taiko driver URL: {},
@@ -399,6 +399,7 @@ threshold_taiko: {}
 amount to bridge from l2 to l1: {}
 simulate not submitting at the end of epoch: {}
 "#,
+            config.preconf_address,
             config.taiko_geth_ws_rpc_url,
             config.taiko_geth_auth_rpc_url,
             config.taiko_driver_url,

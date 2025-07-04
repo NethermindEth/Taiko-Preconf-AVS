@@ -3,6 +3,7 @@ pub enum TransactionError {
     EstimationFailed,
     EstimationTooEarly,
     TransactionReverted,
+    Web3SignerFailed,
     NotConfirmed,
     UnsupportedTransactionType,
     GetBlockNumberFailed,

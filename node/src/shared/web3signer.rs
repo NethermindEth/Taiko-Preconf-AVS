@@ -147,4 +147,3 @@ impl Web3Signer {
         ))
     }
 }
-

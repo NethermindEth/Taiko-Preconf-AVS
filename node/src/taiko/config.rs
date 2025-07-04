@@ -41,7 +41,7 @@ pub struct TaikoConfig {
     pub rpc_l2_execution_layer_timeout: Duration,
     pub rpc_driver_preconf_timeout: Duration,
     pub rpc_driver_status_timeout: Duration,
-    pub avs_node_ecdsa_private_key: String,
+    pub web3signer_url: String,
 }
 
 impl TaikoConfig {
@@ -59,7 +59,7 @@ impl TaikoConfig {
         rpc_l2_execution_layer_timeout: Duration,
         rpc_driver_preconf_timeout: Duration,
         rpc_driver_status_timeout: Duration,
-        avs_node_ecdsa_private_key: String,
+        web3signer_url: String,
     ) -> Result<Self, Error> {
         Ok(Self {
             taiko_geth_ws_url,
@@ -74,7 +74,7 @@ impl TaikoConfig {
             rpc_l2_execution_layer_timeout,
             rpc_driver_preconf_timeout,
             rpc_driver_status_timeout,
-            avs_node_ecdsa_private_key,
+            web3signer_url,
         })
     }
 }
