@@ -27,7 +27,11 @@ where
     let mut last_error: Option<anyhow::Error> = None;
 
     loop {
-        if start_time.elapsed().unwrap() >= timeout {
+        if start_time.elapsed().unwrap_or_else(|_| {
+            tracing::error!("backoff_retry_with_timeout: start_time.elapsed() failed, using 0");
+            Duration::from_secs(0)
+        }) >= timeout
+        {
             let error_msg = if let Some(ref err) = last_error {
                 format!(
                     "Operation timed out after {:?}, last error: {}",

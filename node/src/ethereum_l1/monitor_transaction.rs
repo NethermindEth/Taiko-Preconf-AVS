@@ -1,8 +1,8 @@
-use crate::metrics::Metrics;
+use crate::{metrics::Metrics, shared::web3signer::Web3Signer};
 
 use super::{tools, transaction_error::TransactionError, ws_provider::WsProvider};
 use alloy::{
-    consensus::TxType,
+    consensus::{SignableTransaction, TxEnvelope, TxType, transaction::SignerRecoverable},
     network::{Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
     primitives::B256,
     providers::{
@@ -42,6 +42,7 @@ pub struct TransactionMonitorThread {
     nonce: u64,
     error_notification_channel: Sender<TransactionError>,
     metrics: Arc<Metrics>,
+    web3signer: Arc<Web3Signer>,
 }
 
 //#[derive(Debug)]
@@ -51,6 +52,7 @@ pub struct TransactionMonitor {
     join_handle: Mutex<Option<JoinHandle<()>>>,
     error_notification_channel: Sender<TransactionError>,
     metrics: Arc<Metrics>,
+    web3signer: Arc<Web3Signer>,
 }
 
 impl TransactionMonitor {
@@ -64,7 +66,9 @@ impl TransactionMonitor {
         delay_between_tx_attempts_sec: u64,
         error_notification_channel: Sender<TransactionError>,
         metrics: Arc<Metrics>,
+        web3signer_url: String,
     ) -> Result<Self, Error> {
+        const SIGNER_TIMEOUT: Duration = Duration::from_secs(10);
         Ok(Self {
             provider,
             config: TransactionMonitorConfig {
@@ -77,6 +81,7 @@ impl TransactionMonitor {
             join_handle: Mutex::new(None),
             error_notification_channel,
             metrics,
+            web3signer: Arc::new(Web3Signer::new(&web3signer_url, SIGNER_TIMEOUT)?),
         })
     }
 
@@ -102,6 +107,7 @@ impl TransactionMonitor {
             nonce,
             self.error_notification_channel.clone(),
             self.metrics.clone(),
+            self.web3signer.clone(),
         );
         let join_handle = monitor_thread.spawn_monitoring_task(tx);
         *guard = Some(join_handle);
@@ -124,6 +130,7 @@ impl TransactionMonitorThread {
         nonce: u64,
         error_notification_channel: Sender<TransactionError>,
         metrics: Arc<Metrics>,
+        web3signer: Arc<Web3Signer>,
     ) -> Self {
         Self {
             provider,
@@ -131,6 +138,7 @@ impl TransactionMonitorThread {
             nonce,
             error_notification_channel,
             metrics,
+            web3signer,
         }
     }
     pub fn spawn_monitoring_task(self, tx: TransactionRequest) -> JoinHandle<()> {
@@ -369,7 +377,49 @@ impl TransactionMonitorThread {
         previous_tx_hashes: &Vec<B256>,
         sending_attempt: u64,
     ) -> Option<PendingTransactionBuilder<alloy::network::Ethereum>> {
-        match self.provider.send_transaction(tx).await {
+        let unsigned_tx = match tx.clone().build_unsigned() {
+            Ok(unsigned_tx) => unsigned_tx,
+            Err(e) => {
+                error!("Failed to build unsigned transaction: {}", e);
+                self.send_error_signal(TransactionError::BuildTransactionFailed)
+                    .await;
+                return None;
+            }
+        };
+        let web3singer_signed_tx = match self.web3signer.sign_transaction(tx).await {
+            Ok(web3singer_signed_tx) => web3singer_signed_tx,
+            Err(e) => {
+                error!("Failed to sign transaction: {}", e);
+                self.send_error_signal(TransactionError::Web3SignerFailed)
+                    .await;
+                return None;
+            }
+        };
+
+        let tx_envelope: TxEnvelope =
+            match alloy_rlp::Decodable::decode(&mut web3singer_signed_tx.as_slice()) {
+                Ok(tx_envelope) => tx_envelope,
+                Err(err) => {
+                    error!("Failed to decode RLP transaction: {}", err);
+                    self.send_error_signal(TransactionError::Web3SignerFailed)
+                        .await;
+                    return None;
+                }
+            };
+
+        let signature = tx_envelope.signature();
+
+        // TODO: remove this
+        let signer = tx_envelope
+            .recover_signer()
+            .expect("Failed to recover signer from transaction");
+        debug!("Web3signer signed tx From: {}", signer);
+
+        let signed_tx = unsigned_tx.into_signed(*signature);
+        let mut encoded_tx = Vec::new();
+        signed_tx.eip2718_encode(&mut encoded_tx);
+
+        match self.provider.send_raw_transaction(&encoded_tx).await {
             Ok(tx) => Some(tx),
             Err(e) => {
                 if let RpcError::ErrorResp(err) = &e {

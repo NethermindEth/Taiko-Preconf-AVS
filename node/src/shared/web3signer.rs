@@ -1,12 +1,9 @@
 use crate::utils::rpc_client::JSONRPCClient;
 use alloy::consensus::TxType;
-use alloy::primitives::B256;
 use alloy::{primitives::TxKind, rpc::types::TransactionRequest};
-use alloy_rlp::Encodable;
 use anyhow::Error;
 use hex;
 use serde_json::{Map, Value};
-use std::any::Any;
 use std::time::Duration;
 
 pub struct Web3Signer {
@@ -65,16 +62,9 @@ impl Web3Signer {
                     .to_string(),
             ),
         );
-        tx_obj.insert(
-            "chainId".to_string(),
-            Value::String(
-                tx.chain_id
-                    .ok_or(anyhow::anyhow!(
-                        "Web3Signer: Transaction chainId is not set"
-                    ))?
-                    .to_string(),
-            ),
-        );
+        if let Some(chain_id) = tx.chain_id {
+            tx_obj.insert("chainId".to_string(), Value::String(chain_id.to_string()));
+        }
         if let Some(input) = tx.input.input {
             tx_obj.insert("data".to_string(), Value::String(hex::encode(input)));
         }
@@ -137,8 +127,8 @@ impl Web3Signer {
             .map_err(|e| anyhow::anyhow!("Web3Signer: Failed to sign transaction: {}", e))?;
 
         if let Some(signature) = response.as_str().map(|s| s.strip_prefix("0x").unwrap_or(s)) {
-            return Ok(hex::decode(signature)
-                .map_err(|e| anyhow::anyhow!("Web3Signer: Failed to decode signature: {}", e))?);
+            return hex::decode(signature)
+                .map_err(|e| anyhow::anyhow!("Web3Signer: Failed to decode signature: {}", e));
         }
 
         Err(anyhow::anyhow!(

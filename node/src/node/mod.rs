@@ -607,6 +607,14 @@ impl Node {
                 self.cancel_token.cancel();
                 return Err(anyhow::anyhow!("Transaction reverted, exiting"));
             }
+            TransactionError::Web3SignerFailed => {
+                self.cancel_token.cancel();
+                return Err(anyhow::anyhow!("Web3Signer failed, exiting"));
+            }
+            TransactionError::BuildTransactionFailed => {
+                self.cancel_token.cancel();
+                return Err(anyhow::anyhow!("Build transaction failed, exiting"));
+            }
         }
 
         Ok(())
