@@ -10,6 +10,7 @@ use alloy::{
     },
     contract::Error as ContractError,
     eips::BlockNumberOrTag,
+    network::ReceiptResponse,
     primitives::{Address, B256, Bytes, U256, Uint},
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::{Block as RpcBlock, Transaction},
@@ -20,7 +21,7 @@ use alloy_json_rpc::RpcError;
 use anyhow::Error;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 pub struct L2ExecutionLayer {
     provider_ws: RwLock<WsProvider>,
@@ -320,7 +321,12 @@ impl L2ExecutionLayer {
             data: Bytes::new(),
         };
 
-        let fees = provider_ws.estimate_eip1559_fees().await?;
+        let mut fees = provider_ws.estimate_eip1559_fees().await?;
+        const ONE_GWEI: u128 = 1000000000;
+        if fees.max_priority_fee_per_gas < ONE_GWEI {
+            fees.max_priority_fee_per_gas = ONE_GWEI;
+            fees.max_fee_per_gas += ONE_GWEI;
+        }
         debug!("Fees: {:?}", fees);
         let nonce = provider_ws.get_transaction_count(preconfer_address).await?;
 
@@ -334,13 +340,41 @@ impl L2ExecutionLayer {
             .max_priority_fee_per_gas(fees.max_priority_fee_per_gas);
 
         let tx_request = tx_send_message.into_transaction_request();
-        let estimated_gas = provider_ws.estimate_gas(tx_request.clone()).await?;
-        let tx_request = tx_request.gas_limit(estimated_gas + 1);
-        debug!("Estimated gas: {:?}", estimated_gas);
+        let tx_request = tx_request.gas_limit(1000000);
         let signed_tx = web3signer.sign_transaction(tx_request).await?;
         let pending_tx = provider_ws.send_raw_transaction(&signed_tx).await?;
 
-        info!("Bridge sendMessage tx hash: {}", pending_tx.tx_hash());
+        let tx_hash = *pending_tx.tx_hash();
+        info!("Bridge sendMessage tx hash: {}", tx_hash);
+
+        let receipt = pending_tx.get_receipt().await?;
+
+        if receipt.status() {
+            let block_number = if let Some(block_number) = receipt.block_number() {
+                block_number
+            } else {
+                warn!("Block number not found for transaction {}", tx_hash);
+                0
+            };
+
+            info!(
+                "🌁 Transaction {} confirmed in block {}",
+                tx_hash, block_number
+            );
+        } else if let Some(block_number) = receipt.block_number() {
+            return Err(anyhow::anyhow!(
+                crate::shared::alloy_tools::check_for_revert_reason(
+                    &provider_ws,
+                    tx_hash,
+                    block_number
+                )
+                .await
+            ));
+        } else {
+            return Err(anyhow::anyhow!(
+                "Transaction {tx_hash} failed, but block number not found"
+            ));
+        }
 
         Ok(())
     }

@@ -65,7 +65,7 @@ async fn main() -> Result<(), Error> {
             max_attempts_to_send_tx: config.max_attempts_to_send_tx,
             max_attempts_to_wait_tx: config.max_attempts_to_wait_tx,
             delay_between_tx_attempts_sec: config.delay_between_tx_attempts_sec,
-            web3signer_url: config.web3signer_url.clone(),
+            web3signer_url: config.web3signer_l1_url.clone(),
             preconfer_address: config.preconf_address,
         },
         transaction_error_sender,
@@ -112,7 +112,7 @@ async fn main() -> Result<(), Error> {
                 config.rpc_l2_execution_layer_timeout,
                 config.rpc_driver_preconf_timeout,
                 config.rpc_driver_status_timeout,
-                config.web3signer_url,
+                config.web3signer_l2_url,
             )?,
         )
         .await

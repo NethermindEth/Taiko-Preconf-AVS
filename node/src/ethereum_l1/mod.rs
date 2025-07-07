@@ -7,7 +7,6 @@ mod propose_batch_builder;
 pub mod slot_clock;
 mod tools;
 pub mod transaction_error;
-pub mod ws_provider;
 
 use anyhow::Error;
 use config::EthereumL1Config;

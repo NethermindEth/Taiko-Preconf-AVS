@@ -1,18 +1,16 @@
-use crate::{metrics::Metrics, shared::web3signer::Web3Signer};
-
-use super::{tools, transaction_error::TransactionError, ws_provider::WsProvider};
+use super::{tools, transaction_error::TransactionError};
+use crate::{
+    metrics::Metrics,
+    shared::{web3signer::Web3Signer, ws_provider::WsProvider},
+};
 use alloy::{
-    consensus::{
-        SignableTransaction, Transaction as ConsensusTransaction, TxEnvelope, TxType,
-        transaction::SignerRecoverable,
-    },
+    consensus::{SignableTransaction, TxEnvelope, TxType, transaction::SignerRecoverable},
     network::{Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
     primitives::B256,
     providers::{
         PendingTransactionBuilder, PendingTransactionError, Provider, RootProvider, WatchTxError,
-        ext::DebugApi,
     },
-    rpc::types::{Transaction, TransactionRequest, trace::geth::GethDebugTracingOptions},
+    rpc::types::TransactionRequest,
 };
 use alloy_json_rpc::RpcError;
 use anyhow::Error;
@@ -522,7 +520,14 @@ impl TransactionMonitorThread {
                     self.metrics.inc_batch_confirmed();
                     TxStatus::Confirmed(block_number)
                 } else if let Some(block_number) = receipt.block_number() {
-                    TxStatus::Failed(self.check_for_revert_reason(tx_hash, block_number).await)
+                    TxStatus::Failed(
+                        crate::shared::alloy_tools::check_for_revert_reason(
+                            &self.provider,
+                            tx_hash,
+                            block_number,
+                        )
+                        .await,
+                    )
                 } else {
                     let error_msg =
                         format!("Transaction {tx_hash} failed, but block number not found");
@@ -541,74 +546,6 @@ impl TransactionMonitorThread {
                 }
             },
         }
-    }
-
-    async fn check_for_revert_reason(&self, tx_hash: B256, block_number: u64) -> String {
-        let default_options = GethDebugTracingOptions::default();
-        let trace = self
-            .provider
-            .debug_trace_transaction(tx_hash, default_options)
-            .await;
-
-        let trace_errors = if let Ok(trace) = trace {
-            Self::find_errors_from_trace(&format!("{:?}", trace))
-        } else {
-            None
-        };
-
-        let tx_details = match self.provider.get_transaction_by_hash(tx_hash).await {
-            Ok(Some(tx)) => tx,
-            _ => {
-                let error_msg = format!("Transaction {} failed", tx_hash);
-                error!("{}", error_msg);
-                return error_msg;
-            }
-        };
-
-        let call_request = Self::get_tx_request_for_call(tx_details);
-        let revert_reason = match self
-            .provider
-            .call(call_request)
-            .block(block_number.into())
-            .await
-        {
-            Err(e) => e.to_string(),
-            Ok(ok) => format!("Unknown revert reason: {ok}"),
-        };
-
-        let mut error_msg = format!("Transaction {tx_hash} failed: {revert_reason}");
-        if let Some(trace_errors) = trace_errors {
-            error_msg.push_str(&trace_errors);
-        }
-        error!("{}", error_msg);
-        error_msg
-    }
-
-    fn find_errors_from_trace(trace_str: &str) -> Option<String> {
-        let mut start_pos = 0;
-        let mut error_message = String::new();
-        while let Some(error_start) = trace_str[start_pos..].find("error: Some(") {
-            let absolute_pos = start_pos + error_start;
-            if let Some(closing_paren) = trace_str[absolute_pos..].find(')') {
-                let error_content = &trace_str[absolute_pos..absolute_pos + closing_paren + 1];
-                if !error_message.is_empty() {
-                    error_message.push_str(", ");
-                }
-                error_message.push_str(error_content);
-                start_pos = absolute_pos + closing_paren + 1;
-            } else {
-                break;
-            }
-        }
-        if !error_message.is_empty() {
-            Some(format!(", errors from debug trace: {error_message}"))
-        } else {
-            None
-        }
-    }
-
-    fn get_tx_request_for_call(tx_details: Transaction) -> TransactionRequest {
-        TransactionRequest::from_transaction(tx_details)
     }
 
     fn set_tx_parameters(

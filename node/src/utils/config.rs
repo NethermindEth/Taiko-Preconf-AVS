@@ -11,7 +11,8 @@ pub struct Config {
     pub mev_boost_url: String,
     pub l1_ws_rpc_url: String,
     pub l1_beacon_url: String,
-    pub web3signer_url: String,
+    pub web3signer_l1_url: String,
+    pub web3signer_l2_url: String,
     pub l1_slot_duration_sec: u64,
     pub l1_slots_per_epoch: u64,
     pub preconf_heartbeat_ms: u64,
@@ -323,8 +324,10 @@ impl Config {
             l1_ws_rpc_url: std::env::var("L1_WS_RPC_URL").unwrap_or("wss://127.0.0.1".to_string()),
             l1_beacon_url: std::env::var("L1_BEACON_URL")
                 .unwrap_or("http://127.0.0.1:4000".to_string()),
-            web3signer_url: std::env::var("WEB3SIGNER_URL")
+            web3signer_l1_url: std::env::var("WEB3SIGNER_L1_URL")
                 .unwrap_or("http://127.0.0.1:9000".to_string()),
+            web3signer_l2_url: std::env::var("WEB3SIGNER_L2_URL")
+                .unwrap_or("http://127.0.0.1:9001".to_string()),
             l1_slot_duration_sec,
             l1_slots_per_epoch,
             preconf_heartbeat_ms,
@@ -367,7 +370,8 @@ Taiko driver URL: {},
 MEV Boost URL: {},
 L1 WS URL: {},
 Consensus layer URL: {},
-Web3signer URL: {},
+Web3signer L1 URL: {},
+Web3signer L2 URL: {},
 L1 slot duration: {}s
 L1 slots per epoch: {}
 L2 slot duration (heart beat): {}
@@ -406,7 +410,8 @@ simulate not submitting at the end of epoch: {}
             config.mev_boost_url,
             config.l1_ws_rpc_url,
             config.l1_beacon_url,
-            config.web3signer_url,
+            config.web3signer_l1_url,
+            config.web3signer_l2_url,
             config.l1_slot_duration_sec,
             config.l1_slots_per_epoch,
             config.preconf_heartbeat_ms,

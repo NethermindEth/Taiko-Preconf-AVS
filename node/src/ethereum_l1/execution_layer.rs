@@ -2,10 +2,10 @@ use super::{config::EthereumL1Config, transaction_error::TransactionError};
 use crate::{
     ethereum_l1::{
         l1_contracts_bindings::*, monitor_transaction::TransactionMonitor,
-        propose_batch_builder::ProposeBatchBuilder, ws_provider::WsProvider,
+        propose_batch_builder::ProposeBatchBuilder,
     },
     metrics,
-    shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress},
+    shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress, ws_provider::WsProvider},
     utils::{config, types::*},
 };
 use alloy::{

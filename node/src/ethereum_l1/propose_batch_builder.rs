@@ -1,6 +1,5 @@
-use super::{
-    l1_contracts_bindings::*, tools, transaction_error::TransactionError, ws_provider::WsProvider,
-};
+use super::{l1_contracts_bindings::*, tools, transaction_error::TransactionError};
+use crate::shared::ws_provider::WsProvider;
 use alloy::{
     network::{TransactionBuilder, TransactionBuilder4844},
     primitives::{Address, Bytes, FixedBytes},
