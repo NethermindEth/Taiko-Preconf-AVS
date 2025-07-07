@@ -320,11 +320,23 @@ impl L2ExecutionLayer {
             data: Bytes::new(),
         };
 
+        let fees = provider_ws.estimate_eip1559_fees().await?;
+        debug!("Fees: {:?}", fees);
+        let nonce = provider_ws.get_transaction_count(preconfer_address).await?;
+
         let tx_send_message = contract
             .sendMessage(message)
-            .value(Uint::<256, 4>::from(amount + u128::from(FEE)));
+            .value(Uint::<256, 4>::from(amount + u128::from(FEE)))
+            .from(preconfer_address)
+            .nonce(nonce)
+            .chain_id(self.chain_id)
+            .max_fee_per_gas(fees.max_fee_per_gas)
+            .max_priority_fee_per_gas(fees.max_priority_fee_per_gas);
 
         let tx_request = tx_send_message.into_transaction_request();
+        let estimated_gas = provider_ws.estimate_gas(tx_request.clone()).await?;
+        let tx_request = tx_request.gas_limit(estimated_gas + 1);
+        debug!("Estimated gas: {:?}", estimated_gas);
         let signed_tx = web3signer.sign_transaction(tx_request).await?;
         let pending_tx = provider_ws.send_raw_transaction(&signed_tx).await?;
 
