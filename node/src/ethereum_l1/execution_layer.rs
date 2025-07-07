@@ -79,6 +79,12 @@ impl ExecutionLayer {
         let taiko_wrapper_contract =
             taiko_wrapper::TaikoWrapper::new(contract_addresses.taiko_wrapper, provider_ws.clone());
 
+        let chain_id = provider_ws
+            .get_chain_id()
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get chain ID: {}", e)))?;
+        info!("L1 Chain ID: {}", chain_id);
+
         let transaction_monitor = TransactionMonitor::new(
             provider_ws.clone(),
             config.min_priority_fee_per_gas_wei,
@@ -89,6 +95,7 @@ impl ExecutionLayer {
             transaction_error_channel,
             metrics.clone(),
             config.web3signer_url,
+            chain_id,
         )
         .await
         .map_err(|e| Error::msg(format!("Failed to create TransactionMonitor: {}", e)))?;
@@ -97,12 +104,6 @@ impl ExecutionLayer {
             Self::fetch_pacaya_config(&contract_addresses.taiko_inbox, &provider_ws)
                 .await
                 .map_err(|e| Error::msg(format!("Failed to fetch pacaya config: {}", e)))?;
-
-        let chain_id = provider_ws
-            .get_chain_id()
-            .await
-            .map_err(|e| Error::msg(format!("Failed to get chain ID: {}", e)))?;
-        info!("L1 Chain ID: {}", chain_id);
 
         Ok(Self {
             provider_ws,
@@ -169,7 +170,7 @@ impl ExecutionLayer {
             PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider_ws);
         let operator = contract
             .getOperatorForNextEpoch()
-            // .block(alloy::eips::BlockId::pending())
+            .block(alloy::eips::BlockId::pending())
             .call()
             .await
             .map_err(|e| {

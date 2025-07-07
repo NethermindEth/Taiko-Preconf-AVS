@@ -2,7 +2,10 @@ use crate::{metrics::Metrics, shared::web3signer::Web3Signer};
 
 use super::{tools, transaction_error::TransactionError, ws_provider::WsProvider};
 use alloy::{
-    consensus::{SignableTransaction, TxEnvelope, TxType, transaction::SignerRecoverable},
+    consensus::{
+        SignableTransaction, Transaction as ConsensusTransaction, TxEnvelope, TxType,
+        transaction::SignerRecoverable,
+    },
     network::{Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
     primitives::B256,
     providers::{
@@ -43,6 +46,7 @@ pub struct TransactionMonitorThread {
     error_notification_channel: Sender<TransactionError>,
     metrics: Arc<Metrics>,
     web3signer: Arc<Web3Signer>,
+    chain_id: u64,
 }
 
 //#[derive(Debug)]
@@ -53,6 +57,7 @@ pub struct TransactionMonitor {
     error_notification_channel: Sender<TransactionError>,
     metrics: Arc<Metrics>,
     web3signer: Arc<Web3Signer>,
+    chain_id: u64,
 }
 
 impl TransactionMonitor {
@@ -67,6 +72,7 @@ impl TransactionMonitor {
         error_notification_channel: Sender<TransactionError>,
         metrics: Arc<Metrics>,
         web3signer_url: String,
+        chain_id: u64,
     ) -> Result<Self, Error> {
         const SIGNER_TIMEOUT: Duration = Duration::from_secs(10);
         Ok(Self {
@@ -82,6 +88,7 @@ impl TransactionMonitor {
             error_notification_channel,
             metrics,
             web3signer: Arc::new(Web3Signer::new(&web3signer_url, SIGNER_TIMEOUT)?),
+            chain_id,
         })
     }
 
@@ -108,6 +115,7 @@ impl TransactionMonitor {
             self.error_notification_channel.clone(),
             self.metrics.clone(),
             self.web3signer.clone(),
+            self.chain_id,
         );
         let join_handle = monitor_thread.spawn_monitoring_task(tx);
         *guard = Some(join_handle);
@@ -131,6 +139,7 @@ impl TransactionMonitorThread {
         error_notification_channel: Sender<TransactionError>,
         metrics: Arc<Metrics>,
         web3signer: Arc<Web3Signer>,
+        chain_id: u64,
     ) -> Self {
         Self {
             provider,
@@ -139,6 +148,7 @@ impl TransactionMonitorThread {
             error_notification_channel,
             metrics,
             web3signer,
+            chain_id,
         }
     }
     pub fn spawn_monitoring_task(self, tx: TransactionRequest) -> JoinHandle<()> {
@@ -154,6 +164,7 @@ impl TransactionMonitorThread {
                 .await;
             return;
         }
+        tx.set_chain_id(self.chain_id);
 
         debug!(
             "Monitoring tx with nonce: {}  max_fee_per_gas: {:?}, max_priority_fee_per_gas: {:?}, max_fee_per_blob_gas: {:?}",
@@ -395,6 +406,8 @@ impl TransactionMonitorThread {
                 return None;
             }
         };
+
+        decode_transaction(web3singer_signed_tx.clone());
 
         let tx_envelope: TxEnvelope =
             match alloy_rlp::Decodable::decode(&mut web3singer_signed_tx.as_slice()) {
