@@ -407,8 +407,6 @@ impl TransactionMonitorThread {
             }
         };
 
-        decode_transaction(web3singer_signed_tx.clone());
-
         let tx_envelope: TxEnvelope =
             match alloy_rlp::Decodable::decode(&mut web3singer_signed_tx.as_slice()) {
                 Ok(tx_envelope) => tx_envelope,
