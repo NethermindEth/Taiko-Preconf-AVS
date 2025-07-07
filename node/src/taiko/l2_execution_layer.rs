@@ -340,7 +340,8 @@ impl L2ExecutionLayer {
             .max_priority_fee_per_gas(fees.max_priority_fee_per_gas);
 
         let tx_request = tx_send_message.into_transaction_request();
-        let tx_request = tx_request.gas_limit(1000000);
+        const GAS_LIMIT: u64 = 500000;
+        let tx_request = tx_request.gas_limit(GAS_LIMIT);
         let signed_tx = web3signer.sign_transaction(tx_request).await?;
         let pending_tx = provider_ws.send_raw_transaction(&signed_tx).await?;
 

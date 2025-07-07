@@ -6,7 +6,7 @@ use crate::{
 use alloy::{
     consensus::{SignableTransaction, TxEnvelope, TxType, transaction::SignerRecoverable},
     network::{Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
-    primitives::B256,
+    primitives::{Address, B256},
     providers::{
         PendingTransactionBuilder, PendingTransactionError, Provider, RootProvider, WatchTxError,
     },
@@ -397,6 +397,7 @@ impl TransactionMonitorThread {
                 return None;
             }
         };
+        let from = tx.from;
         let web3singer_signed_tx = match self.web3signer.sign_transaction(tx).await {
             Ok(web3singer_signed_tx) => web3singer_signed_tx,
             Err(e) => {
@@ -418,14 +419,13 @@ impl TransactionMonitorThread {
                 }
             };
 
+        if let Some(from) = from {
+            if !self.check_signer_correctness(&tx_envelope, from).await {
+                return None;
+            }
+        }
+
         let signature = tx_envelope.signature();
-
-        // TODO: remove this
-        let signer = tx_envelope
-            .recover_signer()
-            .expect("Failed to recover signer from transaction");
-        debug!("Web3signer signed tx From: {}", signer);
-
         let signed_tx = unsigned_tx.into_signed(*signature);
         let mut encoded_tx = Vec::new();
         signed_tx.eip2718_encode(&mut encoded_tx);
@@ -464,6 +464,28 @@ impl TransactionMonitorThread {
                 None
             }
         }
+    }
+
+    async fn check_signer_correctness(&self, tx_envelope: &TxEnvelope, from: Address) -> bool {
+        let signer = match tx_envelope.recover_signer() {
+            Ok(signer) => signer,
+            Err(e) => {
+                error!("Failed to recover signer from transaction: {}", e);
+                self.send_error_signal(TransactionError::Web3SignerFailed)
+                    .await;
+                return false;
+            }
+        };
+        debug!("Web3signer signed tx From: {}", signer);
+
+        if signer != from {
+            error!("Signer mismatch: expected {} but got {}", from, signer);
+            self.send_error_signal(TransactionError::Web3SignerFailed)
+                .await;
+            return false;
+        }
+
+        true
     }
 
     async fn send_error_signal(&self, error: TransactionError) {
