@@ -48,8 +48,8 @@ pub struct TransactionMonitorThread {
 }
 
 //#[derive(Debug)]
-pub struct TransactionMonitor {
-    provider: Arc<WsProvider>,
+pub struct TransactionMonitor<P = WsProvider> {
+    provider: Arc<P>,
     config: TransactionMonitorConfig,
     join_handle: Mutex<Option<JoinHandle<()>>>,
     error_notification_channel: Sender<TransactionError>,
@@ -58,10 +58,10 @@ pub struct TransactionMonitor {
     chain_id: u64,
 }
 
-impl TransactionMonitor {
+impl<P> TransactionMonitor<P> {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
-        provider: Arc<WsProvider>,
+        provider: Arc<P>,
         min_priority_fee_per_gas_wei: u64,
         tx_fees_increase_percentage: u64,
         max_attempts_to_send_tx: u64,
@@ -89,7 +89,9 @@ impl TransactionMonitor {
             chain_id,
         })
     }
+}
 
+impl TransactionMonitor<WsProvider> {
     /// Monitor a transaction until it is confirmed or fails.
     /// Spawns a new tokio task to monitor the transaction.
     pub async fn monitor_new_transaction(

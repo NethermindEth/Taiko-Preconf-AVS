@@ -23,16 +23,16 @@ use tracing::{debug, info, warn};
 
 const DELAYED_L1_PROPOSAL_BUFFER: u64 = 4;
 
-pub struct ExecutionLayer {
-    provider_ws: Arc<WsProvider>,
+pub struct ExecutionLayer<P = WsProvider> {
+    provider_ws: Arc<P>,
     preconfer_address: Address,
     contract_addresses: ContractAddresses,
     pacaya_config: taiko_inbox::ITaikoInbox::Config,
     #[cfg(feature = "extra-gas-percentage")]
     extra_gas_percentage: u64,
-    transaction_monitor: TransactionMonitor,
+    transaction_monitor: TransactionMonitor<P>,
     metrics: Arc<metrics::Metrics>,
-    taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::TaikoWrapperInstance<Arc<WsProvider>>,
+    taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::TaikoWrapperInstance<Arc<P>>,
     chain_id: u64,
 }
 
@@ -44,7 +44,7 @@ pub struct ContractAddresses {
     pub taiko_wrapper: Address,
 }
 
-impl ExecutionLayer {
+impl ExecutionLayer<WsProvider> {
     pub async fn new(
         config: EthereumL1Config,
         transaction_error_channel: Sender<TransactionError>,
@@ -347,134 +347,6 @@ impl ExecutionLayer {
         Ok(balance)
     }
 
-    // TODO: fix
-    // #[cfg(test)]
-    // pub async fn new_from_pk(
-    //     ws_rpc_url: String,
-    //     private_key: elliptic_curve::SecretKey<k256::Secp256k1>,
-    // ) -> Result<Self, Error> {
-    //     use crate::metrics::Metrics;
-
-    //     use super::l1_contracts_bindings::taiko_inbox::ITaikoInbox::ForkHeights;
-
-    //     let signer = PrivateKeySigner::from_signing_key(private_key.into());
-    //     let wallet = EthereumWallet::from(signer);
-
-    //     let ws = WsConnect::new(ws_rpc_url.to_string());
-
-    //     let provider_ws: Arc<WsProvider> = Arc::new(
-    //         ProviderBuilder::new()
-    //             .wallet(wallet)
-    //             .connect_ws(ws.clone())
-    //             .await
-    //             .unwrap(),
-    //     );
-
-    //     let preconfer_address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
-    //         .parse()?;
-
-    //     let (tx_error_sender, _) = tokio::sync::mpsc::channel(1);
-
-    //     let metrics = Arc::new(Metrics::new());
-
-    //     Ok(Self {
-    //         provider_ws: provider_ws.clone(),
-    //         preconfer_address,
-    //         contract_addresses: ContractAddresses {
-    //             taiko_inbox: Address::ZERO,
-    //             taiko_token: Address::ZERO,
-    //             preconf_whitelist: Address::ZERO,
-    //             preconf_router: Address::ZERO,
-    //             taiko_wrapper: Address::ZERO,
-    //         },
-    //         pacaya_config: taiko_inbox::ITaikoInbox::Config {
-    //             chainId: 1,
-    //             maxUnverifiedBatches: 100,
-    //             batchRingBufferSize: 100,
-    //             maxBatchesToVerify: 100,
-    //             blockMaxGasLimit: 1000000000,
-    //             livenessBondBase: alloy::primitives::Uint::from_limbs([1000000000000000000, 0]),
-    //             livenessBondPerBlock: alloy::primitives::Uint::from_limbs([1000000000000000000, 0]),
-    //             stateRootSyncInternal: 100,
-    //             maxAnchorHeightOffset: 1000000000000000000,
-    //             baseFeeConfig: taiko_inbox::LibSharedData::BaseFeeConfig {
-    //                 adjustmentQuotient: 100,
-    //                 sharingPctg: 100,
-    //                 gasIssuancePerSecond: 1000000000,
-    //                 minGasExcess: 1000000000000000000,
-    //                 maxGasIssuancePerBlock: 1000000000,
-    //             },
-    //             provingWindow: 1000,
-    //             cooldownWindow: alloy::primitives::Uint::from_limbs([1000000]),
-    //             maxSignalsToReceive: 100,
-    //             maxBlocksPerBatch: 1000,
-    //             forkHeights: ForkHeights {
-    //                 ontake: 0,
-    //                 pacaya: 0,
-    //                 shasta: 0,
-    //                 unzen: 0,
-    //             },
-    //         },
-    //         taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::new(
-    //             Address::ZERO,
-    //             provider_ws.clone(),
-    //         ),
-    //         #[cfg(feature = "extra-gas-percentage")]
-    //         extra_gas_percentage: 5,
-    //         transaction_monitor: TransactionMonitor::new(
-    //             provider_ws.clone(),
-    //             1000000000000000000,
-    //             5,
-    //             4,
-    //             4,
-    //             15,
-    //             tx_error_sender,
-    //             metrics.clone(),
-    //             "http://localhost:8545".to_string(),
-    //         )
-    //         .await
-    //         .unwrap(),
-    //         metrics,
-    //         chain_id: 1,
-    //     })
-    // }
-
-    #[cfg(test)]
-    async fn call_test_contract(&self) -> Result<(), Error> {
-        alloy::sol! {
-            #[allow(missing_docs)]
-            #[sol(rpc, bytecode="6080806040523460135760df908160198239f35b600080fdfe6080806040526004361015601257600080fd5b60003560e01c9081633fb5c1cb1460925781638381f58a146079575063d09de08a14603c57600080fd5b3460745760003660031901126074576000546000198114605e57600101600055005b634e487b7160e01b600052601160045260246000fd5b600080fd5b3460745760003660031901126074576020906000548152f35b34607457602036600319011260745760043560005500fea2646970667358221220e978270883b7baed10810c4079c941512e93a7ba1cd1108c781d4bc738d9090564736f6c634300081a0033")]
-            contract Counter {
-                uint256 public number;
-
-                function setNumber(uint256 newNumber) public {
-                    number = newNumber;
-                }
-
-                function increment() public {
-                    number++;
-                }
-            }
-        }
-
-        let contract = Counter::deploy(&self.provider_ws).await?;
-
-        let builder = contract.setNumber(alloy::primitives::U256::from(42));
-        let tx_hash = builder.send().await?.watch().await?;
-        println!("Set number to 42: {tx_hash}");
-
-        let builder = contract.increment();
-        let tx_hash = builder.send().await?.watch().await?;
-        println!("Incremented number: {tx_hash}");
-
-        let builder = contract.number();
-        let number = builder.call().await?.to_string();
-
-        assert_eq!(number, "43");
-
-        Ok(())
-    }
-
     pub fn get_config_max_blocks_per_batch(&self) -> u16 {
         self.pacaya_config.maxBlocksPerBatch
     }
@@ -575,6 +447,136 @@ impl ExecutionLayer {
     }
 }
 
+#[cfg(test)]
+impl ExecutionLayer<crate::shared::ws_provider::PrivateKeyProvider> {
+    pub async fn new_from_pk(
+        ws_rpc_url: String,
+        private_key: elliptic_curve::SecretKey<k256::Secp256k1>,
+    ) -> Result<Self, Error> {
+        use super::l1_contracts_bindings::taiko_inbox::ITaikoInbox::ForkHeights;
+        use crate::metrics::Metrics;
+        use alloy::{network::EthereumWallet, signers::local::PrivateKeySigner};
+
+        let signer = PrivateKeySigner::from_signing_key(private_key.into());
+        let wallet = EthereumWallet::from(signer);
+
+        let ws = WsConnect::new(ws_rpc_url.to_string());
+
+        let provider_ws: Arc<crate::shared::ws_provider::PrivateKeyProvider> = Arc::new(
+            ProviderBuilder::new()
+                .wallet(wallet)
+                .connect_ws(ws.clone())
+                .await
+                .unwrap(),
+        );
+
+        let preconfer_address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
+            .parse()?;
+
+        let (tx_error_sender, _) = tokio::sync::mpsc::channel(1);
+
+        let metrics = Arc::new(Metrics::new());
+
+        Ok(Self {
+            provider_ws: provider_ws.clone(),
+            preconfer_address,
+            contract_addresses: ContractAddresses {
+                taiko_inbox: Address::ZERO,
+                taiko_token: Address::ZERO,
+                preconf_whitelist: Address::ZERO,
+                preconf_router: Address::ZERO,
+                taiko_wrapper: Address::ZERO,
+            },
+            pacaya_config: taiko_inbox::ITaikoInbox::Config {
+                chainId: 1,
+                maxUnverifiedBatches: 100,
+                batchRingBufferSize: 100,
+                maxBatchesToVerify: 100,
+                blockMaxGasLimit: 1000000000,
+                livenessBondBase: alloy::primitives::Uint::from_limbs([1000000000000000000, 0]),
+                livenessBondPerBlock: alloy::primitives::Uint::from_limbs([1000000000000000000, 0]),
+                stateRootSyncInternal: 100,
+                maxAnchorHeightOffset: 1000000000000000000,
+                baseFeeConfig: taiko_inbox::LibSharedData::BaseFeeConfig {
+                    adjustmentQuotient: 100,
+                    sharingPctg: 100,
+                    gasIssuancePerSecond: 1000000000,
+                    minGasExcess: 1000000000000000000,
+                    maxGasIssuancePerBlock: 1000000000,
+                },
+                provingWindow: 1000,
+                cooldownWindow: alloy::primitives::Uint::from_limbs([1000000]),
+                maxSignalsToReceive: 100,
+                maxBlocksPerBatch: 1000,
+                forkHeights: ForkHeights {
+                    ontake: 0,
+                    pacaya: 0,
+                    shasta: 0,
+                    unzen: 0,
+                },
+            },
+            taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::new(
+                Address::ZERO,
+                provider_ws.clone(),
+            ),
+            #[cfg(feature = "extra-gas-percentage")]
+            extra_gas_percentage: 5,
+            transaction_monitor: TransactionMonitor::new(
+                provider_ws.clone(),
+                1000000000000000000,
+                5,
+                4,
+                4,
+                15,
+                tx_error_sender,
+                metrics.clone(),
+                "http://localhost:8545".to_string(),
+                123456,
+            )
+            .await
+            .unwrap(),
+            metrics,
+            chain_id: 1,
+        })
+    }
+
+    #[cfg(test)]
+    async fn call_test_contract(&self) -> Result<(), Error> {
+        alloy::sol! {
+            #[allow(missing_docs)]
+            #[sol(rpc, bytecode="6080806040523460135760df908160198239f35b600080fdfe6080806040526004361015601257600080fd5b60003560e01c9081633fb5c1cb1460925781638381f58a146079575063d09de08a14603c57600080fd5b3460745760003660031901126074576000546000198114605e57600101600055005b634e487b7160e01b600052601160045260246000fd5b600080fd5b3460745760003660031901126074576020906000548152f35b34607457602036600319011260745760043560005500fea2646970667358221220e978270883b7baed10810c4079c941512e93a7ba1cd1108c781d4bc738d9090564736f6c634300081a0033")]
+            contract Counter {
+                uint256 public number;
+
+                function setNumber(uint256 newNumber) public {
+                    number = newNumber;
+                }
+
+                function increment() public {
+                    number++;
+                }
+            }
+        }
+
+        let contract = Counter::deploy(&self.provider_ws).await?;
+
+        let builder = contract.setNumber(alloy::primitives::U256::from(42));
+        let tx_hash = builder.send().await?.watch().await?;
+        println!("Set number to 42: {tx_hash}");
+
+        let builder = contract.increment();
+        let tx_hash = builder.send().await?.watch().await?;
+        println!("Incremented number: {tx_hash}");
+
+        let builder = contract.number();
+        let number = builder.call().await?.to_string();
+
+        assert_eq!(number, "43");
+
+        Ok(())
+    }
+}
+
 pub trait PreconfOperator {
     async fn is_operator_for_current_epoch(&self) -> Result<bool, Error>;
     async fn is_operator_for_next_epoch(&self) -> Result<bool, Error>;
@@ -598,20 +600,20 @@ impl PreconfOperator for ExecutionLayer {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use alloy::node_bindings::Anvil;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::node_bindings::Anvil;
 
-//     #[tokio::test]
-//     async fn test_call_contract() {
-//         // Ensure `anvil` is available in $PATH.
-//         let anvil = Anvil::new().try_spawn().unwrap();
-//         let ws_rpc_url = anvil.ws_endpoint();
-//         let private_key = anvil.keys()[0].clone();
-//         let el = ExecutionLayer::new_from_pk(ws_rpc_url, private_key)
-//             .await
-//             .unwrap();
-//         el.call_test_contract().await.unwrap();
-//     }
-// }
+    #[tokio::test]
+    async fn test_call_contract() {
+        // Ensure `anvil` is available in $PATH.
+        let anvil = Anvil::new().try_spawn().unwrap();
+        let ws_rpc_url = anvil.ws_endpoint();
+        let private_key = anvil.keys()[0].clone();
+        let el = ExecutionLayer::new_from_pk(ws_rpc_url, private_key)
+            .await
+            .unwrap();
+        el.call_test_contract().await.unwrap();
+    }
+}
