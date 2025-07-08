@@ -544,14 +544,14 @@ impl TransactionMonitorThread {
                     self.metrics.inc_batch_confirmed();
                     TxStatus::Confirmed(block_number)
                 } else if let Some(block_number) = receipt.block_number() {
-                    TxStatus::Failed(
-                        crate::shared::alloy_tools::check_for_revert_reason(
-                            &self.provider,
-                            tx_hash,
-                            block_number,
-                        )
-                        .await,
+                    let revert_reason = crate::shared::alloy_tools::check_for_revert_reason(
+                        &self.provider,
+                        tx_hash,
+                        block_number,
                     )
+                    .await;
+                    error!("Transaction {} reverted: {}", tx_hash, revert_reason);
+                    TxStatus::Failed(revert_reason)
                 } else {
                     let error_msg =
                         format!("Transaction {tx_hash} failed, but block number not found");

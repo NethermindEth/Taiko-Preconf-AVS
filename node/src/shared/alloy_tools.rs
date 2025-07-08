@@ -4,7 +4,6 @@ use alloy::{
     providers::{Provider, ext::DebugApi},
     rpc::types::{Transaction, TransactionRequest, trace::geth::GethDebugTracingOptions},
 };
-use tracing::error;
 
 pub async fn check_for_revert_reason(
     provider: &WsProvider,
@@ -25,9 +24,7 @@ pub async fn check_for_revert_reason(
     let tx_details = match provider.get_transaction_by_hash(tx_hash).await {
         Ok(Some(tx)) => tx,
         _ => {
-            let error_msg = format!("Transaction {} failed", tx_hash);
-            error!("{}", error_msg);
-            return error_msg;
+            return format!("Transaction {} failed", tx_hash);
         }
     };
 
@@ -41,7 +38,6 @@ pub async fn check_for_revert_reason(
     if let Some(trace_errors) = trace_errors {
         error_msg.push_str(&trace_errors);
     }
-    error!("{}", error_msg);
     error_msg
 }
 
