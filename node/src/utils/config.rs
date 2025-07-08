@@ -4,7 +4,7 @@ use tracing::{info, warn};
 use crate::utils::blob::constants::MAX_BLOB_DATA_SIZE;
 
 pub struct Config {
-    pub preconf_address: String,
+    pub preconfer_address: String,
     pub taiko_geth_ws_rpc_url: String,
     pub taiko_geth_auth_rpc_url: String,
     pub taiko_driver_url: String,
@@ -62,11 +62,11 @@ impl Config {
 
         let default_empty_address = "0x0000000000000000000000000000000000000000".to_string();
 
-        const PRECONF_ADDRESS: &str = "PRECONF_ADDRESS";
-        let preconf_address = std::env::var(PRECONF_ADDRESS).unwrap_or_else(|_| {
+        const PRECONFER_ADDRESS: &str = "PRECONFER_ADDRESS";
+        let preconfer_address = std::env::var(PRECONFER_ADDRESS).unwrap_or_else(|_| {
             warn!(
                 "No Preconf address found in {} env var, using default",
-                PRECONF_ADDRESS
+                PRECONFER_ADDRESS
             );
             default_empty_address.clone()
         });
@@ -311,7 +311,7 @@ impl Config {
             .expect("MIN_BYTES_PER_TX_LIST must be a number");
 
         let config = Self {
-            preconf_address,
+            preconfer_address,
             taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
                 .unwrap_or("ws://127.0.0.1:1234".to_string()),
             taiko_geth_auth_rpc_url: std::env::var("TAIKO_GETH_AUTH_RPC_URL")
@@ -403,7 +403,7 @@ threshold_taiko: {}
 amount to bridge from l2 to l1: {}
 simulate not submitting at the end of epoch: {}
 "#,
-            config.preconf_address,
+            config.preconfer_address,
             config.taiko_geth_ws_rpc_url,
             config.taiko_geth_auth_rpc_url,
             config.taiko_driver_url,
