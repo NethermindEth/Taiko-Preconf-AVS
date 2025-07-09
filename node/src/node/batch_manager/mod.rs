@@ -489,6 +489,13 @@ impl BatchManager {
             .execution_layer
             .get_block_timestamp_by_number(anchor_block_id)
             .await?;
+        tracing::debug!(
+            "Add new L2 block with optional forced inclusion: anchor_block_id: {}, anchor_block_timestamp_sec: {}, allow_forced_inclusion {}, !self.has_current_forced_inclusion(): {}",
+            anchor_block_id,
+            anchor_block_timestamp_sec,
+            allow_forced_inclusion,
+            !self.has_current_forced_inclusion(),
+        );
         // Create new batch
         self.batch_builder
             .create_new_batch(anchor_block_id, anchor_block_timestamp_sec);
@@ -634,10 +641,11 @@ impl BatchManager {
         Error,
     > {
         info!(
-            "Adding new L2 block id: {}, timestamp: {}, parent gas used: {}",
+            "Adding new L2 block id: {}, timestamp: {}, parent gas used: {}, allow_forced_inclusion: {}",
             l2_slot_info.parent_id() + 1,
             l2_slot_info.slot_timestamp(),
-            l2_slot_info.parent_gas_used()
+            l2_slot_info.parent_gas_used(),
+            allow_forced_inclusion,
         );
 
         // Check that we will create a new bacth

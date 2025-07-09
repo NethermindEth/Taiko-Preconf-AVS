@@ -82,6 +82,10 @@ impl Verifier {
         if let Some(mut verifier_thread) = self.verifier_thread.take() {
             self.verifier_thread_handle = Some(tokio::spawn(async move {
                 info!("🔍 Started block verification thread");
+
+                // update forced inclusion index
+                verifier_thread.batch_manager.reset_builder().await?;
+
                 verifier_thread
                     .verify_submitted_blocks(taiko_inbox_height, metrics)
                     .await
