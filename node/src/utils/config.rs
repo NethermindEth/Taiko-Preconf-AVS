@@ -41,6 +41,7 @@ pub struct Config {
     pub max_bytes_per_tx_list: u64,
     pub throttling_factor: u64,
     pub min_bytes_per_tx_list: u64,
+    pub propose_forced_inclusion: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -305,6 +306,11 @@ impl Config {
                 .parse::<bool>()
                 .expect("SIMULATE_NOT_SUBMITTING_AT_THE_END_OF_EPOCH must be a boolean");
 
+        let propose_forced_inclusion = std::env::var("PROPOSE_FORCED_INCLUSION")
+            .unwrap_or("true".to_string())
+            .parse::<bool>()
+            .expect("PROPOSE_FORCED_INCLUSION must be a boolean");
+
         let max_bytes_per_tx_list = std::env::var("MAX_BYTES_PER_TX_LIST")
             .unwrap_or(MAX_BLOB_DATA_SIZE.to_string())
             .parse::<u64>()
@@ -365,6 +371,7 @@ impl Config {
             max_bytes_per_tx_list,
             throttling_factor,
             min_bytes_per_tx_list,
+            propose_forced_inclusion,
         };
 
         info!(
@@ -406,6 +413,7 @@ threshold_eth: {}
 threshold_taiko: {}
 amount to bridge from l2 to l1: {}
 simulate not submitting at the end of epoch: {}
+propose_forced_inclusion: {}
 "#,
             config.taiko_geth_ws_rpc_url,
             config.taiko_geth_auth_rpc_url,
@@ -443,6 +451,7 @@ simulate not submitting at the end of epoch: {}
             threshold_taiko,
             config.amount_to_bridge_from_l2_to_l1,
             config.simulate_not_submitting_at_the_end_of_epoch,
+            config.propose_forced_inclusion,
         );
 
         config
