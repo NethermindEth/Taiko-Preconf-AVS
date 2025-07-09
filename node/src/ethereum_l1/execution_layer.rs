@@ -1,9 +1,15 @@
 use super::{config::EthereumL1Config, transaction_error::TransactionError};
 use crate::{
     ethereum_l1::{
-        l1_contracts_bindings::*, monitor_transaction::TransactionMonitor,
-        propose_batch_builder::ProposeBatchBuilder, ws_provider::WsProvider,
+        l1_contracts_bindings::{
+            forced_inclusion_store::IForcedInclusionStore::{self, ForcedInclusion},
+            *,
+        },
+        monitor_transaction::TransactionMonitor,
+        propose_batch_builder::ProposeBatchBuilder,
+        ws_provider::WsProvider,
     },
+    forced_inclusion::ForcedInclusionInfo,
     metrics,
     shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress},
     utils::{config, types::*},
@@ -11,11 +17,11 @@ use crate::{
 use alloy::{
     eips::BlockNumberOrTag,
     network::EthereumWallet,
-    primitives::{Address, B256},
+    primitives::{Address, B256, U256},
     providers::{Provider, ProviderBuilder, WsConnect},
     signers::local::PrivateKeySigner,
 };
-use anyhow::Error;
+use anyhow::{Error, anyhow};
 use std::{
     str::FromStr,
     sync::Arc,
@@ -45,6 +51,7 @@ pub struct ContractAddresses {
     pub preconf_whitelist: Address,
     pub preconf_router: Address,
     pub taiko_wrapper: Address,
+    pub forced_inclusion_store: Address,
 }
 
 impl ExecutionLayer {
@@ -137,6 +144,7 @@ impl ExecutionLayer {
         let preconf_whitelist = contract_addresses.preconf_whitelist.parse()?;
         let preconf_router = contract_addresses.preconf_router.parse()?;
         let taiko_wrapper = contract_addresses.taiko_wrapper.parse()?;
+        let forced_inclusion_store = contract_addresses.forced_inclusion_store.parse()?;
 
         let contract = taiko_inbox::ITaikoInbox::new(taiko_inbox, provider);
         let taiko_token = contract
@@ -151,6 +159,7 @@ impl ExecutionLayer {
             preconf_whitelist,
             preconf_router,
             taiko_wrapper,
+            forced_inclusion_store,
         })
     }
 
@@ -188,6 +197,7 @@ impl ExecutionLayer {
         last_anchor_origin_height: u64,
         coinbase: Address,
         current_l1_slot_timestamp: u64,
+        forced_inclusion: Option<BatchParams>,
     ) -> Result<(), Error> {
         let last_block_timestamp = l2_blocks
             .last()
@@ -231,9 +241,10 @@ impl ExecutionLayer {
         let tx_lists_bytes = encode_and_compress(&tx_vec)?;
 
         info!(
-            "📦 Proposing batch with {} blocks and {} bytes length",
+            "📦 Proposing batch with {} blocks and {} bytes length | forced inclusion: {}",
             blocks.len(),
             tx_lists_bytes.len(),
+            forced_inclusion.is_some(),
         );
 
         self.metrics
@@ -260,6 +271,7 @@ impl ExecutionLayer {
                 last_anchor_origin_height,
                 last_block_timestamp,
                 coinbase,
+                forced_inclusion,
             )
             .await?;
 
@@ -381,6 +393,7 @@ impl ExecutionLayer {
                 preconf_whitelist: Address::ZERO,
                 preconf_router: Address::ZERO,
                 taiko_wrapper: Address::ZERO,
+                forced_inclusion_store: Address::ZERO,
             },
             pacaya_config: taiko_inbox::ITaikoInbox::Config {
                 chainId: 1,
@@ -566,6 +579,63 @@ impl ExecutionLayer {
                 block_number_or_tag
             ))?;
         Ok(block.header.timestamp)
+    }
+
+    pub async fn get_forced_inclusion_head(&self) -> Result<u64, Error> {
+        let contract = IForcedInclusionStore::new(
+            self.contract_addresses.forced_inclusion_store,
+            self.provider_ws.clone(),
+        );
+        contract
+            .head()
+            .call()
+            .await
+            .map_err(|e| anyhow!("Failed to get forced inclusion head: {}", e))
+    }
+
+    pub async fn get_forced_inclusion_tail(&self) -> Result<u64, Error> {
+        let contract = IForcedInclusionStore::new(
+            self.contract_addresses.forced_inclusion_store,
+            self.provider_ws.clone(),
+        );
+        contract
+            .tail()
+            .call()
+            .await
+            .map_err(|e| anyhow!("Failed to get forced inclusion tail: {}", e))
+    }
+
+    pub async fn get_forced_inclusion(&self, index: u64) -> Result<ForcedInclusion, Error> {
+        let contract = IForcedInclusionStore::new(
+            self.contract_addresses.forced_inclusion_store,
+            self.provider_ws.clone(),
+        );
+        contract
+            .getForcedInclusion(U256::from(index))
+            .call()
+            .await
+            .map_err(|e| {
+                Error::msg(format!(
+                    "Failed to get forced inclusion at index {}: {}",
+                    index, e
+                ))
+            })
+    }
+
+    pub fn build_forced_inclusion_batch(
+        &self,
+        coinbase: Address,
+        last_anchor_origin_height: u64,
+        last_l2_block_timestamp: u64,
+        info: &ForcedInclusionInfo,
+    ) -> BatchParams {
+        ProposeBatchBuilder::build_forced_inclusion_batch(
+            self.preconfer_address,
+            coinbase,
+            last_anchor_origin_height,
+            last_l2_block_timestamp,
+            info,
+        )
     }
 }
 

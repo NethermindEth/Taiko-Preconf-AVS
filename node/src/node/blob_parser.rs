@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::{sync::Arc, time::Duration};
 
 use alloy::{eips::eip4844::kzg_to_versioned_hash, primitives::B256, rpc::types::Transaction};
@@ -8,85 +6,76 @@ use anyhow::Error;
 use crate::shared::l2_tx_lists::uncompress_and_decode;
 use crate::{ethereum_l1::EthereumL1, utils::blob::decode_blob};
 
-pub struct BlobParser {
+pub async fn extract_transactions_from_blob(
     ethereum_l1: Arc<EthereumL1>,
+    block: u64,
+    blob_hash: Vec<B256>,
+    tx_list_offset: u32,
+    tx_list_size: u32,
+) -> Result<Vec<Transaction>, Error> {
+    let start = std::time::Instant::now();
+    let v = blob_to_vec(ethereum_l1, block, blob_hash, tx_list_offset, tx_list_size).await?;
+    tracing::debug!(
+        "extract_transactions_from_blob: Blob conversion took {} ms",
+        start.elapsed().as_millis()
+    );
+    let txs = uncompress_and_decode(v.as_slice())?;
+    tracing::debug!(
+        "extract_transactions_from_blob: Total with decompression and decoding took {} ms",
+        start.elapsed().as_millis()
+    );
+    Ok(txs)
 }
 
-impl BlobParser {
-    pub fn new(ethereum_l1: Arc<EthereumL1>) -> Self {
-        Self { ethereum_l1 }
-    }
+async fn blob_to_vec(
+    ethereum_l1: Arc<EthereumL1>,
+    block: u64,
+    blob_hash: Vec<B256>,
+    tx_list_offset: u32,
+    tx_list_size: u32,
+) -> Result<Vec<u8>, Error> {
+    let timestamp = ethereum_l1
+        .execution_layer
+        .get_block_timestamp_by_number(block)
+        .await?;
+    let slot = ethereum_l1
+        .slot_clock
+        .slot_of(Duration::from_secs(timestamp))?;
+    let sidecars = ethereum_l1.consensus_layer.get_blob_sidecars(slot).await?;
 
-    pub async fn extract_transactions_from_blob(
-        &self,
-        block: u64,
-        blob_hash: Vec<B256>,
-        tx_list_offset: u32,
-        tx_list_size: u32,
-    ) -> Result<Vec<Transaction>, Error> {
-        let v = self
-            .blob_to_vec(block, blob_hash, tx_list_offset, tx_list_size)
-            .await?;
-        let txs = uncompress_and_decode(v.as_slice())?;
-        Ok(txs)
-    }
+    let mut result: Vec<u8> = Vec::new();
 
-    async fn blob_to_vec(
-        &self,
-        block: u64,
-        blob_hash: Vec<B256>,
-        tx_list_offset: u32,
-        tx_list_size: u32,
-    ) -> Result<Vec<u8>, Error> {
-        let timestamp = self
-            .ethereum_l1
-            .execution_layer
-            .get_block_timestamp_by_number(block)
-            .await?;
-        let slot = self
-            .ethereum_l1
-            .slot_clock
-            .slot_of(Duration::from_secs(timestamp))?;
-        let sidecars = self
-            .ethereum_l1
-            .consensus_layer
-            .get_blob_sidecars(slot)
-            .await?;
+    let sidecar_hashes: Vec<B256> = sidecars
+        .data
+        .iter()
+        .map(|sidecar| kzg_to_versioned_hash(sidecar.kzg_commitment.as_slice()))
+        .collect();
 
-        let mut result: Vec<u8> = Vec::new();
-
-        let sidecar_hashes: Vec<B256> = sidecars
-            .data
-            .iter()
-            .map(|sidecar| kzg_to_versioned_hash(sidecar.kzg_commitment.as_slice()))
-            .collect();
-
-        for hash in blob_hash {
-            for (i, sidecar) in sidecars.data.iter().enumerate() {
-                if sidecar_hashes[i] == hash {
-                    let data = decode_blob(sidecar.blob.as_ref())?;
-                    result.extend(data);
-                    break;
-                }
+    for hash in blob_hash {
+        for (i, sidecar) in sidecars.data.iter().enumerate() {
+            if sidecar_hashes[i] == hash {
+                let data = decode_blob(sidecar.blob.as_ref())?;
+                result.extend(data);
+                break;
             }
         }
-
-        let tx_list_left: usize = tx_list_offset.try_into()?;
-        let tx_list_right: usize = tx_list_left + usize::try_from(tx_list_size)?;
-
-        if tx_list_right > result.len() {
-            return Err(anyhow::anyhow!(
-                "Invalid tx list offset or size: tx_list_offset {} tx_list_size {} blob_data_size {}",
-                tx_list_offset,
-                tx_list_size,
-                result.len()
-            ));
-        }
-
-        let result = result[tx_list_left..tx_list_right].to_vec();
-
-        Ok(result)
     }
+
+    let tx_list_left: usize = tx_list_offset.try_into()?;
+    let tx_list_right: usize = tx_list_left + usize::try_from(tx_list_size)?;
+
+    if tx_list_right > result.len() {
+        return Err(anyhow::anyhow!(
+            "Invalid tx list offset or size: tx_list_offset {} tx_list_size {} blob_data_size {}",
+            tx_list_offset,
+            tx_list_size,
+            result.len()
+        ));
+    }
+
+    let result = result[tx_list_left..tx_list_right].to_vec();
+
+    Ok(result)
 }
 
 #[cfg(test)]

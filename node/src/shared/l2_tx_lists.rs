@@ -17,7 +17,6 @@ use std::io::Write;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub struct RPCReplyL2TxLists {
-    pub tx_lists: Value, // TODO: decode and create tx_list_bytes on AVS node side
     #[serde(deserialize_with = "deserialize_tx_lists_bytes")]
     pub tx_list_bytes: Vec<Vec<u8>>,
     #[serde(deserialize_with = "deserialize_parent_meta_hash")]
@@ -62,6 +61,16 @@ pub struct PreBuiltTxList {
     pub tx_list: Vec<Transaction>,
     pub estimated_gas_used: u64,
     pub bytes_length: u64,
+}
+
+impl PreBuiltTxList {
+    pub fn empty() -> Self {
+        PreBuiltTxList {
+            tx_list: Vec::new(),
+            estimated_gas_used: 0,
+            bytes_length: 0,
+        }
+    }
 }
 
 pub fn uncompress_and_decode(data: &[u8]) -> Result<Vec<Transaction>, Error> {
