@@ -370,36 +370,9 @@ impl Node {
                     current_status.is_submitter() && self.verifier.is_none(),
                 )
                 .await?;
-            if let Some(forced_inclusion_block) = forced_inclusion_block {
-                if !self
-                    .head_verifier
-                    .verify_next_and_set(
-                        forced_inclusion_block.number,
-                        forced_inclusion_block.hash,
-                        forced_inclusion_block.parent_hash,
-                    )
-                    .await
-                {
-                    self.head_verifier.log_error().await;
-                    self.cancel_token.cancel();
-                    return Err(anyhow::anyhow!(
-                        "Unexpected L2 head after forced inclusion preconfirmation. Restarting node..."
-                    ));
-                }
-            }
-            if let Some(block) = block {
-                if !self
-                    .head_verifier
-                    .verify_next_and_set(block.number, block.hash, block.parent_hash)
-                    .await
-                {
-                    self.head_verifier.log_error().await;
-                    self.cancel_token.cancel();
-                    return Err(anyhow::anyhow!(
-                        "Unexpected L2 head after forced inclusion preconfirmation. Restarting node..."
-                    ));
-                }
-            }
+
+            self.verify_preconfed_block(forced_inclusion_block).await?;
+            self.verify_preconfed_block(block).await?;
         }
 
         if current_status.is_submitter() && !transaction_in_progress {
@@ -435,6 +408,26 @@ impl Node {
             }
         }
 
+        Ok(())
+    }
+
+    async fn verify_preconfed_block(
+        &self,
+        l2_block: Option<BuildPreconfBlockResponse>,
+    ) -> Result<(), Error> {
+        if let Some(l2_block) = l2_block {
+            if !self
+                .head_verifier
+                .verify_next_and_set(l2_block.number, l2_block.hash, l2_block.parent_hash)
+                .await
+            {
+                self.head_verifier.log_error().await;
+                self.cancel_token.cancel();
+                return Err(anyhow::anyhow!(
+                    "Unexpected L2 head after preconfirmation. Restarting node..."
+                ));
+            }
+        }
         Ok(())
     }
 
