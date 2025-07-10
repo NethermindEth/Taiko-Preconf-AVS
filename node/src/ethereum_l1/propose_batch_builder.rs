@@ -1,5 +1,5 @@
 use super::{l1_contracts_bindings::*, tools, transaction_error::TransactionError};
-use crate::shared::ws_provider::WsProvider;
+use crate::{forced_inclusion::ForcedInclusionInfo, shared::ws_provider::WsProvider};
 use alloy::{
     network::{TransactionBuilder, TransactionBuilder4844},
     primitives::{Address, Bytes, FixedBytes},
@@ -63,6 +63,7 @@ impl ProposeBatchBuilder {
         last_anchor_origin_height: u64,
         last_block_timestamp: u64,
         coinbase: Address,
+        forced_inclusion: Option<BatchParams>,
     ) -> Result<TransactionRequest, Error> {
         // Build eip4844 transaction
         let tx_blob = self
@@ -74,6 +75,7 @@ impl ProposeBatchBuilder {
                 last_anchor_origin_height,
                 last_block_timestamp,
                 coinbase,
+                &forced_inclusion,
             )
             .await?;
         let tx_blob_gas = match self.provider_ws.estimate_gas(tx_blob.clone()).await {
@@ -128,6 +130,7 @@ impl ProposeBatchBuilder {
                 last_anchor_origin_height,
                 last_block_timestamp,
                 coinbase,
+                &forced_inclusion,
             )
             .await?;
         let tx_calldata_gas = match self.provider_ws.estimate_gas(tx_calldata.clone()).await {
@@ -189,6 +192,9 @@ impl ProposeBatchBuilder {
         }
         if tools::check_for_reanchor_required(&err_str) {
             return TransactionError::ReanchorRequired;
+        }
+        if tools::check_oldest_forced_inclusion_due(&err_str) {
+            return TransactionError::OldestForcedInclusionDue;
         }
         TransactionError::EstimationFailed
     }
@@ -281,11 +287,16 @@ impl ProposeBatchBuilder {
         last_anchor_origin_height: u64,
         last_block_timestamp: u64,
         coinbase: Address,
+        forced_inclusion: &Option<BatchParams>,
     ) -> Result<TransactionRequest, Error> {
         let tx_list_len = u32::try_from(tx_list.len())?;
         let tx_list = Bytes::from(tx_list);
 
-        let bytes_x = Bytes::new();
+        let bytes_x = if let Some(forced_inclusion) = forced_inclusion {
+            Bytes::from(BatchParams::abi_encode(forced_inclusion))
+        } else {
+            Bytes::new()
+        };
 
         let batch_params = BatchParams {
             proposer: from,
@@ -337,10 +348,15 @@ impl ProposeBatchBuilder {
         last_anchor_origin_height: u64,
         last_block_timestamp: u64,
         coinbase: Address,
+        forced_inclusion: &Option<BatchParams>,
     ) -> Result<TransactionRequest, Error> {
         let tx_list_len = u32::try_from(tx_list.len())?;
 
-        let bytes_x = Bytes::new();
+        let bytes_x = if let Some(forced_inclusion) = forced_inclusion {
+            Bytes::from(BatchParams::abi_encode(forced_inclusion))
+        } else {
+            Bytes::new()
+        };
 
         // Build sidecar
         let sidecar = crate::utils::blob::build_blob_sidecar(tx_list)?;
@@ -385,5 +401,35 @@ impl ProposeBatchBuilder {
             });
 
         Ok(tx)
+    }
+
+    pub fn build_forced_inclusion_batch(
+        proposer: Address,
+        coinbase: Address,
+        last_anchor_origin_height: u64,
+        last_l2_block_timestamp: u64,
+        info: &ForcedInclusionInfo,
+    ) -> BatchParams {
+        BatchParams {
+            proposer,
+            coinbase,
+            parentMetaHash: FixedBytes::from(&[0u8; 32]),
+            anchorBlockId: last_anchor_origin_height,
+            lastBlockTimestamp: last_l2_block_timestamp,
+            revertIfNotFirstProposal: false,
+            blobParams: BlobParams {
+                blobHashes: vec![info.blob_hash],
+                firstBlobIndex: 0,
+                numBlobs: 0,
+                byteOffset: info.blob_byte_offset,
+                byteSize: info.blob_byte_size,
+                createdIn: info.created_in,
+            },
+            blocks: vec![BlockParams {
+                numTransactions: 4096, // TaikoWrapper.MIN_TXS_PER_FORCED_INCLUSION
+                timeShift: 0,
+                signalSlots: vec![],
+            }],
+        }
     }
 }

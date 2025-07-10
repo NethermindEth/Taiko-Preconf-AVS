@@ -1,10 +1,11 @@
 pub(crate) mod batch_manager;
-mod blob_parser;
+pub mod blob_parser;
 mod l2_head_verifier;
 mod operator;
 mod verifier;
 
-use crate::reorg_detector;
+use crate::chain_monitor;
+use crate::forced_inclusion::ForcedInclusion;
 use crate::{
     ethereum_l1::{EthereumL1, transaction_error::TransactionError},
     metrics::Metrics,
@@ -14,8 +15,8 @@ use crate::{
 };
 use anyhow::Error;
 use batch_manager::{BatchBuilderConfig, BatchManager};
+use chain_monitor::ChainMonitor;
 use operator::{Operator, Status as OperatorStatus};
-use reorg_detector::ReorgDetector;
 use std::sync::Arc;
 use tokio::{
     sync::mpsc::{Receiver, error::TryRecvError},
@@ -28,7 +29,7 @@ use verifier::VerificationResult;
 pub struct Node {
     cancel_token: CancellationToken,
     ethereum_l1: Arc<EthereumL1>,
-    reorg_detector: Arc<ReorgDetector>,
+    chain_monitor: Arc<ChainMonitor>,
     preconf_heartbeat_ms: u64,
     operator: Operator,
     batch_manager: BatchManager,
@@ -38,6 +39,7 @@ pub struct Node {
     metrics: Arc<Metrics>,
     watchdog: u64,
     head_verifier: L2HeadVerifier,
+    propose_forced_inclusion: bool,
 }
 
 impl Node {
@@ -46,7 +48,7 @@ impl Node {
         cancel_token: CancellationToken,
         taiko: Arc<Taiko>,
         ethereum_l1: Arc<EthereumL1>,
-        reorg_detector: Arc<ReorgDetector>,
+        chain_monitor: Arc<ChainMonitor>,
         preconf_heartbeat_ms: u64,
         handover_window_slots: u64,
         handover_start_buffer_ms: u64,
@@ -55,6 +57,8 @@ impl Node {
         simulate_not_submitting_at_the_end_of_epoch: bool,
         transaction_error_channel: Receiver<TransactionError>,
         metrics: Arc<Metrics>,
+        forced_inclusion: Arc<ForcedInclusion>,
+        propose_forced_inclusion: bool,
     ) -> Result<Self, Error> {
         info!(
             "Batch builder config:\n\
@@ -83,13 +87,14 @@ impl Node {
             batch_builder_config,
             ethereum_l1.clone(),
             taiko.clone(),
+            forced_inclusion,
         );
         let head_verifier = L2HeadVerifier::new();
         Ok(Self {
             cancel_token,
             batch_manager,
             ethereum_l1,
-            reorg_detector,
+            chain_monitor,
             preconf_heartbeat_ms,
             operator,
             verifier: None,
@@ -98,6 +103,7 @@ impl Node {
             metrics,
             watchdog: 0,
             head_verifier,
+            propose_forced_inclusion,
         })
     }
 
@@ -247,19 +253,26 @@ impl Node {
                 .get_preconfer_nonce_pending()
                 .await?;
             debug!("Nonce Latest: {nonce_latest}, Nonce Pending: {nonce_pending}");
-            // TODO handle when not equal
             if nonce_latest == nonce_pending {
                 // Just create a new verifier, we will check it in preconfirmation loop
                 self.verifier = Some(
                     verifier::Verifier::new_with_taiko_height(
                         taiko_geth_height,
                         self.taiko.clone(),
-                        self.batch_manager.clone_without_batches(),
+                        self.batch_manager
+                            .update_forced_inclusion_and_clone_without_batches()
+                            .await?,
                         0,
                         self.cancel_token.clone(),
                     )
                     .await?,
                 );
+            } else {
+                error!(
+                    "Error: Pending nonce is not equal to latest nonce. Nonce Latest: {nonce_latest}, Nonce Pending: {nonce_pending}"
+                );
+                self.cancel_token.cancel();
+                return Err(Error::msg("Pending nonce is not equal to latest nonce"));
             }
         }
 
@@ -307,7 +320,9 @@ impl Node {
                 let verifier_result = verifier::Verifier::new_with_taiko_height(
                     taiko_geth_height,
                     self.taiko.clone(),
-                    self.batch_manager.clone_without_batches(),
+                    self.batch_manager
+                        .update_forced_inclusion_and_clone_without_batches()
+                        .await?,
                     verification_slot,
                     self.cancel_token.clone(),
                 )
@@ -350,26 +365,19 @@ impl Node {
                     "Unexpected L2 head detected. Restarting node..."
                 ));
             }
-            if let Some(block) = self
+            let (forced_inclusion_block, block) = self
                 .preconfirm_block(
                     pending_tx_list,
                     l2_slot_info,
                     current_status.is_end_of_sequencing(),
+                    self.propose_forced_inclusion
+                        && current_status.is_submitter()
+                        && self.verifier.is_none(),
                 )
-                .await?
-            {
-                if !self
-                    .head_verifier
-                    .verify_next_and_set(block.number, block.hash, block.parent_hash)
-                    .await
-                {
-                    self.head_verifier.log_error().await;
-                    self.cancel_token.cancel();
-                    return Err(anyhow::anyhow!(
-                        "Unexpected L2 head after preconfirmation. Restarting node..."
-                    ));
-                }
-            }
+                .await?;
+
+            self.verify_preconfed_block(forced_inclusion_block).await?;
+            self.verify_preconfed_block(block).await?;
         }
 
         if current_status.is_submitter() && !transaction_in_progress {
@@ -390,11 +398,14 @@ impl Node {
         }
 
         if !current_status.is_submitter() && !current_status.is_preconfer() {
-            if self.batch_manager.has_batches() {
-                self.batch_manager.reset_builder();
+            if self.batch_manager.has_batches() || self.batch_manager.has_current_forced_inclusion()
+            {
                 error!(
-                    "Some batches were not successfully sent in the submitter window. Resetting batch builder."
+                    "Resetting batch builder. has batches: {}, has current forced inclusion: {}",
+                    self.batch_manager.has_batches(),
+                    self.batch_manager.has_current_forced_inclusion()
                 );
+                self.batch_manager.reset_builder().await?;
             }
             if self.verifier.is_some() {
                 error!("Verifier is not None after submitter window.");
@@ -402,6 +413,26 @@ impl Node {
             }
         }
 
+        Ok(())
+    }
+
+    async fn verify_preconfed_block(
+        &self,
+        l2_block: Option<BuildPreconfBlockResponse>,
+    ) -> Result<(), Error> {
+        if let Some(l2_block) = l2_block {
+            if !self
+                .head_verifier
+                .verify_next_and_set(l2_block.number, l2_block.hash, l2_block.parent_hash)
+                .await
+            {
+                self.head_verifier.log_error().await;
+                self.cancel_token.cancel();
+                return Err(anyhow::anyhow!(
+                    "Unexpected L2 head after preconfirmation. Restarting node..."
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -438,6 +469,7 @@ impl Node {
                     .reanchor_blocks(
                         taiko_inbox_height,
                         "Anchor offset is too high for unsafe L2 blocks",
+                        false,
                     )
                     .await
                 {
@@ -493,7 +525,7 @@ impl Node {
                         return Ok(false);
                     }
                     VerificationResult::ReanchorNeeded(block, reason) => {
-                        if let Err(err) = self.reanchor_blocks(block, &reason).await {
+                        if let Err(err) = self.reanchor_blocks(block, &reason, false).await {
                             error!("Failed to reanchor blocks: {}", err);
                             self.cancel_token.cancel();
                             return Err(err);
@@ -547,18 +579,35 @@ impl Node {
         match error {
             TransactionError::ReanchorRequired => {
                 if current_status.is_preconfer() && current_status.is_submitter() {
-                    let taiko_inbox_height = self
+                    let taiko_inbox_height = match self
                         .ethereum_l1
                         .execution_layer
                         .get_l2_height_from_taiko_inbox()
-                        .await?;
-                    if let Err(err) = self
-                        .reanchor_blocks(taiko_inbox_height, "Transaction reverted")
                         .await
                     {
-                        error!("Failed to reanchor blocks: {}", err);
+                        Ok(height) => height,
+                        Err(err) => {
+                            error!(
+                                "ReanchorRequired: Failed to get L2 height from Taiko inbox: {}",
+                                err
+                            );
+                            self.cancel_token.cancel();
+                            return Err(anyhow::anyhow!(
+                                "ReanchorRequired: Failed to get L2 height from Taiko inbox: {}",
+                                err
+                            ));
+                        }
+                    };
+                    if let Err(err) = self
+                        .reanchor_blocks(taiko_inbox_height, "Transaction reverted", false)
+                        .await
+                    {
+                        error!("ReanchorRequired: Failed to reanchor blocks: {}", err);
                         self.cancel_token.cancel();
-                        return Err(anyhow::anyhow!("Failed to reanchor blocks: {}", err));
+                        return Err(anyhow::anyhow!(
+                            "ReanchorRequired: Failed to reanchor blocks: {}",
+                            err
+                        ));
                     }
                     return Err(anyhow::anyhow!("Reanchoring done"));
                 } else {
@@ -615,6 +664,44 @@ impl Node {
                 self.cancel_token.cancel();
                 return Err(anyhow::anyhow!("Build transaction failed, exiting"));
             }
+            TransactionError::OldestForcedInclusionDue => {
+                let taiko_inbox_height = match self
+                    .ethereum_l1
+                    .execution_layer
+                    .get_l2_height_from_taiko_inbox()
+                    .await
+                {
+                    Ok(height) => height,
+                    Err(err) => {
+                        error!(
+                            "OldestForcedInclusionDue: Failed to get L2 height from Taiko inbox: {}",
+                            err
+                        );
+                        self.cancel_token.cancel();
+                        return Err(anyhow::anyhow!(
+                            "OldestForcedInclusionDue: Failed to get L2 height from Taiko inbox: {}",
+                            err
+                        ));
+                    }
+                };
+                if let Err(err) = self
+                    .reanchor_blocks(taiko_inbox_height, "OldestForcedInclusionDue", true)
+                    .await
+                {
+                    error!(
+                        "OldestForcedInclusionDue: Failed to reanchor blocks: {}",
+                        err
+                    );
+                    self.cancel_token.cancel();
+                    return Err(anyhow::anyhow!(
+                        "OldestForcedInclusionDue: Failed to reanchor blocks: {}",
+                        err
+                    ));
+                }
+                return Err(anyhow::anyhow!(
+                    "Need to include forced inclusion, reanchoring done, skipping slot"
+                ));
+            }
         }
 
         Ok(())
@@ -625,9 +712,21 @@ impl Node {
         pending_tx_list: Option<PreBuiltTxList>,
         l2_slot_info: L2SlotInfo,
         end_of_sequencing: bool,
-    ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
+        allow_forced_inclusion: bool,
+    ) -> Result<
+        (
+            Option<BuildPreconfBlockResponse>,
+            Option<BuildPreconfBlockResponse>,
+        ),
+        Error,
+    > {
         self.batch_manager
-            .preconfirm_block(pending_tx_list, l2_slot_info, end_of_sequencing)
+            .preconfirm_block(
+                pending_tx_list,
+                l2_slot_info,
+                end_of_sequencing,
+                allow_forced_inclusion,
+            )
             .await
     }
 
@@ -676,10 +775,15 @@ impl Node {
         Ok(())
     }
 
-    async fn reanchor_blocks(&mut self, parent_block_id: u64, reason: &str) -> Result<(), Error> {
+    async fn reanchor_blocks(
+        &mut self,
+        parent_block_id: u64,
+        reason: &str,
+        allow_forced_inclusion: bool,
+    ) -> Result<(), Error> {
         warn!(
-            "⛓️‍💥 Reanchoring blocks for parent block: {} reason: {}",
-            parent_block_id, reason
+            "⛓️‍💥 Reanchoring blocks for parent block: {} reason: {} allow_forced_inclusion: {}",
+            parent_block_id, reason, allow_forced_inclusion
         );
 
         let start_time = std::time::Instant::now();
@@ -693,11 +797,9 @@ impl Node {
 
         // Update self state
         self.verifier = None;
-        self.batch_manager.reset_builder();
+        self.batch_manager.reset_builder().await?;
 
-        self.reorg_detector
-            .set_expected_reorg(parent_block_id)
-            .await;
+        self.chain_monitor.set_expected_reorg(parent_block_id).await;
 
         let start_block_id = parent_block_id + 1;
         let blocks = self
@@ -742,7 +844,7 @@ impl Node {
 
             let block = self
                 .batch_manager
-                .reanchor_block(pending_tx_list, l2_slot_info)
+                .reanchor_block(pending_tx_list, l2_slot_info, allow_forced_inclusion)
                 .await;
             // if reanchor_block fails restart the node
             if let Ok(Some(block)) = block {

@@ -43,6 +43,7 @@ pub struct Config {
     pub max_bytes_per_tx_list: u64,
     pub throttling_factor: u64,
     pub min_bytes_per_tx_list: u64,
+    pub propose_forced_inclusion: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -51,6 +52,7 @@ pub struct L1ContractAddresses {
     pub preconf_whitelist: String,
     pub preconf_router: String,
     pub taiko_wrapper: String,
+    pub forced_inclusion_store: String,
     #[cfg(feature = "extra-gas-percentage")]
     pub extra_gas_percentage: u64,
 }
@@ -107,6 +109,16 @@ impl Config {
             default_empty_address.clone()
         });
 
+        const FORCED_INCLUSION_STORE_ADDRESS: &str = "FORCED_INCLUSION_STORE_ADDRESS";
+        let forced_inclusion_store =
+            std::env::var(FORCED_INCLUSION_STORE_ADDRESS).unwrap_or_else(|_| {
+                warn!(
+                    "No ForcedInclusionStore contract address found in {} env var, using default",
+                    FORCED_INCLUSION_STORE_ADDRESS
+                );
+                default_empty_address.clone()
+            });
+
         #[cfg(feature = "extra-gas-percentage")]
         let extra_gas_percentage = std::env::var("EXTRA_GAS_PERCENTAGE")
             .unwrap_or("100".to_string())
@@ -118,6 +130,7 @@ impl Config {
             preconf_whitelist,
             preconf_router,
             taiko_wrapper,
+            forced_inclusion_store,
             #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage,
         };
@@ -294,6 +307,11 @@ impl Config {
                 .parse::<bool>()
                 .expect("SIMULATE_NOT_SUBMITTING_AT_THE_END_OF_EPOCH must be a boolean");
 
+        let propose_forced_inclusion = std::env::var("PROPOSE_FORCED_INCLUSION")
+            .unwrap_or("true".to_string())
+            .parse::<bool>()
+            .expect("PROPOSE_FORCED_INCLUSION must be a boolean");
+
         let max_bytes_per_tx_list = std::env::var("MAX_BYTES_PER_TX_LIST")
             .unwrap_or(MAX_BLOB_DATA_SIZE.to_string())
             .parse::<u64>()
@@ -358,6 +376,7 @@ impl Config {
             max_bytes_per_tx_list,
             throttling_factor,
             min_bytes_per_tx_list,
+            propose_forced_inclusion,
         };
 
         info!(
@@ -402,6 +421,7 @@ threshold_eth: {}
 threshold_taiko: {}
 amount to bridge from l2 to l1: {}
 simulate not submitting at the end of epoch: {}
+propose_forced_inclusion: {}
 "#,
             config.preconfer_address,
             config.taiko_geth_ws_rpc_url,
@@ -442,6 +462,7 @@ simulate not submitting at the end of epoch: {}
             threshold_taiko,
             config.amount_to_bridge_from_l2_to_l1,
             config.simulate_not_submitting_at_the_end_of_epoch,
+            config.propose_forced_inclusion,
         );
 
         config

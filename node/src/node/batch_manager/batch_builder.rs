@@ -1,12 +1,15 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use crate::{
-    ethereum_l1::{EthereumL1, slot_clock::SlotClock, transaction_error::TransactionError},
+    ethereum_l1::{
+        EthereumL1, l1_contracts_bindings::BatchParams, slot_clock::SlotClock,
+        transaction_error::TransactionError,
+    },
     shared::l2_block::L2Block,
 };
 use alloy::primitives::Address;
 use anyhow::Error;
-use tracing::{debug, trace, warn};
+use tracing::{debug, error, trace, warn};
 
 use super::BatchBuilderConfig;
 
@@ -19,10 +22,13 @@ pub struct Batch {
     pub anchor_block_timestamp_sec: u64,
 }
 
+pub type BatchesToSend = VecDeque<(Option<BatchParams>, Batch)>;
+
 pub struct BatchBuilder {
     config: BatchBuilderConfig,
-    batches_to_send: VecDeque<Batch>,
+    batches_to_send: BatchesToSend,
     current_batch: Option<Batch>,
+    current_forced_inclusion: Option<BatchParams>,
     slot_clock: Arc<SlotClock>,
 }
 
@@ -42,6 +48,7 @@ impl BatchBuilder {
             config,
             batches_to_send: VecDeque::new(),
             current_batch: None,
+            current_forced_inclusion: None,
             slot_clock,
         }
     }
@@ -58,8 +65,8 @@ impl BatchBuilder {
             .as_ref()
             .is_some_and(|batch| {
                 let number_of_blocks = if let Ok(n) = u16::try_from(batch.l2_blocks.len() + 1) {n} else {
-            return false;
-        };
+                    return false;
+                };
                 // Check if the total bytes of the current batch after adding the new L2 block
                 // is less than or equal to the max bytes size of the batch
                 self.config.is_within_bytes_limit(batch.total_bytes + l2_block.prebuilt_tx_list.bytes_length)
@@ -73,8 +80,62 @@ impl BatchBuilder {
 
     pub fn finalize_current_batch(&mut self) {
         if let Some(batch) = self.current_batch.take() {
-            self.batches_to_send.push_back(batch);
+            if !batch.l2_blocks.is_empty() {
+                self.batches_to_send
+                    .push_back((self.current_forced_inclusion.take(), batch));
+            }
         }
+    }
+
+    pub fn has_current_forced_inclusion(&self) -> bool {
+        self.current_forced_inclusion.is_some()
+    }
+
+    pub fn try_finalize_current_batch(&mut self) -> Result<(), Error> {
+        let is_empty = self
+            .current_batch
+            .as_ref()
+            .is_none_or(|b| b.l2_blocks.is_empty());
+
+        let has_forced_inclusion = self.current_forced_inclusion.is_some();
+
+        if has_forced_inclusion && is_empty {
+            error!(
+                "Failed to finalize current batch, current_batch {} forced_inclusion {}",
+                self.current_batch.is_some(),
+                self.current_forced_inclusion.is_some()
+            );
+            return Err(anyhow::anyhow!(
+                "Failed to finalize current batch, current_batch {} forced_inclusion {}",
+                self.current_batch.is_some(),
+                self.current_forced_inclusion.is_some()
+            ));
+        }
+        self.finalize_current_batch();
+        Ok(())
+    }
+
+    pub fn set_forced_inclusion(&mut self, forced_inclusion_batch: Option<BatchParams>) -> bool {
+        if self.current_forced_inclusion.is_some() {
+            return false;
+        }
+        self.current_forced_inclusion = forced_inclusion_batch;
+        true
+    }
+
+    pub fn create_new_batch(&mut self, anchor_block_id: u64, anchor_block_timestamp_sec: u64) {
+        self.finalize_current_batch();
+        self.current_batch = Some(Batch {
+            total_bytes: 0,
+            l2_blocks: vec![],
+            anchor_block_id,
+            anchor_block_timestamp_sec,
+            coinbase: self.config.default_coinbase,
+        });
+    }
+
+    pub fn remove_current_batch(&mut self) {
+        self.current_batch = None;
     }
 
     pub fn create_new_batch_and_add_l2_block(
@@ -211,16 +272,15 @@ impl BatchBuilder {
                     u16::try_from(
                         self.current_batch
                             .as_ref()
-                            .expect("assert: current batch is available")
-                            .l2_blocks
-                            .len(),
+                            .map(|b| b.l2_blocks.len())
+                            .unwrap_or(0),
                     )? + 1,
                 ))
         {
             self.finalize_current_batch();
         }
 
-        if let Some(batch) = self.batches_to_send.front() {
+        if let Some((forced_inclusion, batch)) = self.batches_to_send.front() {
             if ethereum_l1
                 .execution_layer
                 .is_transaction_in_progress()
@@ -251,6 +311,7 @@ impl BatchBuilder {
                     batch.anchor_block_id,
                     batch.coinbase,
                     self.slot_clock.get_current_slot_begin_timestamp()?,
+                    forced_inclusion.clone(),
                 )
                 .await
             {
@@ -321,6 +382,7 @@ impl BatchBuilder {
             config: self.config.clone(),
             batches_to_send: VecDeque::new(),
             current_batch: None,
+            current_forced_inclusion: None,
             slot_clock: self.slot_clock.clone(),
         }
     }
@@ -333,11 +395,11 @@ impl BatchBuilder {
         self.batches_to_send.len() as u64
     }
 
-    pub fn take_batches_to_send(&mut self) -> VecDeque<Batch> {
+    pub fn take_batches_to_send(&mut self) -> BatchesToSend {
         std::mem::take(&mut self.batches_to_send)
     }
 
-    pub fn prepend_batches(&mut self, mut batches: VecDeque<Batch>) {
+    pub fn prepend_batches(&mut self, mut batches: BatchesToSend) {
         batches.append(&mut self.batches_to_send);
         self.batches_to_send = batches;
     }

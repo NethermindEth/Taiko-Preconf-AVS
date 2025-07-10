@@ -1,19 +1,22 @@
 use alloy::primitives::B256;
 use anyhow::Error;
-use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
+use std::{cmp::Ordering, sync::Arc};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use crate::{ethereum_l1::EthereumL1, taiko::Taiko, utils::types::Slot};
+use crate::{
+    ethereum_l1::EthereumL1, node::batch_manager::batch_builder::BatchesToSend, taiko::Taiko,
+    utils::types::Slot,
+};
 
-use super::batch_manager::{BatchManager, batch_builder::Batch};
+use super::batch_manager::BatchManager;
 
 use crate::Metrics;
 
 pub enum VerificationResult {
     SuccessNoBatches,
-    SuccessWithBatches(VecDeque<Batch>),
+    SuccessWithBatches(BatchesToSend),
     ReanchorNeeded(u64, String),
     SlotNotValid,
     VerificationInProgress,
@@ -28,7 +31,7 @@ struct PreconfirmationRootBlock {
 pub struct Verifier {
     verification_slot: Slot,
     verifier_thread: Option<VerifierThread>,
-    verifier_thread_handle: Option<JoinHandle<Result<VecDeque<Batch>, Error>>>,
+    verifier_thread_handle: Option<JoinHandle<Result<BatchesToSend, Error>>>,
 }
 
 struct VerifierThread {
@@ -79,6 +82,10 @@ impl Verifier {
         if let Some(mut verifier_thread) = self.verifier_thread.take() {
             self.verifier_thread_handle = Some(tokio::spawn(async move {
                 info!("🔍 Started block verification thread");
+
+                // update forced inclusion index
+                verifier_thread.batch_manager.reset_builder().await?;
+
                 verifier_thread
                     .verify_submitted_blocks(taiko_inbox_height, metrics)
                     .await
@@ -149,7 +156,7 @@ impl VerifierThread {
         &mut self,
         taiko_inbox_height: u64,
         metrics: Arc<Metrics>,
-    ) -> Result<VecDeque<Batch>, Error> {
+    ) -> Result<BatchesToSend, Error> {
         // Compare block hashes to confirm that the block is still the same.
         // If not, return an error that will trigger a reorg.
         let current_hash = self
@@ -201,12 +208,9 @@ impl VerifierThread {
         );
 
         metrics.inc_by_batch_recovered(self.batch_manager.get_number_of_batches());
-        Ok(self.finalize_and_take_batches_to_send())
-    }
 
-    fn finalize_and_take_batches_to_send(&mut self) -> VecDeque<Batch> {
-        self.batch_manager.finalize_current_batch();
-        self.batch_manager.take_batches_to_send()
+        self.batch_manager.try_finalize_current_batch()?;
+        Ok(self.batch_manager.take_batches_to_send())
     }
 
     async fn handle_unprocessed_blocks(

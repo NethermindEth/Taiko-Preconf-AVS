@@ -1,9 +1,10 @@
+mod chain_monitor;
 mod crypto;
 mod ethereum_l1;
+mod forced_inclusion;
 mod funds_monitor;
 mod metrics;
 mod node;
-mod reorg_detector;
 mod shared;
 mod taiko;
 mod utils;
@@ -76,6 +77,8 @@ async fn main() -> Result<(), Error> {
 
     let ethereum_l1 = Arc::new(ethereum_l1);
 
+    let forced_inclusion = Arc::new(forced_inclusion::ForcedInclusion::new(ethereum_l1.clone()));
+
     #[cfg(feature = "test-gas")]
     let args = Args::parse();
     #[cfg(feature = "test-gas")]
@@ -146,25 +149,25 @@ async fn main() -> Result<(), Error> {
         config.max_blocks_per_batch
     };
 
-    let reorg_detector = Arc::new(
-        reorg_detector::ReorgDetector::new(
+    let chain_monitor = Arc::new(
+        chain_monitor::ChainMonitor::new(
             config.l1_ws_rpc_url,
             config.taiko_geth_ws_rpc_url,
             config.contract_addresses.taiko_inbox,
             cancel_token.clone(),
         )
-        .map_err(|e| anyhow::anyhow!("Failed to create ReorgDetector: {}", e))?,
+        .map_err(|e| anyhow::anyhow!("Failed to create ChainMonitor: {}", e))?,
     );
-    reorg_detector
+    chain_monitor
         .start()
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to start ReorgDetector: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to start ChainMonitor: {}", e))?;
 
     let node = node::Node::new(
         cancel_token.clone(),
         taiko.clone(),
         ethereum_l1.clone(),
-        reorg_detector.clone(),
+        chain_monitor.clone(),
         config.preconf_heartbeat_ms,
         config.handover_window_slots,
         config.handover_start_buffer_ms,
@@ -181,6 +184,8 @@ async fn main() -> Result<(), Error> {
         config.simulate_not_submitting_at_the_end_of_epoch,
         transaction_error_receiver,
         metrics.clone(),
+        forced_inclusion,
+        config.propose_forced_inclusion,
     )
     .await
     .map_err(|e| anyhow::anyhow!("Failed to create Node: {}", e))?;

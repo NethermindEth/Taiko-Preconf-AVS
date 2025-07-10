@@ -352,6 +352,12 @@ impl TransactionMonitorThread {
                         self.send_error_signal(TransactionError::ReanchorRequired)
                             .await;
                         return true;
+                    // 0x1e66a770 -> OldestForcedInclusionDue()
+                    } else if tools::check_oldest_forced_inclusion_due(&err_str) {
+                        warn!("⚠️ Transaction reverted OldestForcedInclusionDue()");
+                        self.send_error_signal(TransactionError::OldestForcedInclusionDue)
+                            .await;
+                        return true;
                     }
                     self.send_error_signal(TransactionError::TransactionReverted)
                         .await;

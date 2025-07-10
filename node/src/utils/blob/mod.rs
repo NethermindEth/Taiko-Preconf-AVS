@@ -1,10 +1,4 @@
-#![allow(unused)] // TODO: remove this once blob module is used
-
-use alloy::{
-    consensus::{Blob, BlobTransactionSidecar, Bytes48, EnvKzgSettings},
-    eips::eip4844::BYTES_PER_BLOB,
-    primitives::FixedBytes,
-};
+use alloy::consensus::{Blob, BlobTransactionSidecar, Bytes48, EnvKzgSettings};
 use anyhow::Error;
 
 mod blob_coder;
@@ -48,9 +42,10 @@ pub fn decode_blob(blob: &Blob) -> Result<Vec<u8>, Error> {
     BlobDecoder::decode_blob(blob)
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
-    use blob_decoder::BlobDecoder;
+    use alloy::primitives::FixedBytes;
 
     #[test]
     fn test_build_blob_sidecar() {

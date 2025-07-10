@@ -1,6 +1,5 @@
 use alloy::primitives::{Address, B256};
 use anyhow::{Error, anyhow};
-use batch_proposed::BatchProposed;
 use batch_proposed_receiver::BatchProposedEventReceiver;
 use l2_block_receiver::{L2BlockInfo, L2BlockReceiver};
 use std::{str::FromStr, sync::Arc};
@@ -9,7 +8,8 @@ use tokio::sync::mpsc::{self, Receiver};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
-mod batch_proposed;
+use crate::ethereum_l1::l1_contracts_bindings::taiko_inbox::ITaikoInbox;
+
 mod batch_proposed_receiver;
 mod l2_block_receiver;
 
@@ -21,7 +21,7 @@ struct TaikoGethStatus {
     expected_reorg: Option<u64>,
 }
 
-pub struct ReorgDetector {
+pub struct ChainMonitor {
     ws_l1_rpc_url: String,
     ws_l2_rpc_url: String,
     taiko_inbox: Address,
@@ -29,7 +29,7 @@ pub struct ReorgDetector {
     cancel_token: CancellationToken,
 }
 
-impl ReorgDetector {
+impl ChainMonitor {
     pub fn new(
         ws_l1_rpc_url: String,
         ws_l2_rpc_url: String,
@@ -37,7 +37,7 @@ impl ReorgDetector {
         cancel_token: CancellationToken,
     ) -> Result<Self, Error> {
         debug!(
-            "Creating ReorgDetector (L1: {}, L2: {}, Inbox: {})",
+            "Creating ChainMonitor (L1: {}, L2: {}, Inbox: {})",
             ws_l1_rpc_url, ws_l2_rpc_url, taiko_inbox
         );
 
@@ -65,7 +65,7 @@ impl ReorgDetector {
 
     /// Spawns the event listeners and the message handler.
     pub async fn start(&self) -> Result<(), Error> {
-        debug!("Starting ReorgDetector");
+        debug!("Starting ChainMonitor");
 
         //BatchProposed events
         let (batch_proposed_tx, batch_proposed_rx) = mpsc::channel(MESSAGE_QUEUE_SIZE);
@@ -102,23 +102,23 @@ impl ReorgDetector {
     }
 
     async fn handle_incoming_messages(
-        mut batch_proposed_rx: Receiver<BatchProposed>,
+        mut batch_proposed_rx: Receiver<ITaikoInbox::BatchProposed>,
         mut l2_block_rx: Receiver<L2BlockInfo>,
         taiko_geth_status: Arc<Mutex<TaikoGethStatus>>,
         cancel_token: CancellationToken,
     ) {
-        info!("ReorgDetector message loop running");
+        info!("ChainMonitor message loop running");
 
         loop {
             tokio::select! {
                 _ = cancel_token.cancelled() => {
-                    info!("ReorgDetector: cancellation received, shutting down message loop");
+                    info!("ChainMonitor: cancellation received, shutting down message loop");
                     break;
                 }
                 Some(batch) = batch_proposed_rx.recv() => {
                     info!(
                         "BatchProposed event → lastBlockId = {}",
-                        batch.event_data().info.lastBlockId
+                        batch.info.lastBlockId
                     );
                 }
                 Some(block) = l2_block_rx.recv() => {
@@ -135,12 +135,9 @@ impl ReorgDetector {
                                 None => false,
                             };
                             if !reorg_expected {
-                                tracing::warn!("⛔ Geth reorg detected: Received L2 block with unexpected number. Current state: block_id {} hash {}", status.height, status.hash);
-                                //TODO uncomment
-                                //cancel_token.cancel();
-                                //break;
+                                tracing::warn!("⛔ Geth reorg detected: Received L2 block with unexpected number. Expected: block_id {} hash {}", status.height, status.hash);
                             } else {
-                                tracing::debug!("Geth reorg detected: Received L2 block with expected number. Current state: block_id {} hash {}", status.height, status.hash);
+                                tracing::debug!("Geth reorg detected: Received L2 block with expected number. Expected: block_id {} hash {}", status.height, status.hash);
                             }
                         }
 

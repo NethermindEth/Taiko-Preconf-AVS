@@ -81,7 +81,13 @@ pub async fn test_gas_params(
 
     let _ = ethereum_l1
         .execution_layer
-        .send_batch_to_l1(l2_blocks, anchor_block_id, coinbase, current_timestamp)
+        .send_batch_to_l1(
+            l2_blocks,
+            anchor_block_id,
+            coinbase,
+            current_timestamp,
+            None,
+        )
         .await;
 
     while ethereum_l1

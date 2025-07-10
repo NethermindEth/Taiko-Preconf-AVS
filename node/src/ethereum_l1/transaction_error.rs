@@ -11,6 +11,7 @@ pub enum TransactionError {
     InsufficientFunds,
     ReanchorRequired,
     BuildTransactionFailed,
+    OldestForcedInclusionDue,
 }
 
 impl std::fmt::Display for TransactionError {

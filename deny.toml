@@ -23,12 +23,14 @@ ignore = [
 allow = [
     "MIT",
     "Apache-2.0",
+    "0BSD",
     "BSD-3-Clause",
     "BSD-2-Clause",
     "CC-BY-1.0",
     "CC-BY-2.0",
     "CC-BY-3.0",
     "CC-BY-4.0",
+    "CC0-1.0",
     "ISC",
     "OpenSSL",
     "Unicode-3.0",
@@ -41,16 +43,6 @@ unused-allowed-license = "allow"
 [licenses.private]
 ignore = false
 registries = []
-
-[[licenses.exceptions]]
-allow = ["0BSD"]
-name = "doctest-file"
-version = "*"
-
-[[licenses.exceptions]]
-allow = ["CC0-1.0"]
-name = "tiny-keccak"
-version = "*"
 
 [[licenses.exceptions]]
 allow = ["MPL-2.0"]
