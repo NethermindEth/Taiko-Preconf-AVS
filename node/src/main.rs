@@ -184,6 +184,7 @@ async fn main() -> Result<(), Error> {
         transaction_error_receiver,
         metrics.clone(),
         forced_inclusion,
+        config.propose_forced_inclusion,
     )
     .await
     .map_err(|e| anyhow::anyhow!("Failed to create Node: {}", e))?;
