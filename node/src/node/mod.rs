@@ -39,6 +39,7 @@ pub struct Node {
     metrics: Arc<Metrics>,
     watchdog: u64,
     head_verifier: L2HeadVerifier,
+    propose_forced_inclusion: bool,
 }
 
 impl Node {
@@ -57,6 +58,7 @@ impl Node {
         transaction_error_channel: Receiver<TransactionError>,
         metrics: Arc<Metrics>,
         forced_inclusion: Arc<ForcedInclusion>,
+        propose_forced_inclusion: bool,
     ) -> Result<Self, Error> {
         info!(
             "Batch builder config:\n\
@@ -101,6 +103,7 @@ impl Node {
             metrics,
             watchdog: 0,
             head_verifier,
+            propose_forced_inclusion,
         })
     }
 
@@ -367,7 +370,9 @@ impl Node {
                     pending_tx_list,
                     l2_slot_info,
                     current_status.is_end_of_sequencing(),
-                    current_status.is_submitter() && self.verifier.is_none(),
+                    self.propose_forced_inclusion
+                        && current_status.is_submitter()
+                        && self.verifier.is_none(),
                 )
                 .await?;
 
