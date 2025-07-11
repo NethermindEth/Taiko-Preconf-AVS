@@ -1,6 +1,12 @@
-use alloy::providers::{
-    Identity, RootProvider,
-    fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
+use alloy::{
+    network::EthereumWallet,
+    providers::{
+        Identity, Provider, RootProvider,
+        fillers::{
+            BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
+            WalletFiller,
+        },
+    },
 };
 
 pub type WsProvider = FillProvider<
@@ -10,9 +16,6 @@ pub type WsProvider = FillProvider<
     >,
     RootProvider,
 >;
-
-#[cfg(test)]
-use alloy::{network::EthereumWallet, providers::fillers::WalletFiller};
 
 #[cfg(test)]
 pub type PrivateKeyProvider = FillProvider<
@@ -25,3 +28,9 @@ pub type PrivateKeyProvider = FillProvider<
     >,
     RootProvider,
 >;
+
+#[derive(Clone)]
+pub enum Signer {
+    Web3signer(String),
+    PrivateKey(String),
+}

@@ -1,16 +1,18 @@
-use super::{tools, transaction_error::TransactionError};
+use super::{config::EthereumL1Config, tools, transaction_error::TransactionError};
 use crate::{
     metrics::Metrics,
-    shared::{web3signer::Web3Signer, ws_provider::WsProvider},
+    shared::{web3signer::Web3Signer, ws_provider::Signer},
 };
 use alloy::{
     consensus::{SignableTransaction, TxEnvelope, TxType, transaction::SignerRecoverable},
     network::{Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
     primitives::{Address, B256},
     providers::{
-        PendingTransactionBuilder, PendingTransactionError, Provider, RootProvider, WatchTxError,
+        DynProvider, PendingTransactionBuilder, PendingTransactionError, Provider, RootProvider,
+        WatchTxError,
     },
     rpc::types::TransactionRequest,
+    transports::TransportErrorKind,
 };
 use alloy_json_rpc::RpcError;
 use anyhow::Error;
@@ -38,60 +40,62 @@ pub struct TransactionMonitorConfig {
 }
 
 pub struct TransactionMonitorThread {
-    provider: Arc<WsProvider>,
+    provider: DynProvider,
     config: TransactionMonitorConfig,
     nonce: u64,
     error_notification_channel: Sender<TransactionError>,
     metrics: Arc<Metrics>,
-    web3signer: Arc<Web3Signer>,
+    web3signer: Option<Arc<Web3Signer>>,
     chain_id: u64,
 }
 
 //#[derive(Debug)]
-pub struct TransactionMonitor<P = WsProvider> {
-    provider: Arc<P>,
+pub struct TransactionMonitor {
+    provider: DynProvider,
     config: TransactionMonitorConfig,
     join_handle: Mutex<Option<JoinHandle<()>>>,
     error_notification_channel: Sender<TransactionError>,
     metrics: Arc<Metrics>,
-    web3signer: Arc<Web3Signer>,
+    web3signer: Option<Arc<Web3Signer>>,
     chain_id: u64,
 }
 
-impl<P> TransactionMonitor<P> {
+impl TransactionMonitor {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
-        provider: Arc<P>,
-        min_priority_fee_per_gas_wei: u64,
-        tx_fees_increase_percentage: u64,
-        max_attempts_to_send_tx: u64,
-        max_attempts_to_wait_tx: u64,
-        delay_between_tx_attempts_sec: u64,
+        provider: DynProvider,
+        config: &EthereumL1Config,
         error_notification_channel: Sender<TransactionError>,
         metrics: Arc<Metrics>,
-        web3signer_url: String,
         chain_id: u64,
     ) -> Result<Self, Error> {
         const SIGNER_TIMEOUT: Duration = Duration::from_secs(10);
         Ok(Self {
             provider,
             config: TransactionMonitorConfig {
-                min_priority_fee_per_gas_wei: u128::from(min_priority_fee_per_gas_wei),
-                tx_fees_increase_percentage: u128::from(tx_fees_increase_percentage),
-                max_attempts_to_send_tx,
-                max_attempts_to_wait_tx,
-                delay_between_tx_attempts: Duration::from_secs(delay_between_tx_attempts_sec),
+                min_priority_fee_per_gas_wei: u128::from(config.min_priority_fee_per_gas_wei),
+                tx_fees_increase_percentage: u128::from(config.tx_fees_increase_percentage),
+                max_attempts_to_send_tx: config.max_attempts_to_send_tx,
+                max_attempts_to_wait_tx: config.max_attempts_to_wait_tx,
+                delay_between_tx_attempts: Duration::from_secs(
+                    config.delay_between_tx_attempts_sec,
+                ),
             },
             join_handle: Mutex::new(None),
             error_notification_channel,
             metrics,
-            web3signer: Arc::new(Web3Signer::new(&web3signer_url, SIGNER_TIMEOUT)?),
+            web3signer: match &config.signer {
+                Signer::Web3signer(web3signer_url) => {
+                    Some(Arc::new(Web3Signer::new(web3signer_url, SIGNER_TIMEOUT)?))
+                }
+                _ => None,
+            },
             chain_id,
         })
     }
 }
 
-impl TransactionMonitor<WsProvider> {
+impl TransactionMonitor {
     /// Monitor a transaction until it is confirmed or fails.
     /// Spawns a new tokio task to monitor the transaction.
     pub async fn monitor_new_transaction(
@@ -133,12 +137,12 @@ impl TransactionMonitor<WsProvider> {
 
 impl TransactionMonitorThread {
     pub fn new(
-        provider: Arc<WsProvider>,
+        provider: DynProvider,
         config: TransactionMonitorConfig,
         nonce: u64,
         error_notification_channel: Sender<TransactionError>,
         metrics: Arc<Metrics>,
-        web3signer: Arc<Web3Signer>,
+        web3signer: Option<Arc<Web3Signer>>,
         chain_id: u64,
     ) -> Self {
         Self {
@@ -394,6 +398,43 @@ impl TransactionMonitorThread {
         previous_tx_hashes: &Vec<B256>,
         sending_attempt: u64,
     ) -> Option<PendingTransactionBuilder<alloy::network::Ethereum>> {
+        if let Some(web3signer) = &self.web3signer {
+            self.send_transaction_with_web3signer(
+                tx,
+                previous_tx_hashes,
+                sending_attempt,
+                web3signer,
+            )
+            .await
+        } else {
+            self.send_transaction_with_private_key_signer(tx, previous_tx_hashes, sending_attempt)
+                .await
+        }
+    }
+
+    async fn send_transaction_with_private_key_signer(
+        &self,
+        tx: TransactionRequest,
+        previous_tx_hashes: &Vec<B256>,
+        sending_attempt: u64,
+    ) -> Option<PendingTransactionBuilder<alloy::network::Ethereum>> {
+        match self.provider.send_transaction(tx).await {
+            Ok(tx) => Some(tx),
+            Err(e) => {
+                self.handle_rpc_error(e, previous_tx_hashes, sending_attempt)
+                    .await;
+                return None;
+            }
+        }
+    }
+
+    async fn send_transaction_with_web3signer(
+        &self,
+        tx: TransactionRequest,
+        previous_tx_hashes: &Vec<B256>,
+        sending_attempt: u64,
+        web3signer: &Arc<Web3Signer>,
+    ) -> Option<PendingTransactionBuilder<alloy::network::Ethereum>> {
         let unsigned_tx = match tx.clone().build_unsigned() {
             Ok(unsigned_tx) => unsigned_tx,
             Err(e) => {
@@ -404,7 +445,7 @@ impl TransactionMonitorThread {
             }
         };
         let from = tx.from;
-        let web3singer_signed_tx = match self.web3signer.sign_transaction(tx).await {
+        let web3singer_signed_tx = match web3signer.sign_transaction(tx).await {
             Ok(web3singer_signed_tx) => web3singer_signed_tx,
             Err(e) => {
                 error!("Failed to sign transaction: {}", e);
@@ -439,36 +480,44 @@ impl TransactionMonitorThread {
         match self.provider.send_raw_transaction(&encoded_tx).await {
             Ok(tx) => Some(tx),
             Err(e) => {
-                if let RpcError::ErrorResp(err) = &e {
-                    if err.message.contains("nonce too low") {
-                        if self
-                            .verify_tx_included(previous_tx_hashes, sending_attempt)
-                            .await
-                        {
-                            return None;
-                        } else {
-                            self.send_error_signal(TransactionError::TransactionReverted)
-                                .await;
-                            return None;
-                        }
-                    } else if tools::check_for_insufficient_funds(&err.message) {
-                        error!("Failed to send transaction: {}", e);
-                        self.send_error_signal(TransactionError::InsufficientFunds)
-                            .await;
-                        return None;
-                    } else if tools::check_for_reanchor_required(&err.message) {
-                        warn!("Reanchor required: {}", err.message);
-                        self.send_error_signal(TransactionError::ReanchorRequired)
-                            .await;
-                        return None;
-                    }
-                }
-                // TODO if it is not revert then rebuild rpc client and retry on rpc error
-                error!("Failed to send transaction: {}", e);
-                self.send_error_signal(TransactionError::TransactionReverted)
+                self.handle_rpc_error(e, previous_tx_hashes, sending_attempt)
                     .await;
-                None
+                return None;
             }
+        }
+    }
+
+    async fn handle_rpc_error(
+        &self,
+        e: RpcError<TransportErrorKind>,
+        previous_tx_hashes: &Vec<B256>,
+        sending_attempt: u64,
+    ) {
+        if let RpcError::ErrorResp(err) = &e {
+            if err.message.contains("nonce too low") {
+                if self
+                    .verify_tx_included(previous_tx_hashes, sending_attempt)
+                    .await
+                {
+                    return;
+                } else {
+                    self.send_error_signal(TransactionError::TransactionReverted)
+                        .await;
+                }
+            } else if tools::check_for_insufficient_funds(&err.message) {
+                error!("Failed to send transaction: {}", e);
+                self.send_error_signal(TransactionError::InsufficientFunds)
+                    .await;
+            } else if tools::check_for_reanchor_required(&err.message) {
+                warn!("Reanchor required: {}", err.message);
+                self.send_error_signal(TransactionError::ReanchorRequired)
+                    .await;
+            }
+        } else {
+            // TODO if it is not revert then rebuild rpc client and retry on rpc error
+            error!("Failed to send transaction: {}", e);
+            self.send_error_signal(TransactionError::TransactionReverted)
+                .await;
         }
     }
 

@@ -1,12 +1,12 @@
-use super::ws_provider::WsProvider;
 use alloy::{
+    network::Ethereum,
     primitives::B256,
     providers::{Provider, ext::DebugApi},
     rpc::types::{Transaction, TransactionRequest, trace::geth::GethDebugTracingOptions},
 };
 
-pub async fn check_for_revert_reason(
-    provider: &WsProvider,
+pub async fn check_for_revert_reason<P: Provider<Ethereum>>(
+    provider: &P,
     tx_hash: B256,
     block_number: u64,
 ) -> String {

@@ -1,4 +1,4 @@
-use crate::utils::config::L1ContractAddresses;
+use crate::{shared::ws_provider::Signer, utils::config::L1ContractAddresses};
 
 pub struct EthereumL1Config {
     pub execution_ws_rpc_url: String,
@@ -12,6 +12,6 @@ pub struct EthereumL1Config {
     pub max_attempts_to_send_tx: u64,
     pub max_attempts_to_wait_tx: u64,
     pub delay_between_tx_attempts_sec: u64,
-    pub web3signer_url: String,
-    pub preconfer_address: String,
+    pub signer: Signer,
+    pub preconfer_address: Option<String>,
 }

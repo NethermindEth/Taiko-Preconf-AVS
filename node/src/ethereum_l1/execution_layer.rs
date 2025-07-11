@@ -10,16 +10,18 @@ use crate::{
     },
     forced_inclusion::ForcedInclusionInfo,
     metrics,
-    shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress, ws_provider::WsProvider},
+    shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress, ws_provider::Signer},
     utils::{config, types::*},
 };
 use alloy::{
     eips::BlockNumberOrTag,
     primitives::{Address, B256, U256},
-    providers::{Provider, ProviderBuilder, WsConnect},
+    providers::{DynProvider, Provider, ProviderBuilder, WsConnect},
+    signers::local::PrivateKeySigner,
 };
 use anyhow::{Error, anyhow};
 use std::{
+    str::FromStr,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -28,16 +30,16 @@ use tracing::{debug, info, warn};
 
 const DELAYED_L1_PROPOSAL_BUFFER: u64 = 4;
 
-pub struct ExecutionLayer<P = WsProvider> {
-    provider_ws: Arc<P>,
+pub struct ExecutionLayer {
+    provider_ws: DynProvider,
     preconfer_address: Address,
     contract_addresses: ContractAddresses,
     pacaya_config: taiko_inbox::ITaikoInbox::Config,
     #[cfg(feature = "extra-gas-percentage")]
     extra_gas_percentage: u64,
-    transaction_monitor: TransactionMonitor<P>,
+    transaction_monitor: TransactionMonitor,
     metrics: Arc<metrics::Metrics>,
-    taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::TaikoWrapperInstance<Arc<P>>,
+    taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::TaikoWrapperInstance<DynProvider>,
     chain_id: u64,
 }
 
@@ -50,32 +52,16 @@ pub struct ContractAddresses {
     pub forced_inclusion_store: Address,
 }
 
-impl ExecutionLayer<WsProvider> {
+impl ExecutionLayer {
     pub async fn new(
         config: EthereumL1Config,
         transaction_error_channel: Sender<TransactionError>,
         metrics: Arc<metrics::Metrics>,
     ) -> Result<Self, Error> {
-        debug!(
-            "Creating ExecutionLayer with WS URL: {}",
-            config.execution_ws_rpc_url
-        );
-
-        info!("AVS node address: {}", config.preconfer_address);
+        let (provider_ws, preconfer_address) = Self::construct_alloy_provider(&config).await?;
 
         #[cfg(feature = "extra-gas-percentage")]
         let extra_gas_percentage = config.contract_addresses.extra_gas_percentage;
-
-        let ws = WsConnect::new(config.execution_ws_rpc_url.to_string());
-
-        let provider_ws: Arc<WsProvider> = Arc::new(
-            ProviderBuilder::new()
-                .connect_ws(ws.clone())
-                .await
-                .map_err(|e| {
-                    Error::msg(format!("Execution layer: Failed to connect to WS: {}", e))
-                })?,
-        );
 
         let contract_addresses =
             Self::parse_contract_addresses(provider_ws.clone(), &config.contract_addresses)
@@ -93,14 +79,9 @@ impl ExecutionLayer<WsProvider> {
 
         let transaction_monitor = TransactionMonitor::new(
             provider_ws.clone(),
-            config.min_priority_fee_per_gas_wei,
-            config.tx_fees_increase_percentage,
-            config.max_attempts_to_send_tx,
-            config.max_attempts_to_wait_tx,
-            config.delay_between_tx_attempts_sec,
+            &config,
             transaction_error_channel,
             metrics.clone(),
-            config.web3signer_url,
             chain_id,
         )
         .await
@@ -113,7 +94,7 @@ impl ExecutionLayer<WsProvider> {
 
         Ok(Self {
             provider_ws,
-            preconfer_address: config.preconfer_address.parse()?,
+            preconfer_address,
             contract_addresses,
             pacaya_config,
             #[cfg(feature = "extra-gas-percentage")]
@@ -125,12 +106,68 @@ impl ExecutionLayer<WsProvider> {
         })
     }
 
+    async fn construct_alloy_provider(
+        config: &EthereumL1Config,
+    ) -> Result<(DynProvider, Address), Error> {
+        match &config.signer {
+            Signer::PrivateKey(private_key) => {
+                debug!(
+                    "Creating ExecutionLayer with WS URL: {}",
+                    config.execution_ws_rpc_url
+                );
+
+                let signer = PrivateKeySigner::from_str(&private_key)?;
+                let preconfer_address: Address = signer.address();
+                info!("AVS node address: {}", preconfer_address);
+
+                let ws = WsConnect::new(config.execution_ws_rpc_url.clone());
+                Ok((
+                    ProviderBuilder::new()
+                        .wallet(signer)
+                        .connect_ws(ws.clone())
+                        .await
+                        .map_err(|e| {
+                            Error::msg(format!("Execution layer: Failed to connect to WS: {}", e))
+                        })?
+                        .erased(),
+                    preconfer_address,
+                ))
+            }
+            Signer::Web3signer(web3signer_url) => {
+                debug!(
+                    "Creating ExecutionLayer with WS URL: {}",
+                    config.execution_ws_rpc_url
+                );
+
+                let preconfer_address =
+                    if let Some(preconfer_address) = config.preconfer_address.clone() {
+                        preconfer_address
+                    } else {
+                        panic!("Preconfer address is not provided");
+                    };
+                info!("AVS node address: {:?}", preconfer_address);
+
+                let ws = WsConnect::new(config.execution_ws_rpc_url.clone());
+                Ok((
+                    ProviderBuilder::new()
+                        .connect_ws(ws.clone())
+                        .await
+                        .map_err(|e| {
+                            Error::msg(format!("Execution layer: Failed to connect to WS: {}", e))
+                        })?
+                        .erased(),
+                    preconfer_address.parse()?,
+                ))
+            }
+        }
+    }
+
     pub fn chain_id(&self) -> u64 {
         self.chain_id
     }
 
     async fn parse_contract_addresses(
-        provider: Arc<WsProvider>,
+        provider: DynProvider,
         contract_addresses: &config::L1ContractAddresses,
     ) -> Result<ContractAddresses, Error> {
         let taiko_inbox = contract_addresses.taiko_inbox.parse()?;
@@ -290,7 +327,7 @@ impl ExecutionLayer<WsProvider> {
 
     async fn fetch_pacaya_config(
         taiko_inbox_address: &Address,
-        ws_provider: &WsProvider,
+        ws_provider: &DynProvider,
     ) -> Result<taiko_inbox::ITaikoInbox::Config, Error> {
         let contract = taiko_inbox::ITaikoInbox::new(*taiko_inbox_address, ws_provider);
         let pacaya_config = contract.pacayaConfig().call().await?;

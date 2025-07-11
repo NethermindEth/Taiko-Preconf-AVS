@@ -4,15 +4,16 @@ use tracing::{info, warn};
 use crate::utils::blob::constants::MAX_BLOB_DATA_SIZE;
 
 pub struct Config {
-    pub preconfer_address: String,
+    pub preconfer_address: Option<String>,
     pub taiko_geth_ws_rpc_url: String,
     pub taiko_geth_auth_rpc_url: String,
     pub taiko_driver_url: String,
+    pub avs_node_ecdsa_private_key: Option<String>,
     pub mev_boost_url: String,
     pub l1_ws_rpc_url: String,
     pub l1_beacon_url: String,
-    pub web3signer_l1_url: String,
-    pub web3signer_l2_url: String,
+    pub web3signer_l1_url: Option<String>,
+    pub web3signer_l2_url: Option<String>,
     pub l1_slot_duration_sec: u64,
     pub l1_slots_per_epoch: u64,
     pub preconf_heartbeat_ms: u64,
@@ -64,14 +65,34 @@ impl Config {
 
         let default_empty_address = "0x0000000000000000000000000000000000000000".to_string();
 
+        const AVS_NODE_ECDSA_PRIVATE_KEY: &str = "AVS_NODE_ECDSA_PRIVATE_KEY";
+        let avs_node_ecdsa_private_key = std::env::var(AVS_NODE_ECDSA_PRIVATE_KEY).ok();
         const PRECONFER_ADDRESS: &str = "PRECONFER_ADDRESS";
-        let preconfer_address = std::env::var(PRECONFER_ADDRESS).unwrap_or_else(|_| {
-            warn!(
-                "No Preconf address found in {} env var, using default",
-                PRECONFER_ADDRESS
-            );
-            default_empty_address.clone()
-        });
+        let preconfer_address = std::env::var(PRECONFER_ADDRESS).ok();
+        const WEB3SIGNER_L1_URL: &str = "WEB3SIGNER_L1_URL";
+        let web3signer_l1_url = std::env::var(WEB3SIGNER_L1_URL).ok();
+        const WEB3SIGNER_L2_URL: &str = "WEB3SIGNER_L2_URL";
+        let web3signer_l2_url = std::env::var(WEB3SIGNER_L2_URL).ok();
+
+        if avs_node_ecdsa_private_key.is_none() {
+            if web3signer_l1_url.is_none()
+                || web3signer_l2_url.is_none()
+                || preconfer_address.is_none()
+            {
+                panic!(
+                    "When {AVS_NODE_ECDSA_PRIVATE_KEY} is not set, {WEB3SIGNER_L1_URL}, {WEB3SIGNER_L2_URL} and {PRECONFER_ADDRESS} must be set"
+                );
+            }
+        } else {
+            if web3signer_l1_url.is_some()
+                || web3signer_l2_url.is_some()
+                || preconfer_address.is_some()
+            {
+                panic!(
+                    "When {AVS_NODE_ECDSA_PRIVATE_KEY} is set, {WEB3SIGNER_L1_URL}, {WEB3SIGNER_L2_URL} and {PRECONFER_ADDRESS} must not be set"
+                );
+            }
+        }
 
         const TAIKO_INBOX_ADDRESS: &str = "TAIKO_INBOX_ADDRESS";
         let taiko_inbox = std::env::var(TAIKO_INBOX_ADDRESS).unwrap_or_else(|_| {
@@ -336,16 +357,14 @@ impl Config {
                 .unwrap_or("http://127.0.0.1:1235".to_string()),
             taiko_driver_url: std::env::var("TAIKO_DRIVER_URL")
                 .unwrap_or("http://127.0.0.1:1236".to_string()),
-
+            avs_node_ecdsa_private_key,
             mev_boost_url: std::env::var("MEV_BOOST_URL")
                 .unwrap_or("http://127.0.0.1:8080".to_string()),
             l1_ws_rpc_url: std::env::var("L1_WS_RPC_URL").unwrap_or("wss://127.0.0.1".to_string()),
             l1_beacon_url: std::env::var("L1_BEACON_URL")
                 .unwrap_or("http://127.0.0.1:4000".to_string()),
-            web3signer_l1_url: std::env::var("WEB3SIGNER_L1_URL")
-                .unwrap_or("http://127.0.0.1:9000".to_string()),
-            web3signer_l2_url: std::env::var("WEB3SIGNER_L2_URL")
-                .unwrap_or("http://127.0.0.1:9001".to_string()),
+            web3signer_l1_url,
+            web3signer_l2_url,
             l1_slot_duration_sec,
             l1_slots_per_epoch,
             preconf_heartbeat_ms,
@@ -381,8 +400,7 @@ impl Config {
 
         info!(
             r#"
-Configuration:
-preconfer address: {}
+Configuration:{}
 Taiko geth WS RPC URL: {},
 Taiko geth auth RPC URL: {},
 Taiko driver URL: {},
@@ -423,15 +441,22 @@ amount to bridge from l2 to l1: {}
 simulate not submitting at the end of epoch: {}
 propose_forced_inclusion: {}
 "#,
-            config.preconfer_address,
+            if config.preconfer_address.is_some() {
+                format!(
+                    "\npreconfer address: {}",
+                    config.preconfer_address.as_ref().unwrap()
+                )
+            } else {
+                "".to_string()
+            },
             config.taiko_geth_ws_rpc_url,
             config.taiko_geth_auth_rpc_url,
             config.taiko_driver_url,
             config.mev_boost_url,
             config.l1_ws_rpc_url,
             config.l1_beacon_url,
-            config.web3signer_l1_url,
-            config.web3signer_l2_url,
+            config.web3signer_l1_url.as_deref().unwrap_or("not set"),
+            config.web3signer_l2_url.as_deref().unwrap_or("not set"),
             config.l1_slot_duration_sec,
             config.l1_slots_per_epoch,
             config.preconf_heartbeat_ms,

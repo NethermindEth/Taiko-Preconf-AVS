@@ -1,15 +1,14 @@
 use super::{l1_contracts_bindings::*, tools, transaction_error::TransactionError};
-use crate::{forced_inclusion::ForcedInclusionInfo, shared::ws_provider::WsProvider};
+use crate::forced_inclusion::ForcedInclusionInfo;
 use alloy::{
     network::{TransactionBuilder, TransactionBuilder4844},
     primitives::{Address, Bytes, FixedBytes},
-    providers::Provider,
+    providers::{DynProvider, Provider},
     rpc::types::TransactionRequest,
     sol_types::SolValue,
 };
 use alloy_json_rpc::{ErrorPayload, RpcError};
 use anyhow::{Error, anyhow};
-use std::sync::Arc;
 use tracing::warn;
 
 struct FeesPerGas {
@@ -20,19 +19,19 @@ struct FeesPerGas {
 }
 
 pub struct ProposeBatchBuilder {
-    provider_ws: Arc<WsProvider>,
+    provider_ws: DynProvider,
     #[cfg(feature = "extra-gas-percentage")]
     extra_gas_percentage: u64,
 }
 
 impl ProposeBatchBuilder {
     #[cfg(not(feature = "extra-gas-percentage"))]
-    pub fn new(provider_ws: Arc<WsProvider>) -> Self {
+    pub fn new(provider_ws: Arc<DynProvider>) -> Self {
         Self { provider_ws }
     }
 
     #[cfg(feature = "extra-gas-percentage")]
-    pub fn new(provider_ws: Arc<WsProvider>, extra_gas_percentage: u64) -> Self {
+    pub fn new(provider_ws: DynProvider, extra_gas_percentage: u64) -> Self {
         Self {
             provider_ws,
             extra_gas_percentage,

@@ -1,10 +1,5 @@
-use alloy::{
-    primitives::{Address, B256},
-    providers::{
-        Identity, RootProvider,
-        fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
-    },
-};
+use crate::shared::ws_provider::Signer;
+use alloy::primitives::{Address, B256};
 use anyhow::Error;
 use std::str::FromStr;
 use std::time::Duration;
@@ -18,14 +13,6 @@ pub const GOLDEN_TOUCH_ADDRESS: Address = Address::new([
     0x00, 0x00, 0x77, 0x77, 0x35, 0x36, 0x7b, 0x36, 0xbc, 0x9b, 0x61, 0xc5, 0x00, 0x22, 0xd9, 0xd0,
     0x70, 0x0d, 0xb4, 0xec,
 ]);
-
-pub type WsProvider = FillProvider<
-    JoinFill<
-        Identity,
-        JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
-    >,
-    RootProvider,
->;
 
 #[derive(Clone)]
 pub struct TaikoConfig {
@@ -41,7 +28,7 @@ pub struct TaikoConfig {
     pub rpc_l2_execution_layer_timeout: Duration,
     pub rpc_driver_preconf_timeout: Duration,
     pub rpc_driver_status_timeout: Duration,
-    pub web3signer_url: String,
+    pub signer: Signer,
 }
 
 impl TaikoConfig {
@@ -59,7 +46,7 @@ impl TaikoConfig {
         rpc_l2_execution_layer_timeout: Duration,
         rpc_driver_preconf_timeout: Duration,
         rpc_driver_status_timeout: Duration,
-        web3signer_url: String,
+        singer: Signer,
     ) -> Result<Self, Error> {
         Ok(Self {
             taiko_geth_ws_url,
@@ -74,7 +61,7 @@ impl TaikoConfig {
             rpc_l2_execution_layer_timeout,
             rpc_driver_preconf_timeout,
             rpc_driver_status_timeout,
-            web3signer_url,
+            signer: singer,
         })
     }
 }
