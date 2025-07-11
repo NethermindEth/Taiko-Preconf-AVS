@@ -256,12 +256,18 @@ impl Config {
         }
 
         let min_priority_fee_per_gas_wei = std::env::var("MIN_PRIORITY_FEE_PER_GAS_WEI")
-            .unwrap_or("10000000000".to_string()) // 10 Gwei
+            .unwrap_or("1000000000".to_string()) // 1 Gwei
             .parse::<u64>()
             .expect("MIN_PRIORITY_FEE_PER_GAS_WEI must be a number");
 
+        if min_priority_fee_per_gas_wei < 1000000000 {
+            panic!(
+                "MIN_PRIORITY_FEE_PER_GAS_WEI is less than 1 Gwei! It must be at least 1,000,000,000 wei."
+            );
+        }
+
         let tx_fees_increase_percentage = std::env::var("TX_FEES_INCREASE_PERCENTAGE")
-            .unwrap_or("10".to_string())
+            .unwrap_or("0".to_string())
             .parse::<u64>()
             .expect("TX_FEES_INCREASE_PERCENTAGE must be a number");
 
@@ -276,7 +282,7 @@ impl Config {
             .expect("MAX_ATTEMPTS_TO_WAIT_TX must be a number");
 
         let delay_between_tx_attempts_sec = std::env::var("DELAY_BETWEEN_TX_ATTEMPTS_SEC")
-            .unwrap_or("27".to_string())
+            .unwrap_or("63".to_string())
             .parse::<u64>()
             .expect("DELAY_BETWEEN_TX_ATTEMPTS_SEC must be a number");
 
