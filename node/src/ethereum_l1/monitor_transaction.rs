@@ -165,13 +165,9 @@ impl TransactionMonitorThread {
         max_fee_per_gas *= 2;
         max_priority_fee_per_gas +=
             max_priority_fee_per_gas * self.config.tx_fees_increase_percentage / 100;
-        let mut min_priority_fee_per_gas = self.config.min_priority_fee_per_gas_wei;
+        let min_priority_fee_per_gas = self.config.min_priority_fee_per_gas_wei;
         if let Some(max_fee_per_blob_gas) = &mut max_fee_per_blob_gas {
             *max_fee_per_blob_gas *= 2;
-            // at least 1 Gwei for max priority fee is required for blob tx by Nethermind
-            if min_priority_fee_per_gas < 1000000000 {
-                min_priority_fee_per_gas = 1000000000;
-            }
         }
 
         if max_priority_fee_per_gas < min_priority_fee_per_gas {
