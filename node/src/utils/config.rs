@@ -256,9 +256,15 @@ impl Config {
         }
 
         let min_priority_fee_per_gas_wei = std::env::var("MIN_PRIORITY_FEE_PER_GAS_WEI")
-            .unwrap_or("0".to_string()) // 0 Gwei
+            .unwrap_or("1000000000".to_string()) // 1 Gwei
             .parse::<u64>()
             .expect("MIN_PRIORITY_FEE_PER_GAS_WEI must be a number");
+
+        if min_priority_fee_per_gas_wei < 1000000000 {
+            panic!(
+                "MIN_PRIORITY_FEE_PER_GAS_WEI is less than 1 Gwei! It must be at least 1,000,000,000 wei."
+            );
+        }
 
         let tx_fees_increase_percentage = std::env::var("TX_FEES_INCREASE_PERCENTAGE")
             .unwrap_or("0".to_string())
