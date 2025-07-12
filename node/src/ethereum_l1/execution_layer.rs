@@ -1,4 +1,7 @@
-use super::{config::EthereumL1Config, transaction_error::TransactionError};
+use super::{
+    config::{ContractAddresses, EthereumL1Config},
+    transaction_error::TransactionError,
+};
 use crate::{
     ethereum_l1::{
         l1_contracts_bindings::{
@@ -11,7 +14,7 @@ use crate::{
     forced_inclusion::ForcedInclusionInfo,
     metrics,
     shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress, ws_provider::Signer},
-    utils::{config, types::*},
+    utils::types::*,
 };
 use alloy::{
     eips::BlockNumberOrTag,
@@ -43,15 +46,6 @@ pub struct ExecutionLayer {
     chain_id: u64,
 }
 
-pub struct ContractAddresses {
-    pub taiko_inbox: Address,
-    pub taiko_token: Address,
-    pub preconf_whitelist: Address,
-    pub preconf_router: Address,
-    pub taiko_wrapper: Address,
-    pub forced_inclusion_store: Address,
-}
-
 impl ExecutionLayer {
     pub async fn new(
         config: EthereumL1Config,
@@ -61,15 +55,12 @@ impl ExecutionLayer {
         let (provider_ws, preconfer_address) = Self::construct_alloy_provider(&config).await?;
 
         #[cfg(feature = "extra-gas-percentage")]
-        let extra_gas_percentage = config.contract_addresses.extra_gas_percentage;
+        let extra_gas_percentage = config.extra_gas_percentage;
 
-        let contract_addresses =
-            Self::parse_contract_addresses(provider_ws.clone(), &config.contract_addresses)
-                .await
-                .map_err(|e| Error::msg(format!("Failed to parse contract addresses: {}", e)))?;
-
-        let taiko_wrapper_contract =
-            taiko_wrapper::TaikoWrapper::new(contract_addresses.taiko_wrapper, provider_ws.clone());
+        let taiko_wrapper_contract = taiko_wrapper::TaikoWrapper::new(
+            config.contract_addresses.taiko_wrapper,
+            provider_ws.clone(),
+        );
 
         let chain_id = provider_ws
             .get_chain_id()
@@ -88,14 +79,14 @@ impl ExecutionLayer {
         .map_err(|e| Error::msg(format!("Failed to create TransactionMonitor: {}", e)))?;
 
         let pacaya_config =
-            Self::fetch_pacaya_config(&contract_addresses.taiko_inbox, &provider_ws)
+            Self::fetch_pacaya_config(&config.contract_addresses.taiko_inbox, &provider_ws)
                 .await
                 .map_err(|e| Error::msg(format!("Failed to fetch pacaya config: {}", e)))?;
 
         Ok(Self {
             provider_ws,
             preconfer_address,
-            contract_addresses,
+            contract_addresses: config.contract_addresses,
             pacaya_config,
             #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage,
@@ -116,7 +107,7 @@ impl ExecutionLayer {
                     config.execution_ws_rpc_url
                 );
 
-                let signer = PrivateKeySigner::from_str(&private_key)?;
+                let signer = PrivateKeySigner::from_str(private_key)?;
                 let preconfer_address: Address = signer.address();
                 info!("AVS node address: {}", preconfer_address);
 
@@ -133,7 +124,7 @@ impl ExecutionLayer {
                     preconfer_address,
                 ))
             }
-            Signer::Web3signer(web3signer_url) => {
+            Signer::Web3signer(_) => {
                 debug!(
                     "Creating ExecutionLayer with WS URL: {}",
                     config.execution_ws_rpc_url
@@ -164,33 +155,6 @@ impl ExecutionLayer {
 
     pub fn chain_id(&self) -> u64 {
         self.chain_id
-    }
-
-    async fn parse_contract_addresses(
-        provider: DynProvider,
-        contract_addresses: &config::L1ContractAddresses,
-    ) -> Result<ContractAddresses, Error> {
-        let taiko_inbox = contract_addresses.taiko_inbox.parse()?;
-        let preconf_whitelist = contract_addresses.preconf_whitelist.parse()?;
-        let preconf_router = contract_addresses.preconf_router.parse()?;
-        let taiko_wrapper = contract_addresses.taiko_wrapper.parse()?;
-        let forced_inclusion_store = contract_addresses.forced_inclusion_store.parse()?;
-
-        let contract = taiko_inbox::ITaikoInbox::new(taiko_inbox, provider);
-        let taiko_token = contract
-            .bondToken()
-            .call()
-            .await
-            .map_err(|e| Error::msg(format!("Failed to get bond token: {}", e)))?;
-
-        Ok(ContractAddresses {
-            taiko_inbox,
-            taiko_token,
-            preconf_whitelist,
-            preconf_router,
-            taiko_wrapper,
-            forced_inclusion_store,
-        })
     }
 
     async fn get_operator_for_current_epoch(&self) -> Result<Address, Error> {
@@ -359,7 +323,25 @@ impl ExecutionLayer {
     }
 
     pub async fn get_preconfer_wallet_bonds(&self) -> Result<alloy::primitives::U256, Error> {
-        let contract = IERC20::new(self.contract_addresses.taiko_token, &self.provider_ws);
+        let taiko_token = self
+            .contract_addresses
+            .taiko_token
+            .get_or_try_init(|| async {
+                let contract = taiko_inbox::ITaikoInbox::new(
+                    self.contract_addresses.taiko_inbox,
+                    self.provider_ws.clone(),
+                );
+                let taiko_token = contract
+                    .bondToken()
+                    .call()
+                    .await
+                    .map_err(|e| Error::msg(format!("Failed to get bond token: {}", e)))?;
+                info!("Taiko token address: {}", taiko_token);
+                Ok::<Address, Error>(taiko_token)
+            })
+            .await?;
+
+        let contract = IERC20::new(*taiko_token, &self.provider_ws);
         let allowance = contract
             .allowance(self.preconfer_address, self.contract_addresses.taiko_inbox)
             .call()
@@ -553,7 +535,7 @@ impl ExecutionLayer {
 }
 
 #[cfg(test)]
-impl ExecutionLayer<crate::shared::ws_provider::PrivateKeyProvider> {
+impl ExecutionLayer {
     pub async fn new_from_pk(
         ws_rpc_url: String,
         private_key: elliptic_curve::SecretKey<k256::Secp256k1>,
@@ -561,38 +543,57 @@ impl ExecutionLayer<crate::shared::ws_provider::PrivateKeyProvider> {
         use super::l1_contracts_bindings::taiko_inbox::ITaikoInbox::ForkHeights;
         use crate::metrics::Metrics;
         use alloy::{network::EthereumWallet, signers::local::PrivateKeySigner};
+        use tokio::sync::OnceCell;
 
-        let signer = PrivateKeySigner::from_signing_key(private_key.into());
+        let signer = PrivateKeySigner::from_signing_key(private_key.clone().into());
         let wallet = EthereumWallet::from(signer);
 
         let ws = WsConnect::new(ws_rpc_url.to_string());
 
-        let provider_ws: Arc<crate::shared::ws_provider::PrivateKeyProvider> = Arc::new(
-            ProviderBuilder::new()
-                .wallet(wallet)
-                .connect_ws(ws.clone())
-                .await
-                .unwrap(),
-        );
+        let provider_ws = ProviderBuilder::new()
+            .wallet(wallet)
+            .connect_ws(ws.clone())
+            .await
+            .unwrap()
+            .erased();
 
-        let preconfer_address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
-            .parse()?;
+        let preconfer_address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"; // some random address for test
 
         let (tx_error_sender, _) = tokio::sync::mpsc::channel(1);
 
         let metrics = Arc::new(Metrics::new());
 
-        Ok(Self {
-            provider_ws: provider_ws.clone(),
-            preconfer_address,
+        let ethereum_l1_config = EthereumL1Config {
+            execution_ws_rpc_url: ws_rpc_url,
             contract_addresses: ContractAddresses {
                 taiko_inbox: Address::ZERO,
-                taiko_token: Address::ZERO,
+                taiko_token: OnceCell::new(),
                 preconf_whitelist: Address::ZERO,
                 preconf_router: Address::ZERO,
                 taiko_wrapper: Address::ZERO,
                 forced_inclusion_store: Address::ZERO,
             },
+            consensus_rpc_url: "".to_string(),
+            slot_duration_sec: 12,
+            slots_per_epoch: 32,
+            preconf_heartbeat_ms: 1000,
+            signer: Signer::PrivateKey(hex::encode(private_key.to_bytes())),
+            preconfer_address: Some(preconfer_address.to_string()),
+            min_priority_fee_per_gas_wei: 1000000000000000000,
+            tx_fees_increase_percentage: 5,
+            max_attempts_to_send_tx: 4,
+            max_attempts_to_wait_tx: 4,
+            delay_between_tx_attempts_sec: 15,
+            #[cfg(feature = "extra-gas-percentage")]
+            extra_gas_percentage: 5,
+        };
+
+        // Self::new(ethereum_l1_config, tx_error_sender, metrics.clone()).await
+
+        Ok(Self {
+            provider_ws: provider_ws.clone(),
+            preconfer_address: preconfer_address.parse()?,
+            contract_addresses: ethereum_l1_config.contract_addresses.clone(),
             pacaya_config: taiko_inbox::ITaikoInbox::Config {
                 chainId: 1,
                 maxUnverifiedBatches: 100,
@@ -629,14 +630,9 @@ impl ExecutionLayer<crate::shared::ws_provider::PrivateKeyProvider> {
             extra_gas_percentage: 5,
             transaction_monitor: TransactionMonitor::new(
                 provider_ws.clone(),
-                1000000000000000000,
-                5,
-                4,
-                4,
-                15,
+                &ethereum_l1_config,
                 tx_error_sender,
                 metrics.clone(),
-                "http://localhost:8545".to_string(),
                 123456,
             )
             .await

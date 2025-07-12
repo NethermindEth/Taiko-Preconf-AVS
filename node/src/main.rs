@@ -57,7 +57,7 @@ async fn main() -> Result<(), Error> {
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
         ethereum_l1::config::EthereumL1Config {
             execution_ws_rpc_url: config.l1_ws_rpc_url.clone(),
-            contract_addresses: config.contract_addresses.clone(),
+            contract_addresses: config.contract_addresses.clone().try_into()?,
             consensus_rpc_url: config.l1_beacon_url,
             slot_duration_sec: config.l1_slot_duration_sec,
             slots_per_epoch: config.l1_slots_per_epoch,
@@ -77,6 +77,8 @@ async fn main() -> Result<(), Error> {
                 panic!("No singer provided");
             },
             preconfer_address: config.preconfer_address,
+            #[cfg(feature = "extra-gas-percentage")]
+            extra_gas_percentage: config.extra_gas_percentage,
         },
         transaction_error_sender,
         metrics.clone(),

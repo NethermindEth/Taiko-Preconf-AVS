@@ -45,6 +45,8 @@ pub struct Config {
     pub throttling_factor: u64,
     pub min_bytes_per_tx_list: u64,
     pub propose_forced_inclusion: bool,
+    #[cfg(feature = "extra-gas-percentage")]
+    pub extra_gas_percentage: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -54,8 +56,6 @@ pub struct L1ContractAddresses {
     pub preconf_router: String,
     pub taiko_wrapper: String,
     pub forced_inclusion_store: String,
-    #[cfg(feature = "extra-gas-percentage")]
-    pub extra_gas_percentage: u64,
 }
 
 impl Config {
@@ -83,15 +83,13 @@ impl Config {
                     "When {AVS_NODE_ECDSA_PRIVATE_KEY} is not set, {WEB3SIGNER_L1_URL}, {WEB3SIGNER_L2_URL} and {PRECONFER_ADDRESS} must be set"
                 );
             }
-        } else {
-            if web3signer_l1_url.is_some()
-                || web3signer_l2_url.is_some()
-                || preconfer_address.is_some()
-            {
-                panic!(
-                    "When {AVS_NODE_ECDSA_PRIVATE_KEY} is set, {WEB3SIGNER_L1_URL}, {WEB3SIGNER_L2_URL} and {PRECONFER_ADDRESS} must not be set"
-                );
-            }
+        } else if web3signer_l1_url.is_some()
+            || web3signer_l2_url.is_some()
+            || preconfer_address.is_some()
+        {
+            panic!(
+                "When {AVS_NODE_ECDSA_PRIVATE_KEY} is set, {WEB3SIGNER_L1_URL}, {WEB3SIGNER_L2_URL} and {PRECONFER_ADDRESS} must not be set"
+            );
         }
 
         const TAIKO_INBOX_ADDRESS: &str = "TAIKO_INBOX_ADDRESS";
@@ -152,8 +150,6 @@ impl Config {
             preconf_router,
             taiko_wrapper,
             forced_inclusion_store,
-            #[cfg(feature = "extra-gas-percentage")]
-            extra_gas_percentage,
         };
 
         let l1_slot_duration_sec = std::env::var("L1_SLOT_DURATION_SEC")
@@ -396,6 +392,8 @@ impl Config {
             throttling_factor,
             min_bytes_per_tx_list,
             propose_forced_inclusion,
+            #[cfg(feature = "extra-gas-percentage")]
+            extra_gas_percentage,
         };
 
         info!(
@@ -441,11 +439,8 @@ amount to bridge from l2 to l1: {}
 simulate not submitting at the end of epoch: {}
 propose_forced_inclusion: {}
 "#,
-            if config.preconfer_address.is_some() {
-                format!(
-                    "\npreconfer address: {}",
-                    config.preconfer_address.as_ref().unwrap()
-                )
+            if let Some(preconfer_address) = &config.preconfer_address {
+                format!("\npreconfer address: {}", preconfer_address)
             } else {
                 "".to_string()
             },

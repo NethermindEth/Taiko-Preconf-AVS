@@ -423,7 +423,7 @@ impl TransactionMonitorThread {
             Err(e) => {
                 self.handle_rpc_error(e, previous_tx_hashes, sending_attempt)
                     .await;
-                return None;
+                None
             }
         }
     }
@@ -482,7 +482,7 @@ impl TransactionMonitorThread {
             Err(e) => {
                 self.handle_rpc_error(e, previous_tx_hashes, sending_attempt)
                     .await;
-                return None;
+                None
             }
         }
     }
@@ -495,12 +495,10 @@ impl TransactionMonitorThread {
     ) {
         if let RpcError::ErrorResp(err) = &e {
             if err.message.contains("nonce too low") {
-                if self
+                if !self
                     .verify_tx_included(previous_tx_hashes, sending_attempt)
                     .await
                 {
-                    return;
-                } else {
                     self.send_error_signal(TransactionError::TransactionReverted)
                         .await;
                 }
