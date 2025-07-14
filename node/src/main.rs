@@ -77,7 +77,6 @@ async fn main() -> Result<(), Error> {
                 panic!("No singer provided");
             },
             preconfer_address: config.preconfer_address,
-            #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage: config.extra_gas_percentage,
         },
         transaction_error_sender,

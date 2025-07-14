@@ -20,17 +20,10 @@ struct FeesPerGas {
 
 pub struct ProposeBatchBuilder {
     provider_ws: DynProvider,
-    #[cfg(feature = "extra-gas-percentage")]
     extra_gas_percentage: u64,
 }
 
 impl ProposeBatchBuilder {
-    #[cfg(not(feature = "extra-gas-percentage"))]
-    pub fn new(provider_ws: Arc<DynProvider>) -> Self {
-        Self { provider_ws }
-    }
-
-    #[cfg(feature = "extra-gas-percentage")]
     pub fn new(provider_ws: DynProvider, extra_gas_percentage: u64) -> Self {
         Self {
             provider_ws,
@@ -92,7 +85,6 @@ impl ProposeBatchBuilder {
                 }
             }
         };
-        #[cfg(feature = "extra-gas-percentage")]
         let tx_blob_gas = tx_blob_gas + tx_blob_gas * self.extra_gas_percentage / 100;
 
         // Get fees from the network
@@ -147,7 +139,6 @@ impl ProposeBatchBuilder {
                 }
             }
         };
-        #[cfg(feature = "extra-gas-percentage")]
         let tx_calldata_gas = tx_calldata_gas + tx_calldata_gas * self.extra_gas_percentage / 100;
 
         tracing::debug!(

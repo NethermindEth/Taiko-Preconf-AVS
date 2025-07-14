@@ -38,7 +38,6 @@ pub struct ExecutionLayer {
     preconfer_address: Address,
     contract_addresses: ContractAddresses,
     pacaya_config: taiko_inbox::ITaikoInbox::Config,
-    #[cfg(feature = "extra-gas-percentage")]
     extra_gas_percentage: u64,
     transaction_monitor: TransactionMonitor,
     metrics: Arc<metrics::Metrics>,
@@ -53,8 +52,8 @@ impl ExecutionLayer {
         metrics: Arc<metrics::Metrics>,
     ) -> Result<Self, Error> {
         let (provider_ws, preconfer_address) = Self::construct_alloy_provider(&config).await?;
+        info!("AVS node address: {}", preconfer_address);
 
-        #[cfg(feature = "extra-gas-percentage")]
         let extra_gas_percentage = config.extra_gas_percentage;
 
         let taiko_wrapper_contract = taiko_wrapper::TaikoWrapper::new(
@@ -88,7 +87,6 @@ impl ExecutionLayer {
             preconfer_address,
             contract_addresses: config.contract_addresses,
             pacaya_config,
-            #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage,
             transaction_monitor,
             metrics,
@@ -103,13 +101,11 @@ impl ExecutionLayer {
         match &config.signer {
             Signer::PrivateKey(private_key) => {
                 debug!(
-                    "Creating ExecutionLayer with WS URL: {}",
+                    "Creating ExecutionLayer with WS URL: {} and private key signer.",
                     config.execution_ws_rpc_url
                 );
-
                 let signer = PrivateKeySigner::from_str(private_key)?;
                 let preconfer_address: Address = signer.address();
-                info!("AVS node address: {}", preconfer_address);
 
                 let ws = WsConnect::new(config.execution_ws_rpc_url.clone());
                 Ok((
@@ -126,17 +122,15 @@ impl ExecutionLayer {
             }
             Signer::Web3signer(_) => {
                 debug!(
-                    "Creating ExecutionLayer with WS URL: {}",
+                    "Creating ExecutionLayer with WS URL: {} and web3signer signer.",
                     config.execution_ws_rpc_url
                 );
-
                 let preconfer_address =
                     if let Some(preconfer_address) = config.preconfer_address.clone() {
                         preconfer_address
                     } else {
                         panic!("Preconfer address is not provided");
                     };
-                info!("AVS node address: {:?}", preconfer_address);
 
                 let ws = WsConnect::new(config.execution_ws_rpc_url.clone());
                 Ok((
@@ -262,9 +256,6 @@ impl ExecutionLayer {
         );
 
         // Build proposeBatch transaction
-        #[cfg(not(feature = "extra-gas-percentage"))]
-        let builder = ProposeBatchBuilder::new(self.provider_ws.clone());
-        #[cfg(feature = "extra-gas-percentage")]
         let builder = ProposeBatchBuilder::new(self.provider_ws.clone(), self.extra_gas_percentage);
         let tx = builder
             .build_propose_batch_tx(
@@ -584,7 +575,6 @@ impl ExecutionLayer {
             max_attempts_to_send_tx: 4,
             max_attempts_to_wait_tx: 4,
             delay_between_tx_attempts_sec: 15,
-            #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage: 5,
         };
 
@@ -626,7 +616,6 @@ impl ExecutionLayer {
                 Address::ZERO,
                 provider_ws.clone(),
             ),
-            #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage: 5,
             transaction_monitor: TransactionMonitor::new(
                 provider_ws.clone(),

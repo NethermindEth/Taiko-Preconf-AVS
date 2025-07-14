@@ -48,6 +48,5 @@ pub struct EthereumL1Config {
     pub delay_between_tx_attempts_sec: u64,
     pub signer: Signer,
     pub preconfer_address: Option<String>,
-    #[cfg(feature = "extra-gas-percentage")]
     pub extra_gas_percentage: u64,
 }

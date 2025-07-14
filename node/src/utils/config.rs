@@ -45,7 +45,6 @@ pub struct Config {
     pub throttling_factor: u64,
     pub min_bytes_per_tx_list: u64,
     pub propose_forced_inclusion: bool,
-    #[cfg(feature = "extra-gas-percentage")]
     pub extra_gas_percentage: u64,
 }
 
@@ -138,7 +137,6 @@ impl Config {
                 default_empty_address.clone()
             });
 
-        #[cfg(feature = "extra-gas-percentage")]
         let extra_gas_percentage = std::env::var("EXTRA_GAS_PERCENTAGE")
             .unwrap_or("100".to_string())
             .parse::<u64>()
@@ -392,7 +390,6 @@ impl Config {
             throttling_factor,
             min_bytes_per_tx_list,
             propose_forced_inclusion,
-            #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage,
         };
 
