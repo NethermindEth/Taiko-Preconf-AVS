@@ -7,6 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 pub struct BuildPreconfBlockRequestBody {
     pub executable_data: ExecutableData,
     pub end_of_sequencing: bool,
+    pub is_forced_inclusion: bool,
 }
 
 #[derive(Debug)]

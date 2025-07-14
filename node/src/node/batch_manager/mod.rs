@@ -396,6 +396,7 @@ impl BatchManager {
                     anchor_block_id,
                     &l2_slot_info,
                     false,
+                    true,
                     operation_type.clone(),
                 )
                 .await
@@ -455,6 +456,7 @@ impl BatchManager {
                 anchor_block_id,
                 &l2_slot_info,
                 end_of_sequencing,
+                false,
                 operation_type,
             )
             .await
@@ -537,6 +539,7 @@ impl BatchManager {
                         anchor_block_id,
                         &l2_slot_info,
                         false,
+                        true,
                         operation_type.clone(),
                     )
                     .await
@@ -613,6 +616,7 @@ impl BatchManager {
                 anchor_block_id,
                 &l2_slot_info,
                 end_of_sequencing,
+                false,
                 operation_type,
             )
             .await

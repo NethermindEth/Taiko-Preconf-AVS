@@ -243,6 +243,7 @@ impl Taiko {
         anchor_origin_height: u64,
         l2_slot_info: &L2SlotInfo,
         end_of_sequencing: bool,
+        is_forced_inclusion: bool,
         operation_type: OperationType,
     ) -> Result<Option<preconf_blocks::BuildPreconfBlockResponse>, Error> {
         tracing::debug!(
@@ -294,6 +295,7 @@ impl Taiko {
         let request_body = preconf_blocks::BuildPreconfBlockRequestBody {
             executable_data,
             end_of_sequencing,
+            is_forced_inclusion,
         };
 
         const API_ENDPOINT: &str = "preconfBlocks";
