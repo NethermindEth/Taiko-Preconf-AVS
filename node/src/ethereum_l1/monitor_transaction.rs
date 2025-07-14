@@ -398,6 +398,8 @@ impl TransactionMonitorThread {
         previous_tx_hashes: &Vec<B256>,
         sending_attempt: u64,
     ) -> Option<PendingTransactionBuilder<alloy::network::Ethereum>> {
+        // TODO: alloy provides TxSigner trait, we can use it to implement new signer with web3signer
+        // so it would be enough to add new wallet to the provider
         if let Some(web3signer) = &self.web3signer {
             self.send_transaction_with_web3signer(
                 tx,
