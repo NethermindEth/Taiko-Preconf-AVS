@@ -1,18 +1,14 @@
+use super::{l1_contracts_bindings::*, tools, transaction_error::TransactionError};
 use crate::forced_inclusion::ForcedInclusionInfo;
-
-use super::{
-    l1_contracts_bindings::*, tools, transaction_error::TransactionError, ws_provider::WsProvider,
-};
 use alloy::{
     network::{TransactionBuilder, TransactionBuilder4844},
     primitives::{Address, Bytes, FixedBytes},
-    providers::Provider,
+    providers::{DynProvider, Provider},
     rpc::types::TransactionRequest,
     sol_types::SolValue,
 };
 use alloy_json_rpc::{ErrorPayload, RpcError};
 use anyhow::{Error, anyhow};
-use std::sync::Arc;
 use tracing::warn;
 
 struct FeesPerGas {
@@ -23,19 +19,12 @@ struct FeesPerGas {
 }
 
 pub struct ProposeBatchBuilder {
-    provider_ws: Arc<WsProvider>,
-    #[cfg(feature = "extra-gas-percentage")]
+    provider_ws: DynProvider,
     extra_gas_percentage: u64,
 }
 
 impl ProposeBatchBuilder {
-    #[cfg(not(feature = "extra-gas-percentage"))]
-    pub fn new(provider_ws: Arc<WsProvider>) -> Self {
-        Self { provider_ws }
-    }
-
-    #[cfg(feature = "extra-gas-percentage")]
-    pub fn new(provider_ws: Arc<WsProvider>, extra_gas_percentage: u64) -> Self {
+    pub fn new(provider_ws: DynProvider, extra_gas_percentage: u64) -> Self {
         Self {
             provider_ws,
             extra_gas_percentage,
@@ -96,7 +85,6 @@ impl ProposeBatchBuilder {
                 }
             }
         };
-        #[cfg(feature = "extra-gas-percentage")]
         let tx_blob_gas = tx_blob_gas + tx_blob_gas * self.extra_gas_percentage / 100;
 
         // Get fees from the network
@@ -151,7 +139,6 @@ impl ProposeBatchBuilder {
                 }
             }
         };
-        #[cfg(feature = "extra-gas-percentage")]
         let tx_calldata_gas = tx_calldata_gas + tx_calldata_gas * self.extra_gas_percentage / 100;
 
         tracing::debug!(

@@ -1,15 +1,18 @@
-use crate::metrics::Metrics;
-
-use super::{tools, transaction_error::TransactionError, ws_provider::WsProvider};
+use super::{config::EthereumL1Config, tools, transaction_error::TransactionError};
+use crate::{
+    metrics::Metrics,
+    shared::{web3signer::Web3Signer, ws_provider::Signer},
+};
 use alloy::{
-    consensus::TxType,
+    consensus::{SignableTransaction, TxEnvelope, TxType, transaction::SignerRecoverable},
     network::{Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
-    primitives::B256,
+    primitives::{Address, B256},
     providers::{
-        PendingTransactionBuilder, PendingTransactionError, Provider, RootProvider, WatchTxError,
-        ext::DebugApi,
+        DynProvider, PendingTransactionBuilder, PendingTransactionError, Provider, RootProvider,
+        WatchTxError,
     },
-    rpc::types::{Transaction, TransactionRequest, trace::geth::GethDebugTracingOptions},
+    rpc::types::TransactionRequest,
+    transports::TransportErrorKind,
 };
 use alloy_json_rpc::RpcError;
 use anyhow::Error;
@@ -37,49 +40,62 @@ pub struct TransactionMonitorConfig {
 }
 
 pub struct TransactionMonitorThread {
-    provider: Arc<WsProvider>,
+    provider: DynProvider,
     config: TransactionMonitorConfig,
     nonce: u64,
     error_notification_channel: Sender<TransactionError>,
     metrics: Arc<Metrics>,
+    web3signer: Option<Arc<Web3Signer>>,
+    chain_id: u64,
 }
 
 //#[derive(Debug)]
 pub struct TransactionMonitor {
-    provider: Arc<WsProvider>,
+    provider: DynProvider,
     config: TransactionMonitorConfig,
     join_handle: Mutex<Option<JoinHandle<()>>>,
     error_notification_channel: Sender<TransactionError>,
     metrics: Arc<Metrics>,
+    web3signer: Option<Arc<Web3Signer>>,
+    chain_id: u64,
 }
 
 impl TransactionMonitor {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
-        provider: Arc<WsProvider>,
-        min_priority_fee_per_gas_wei: u64,
-        tx_fees_increase_percentage: u64,
-        max_attempts_to_send_tx: u64,
-        max_attempts_to_wait_tx: u64,
-        delay_between_tx_attempts_sec: u64,
+        provider: DynProvider,
+        config: &EthereumL1Config,
         error_notification_channel: Sender<TransactionError>,
         metrics: Arc<Metrics>,
+        chain_id: u64,
     ) -> Result<Self, Error> {
+        const SIGNER_TIMEOUT: Duration = Duration::from_secs(10);
         Ok(Self {
             provider,
             config: TransactionMonitorConfig {
-                min_priority_fee_per_gas_wei: u128::from(min_priority_fee_per_gas_wei),
-                tx_fees_increase_percentage: u128::from(tx_fees_increase_percentage),
-                max_attempts_to_send_tx,
-                max_attempts_to_wait_tx,
-                delay_between_tx_attempts: Duration::from_secs(delay_between_tx_attempts_sec),
+                min_priority_fee_per_gas_wei: u128::from(config.min_priority_fee_per_gas_wei),
+                tx_fees_increase_percentage: u128::from(config.tx_fees_increase_percentage),
+                max_attempts_to_send_tx: config.max_attempts_to_send_tx,
+                max_attempts_to_wait_tx: config.max_attempts_to_wait_tx,
+                delay_between_tx_attempts: Duration::from_secs(
+                    config.delay_between_tx_attempts_sec,
+                ),
             },
             join_handle: Mutex::new(None),
             error_notification_channel,
             metrics,
+            web3signer: match &config.signer {
+                Signer::Web3signer(web3signer_url) => {
+                    Some(Arc::new(Web3Signer::new(web3signer_url, SIGNER_TIMEOUT)?))
+                }
+                _ => None,
+            },
+            chain_id,
         })
     }
+}
 
+impl TransactionMonitor {
     /// Monitor a transaction until it is confirmed or fails.
     /// Spawns a new tokio task to monitor the transaction.
     pub async fn monitor_new_transaction(
@@ -102,6 +118,8 @@ impl TransactionMonitor {
             nonce,
             self.error_notification_channel.clone(),
             self.metrics.clone(),
+            self.web3signer.clone(),
+            self.chain_id,
         );
         let join_handle = monitor_thread.spawn_monitoring_task(tx);
         *guard = Some(join_handle);
@@ -119,11 +137,13 @@ impl TransactionMonitor {
 
 impl TransactionMonitorThread {
     pub fn new(
-        provider: Arc<WsProvider>,
+        provider: DynProvider,
         config: TransactionMonitorConfig,
         nonce: u64,
         error_notification_channel: Sender<TransactionError>,
         metrics: Arc<Metrics>,
+        web3signer: Option<Arc<Web3Signer>>,
+        chain_id: u64,
     ) -> Self {
         Self {
             provider,
@@ -131,6 +151,8 @@ impl TransactionMonitorThread {
             nonce,
             error_notification_channel,
             metrics,
+            web3signer,
+            chain_id,
         }
     }
     pub fn spawn_monitoring_task(self, tx: TransactionRequest) -> JoinHandle<()> {
@@ -146,6 +168,7 @@ impl TransactionMonitorThread {
                 .await;
             return;
         }
+        tx.set_chain_id(self.chain_id);
 
         debug!(
             "Monitoring tx with nonce: {}  max_fee_per_gas: {:?}, max_priority_fee_per_gas: {:?}, max_fee_per_blob_gas: {:?}",
@@ -371,40 +394,149 @@ impl TransactionMonitorThread {
         previous_tx_hashes: &Vec<B256>,
         sending_attempt: u64,
     ) -> Option<PendingTransactionBuilder<alloy::network::Ethereum>> {
+        // TODO: alloy provides TxSigner trait, we can use it to implement new signer with web3signer
+        // so it would be enough to add new wallet to the provider
+        if let Some(web3signer) = &self.web3signer {
+            self.send_transaction_with_web3signer(
+                tx,
+                previous_tx_hashes,
+                sending_attempt,
+                web3signer,
+            )
+            .await
+        } else {
+            self.send_transaction_with_private_key_signer(tx, previous_tx_hashes, sending_attempt)
+                .await
+        }
+    }
+
+    async fn send_transaction_with_private_key_signer(
+        &self,
+        tx: TransactionRequest,
+        previous_tx_hashes: &Vec<B256>,
+        sending_attempt: u64,
+    ) -> Option<PendingTransactionBuilder<alloy::network::Ethereum>> {
         match self.provider.send_transaction(tx).await {
             Ok(tx) => Some(tx),
             Err(e) => {
-                if let RpcError::ErrorResp(err) = &e {
-                    if err.message.contains("nonce too low") {
-                        if self
-                            .verify_tx_included(previous_tx_hashes, sending_attempt)
-                            .await
-                        {
-                            return None;
-                        } else {
-                            self.send_error_signal(TransactionError::TransactionReverted)
-                                .await;
-                            return None;
-                        }
-                    } else if tools::check_for_insufficient_funds(&err.message) {
-                        error!("Failed to send transaction: {}", e);
-                        self.send_error_signal(TransactionError::InsufficientFunds)
-                            .await;
-                        return None;
-                    } else if tools::check_for_reanchor_required(&err.message) {
-                        warn!("Reanchor required: {}", err.message);
-                        self.send_error_signal(TransactionError::ReanchorRequired)
-                            .await;
-                        return None;
-                    }
-                }
-                // TODO if it is not revert then rebuild rpc client and retry on rpc error
-                error!("Failed to send transaction: {}", e);
-                self.send_error_signal(TransactionError::TransactionReverted)
+                self.handle_rpc_error(e, previous_tx_hashes, sending_attempt)
                     .await;
                 None
             }
         }
+    }
+
+    async fn send_transaction_with_web3signer(
+        &self,
+        tx: TransactionRequest,
+        previous_tx_hashes: &Vec<B256>,
+        sending_attempt: u64,
+        web3signer: &Arc<Web3Signer>,
+    ) -> Option<PendingTransactionBuilder<alloy::network::Ethereum>> {
+        let unsigned_tx = match tx.clone().build_unsigned() {
+            Ok(unsigned_tx) => unsigned_tx,
+            Err(e) => {
+                error!("Failed to build unsigned transaction: {}", e);
+                self.send_error_signal(TransactionError::BuildTransactionFailed)
+                    .await;
+                return None;
+            }
+        };
+        let from = tx.from;
+        let web3singer_signed_tx = match web3signer.sign_transaction(tx).await {
+            Ok(web3singer_signed_tx) => web3singer_signed_tx,
+            Err(e) => {
+                error!("Failed to sign transaction: {}", e);
+                self.send_error_signal(TransactionError::Web3SignerFailed)
+                    .await;
+                return None;
+            }
+        };
+
+        let tx_envelope: TxEnvelope =
+            match alloy_rlp::Decodable::decode(&mut web3singer_signed_tx.as_slice()) {
+                Ok(tx_envelope) => tx_envelope,
+                Err(err) => {
+                    error!("Failed to decode RLP transaction: {}", err);
+                    self.send_error_signal(TransactionError::Web3SignerFailed)
+                        .await;
+                    return None;
+                }
+            };
+
+        if let Some(from) = from {
+            if !self.check_signer_correctness(&tx_envelope, from).await {
+                return None;
+            }
+        }
+
+        let signature = tx_envelope.signature();
+        let signed_tx = unsigned_tx.into_signed(*signature);
+        let mut encoded_tx = Vec::new();
+        signed_tx.eip2718_encode(&mut encoded_tx);
+
+        match self.provider.send_raw_transaction(&encoded_tx).await {
+            Ok(tx) => Some(tx),
+            Err(e) => {
+                self.handle_rpc_error(e, previous_tx_hashes, sending_attempt)
+                    .await;
+                None
+            }
+        }
+    }
+
+    async fn handle_rpc_error(
+        &self,
+        e: RpcError<TransportErrorKind>,
+        previous_tx_hashes: &Vec<B256>,
+        sending_attempt: u64,
+    ) {
+        if let RpcError::ErrorResp(err) = &e {
+            if err.message.contains("nonce too low") {
+                if !self
+                    .verify_tx_included(previous_tx_hashes, sending_attempt)
+                    .await
+                {
+                    self.send_error_signal(TransactionError::TransactionReverted)
+                        .await;
+                }
+            } else if tools::check_for_insufficient_funds(&err.message) {
+                error!("Failed to send transaction: {}", e);
+                self.send_error_signal(TransactionError::InsufficientFunds)
+                    .await;
+            } else if tools::check_for_reanchor_required(&err.message) {
+                warn!("Reanchor required: {}", err.message);
+                self.send_error_signal(TransactionError::ReanchorRequired)
+                    .await;
+            }
+        } else {
+            // TODO if it is not revert then rebuild rpc client and retry on rpc error
+            error!("Failed to send transaction: {}", e);
+            self.send_error_signal(TransactionError::TransactionReverted)
+                .await;
+        }
+    }
+
+    async fn check_signer_correctness(&self, tx_envelope: &TxEnvelope, from: Address) -> bool {
+        let signer = match tx_envelope.recover_signer() {
+            Ok(signer) => signer,
+            Err(e) => {
+                error!("Failed to recover signer from transaction: {}", e);
+                self.send_error_signal(TransactionError::Web3SignerFailed)
+                    .await;
+                return false;
+            }
+        };
+        debug!("Web3signer signed tx From: {}", signer);
+
+        if signer != from {
+            error!("Signer mismatch: expected {} but got {}", from, signer);
+            self.send_error_signal(TransactionError::Web3SignerFailed)
+                .await;
+            return false;
+        }
+
+        true
     }
 
     async fn send_error_signal(&self, error: TransactionError) {
@@ -463,7 +595,14 @@ impl TransactionMonitorThread {
                     self.metrics.inc_batch_confirmed();
                     TxStatus::Confirmed(block_number)
                 } else if let Some(block_number) = receipt.block_number() {
-                    TxStatus::Failed(self.check_for_revert_reason(tx_hash, block_number).await)
+                    let revert_reason = crate::shared::alloy_tools::check_for_revert_reason(
+                        &self.provider,
+                        tx_hash,
+                        block_number,
+                    )
+                    .await;
+                    error!("Transaction {} reverted: {}", tx_hash, revert_reason);
+                    TxStatus::Failed(revert_reason)
                 } else {
                     let error_msg =
                         format!("Transaction {tx_hash} failed, but block number not found");
@@ -482,74 +621,6 @@ impl TransactionMonitorThread {
                 }
             },
         }
-    }
-
-    async fn check_for_revert_reason(&self, tx_hash: B256, block_number: u64) -> String {
-        let default_options = GethDebugTracingOptions::default();
-        let trace = self
-            .provider
-            .debug_trace_transaction(tx_hash, default_options)
-            .await;
-
-        let trace_errors = if let Ok(trace) = trace {
-            Self::find_errors_from_trace(&format!("{:?}", trace))
-        } else {
-            None
-        };
-
-        let tx_details = match self.provider.get_transaction_by_hash(tx_hash).await {
-            Ok(Some(tx)) => tx,
-            _ => {
-                let error_msg = format!("Transaction {} failed", tx_hash);
-                error!("{}", error_msg);
-                return error_msg;
-            }
-        };
-
-        let call_request = Self::get_tx_request_for_call(tx_details);
-        let revert_reason = match self
-            .provider
-            .call(call_request)
-            .block(block_number.into())
-            .await
-        {
-            Err(e) => e.to_string(),
-            Ok(ok) => format!("Unknown revert reason: {ok}"),
-        };
-
-        let mut error_msg = format!("Transaction {tx_hash} failed: {revert_reason}");
-        if let Some(trace_errors) = trace_errors {
-            error_msg.push_str(&trace_errors);
-        }
-        error!("{}", error_msg);
-        error_msg
-    }
-
-    fn find_errors_from_trace(trace_str: &str) -> Option<String> {
-        let mut start_pos = 0;
-        let mut error_message = String::new();
-        while let Some(error_start) = trace_str[start_pos..].find("error: Some(") {
-            let absolute_pos = start_pos + error_start;
-            if let Some(closing_paren) = trace_str[absolute_pos..].find(')') {
-                let error_content = &trace_str[absolute_pos..absolute_pos + closing_paren + 1];
-                if !error_message.is_empty() {
-                    error_message.push_str(", ");
-                }
-                error_message.push_str(error_content);
-                start_pos = absolute_pos + closing_paren + 1;
-            } else {
-                break;
-            }
-        }
-        if !error_message.is_empty() {
-            Some(format!(", errors from debug trace: {error_message}"))
-        } else {
-            None
-        }
-    }
-
-    fn get_tx_request_for_call(tx_details: Transaction) -> TransactionRequest {
-        TransactionRequest::from_transaction(tx_details)
     }
 
     fn set_tx_parameters(

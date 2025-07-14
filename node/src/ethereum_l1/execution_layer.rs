@@ -1,4 +1,7 @@
-use super::{config::EthereumL1Config, transaction_error::TransactionError};
+use super::{
+    config::{ContractAddresses, EthereumL1Config},
+    transaction_error::TransactionError,
+};
 use crate::{
     ethereum_l1::{
         l1_contracts_bindings::{
@@ -7,18 +10,16 @@ use crate::{
         },
         monitor_transaction::TransactionMonitor,
         propose_batch_builder::ProposeBatchBuilder,
-        ws_provider::WsProvider,
     },
     forced_inclusion::ForcedInclusionInfo,
     metrics,
-    shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress},
-    utils::{config, types::*},
+    shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress, ws_provider::Signer},
+    utils::types::*,
 };
 use alloy::{
     eips::BlockNumberOrTag,
-    network::EthereumWallet,
     primitives::{Address, B256, U256},
-    providers::{Provider, ProviderBuilder, WsConnect},
+    providers::{DynProvider, Provider, ProviderBuilder, WsConnect},
     signers::local::PrivateKeySigner,
 };
 use anyhow::{Error, anyhow};
@@ -33,25 +34,15 @@ use tracing::{debug, info, warn};
 const DELAYED_L1_PROPOSAL_BUFFER: u64 = 4;
 
 pub struct ExecutionLayer {
-    provider_ws: Arc<WsProvider>,
+    provider_ws: DynProvider,
     preconfer_address: Address,
     contract_addresses: ContractAddresses,
     pacaya_config: taiko_inbox::ITaikoInbox::Config,
-    #[cfg(feature = "extra-gas-percentage")]
     extra_gas_percentage: u64,
     transaction_monitor: TransactionMonitor,
     metrics: Arc<metrics::Metrics>,
-    taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::TaikoWrapperInstance<Arc<WsProvider>>,
+    taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::TaikoWrapperInstance<DynProvider>,
     chain_id: u64,
-}
-
-pub struct ContractAddresses {
-    pub taiko_inbox: Address,
-    pub taiko_token: Address,
-    pub preconf_whitelist: Address,
-    pub preconf_router: Address,
-    pub taiko_wrapper: Address,
-    pub forced_inclusion_store: Address,
 }
 
 impl ExecutionLayer {
@@ -60,57 +51,15 @@ impl ExecutionLayer {
         transaction_error_channel: Sender<TransactionError>,
         metrics: Arc<metrics::Metrics>,
     ) -> Result<Self, Error> {
-        debug!(
-            "Creating ExecutionLayer with WS URL: {}",
-            config.execution_ws_rpc_url
-        );
-
-        let signer = PrivateKeySigner::from_str(&config.avs_node_ecdsa_private_key)?;
-        let preconfer_address: Address = signer.address();
+        let (provider_ws, preconfer_address) = Self::construct_alloy_provider(&config).await?;
         info!("AVS node address: {}", preconfer_address);
 
-        let wallet = EthereumWallet::from(signer);
+        let extra_gas_percentage = config.extra_gas_percentage;
 
-        #[cfg(feature = "extra-gas-percentage")]
-        let extra_gas_percentage = config.contract_addresses.extra_gas_percentage;
-
-        let ws = WsConnect::new(config.execution_ws_rpc_url.to_string());
-
-        let provider_ws: Arc<WsProvider> = Arc::new(
-            ProviderBuilder::new()
-                .wallet(wallet)
-                .connect_ws(ws.clone())
-                .await
-                .map_err(|e| {
-                    Error::msg(format!("Execution layer: Failed to connect to WS: {}", e))
-                })?,
-        );
-
-        let contract_addresses =
-            Self::parse_contract_addresses(provider_ws.clone(), &config.contract_addresses)
-                .await
-                .map_err(|e| Error::msg(format!("Failed to parse contract addresses: {}", e)))?;
-
-        let taiko_wrapper_contract =
-            taiko_wrapper::TaikoWrapper::new(contract_addresses.taiko_wrapper, provider_ws.clone());
-
-        let transaction_monitor = TransactionMonitor::new(
+        let taiko_wrapper_contract = taiko_wrapper::TaikoWrapper::new(
+            config.contract_addresses.taiko_wrapper,
             provider_ws.clone(),
-            config.min_priority_fee_per_gas_wei,
-            config.tx_fees_increase_percentage,
-            config.max_attempts_to_send_tx,
-            config.max_attempts_to_wait_tx,
-            config.delay_between_tx_attempts_sec,
-            transaction_error_channel,
-            metrics.clone(),
-        )
-        .await
-        .map_err(|e| Error::msg(format!("Failed to create TransactionMonitor: {}", e)))?;
-
-        let pacaya_config =
-            Self::fetch_pacaya_config(&contract_addresses.taiko_inbox, &provider_ws)
-                .await
-                .map_err(|e| Error::msg(format!("Failed to fetch pacaya config: {}", e)))?;
+        );
 
         let chain_id = provider_ws
             .get_chain_id()
@@ -118,12 +67,26 @@ impl ExecutionLayer {
             .map_err(|e| Error::msg(format!("Failed to get chain ID: {}", e)))?;
         info!("L1 Chain ID: {}", chain_id);
 
+        let transaction_monitor = TransactionMonitor::new(
+            provider_ws.clone(),
+            &config,
+            transaction_error_channel,
+            metrics.clone(),
+            chain_id,
+        )
+        .await
+        .map_err(|e| Error::msg(format!("Failed to create TransactionMonitor: {}", e)))?;
+
+        let pacaya_config =
+            Self::fetch_pacaya_config(&config.contract_addresses.taiko_inbox, &provider_ws)
+                .await
+                .map_err(|e| Error::msg(format!("Failed to fetch pacaya config: {}", e)))?;
+
         Ok(Self {
             provider_ws,
             preconfer_address,
-            contract_addresses,
+            contract_addresses: config.contract_addresses,
             pacaya_config,
-            #[cfg(feature = "extra-gas-percentage")]
             extra_gas_percentage,
             transaction_monitor,
             metrics,
@@ -132,35 +95,60 @@ impl ExecutionLayer {
         })
     }
 
-    pub fn chain_id(&self) -> u64 {
-        self.chain_id
+    async fn construct_alloy_provider(
+        config: &EthereumL1Config,
+    ) -> Result<(DynProvider, Address), Error> {
+        match &config.signer {
+            Signer::PrivateKey(private_key) => {
+                debug!(
+                    "Creating ExecutionLayer with WS URL: {} and private key signer.",
+                    config.execution_ws_rpc_url
+                );
+                let signer = PrivateKeySigner::from_str(private_key)?;
+                let preconfer_address: Address = signer.address();
+
+                let ws = WsConnect::new(config.execution_ws_rpc_url.clone());
+                Ok((
+                    ProviderBuilder::new()
+                        .wallet(signer)
+                        .connect_ws(ws.clone())
+                        .await
+                        .map_err(|e| {
+                            Error::msg(format!("Execution layer: Failed to connect to WS: {}", e))
+                        })?
+                        .erased(),
+                    preconfer_address,
+                ))
+            }
+            Signer::Web3signer(_) => {
+                debug!(
+                    "Creating ExecutionLayer with WS URL: {} and web3signer signer.",
+                    config.execution_ws_rpc_url
+                );
+                let preconfer_address =
+                    if let Some(preconfer_address) = config.preconfer_address.clone() {
+                        preconfer_address
+                    } else {
+                        panic!("Preconfer address is not provided");
+                    };
+
+                let ws = WsConnect::new(config.execution_ws_rpc_url.clone());
+                Ok((
+                    ProviderBuilder::new()
+                        .connect_ws(ws.clone())
+                        .await
+                        .map_err(|e| {
+                            Error::msg(format!("Execution layer: Failed to connect to WS: {}", e))
+                        })?
+                        .erased(),
+                    preconfer_address.parse()?,
+                ))
+            }
+        }
     }
 
-    async fn parse_contract_addresses(
-        provider: Arc<WsProvider>,
-        contract_addresses: &config::L1ContractAddresses,
-    ) -> Result<ContractAddresses, Error> {
-        let taiko_inbox = contract_addresses.taiko_inbox.parse()?;
-        let preconf_whitelist = contract_addresses.preconf_whitelist.parse()?;
-        let preconf_router = contract_addresses.preconf_router.parse()?;
-        let taiko_wrapper = contract_addresses.taiko_wrapper.parse()?;
-        let forced_inclusion_store = contract_addresses.forced_inclusion_store.parse()?;
-
-        let contract = taiko_inbox::ITaikoInbox::new(taiko_inbox, provider);
-        let taiko_token = contract
-            .bondToken()
-            .call()
-            .await
-            .map_err(|e| Error::msg(format!("Failed to get bond token: {}", e)))?;
-
-        Ok(ContractAddresses {
-            taiko_inbox,
-            taiko_token,
-            preconf_whitelist,
-            preconf_router,
-            taiko_wrapper,
-            forced_inclusion_store,
-        })
+    pub fn chain_id(&self) -> u64 {
+        self.chain_id
     }
 
     async fn get_operator_for_current_epoch(&self) -> Result<Address, Error> {
@@ -171,7 +159,12 @@ impl ExecutionLayer {
             .block(alloy::eips::BlockId::pending())
             .call()
             .await
-            .map_err(|e| Error::msg(format!("Failed to get operator for current epoch: {}", e)))?;
+            .map_err(|e| {
+                Error::msg(format!(
+                    "Failed to get operator for current epoch: {}, contract: {:?}",
+                    e, self.contract_addresses.preconf_whitelist
+                ))
+            })?;
         Ok(operator)
     }
 
@@ -183,7 +176,12 @@ impl ExecutionLayer {
             .block(alloy::eips::BlockId::pending())
             .call()
             .await
-            .map_err(|e| Error::msg(format!("Failed to get operator for next epoch: {}", e)))?;
+            .map_err(|e| {
+                Error::msg(format!(
+                    "Failed to get operator for next epoch: {}, contract: {:?}",
+                    e, self.contract_addresses.preconf_whitelist
+                ))
+            })?;
         Ok(operator)
     }
 
@@ -258,9 +256,6 @@ impl ExecutionLayer {
         );
 
         // Build proposeBatch transaction
-        #[cfg(not(feature = "extra-gas-percentage"))]
-        let builder = ProposeBatchBuilder::new(self.provider_ws.clone());
-        #[cfg(feature = "extra-gas-percentage")]
         let builder = ProposeBatchBuilder::new(self.provider_ws.clone(), self.extra_gas_percentage);
         let tx = builder
             .build_propose_batch_tx(
@@ -287,7 +282,7 @@ impl ExecutionLayer {
 
     async fn fetch_pacaya_config(
         taiko_inbox_address: &Address,
-        ws_provider: &WsProvider,
+        ws_provider: &DynProvider,
     ) -> Result<taiko_inbox::ITaikoInbox::Config, Error> {
         let contract = taiko_inbox::ITaikoInbox::new(*taiko_inbox_address, ws_provider);
         let pacaya_config = contract.pacayaConfig().call().await?;
@@ -319,7 +314,25 @@ impl ExecutionLayer {
     }
 
     pub async fn get_preconfer_wallet_bonds(&self) -> Result<alloy::primitives::U256, Error> {
-        let contract = IERC20::new(self.contract_addresses.taiko_token, &self.provider_ws);
+        let taiko_token = self
+            .contract_addresses
+            .taiko_token
+            .get_or_try_init(|| async {
+                let contract = taiko_inbox::ITaikoInbox::new(
+                    self.contract_addresses.taiko_inbox,
+                    self.provider_ws.clone(),
+                );
+                let taiko_token = contract
+                    .bondToken()
+                    .call()
+                    .await
+                    .map_err(|e| Error::msg(format!("Failed to get bond token: {}", e)))?;
+                info!("Taiko token address: {}", taiko_token);
+                Ok::<Address, Error>(taiko_token)
+            })
+            .await?;
+
+        let contract = IERC20::new(*taiko_token, &self.provider_ws);
         let allowance = contract
             .allowance(self.preconfer_address, self.contract_addresses.taiko_inbox)
             .call()
@@ -353,133 +366,6 @@ impl ExecutionLayer {
     pub async fn get_preconfer_wallet_eth(&self) -> Result<alloy::primitives::U256, Error> {
         let balance = self.provider_ws.get_balance(self.preconfer_address).await?;
         Ok(balance)
-    }
-
-    #[cfg(test)]
-    pub async fn new_from_pk(
-        ws_rpc_url: String,
-        private_key: elliptic_curve::SecretKey<k256::Secp256k1>,
-    ) -> Result<Self, Error> {
-        use crate::metrics::Metrics;
-
-        use super::l1_contracts_bindings::taiko_inbox::ITaikoInbox::ForkHeights;
-
-        let signer = PrivateKeySigner::from_signing_key(private_key.into());
-        let wallet = EthereumWallet::from(signer);
-
-        let ws = WsConnect::new(ws_rpc_url.to_string());
-
-        let provider_ws: Arc<WsProvider> = Arc::new(
-            ProviderBuilder::new()
-                .wallet(wallet)
-                .connect_ws(ws.clone())
-                .await
-                .unwrap(),
-        );
-
-        let preconfer_address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // some random address for test
-            .parse()?;
-
-        let (tx_error_sender, _) = tokio::sync::mpsc::channel(1);
-
-        let metrics = Arc::new(Metrics::new());
-
-        Ok(Self {
-            provider_ws: provider_ws.clone(),
-            preconfer_address,
-            contract_addresses: ContractAddresses {
-                taiko_inbox: Address::ZERO,
-                taiko_token: Address::ZERO,
-                preconf_whitelist: Address::ZERO,
-                preconf_router: Address::ZERO,
-                taiko_wrapper: Address::ZERO,
-                forced_inclusion_store: Address::ZERO,
-            },
-            pacaya_config: taiko_inbox::ITaikoInbox::Config {
-                chainId: 1,
-                maxUnverifiedBatches: 100,
-                batchRingBufferSize: 100,
-                maxBatchesToVerify: 100,
-                blockMaxGasLimit: 1000000000,
-                livenessBondBase: alloy::primitives::Uint::from_limbs([1000000000000000000, 0]),
-                livenessBondPerBlock: alloy::primitives::Uint::from_limbs([1000000000000000000, 0]),
-                stateRootSyncInternal: 100,
-                maxAnchorHeightOffset: 1000000000000000000,
-                baseFeeConfig: taiko_inbox::LibSharedData::BaseFeeConfig {
-                    adjustmentQuotient: 100,
-                    sharingPctg: 100,
-                    gasIssuancePerSecond: 1000000000,
-                    minGasExcess: 1000000000000000000,
-                    maxGasIssuancePerBlock: 1000000000,
-                },
-                provingWindow: 1000,
-                cooldownWindow: alloy::primitives::Uint::from_limbs([1000000]),
-                maxSignalsToReceive: 100,
-                maxBlocksPerBatch: 1000,
-                forkHeights: ForkHeights {
-                    ontake: 0,
-                    pacaya: 0,
-                    shasta: 0,
-                    unzen: 0,
-                },
-            },
-            taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::new(
-                Address::ZERO,
-                provider_ws.clone(),
-            ),
-            #[cfg(feature = "extra-gas-percentage")]
-            extra_gas_percentage: 5,
-            transaction_monitor: TransactionMonitor::new(
-                provider_ws.clone(),
-                1000000000000000000,
-                5,
-                4,
-                4,
-                15,
-                tx_error_sender,
-                metrics.clone(),
-            )
-            .await
-            .unwrap(),
-            metrics,
-            chain_id: 1,
-        })
-    }
-
-    #[cfg(test)]
-    async fn call_test_contract(&self) -> Result<(), Error> {
-        alloy::sol! {
-            #[allow(missing_docs)]
-            #[sol(rpc, bytecode="6080806040523460135760df908160198239f35b600080fdfe6080806040526004361015601257600080fd5b60003560e01c9081633fb5c1cb1460925781638381f58a146079575063d09de08a14603c57600080fd5b3460745760003660031901126074576000546000198114605e57600101600055005b634e487b7160e01b600052601160045260246000fd5b600080fd5b3460745760003660031901126074576020906000548152f35b34607457602036600319011260745760043560005500fea2646970667358221220e978270883b7baed10810c4079c941512e93a7ba1cd1108c781d4bc738d9090564736f6c634300081a0033")]
-            contract Counter {
-                uint256 public number;
-
-                function setNumber(uint256 newNumber) public {
-                    number = newNumber;
-                }
-
-                function increment() public {
-                    number++;
-                }
-            }
-        }
-
-        let contract = Counter::deploy(&self.provider_ws).await?;
-
-        let builder = contract.setNumber(alloy::primitives::U256::from(42));
-        let tx_hash = builder.send().await?.watch().await?;
-        println!("Set number to 42: {tx_hash}");
-
-        let builder = contract.increment();
-        let tx_hash = builder.send().await?.watch().await?;
-        println!("Incremented number: {tx_hash}");
-
-        let builder = contract.number();
-        let number = builder.call().await?.to_string();
-
-        assert_eq!(number, "43");
-
-        Ok(())
     }
 
     pub fn get_config_max_blocks_per_batch(&self) -> u16 {
@@ -636,6 +522,149 @@ impl ExecutionLayer {
             last_l2_block_timestamp,
             info,
         )
+    }
+}
+
+#[cfg(test)]
+impl ExecutionLayer {
+    pub async fn new_from_pk(
+        ws_rpc_url: String,
+        private_key: elliptic_curve::SecretKey<k256::Secp256k1>,
+    ) -> Result<Self, Error> {
+        use super::l1_contracts_bindings::taiko_inbox::ITaikoInbox::ForkHeights;
+        use crate::metrics::Metrics;
+        use alloy::{network::EthereumWallet, signers::local::PrivateKeySigner};
+        use tokio::sync::OnceCell;
+
+        let signer = PrivateKeySigner::from_signing_key(private_key.clone().into());
+        let wallet = EthereumWallet::from(signer);
+
+        let ws = WsConnect::new(ws_rpc_url.to_string());
+
+        let provider_ws = ProviderBuilder::new()
+            .wallet(wallet)
+            .connect_ws(ws.clone())
+            .await
+            .unwrap()
+            .erased();
+
+        let preconfer_address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"; // some random address for test
+
+        let (tx_error_sender, _) = tokio::sync::mpsc::channel(1);
+
+        let metrics = Arc::new(Metrics::new());
+
+        let ethereum_l1_config = EthereumL1Config {
+            execution_ws_rpc_url: ws_rpc_url,
+            contract_addresses: ContractAddresses {
+                taiko_inbox: Address::ZERO,
+                taiko_token: OnceCell::new(),
+                preconf_whitelist: Address::ZERO,
+                preconf_router: Address::ZERO,
+                taiko_wrapper: Address::ZERO,
+                forced_inclusion_store: Address::ZERO,
+            },
+            consensus_rpc_url: "".to_string(),
+            slot_duration_sec: 12,
+            slots_per_epoch: 32,
+            preconf_heartbeat_ms: 1000,
+            signer: Signer::PrivateKey(hex::encode(private_key.to_bytes())),
+            preconfer_address: Some(preconfer_address.to_string()),
+            min_priority_fee_per_gas_wei: 1000000000000000000,
+            tx_fees_increase_percentage: 5,
+            max_attempts_to_send_tx: 4,
+            max_attempts_to_wait_tx: 4,
+            delay_between_tx_attempts_sec: 15,
+            extra_gas_percentage: 5,
+        };
+
+        // Self::new(ethereum_l1_config, tx_error_sender, metrics.clone()).await
+
+        Ok(Self {
+            provider_ws: provider_ws.clone(),
+            preconfer_address: preconfer_address.parse()?,
+            contract_addresses: ethereum_l1_config.contract_addresses.clone(),
+            pacaya_config: taiko_inbox::ITaikoInbox::Config {
+                chainId: 1,
+                maxUnverifiedBatches: 100,
+                batchRingBufferSize: 100,
+                maxBatchesToVerify: 100,
+                blockMaxGasLimit: 1000000000,
+                livenessBondBase: alloy::primitives::Uint::from_limbs([1000000000000000000, 0]),
+                livenessBondPerBlock: alloy::primitives::Uint::from_limbs([1000000000000000000, 0]),
+                stateRootSyncInternal: 100,
+                maxAnchorHeightOffset: 1000000000000000000,
+                baseFeeConfig: taiko_inbox::LibSharedData::BaseFeeConfig {
+                    adjustmentQuotient: 100,
+                    sharingPctg: 100,
+                    gasIssuancePerSecond: 1000000000,
+                    minGasExcess: 1000000000000000000,
+                    maxGasIssuancePerBlock: 1000000000,
+                },
+                provingWindow: 1000,
+                cooldownWindow: alloy::primitives::Uint::from_limbs([1000000]),
+                maxSignalsToReceive: 100,
+                maxBlocksPerBatch: 1000,
+                forkHeights: ForkHeights {
+                    ontake: 0,
+                    pacaya: 0,
+                    shasta: 0,
+                    unzen: 0,
+                },
+            },
+            taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::new(
+                Address::ZERO,
+                provider_ws.clone(),
+            ),
+            extra_gas_percentage: 5,
+            transaction_monitor: TransactionMonitor::new(
+                provider_ws.clone(),
+                &ethereum_l1_config,
+                tx_error_sender,
+                metrics.clone(),
+                123456,
+            )
+            .await
+            .unwrap(),
+            metrics,
+            chain_id: 1,
+        })
+    }
+
+    #[cfg(test)]
+    async fn call_test_contract(&self) -> Result<(), Error> {
+        alloy::sol! {
+            #[allow(missing_docs)]
+            #[sol(rpc, bytecode="6080806040523460135760df908160198239f35b600080fdfe6080806040526004361015601257600080fd5b60003560e01c9081633fb5c1cb1460925781638381f58a146079575063d09de08a14603c57600080fd5b3460745760003660031901126074576000546000198114605e57600101600055005b634e487b7160e01b600052601160045260246000fd5b600080fd5b3460745760003660031901126074576020906000548152f35b34607457602036600319011260745760043560005500fea2646970667358221220e978270883b7baed10810c4079c941512e93a7ba1cd1108c781d4bc738d9090564736f6c634300081a0033")]
+            contract Counter {
+                uint256 public number;
+
+                function setNumber(uint256 newNumber) public {
+                    number = newNumber;
+                }
+
+                function increment() public {
+                    number++;
+                }
+            }
+        }
+
+        let contract = Counter::deploy(&self.provider_ws).await?;
+
+        let builder = contract.setNumber(alloy::primitives::U256::from(42));
+        let tx_hash = builder.send().await?.watch().await?;
+        println!("Set number to 42: {tx_hash}");
+
+        let builder = contract.increment();
+        let tx_hash = builder.send().await?.watch().await?;
+        println!("Incremented number: {tx_hash}");
+
+        let builder = contract.number();
+        let number = builder.call().await?.to_string();
+
+        assert_eq!(number, "43");
+
+        Ok(())
     }
 }
 

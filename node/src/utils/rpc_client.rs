@@ -1,4 +1,4 @@
-use alloy::primitives::B256;
+use super::retry::backoff_retry_with_timeout;
 use anyhow::Error;
 use http::{HeaderMap, HeaderValue};
 use jsonrpsee::{
@@ -36,7 +36,7 @@ fn create_jwt_token(secret: &[u8]) -> Result<String, Box<dyn std::error::Error>>
 pub struct JSONRPCClient {
     url: String,
     timeout: Duration,
-    jwt_secret: [u8; 32],
+    jwt_secret: Option<[u8; 32]>,
     client: RwLock<HttpClient>,
 }
 
@@ -54,24 +54,22 @@ impl JSONRPCClient {
         let jwt_secret: [u8; 32] = jwt_secret
             .try_into()
             .map_err(|e| anyhow::anyhow!("Invalid JWT secret: {e}"))?;
-        let client = Self::create_client(url, timeout, &jwt_secret)?;
+        let client = Self::create_client_with_jwt(url, timeout, &jwt_secret)?;
 
         Ok(Self {
             url: url.to_string(),
             timeout,
-            jwt_secret,
+            jwt_secret: Some(jwt_secret),
             client: RwLock::new(client),
         })
     }
 
-    fn create_client(
+    fn create_client_with_jwt(
         url: &str,
         timeout: Duration,
         jwt_secret: &[u8; 32],
     ) -> Result<HttpClient, Error> {
-        let jwt = B256::from_slice(jwt_secret);
-
-        let jwt_token = create_jwt_token(&jwt.0)
+        let jwt_token = create_jwt_token(jwt_secret)
             .map_err(|e| anyhow::anyhow!("Failed to create JWT token: {e}"))?;
 
         let mut headers = HeaderMap::new();
@@ -88,6 +86,24 @@ impl JSONRPCClient {
             .build(url)
             .map_err(|e| anyhow::anyhow!("Failed to create authenticated HTTP client: {e}"))?;
 
+        Ok(client)
+    }
+
+    pub fn new_with_timeout(url: &str, timeout: Duration) -> Result<Self, Error> {
+        let client = Self::create_client(url, timeout)?;
+        Ok(Self {
+            url: url.to_string(),
+            timeout,
+            jwt_secret: None,
+            client: RwLock::new(client),
+        })
+    }
+
+    fn create_client(url: &str, timeout: Duration) -> Result<HttpClient, Error> {
+        let client = HttpClientBuilder::default()
+            .request_timeout(timeout)
+            .build(url)
+            .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?;
         Ok(client)
     }
 
@@ -117,9 +133,31 @@ impl JSONRPCClient {
         }
     }
 
+    pub async fn call_method_with_retry(
+        &self,
+        method: &str,
+        params: Vec<Value>,
+    ) -> Result<Value, Error> {
+        let result = backoff_retry_with_timeout(
+            || async { self.call_method(method, params.clone()).await },
+            Duration::from_millis(10),
+            Duration::from_secs(1),
+            self.timeout,
+        )
+        .await;
+
+        result.map_err(|e| {
+            anyhow::anyhow!("JSONRPCClient: Failed to call method {method} with retry: {e}")
+        })
+    }
+
     async fn recreate_client(&self) -> Result<(), Error> {
-        let new_client = Self::create_client(&self.url, self.timeout, &self.jwt_secret)
-            .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?;
+        let new_client = (if let Some(jwt_secret) = self.jwt_secret {
+            Self::create_client_with_jwt(&self.url, self.timeout, &jwt_secret)
+        } else {
+            Self::create_client(&self.url, self.timeout)
+        })
+        .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?;
 
         tracing::trace!("Created new client");
         *self.client.write().await = new_client;
@@ -161,13 +199,7 @@ impl HttpRPCClient {
     }
 
     fn create_client(timeout: Duration, jwt_secret: &[u8; 32]) -> Result<reqwest::Client, Error> {
-        let jwt = B256::from_slice(jwt_secret);
-
-        if jwt == B256::ZERO {
-            return Err(anyhow::anyhow!("JWT secret is illegal"));
-        }
-
-        let jwt_token = create_jwt_token(&jwt.0)
+        let jwt_token = create_jwt_token(jwt_secret)
             .map_err(|e| anyhow::anyhow!("Failed to create JWT token: {e}"))?;
 
         let client = reqwest::Client::builder()
@@ -199,39 +231,30 @@ impl HttpRPCClient {
     where
         T: serde::Serialize,
     {
-        let start_time = std::time::Instant::now();
+        let result = backoff_retry_with_timeout(
+            || async {
+                let response = self.request_json(method.clone(), endpoint, payload).await;
 
-        // Try until we exceed the max duration
-        while start_time.elapsed() < max_duration {
-            let response = self.request_json(method.clone(), endpoint, payload).await;
-
-            match response {
-                Ok(ref data) => {
-                    return Ok(data.clone());
-                }
-                Err(ref e) => {
-                    let elapsed = start_time.elapsed();
-                    let remaining = max_duration.checked_sub(elapsed).unwrap_or_default();
-
+                if let Err(ref e) = response {
                     tracing::error!(
-                        "Failed to call driver RPC for API '{}': {}. Retrying... ({}ms elapsed, {}ms remaining)",
+                        "Failed to call driver RPC for API '{}': {}. Retrying...",
                         endpoint,
-                        e,
-                        elapsed.as_millis(),
-                        remaining.as_millis()
+                        e
                     );
-
-                    tokio::time::sleep(Duration::from_millis(100)).await;
                     self.recreate_client().await?;
                 }
-            }
-        }
 
-        Err(anyhow::anyhow!(
-            "Failed to call driver RPC for API '{}' within the duration ({}ms)",
-            endpoint,
-            start_time.elapsed().as_millis()
-        ))
+                response
+            },
+            Duration::from_millis(10),
+            Duration::from_secs(1),
+            max_duration,
+        )
+        .await;
+
+        result.map_err(|err| {
+            anyhow::anyhow!("Failed to call driver RPC for API '{}': {}", endpoint, err)
+        })
     }
 
     /// Send a request to the specified endpoint with the given method and payload

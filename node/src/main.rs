@@ -11,6 +11,7 @@ mod utils;
 
 use anyhow::Error;
 use metrics::Metrics;
+use shared::ws_provider::Signer;
 use std::sync::Arc;
 use tokio::{
     signal::unix::{SignalKind, signal},
@@ -56,8 +57,7 @@ async fn main() -> Result<(), Error> {
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
         ethereum_l1::config::EthereumL1Config {
             execution_ws_rpc_url: config.l1_ws_rpc_url.clone(),
-            avs_node_ecdsa_private_key: config.avs_node_ecdsa_private_key.clone(),
-            contract_addresses: config.contract_addresses.clone(),
+            contract_addresses: config.contract_addresses.clone().try_into()?,
             consensus_rpc_url: config.l1_beacon_url,
             slot_duration_sec: config.l1_slot_duration_sec,
             slots_per_epoch: config.l1_slots_per_epoch,
@@ -67,6 +67,17 @@ async fn main() -> Result<(), Error> {
             max_attempts_to_send_tx: config.max_attempts_to_send_tx,
             max_attempts_to_wait_tx: config.max_attempts_to_wait_tx,
             delay_between_tx_attempts_sec: config.delay_between_tx_attempts_sec,
+            signer: if let Some(web3signer_l1_url) = config.web3signer_l1_url {
+                Signer::Web3signer(web3signer_l1_url)
+            } else if let Some(avs_node_ecdsa_private_key) =
+                config.avs_node_ecdsa_private_key.clone()
+            {
+                Signer::PrivateKey(avs_node_ecdsa_private_key)
+            } else {
+                panic!("No singer provided");
+            },
+            preconfer_address: config.preconfer_address,
+            extra_gas_percentage: config.extra_gas_percentage,
         },
         transaction_error_sender,
         metrics.clone(),
@@ -114,7 +125,13 @@ async fn main() -> Result<(), Error> {
                 config.rpc_l2_execution_layer_timeout,
                 config.rpc_driver_preconf_timeout,
                 config.rpc_driver_status_timeout,
-                config.avs_node_ecdsa_private_key,
+                if let Some(web3signer_l2_url) = config.web3signer_l2_url {
+                    Signer::Web3signer(web3signer_l2_url)
+                } else if let Some(avs_node_ecdsa_private_key) = config.avs_node_ecdsa_private_key {
+                    Signer::PrivateKey(avs_node_ecdsa_private_key)
+                } else {
+                    panic!("No singer provided");
+                },
             )?,
         )
         .await
