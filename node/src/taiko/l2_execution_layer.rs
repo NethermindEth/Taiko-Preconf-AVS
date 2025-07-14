@@ -3,10 +3,7 @@ use super::{
     fixed_k_signer_chainbound,
     l2_contracts_bindings::{Bridge, LibSharedData, TaikoAnchor},
 };
-use crate::shared::{
-    web3signer::Web3Signer,
-    ws_provider::{Signer, WsProvider},
-};
+use crate::shared::ws_provider::{Signer, WsProvider};
 use alloy::{
     consensus::{
         SignableTransaction, Transaction as AnchorTransaction, TxEnvelope, transaction::Recovered,
@@ -22,7 +19,6 @@ use alloy::{
 };
 use alloy_json_rpc::RpcError;
 use anyhow::Error;
-use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
@@ -294,7 +290,7 @@ impl L2ExecutionLayer {
             self.chain_id, dest_chain_id
         );
 
-        match &self.config.signer {
+        match self.config.signer.as_ref() {
             Signer::Web3signer(_) => {
                 let provider = ProviderBuilder::new()
                     .connect_ws(ws.clone())
@@ -382,9 +378,7 @@ impl L2ExecutionLayer {
         let tx_request = tx_send_message.into_transaction_request();
         const GAS_LIMIT: u64 = 500000;
         let tx_request = tx_request.gas_limit(GAS_LIMIT);
-        let pending_tx = if let Signer::Web3signer(url) = &self.config.signer {
-            const SIGNER_TIMEOUT: Duration = Duration::from_secs(10);
-            let web3signer = Web3Signer::new(url.as_str(), SIGNER_TIMEOUT)?;
+        let pending_tx = if let Signer::Web3signer(web3signer) = &self.config.signer.as_ref() {
             let signed_tx = web3signer.sign_transaction(tx_request).await?;
             provider_ws.send_raw_transaction(&signed_tx).await?
         } else {

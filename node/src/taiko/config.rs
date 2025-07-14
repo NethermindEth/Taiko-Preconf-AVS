@@ -2,6 +2,7 @@ use crate::shared::ws_provider::Signer;
 use alloy::primitives::{Address, B256};
 use anyhow::Error;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 
 pub const GOLDEN_TOUCH_PRIVATE_KEY: B256 = B256::new([
@@ -28,7 +29,7 @@ pub struct TaikoConfig {
     pub rpc_l2_execution_layer_timeout: Duration,
     pub rpc_driver_preconf_timeout: Duration,
     pub rpc_driver_status_timeout: Duration,
-    pub signer: Signer,
+    pub signer: Arc<Signer>,
 }
 
 impl TaikoConfig {
@@ -46,7 +47,7 @@ impl TaikoConfig {
         rpc_l2_execution_layer_timeout: Duration,
         rpc_driver_preconf_timeout: Duration,
         rpc_driver_status_timeout: Duration,
-        singer: Signer,
+        singer: Arc<Signer>,
     ) -> Result<Self, Error> {
         Ok(Self {
             taiko_geth_ws_url,

@@ -45,7 +45,7 @@ pub struct TransactionMonitorThread {
     nonce: u64,
     error_notification_channel: Sender<TransactionError>,
     metrics: Arc<Metrics>,
-    web3signer: Option<Arc<Web3Signer>>,
+    signer: Arc<Signer>,
     chain_id: u64,
 }
 
@@ -56,7 +56,7 @@ pub struct TransactionMonitor {
     join_handle: Mutex<Option<JoinHandle<()>>>,
     error_notification_channel: Sender<TransactionError>,
     metrics: Arc<Metrics>,
-    web3signer: Option<Arc<Web3Signer>>,
+    signer: Arc<Signer>,
     chain_id: u64,
 }
 
@@ -69,7 +69,6 @@ impl TransactionMonitor {
         metrics: Arc<Metrics>,
         chain_id: u64,
     ) -> Result<Self, Error> {
-        const SIGNER_TIMEOUT: Duration = Duration::from_secs(10);
         Ok(Self {
             provider,
             config: TransactionMonitorConfig {
@@ -84,12 +83,7 @@ impl TransactionMonitor {
             join_handle: Mutex::new(None),
             error_notification_channel,
             metrics,
-            web3signer: match &config.signer {
-                Signer::Web3signer(web3signer_url) => {
-                    Some(Arc::new(Web3Signer::new(web3signer_url, SIGNER_TIMEOUT)?))
-                }
-                _ => None,
-            },
+            signer: config.signer.clone(),
             chain_id,
         })
     }
@@ -118,7 +112,7 @@ impl TransactionMonitor {
             nonce,
             self.error_notification_channel.clone(),
             self.metrics.clone(),
-            self.web3signer.clone(),
+            self.signer.clone(),
             self.chain_id,
         );
         let join_handle = monitor_thread.spawn_monitoring_task(tx);
@@ -142,7 +136,7 @@ impl TransactionMonitorThread {
         nonce: u64,
         error_notification_channel: Sender<TransactionError>,
         metrics: Arc<Metrics>,
-        web3signer: Option<Arc<Web3Signer>>,
+        signer: Arc<Signer>,
         chain_id: u64,
     ) -> Self {
         Self {
@@ -151,7 +145,7 @@ impl TransactionMonitorThread {
             nonce,
             error_notification_channel,
             metrics,
-            web3signer,
+            signer,
             chain_id,
         }
     }
@@ -396,17 +390,24 @@ impl TransactionMonitorThread {
     ) -> Option<PendingTransactionBuilder<alloy::network::Ethereum>> {
         // TODO: alloy provides TxSigner trait, we can use it to implement new signer with web3signer
         // so it would be enough to add new wallet to the provider
-        if let Some(web3signer) = &self.web3signer {
-            self.send_transaction_with_web3signer(
-                tx,
-                previous_tx_hashes,
-                sending_attempt,
-                web3signer,
-            )
-            .await
-        } else {
-            self.send_transaction_with_private_key_signer(tx, previous_tx_hashes, sending_attempt)
+        match self.signer.as_ref() {
+            Signer::Web3signer(web3signer) => {
+                self.send_transaction_with_web3signer(
+                    tx,
+                    previous_tx_hashes,
+                    sending_attempt,
+                    web3signer,
+                )
                 .await
+            }
+            Signer::PrivateKey(_) => {
+                self.send_transaction_with_private_key_signer(
+                    tx,
+                    previous_tx_hashes,
+                    sending_attempt,
+                )
+                .await
+            }
         }
     }
 
@@ -431,7 +432,7 @@ impl TransactionMonitorThread {
         tx: TransactionRequest,
         previous_tx_hashes: &Vec<B256>,
         sending_attempt: u64,
-        web3signer: &Arc<Web3Signer>,
+        web3signer: &Web3Signer,
     ) -> Option<PendingTransactionBuilder<alloy::network::Ethereum>> {
         let unsigned_tx = match tx.clone().build_unsigned() {
             Ok(unsigned_tx) => unsigned_tx,

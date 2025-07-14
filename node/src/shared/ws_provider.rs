@@ -1,3 +1,4 @@
+use super::web3signer::Web3Signer;
 use alloy::providers::{
     Identity, RootProvider,
     fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
@@ -11,8 +12,7 @@ pub type WsProvider = FillProvider<
     RootProvider,
 >;
 
-#[derive(Clone)]
 pub enum Signer {
-    Web3signer(String),
+    Web3signer(Web3Signer),
     PrivateKey(String),
 }

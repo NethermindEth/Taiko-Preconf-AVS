@@ -5,15 +5,57 @@ use anyhow::Error;
 use hex;
 use serde_json::{Map, Value};
 use std::time::Duration;
+use tracing::info;
 
 pub struct Web3Signer {
     client: JSONRPCClient,
 }
 
 impl Web3Signer {
-    pub fn new(rpc_url: &str, timeout: Duration) -> Result<Self, Error> {
+    pub async fn new(
+        rpc_url: &str,
+        timeout: Duration,
+        signer_address: &str,
+    ) -> Result<Self, Error> {
         let client = JSONRPCClient::new_with_timeout(rpc_url, timeout)?;
+        Self::check_web3signer_version(&client).await?;
+        if !Self::is_signer_key_available(&client, signer_address).await? {
+            return Err(anyhow::anyhow!(
+                "Web3Signer: Signer key is not available for address {}",
+                signer_address
+            ));
+        }
         Ok(Self { client })
+    }
+
+    async fn check_web3signer_version(client: &JSONRPCClient) -> Result<(), Error> {
+        let response = client
+            .call_method_with_retry("health_status", vec![])
+            .await
+            .map_err(|e| anyhow::anyhow!("Web3Signer: Failed to get health status: {}", e))?;
+        let version = response.as_str().ok_or(anyhow::anyhow!(
+            "Web3Signer: Failed to decode health status"
+        ))?;
+        info!(
+            "Web3Signer available at {} with version {}",
+            client.url(),
+            version
+        );
+        Ok(())
+    }
+
+    async fn is_signer_key_available(
+        client: &JSONRPCClient,
+        signer_address: &str,
+    ) -> Result<bool, Error> {
+        let response = client
+            .call_method_with_retry("eth_accounts", vec![])
+            .await
+            .map_err(|e| anyhow::anyhow!("Web3Signer: Failed to get available accounts: {}", e))?;
+        let accounts = response.as_array().ok_or(anyhow::anyhow!(
+            "Web3Signer: Failed to decode available accounts"
+        ))?;
+        Ok(accounts.contains(&Value::String(signer_address.to_string())))
     }
 
     pub async fn sign_transaction(&self, tx: TransactionRequest) -> Result<Vec<u8>, Error> {
