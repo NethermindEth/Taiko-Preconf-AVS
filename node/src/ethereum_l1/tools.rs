@@ -23,3 +23,11 @@ pub fn check_for_too_early_estimation(err_str: &str) -> bool {
 pub fn check_oldest_forced_inclusion_due(err_str: &str) -> bool {
     err_str.contains("0x1e66a770")
 }
+
+// 0x47fac6c1 -> NotTheOperator()
+// 0x795e2f19 -> NotPreconfer()
+pub fn check_for_not_the_operator_in_current_epoch(err_str: &str) -> bool {
+    // TODO: for new contracts version we should remove NotTheOperator
+    // as it was renamed to NotPreconfer
+    err_str.contains("0x47fac6c1") || err_str.contains("0x795e2f19")
+}

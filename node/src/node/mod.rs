@@ -702,6 +702,10 @@ impl Node {
                     "Need to include forced inclusion, reanchoring done, skipping slot"
                 ));
             }
+            TransactionError::NotTheOperatorInCurrentEpoch => {
+                warn!("Propose batch transaction executed too late.");
+                return Ok(());
+            }
         }
 
         Ok(())

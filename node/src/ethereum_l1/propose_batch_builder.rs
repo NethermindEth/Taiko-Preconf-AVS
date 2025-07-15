@@ -186,6 +186,9 @@ impl ProposeBatchBuilder {
         if tools::check_oldest_forced_inclusion_due(&err_str) {
             return TransactionError::OldestForcedInclusionDue;
         }
+        if tools::check_for_not_the_operator_in_current_epoch(&err_str) {
+            return TransactionError::NotTheOperatorInCurrentEpoch;
+        }
         TransactionError::EstimationFailed
     }
 
