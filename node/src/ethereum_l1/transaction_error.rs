@@ -12,6 +12,7 @@ pub enum TransactionError {
     ReanchorRequired,
     BuildTransactionFailed,
     OldestForcedInclusionDue,
+    NotTheOperatorInCurrentEpoch,
 }
 
 impl std::fmt::Display for TransactionError {
