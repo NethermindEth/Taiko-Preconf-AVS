@@ -61,15 +61,14 @@ impl BatchBuilder {
                 Err(_) => return false,
             };
 
-            let new_total_bytes = batch.total_bytes + l2_block.prebuilt_tx_list.bytes_length;
+            let mut new_total_bytes = batch.total_bytes + l2_block.prebuilt_tx_list.bytes_length;
 
             if !self.config.is_within_bytes_limit(new_total_bytes) {
                 batch.compress();
+                new_total_bytes = batch.total_bytes + l2_block.prebuilt_tx_list.bytes_length;
             }
 
-            let updated_total_bytes = batch.total_bytes + l2_block.prebuilt_tx_list.bytes_length;
-
-            self.config.is_within_bytes_limit(updated_total_bytes)
+            self.config.is_within_bytes_limit(new_total_bytes)
                 && self.config.is_within_block_limit(new_block_count)
                 && !is_time_shift_expired
         })
