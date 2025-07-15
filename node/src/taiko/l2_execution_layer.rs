@@ -378,7 +378,7 @@ impl L2ExecutionLayer {
         let tx_request = tx_send_message.into_transaction_request();
         const GAS_LIMIT: u64 = 500000;
         let tx_request = tx_request.gas_limit(GAS_LIMIT);
-        let pending_tx = if let Signer::Web3signer(web3signer) = &self.config.signer.as_ref() {
+        let pending_tx = if let Signer::Web3signer(web3signer) = self.config.signer.as_ref() {
             let signed_tx = web3signer.sign_transaction(tx_request).await?;
             provider_ws.send_raw_transaction(&signed_tx).await?
         } else {
