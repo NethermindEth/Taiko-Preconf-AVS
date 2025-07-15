@@ -5,15 +5,61 @@ use anyhow::Error;
 use hex;
 use serde_json::{Map, Value};
 use std::time::Duration;
+use tracing::{debug, info};
 
 pub struct Web3Signer {
     client: JSONRPCClient,
 }
 
 impl Web3Signer {
-    pub fn new(rpc_url: &str, timeout: Duration) -> Result<Self, Error> {
+    pub async fn new(
+        rpc_url: &str,
+        timeout: Duration,
+        signer_address: &str,
+    ) -> Result<Self, Error> {
         let client = JSONRPCClient::new_with_timeout(rpc_url, timeout)?;
+        Self::check_web3signer_version(&client).await?;
+        if !Self::is_signer_key_available(&client, signer_address).await? {
+            return Err(anyhow::anyhow!(
+                "Web3Signer: Signer key is not available for address {}",
+                signer_address
+            ));
+        }
         Ok(Self { client })
+    }
+
+    async fn check_web3signer_version(client: &JSONRPCClient) -> Result<(), Error> {
+        let response = client
+            .call_method_with_retry("health_status", vec![])
+            .await
+            .map_err(|e| anyhow::anyhow!("Web3Signer: Failed to get health status: {}", e))?;
+        let version = response.as_str().ok_or(anyhow::anyhow!(
+            "Web3Signer: Failed to decode health status"
+        ))?;
+        info!(
+            "Web3Signer available at {} with version {}",
+            client.url(),
+            version
+        );
+        Ok(())
+    }
+
+    async fn is_signer_key_available(
+        client: &JSONRPCClient,
+        signer_address: &str,
+    ) -> Result<bool, Error> {
+        let response = client
+            .call_method_with_retry("eth_accounts", vec![])
+            .await
+            .map_err(|e| anyhow::anyhow!("Web3Signer: Failed to get available accounts: {}", e))?;
+        let accounts = response.as_array().ok_or(anyhow::anyhow!(
+            "Web3Signer: Failed to decode available accounts"
+        ))?;
+        debug!("Web3Signer: Available accounts: {:?}", accounts);
+        Ok(accounts
+            .iter()
+            .map(|account| account.as_str().unwrap_or("").to_lowercase())
+            .any(|account| account == signer_address.to_lowercase()))
     }
 
     pub async fn sign_transaction(&self, tx: TransactionRequest) -> Result<Vec<u8>, Error> {
@@ -135,5 +181,52 @@ impl Web3Signer {
             "Web3Signer: Failed to sign transaction: {}",
             response
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_is_signer_key_available() {
+        let mut server = mockito::Server::new_async().await;
+        let server_url = &server.url();
+        server
+            .mock("POST", "/")
+            .match_body(mockito::Matcher::Regex(".*\"id\":1.*eth_accounts.*".to_string()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{"jsonrpc":"2.0","id":1,"result":["0x614561d2d143621e126e87831aef287678b442b8","0x7901203a6137eb823103680d7a899b2577b96d44"]}"#,
+            )
+            .create_async().await;
+
+        server
+            .mock("POST", "/")
+            .match_body(mockito::Matcher::Regex(".*\"id\":2.*eth_accounts.*".to_string()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{"jsonrpc":"2.0","id":2,"result":["0x614561d2d143621e126e87831aef287678b442b8","0x7901203a6137eb823103680d7a899b2577b96d44"]}"#,
+            )
+            .create_async().await;
+
+        let client = JSONRPCClient::new_with_timeout(server_url, Duration::from_secs(1)).unwrap();
+
+        let available_address = "0x614561D2D143621E126E87831AEF287678B442B8";
+        let unavailable_address = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+        assert!(
+            Web3Signer::is_signer_key_available(&client, available_address)
+                .await
+                .unwrap()
+        );
+
+        assert!(
+            !Web3Signer::is_signer_key_available(&client, unavailable_address)
+                .await
+                .unwrap()
+        );
     }
 }

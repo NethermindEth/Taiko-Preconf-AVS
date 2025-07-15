@@ -64,6 +64,10 @@ impl JSONRPCClient {
         })
     }
 
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
     fn create_client_with_jwt(
         url: &str,
         timeout: Duration,

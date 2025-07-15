@@ -98,7 +98,7 @@ impl ExecutionLayer {
     async fn construct_alloy_provider(
         config: &EthereumL1Config,
     ) -> Result<(DynProvider, Address), Error> {
-        match &config.signer {
+        match config.signer.as_ref() {
             Signer::PrivateKey(private_key) => {
                 debug!(
                     "Creating ExecutionLayer with WS URL: {} and private key signer.",
@@ -568,7 +568,7 @@ impl ExecutionLayer {
             slot_duration_sec: 12,
             slots_per_epoch: 32,
             preconf_heartbeat_ms: 1000,
-            signer: Signer::PrivateKey(hex::encode(private_key.to_bytes())),
+            signer: Arc::new(Signer::PrivateKey(hex::encode(private_key.to_bytes()))),
             preconfer_address: Some(preconfer_address.to_string()),
             min_priority_fee_per_gas_wei: 1000000000000000000,
             tx_fees_increase_percentage: 5,
