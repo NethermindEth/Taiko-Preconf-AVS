@@ -1,20 +1,18 @@
 use crate::utils::rpc_client::JSONRPCClient;
-use alloy::consensus::{
-    EthereumTypedTransaction, Transaction, TxEip4844Variant, TxEnvelope, TxType, TypedTransaction,
-    transaction::SignerRecoverable,
-};
-use alloy::eips::Typed2718;
-use alloy::primitives::TxKind;
 use alloy::{
+    consensus::{
+        EthereumTxEnvelope, Transaction, TxEip4844, TxEip4844Variant, TxEnvelope, TxType,
+        TypedTransaction, transaction::SignerRecoverable,
+    },
+    eips::Typed2718,
     network::{Ethereum, NetworkWallet},
-    primitives::{Address, B256, Bytes},
+    primitives::Address,
+    primitives::TxKind,
     rpc::types::TransactionRequest,
-    signers::{Error as SignerError, Result as SignerResult, Signature, Signer, SignerSync},
-    transports::Transport,
+    signers::{Error as SignerError, Result as SignerResult},
 };
 use anyhow::Error;
 use hex;
-use serde::Serialize;
 use serde_json::{Map, Value};
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,7 +21,6 @@ use tracing::{debug, error, info};
 #[derive(Debug)]
 pub struct Web3Signer {
     client: JSONRPCClient,
-    signer_address: Address,
 }
 
 impl Web3Signer {
@@ -40,12 +37,7 @@ impl Web3Signer {
                 signer_address
             ));
         }
-        Ok(Self {
-            client,
-            signer_address: signer_address
-                .parse()
-                .map_err(|e| anyhow::anyhow!("Web3Signer: Invalid address: {}", e))?,
-        })
+        Ok(Self { client })
     }
 
     async fn check_web3signer_version(client: &JSONRPCClient) -> Result<(), Error> {
@@ -205,11 +197,12 @@ impl Web3Signer {
 
     pub async fn sign_transaction_from_wallet(
         &self,
-        tx: TypedTransaction,
+        tx: &TypedTransaction,
+        from: Address,
     ) -> Result<Vec<u8>, Error> {
         tracing::debug!(
             "Web3Signer signing transaction from wallet, source_address: {:?}",
-            self.signer_address,
+            from,
         );
 
         if !tx.is_eip4844() && !tx.is_eip1559() {
@@ -220,10 +213,7 @@ impl Web3Signer {
 
         // Construct transaction object similar to the provided JSON structure
         let mut tx_obj = Map::new();
-        tx_obj.insert(
-            "from".to_string(),
-            Value::String(self.signer_address.to_string()),
-        );
+        tx_obj.insert("from".to_string(), Value::String(from.to_string()));
 
         let to = tx
             .to()
@@ -293,7 +283,6 @@ impl Web3Signer {
 pub struct Web3SignerWallet {
     inner: Arc<Web3Signer>,
     address: Address,
-    chain_id: Option<u64>,
 }
 
 impl Web3SignerWallet {
@@ -304,12 +293,7 @@ impl Web3SignerWallet {
         Ok(Self {
             inner: signer,
             address,
-            chain_id: None,
         })
-    }
-
-    pub fn address(&self) -> Address {
-        self.address
     }
 }
 
@@ -331,7 +315,8 @@ impl NetworkWallet<Ethereum> for Web3SignerWallet {
         sender: Address,
         tx: TypedTransaction,
     ) -> SignerResult<TxEnvelope> {
-        let web3singer_signed_tx = match self.inner.sign_transaction_from_wallet(tx).await {
+        let web3singer_signed_tx = match self.inner.sign_transaction_from_wallet(&tx, sender).await
+        {
             Ok(web3singer_signed_tx) => web3singer_signed_tx,
             Err(err) => {
                 error!("Failed to sign transaction: {}", err);
@@ -339,7 +324,7 @@ impl NetworkWallet<Ethereum> for Web3SignerWallet {
             }
         };
 
-        let tx_envelope: TxEnvelope =
+        let mut tx_envelope: TxEnvelope =
             match alloy_rlp::Decodable::decode(&mut web3singer_signed_tx.as_slice()) {
                 Ok(tx_envelope) => tx_envelope,
                 Err(err) => {
@@ -353,6 +338,32 @@ impl NetworkWallet<Ethereum> for Web3SignerWallet {
                 return Err(SignerError::Other(
                     anyhow::anyhow!("Wrong signer received from Web3Signer").into(),
                 ));
+            }
+        }
+
+        if tx.is_eip4844() {
+            let eip4844_tx = tx.try_into_eip4844().unwrap();
+            match eip4844_tx {
+                TxEip4844Variant::TxEip4844(_tx) => {
+                    return Err(SignerError::Other(
+                        anyhow::anyhow!("No sidecar available for typed transaction, which is required for creating pooled transaction").into(),
+                    ));
+                }
+                TxEip4844Variant::TxEip4844WithSidecar(tx) => {
+                    let sidecar = tx.into_sidecar();
+                    // Convert to EthereumTxEnvelope<TxEip4844> first, then add sidecar
+                    let eip4844_envelope: EthereumTxEnvelope<TxEip4844> = tx_envelope.into();
+                    tx_envelope = eip4844_envelope
+                        .try_into_pooled_eip4844(sidecar)
+                        .map_err(|e| {
+                            SignerError::Other(
+                                anyhow::anyhow!("Failed to create pooled transaction: {}", e)
+                                    .into(),
+                            )
+                        })?
+                        .into();
+                    debug!("Successfully created pooled transaction with sidecar");
+                }
             }
         }
 
@@ -425,5 +436,4 @@ mod tests {
                 .unwrap()
         );
     }
-
 }
