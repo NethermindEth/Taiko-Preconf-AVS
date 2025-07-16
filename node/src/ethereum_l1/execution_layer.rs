@@ -13,18 +13,16 @@ use crate::{
     },
     forced_inclusion::ForcedInclusionInfo,
     metrics,
-    shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress, ws_provider::Signer},
+    shared::{alloy_tools, l2_block::L2Block, l2_tx_lists::encode_and_compress},
     utils::types::*,
 };
 use alloy::{
     eips::BlockNumberOrTag,
     primitives::{Address, B256, U256},
-    providers::{DynProvider, Provider, ProviderBuilder, WsConnect},
-    signers::local::PrivateKeySigner,
+    providers::{DynProvider, Provider},
 };
 use anyhow::{Error, anyhow};
 use std::{
-    str::FromStr,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -51,7 +49,12 @@ impl ExecutionLayer {
         transaction_error_channel: Sender<TransactionError>,
         metrics: Arc<metrics::Metrics>,
     ) -> Result<Self, Error> {
-        let (provider_ws, preconfer_address) = Self::construct_alloy_provider(&config).await?;
+        let (provider_ws, preconfer_address) = alloy_tools::construct_alloy_provider(
+            &config.signer,
+            &config.execution_ws_rpc_url,
+            config.preconfer_address,
+        )
+        .await?;
         info!("AVS node address: {}", preconfer_address);
 
         let extra_gas_percentage = config.extra_gas_percentage;
@@ -93,58 +96,6 @@ impl ExecutionLayer {
             taiko_wrapper_contract,
             chain_id,
         })
-    }
-
-    async fn construct_alloy_provider(
-        config: &EthereumL1Config,
-    ) -> Result<(DynProvider, Address), Error> {
-        match &config.signer {
-            Signer::PrivateKey(private_key) => {
-                debug!(
-                    "Creating ExecutionLayer with WS URL: {} and private key signer.",
-                    config.execution_ws_rpc_url
-                );
-                let signer = PrivateKeySigner::from_str(private_key)?;
-                let preconfer_address: Address = signer.address();
-
-                let ws = WsConnect::new(config.execution_ws_rpc_url.clone());
-                Ok((
-                    ProviderBuilder::new()
-                        .wallet(signer)
-                        .connect_ws(ws.clone())
-                        .await
-                        .map_err(|e| {
-                            Error::msg(format!("Execution layer: Failed to connect to WS: {}", e))
-                        })?
-                        .erased(),
-                    preconfer_address,
-                ))
-            }
-            Signer::Web3signer(_) => {
-                debug!(
-                    "Creating ExecutionLayer with WS URL: {} and web3signer signer.",
-                    config.execution_ws_rpc_url
-                );
-                let preconfer_address =
-                    if let Some(preconfer_address) = config.preconfer_address.clone() {
-                        preconfer_address
-                    } else {
-                        panic!("Preconfer address is not provided");
-                    };
-
-                let ws = WsConnect::new(config.execution_ws_rpc_url.clone());
-                Ok((
-                    ProviderBuilder::new()
-                        .connect_ws(ws.clone())
-                        .await
-                        .map_err(|e| {
-                            Error::msg(format!("Execution layer: Failed to connect to WS: {}", e))
-                        })?
-                        .erased(),
-                    preconfer_address.parse()?,
-                ))
-            }
-        }
     }
 
     pub fn chain_id(&self) -> u64 {
@@ -532,7 +483,10 @@ impl ExecutionLayer {
         private_key: elliptic_curve::SecretKey<k256::Secp256k1>,
     ) -> Result<Self, Error> {
         use super::l1_contracts_bindings::taiko_inbox::ITaikoInbox::ForkHeights;
+        use crate::Signer;
         use crate::metrics::Metrics;
+        use alloy::providers::ProviderBuilder;
+        use alloy::providers::WsConnect;
         use alloy::{network::EthereumWallet, signers::local::PrivateKeySigner};
         use tokio::sync::OnceCell;
 
@@ -568,8 +522,8 @@ impl ExecutionLayer {
             slot_duration_sec: 12,
             slots_per_epoch: 32,
             preconf_heartbeat_ms: 1000,
-            signer: Signer::PrivateKey(hex::encode(private_key.to_bytes())),
-            preconfer_address: Some(preconfer_address.to_string()),
+            signer: Arc::new(Signer::PrivateKey(hex::encode(private_key.to_bytes()))),
+            preconfer_address: Some(preconfer_address.parse()?),
             min_priority_fee_per_gas_wei: 1000000000000000000,
             tx_fees_increase_percentage: 5,
             max_attempts_to_send_tx: 4,

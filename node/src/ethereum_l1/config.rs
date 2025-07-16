@@ -1,5 +1,6 @@
 use crate::{shared::ws_provider::Signer, utils::config::L1ContractAddresses};
 use alloy::primitives::Address;
+use std::sync::Arc;
 use tokio::sync::OnceCell;
 
 #[derive(Clone)]
@@ -46,7 +47,7 @@ pub struct EthereumL1Config {
     pub max_attempts_to_send_tx: u64,
     pub max_attempts_to_wait_tx: u64,
     pub delay_between_tx_attempts_sec: u64,
-    pub signer: Signer,
-    pub preconfer_address: Option<String>,
+    pub signer: Arc<Signer>,
+    pub preconfer_address: Option<Address>,
     pub extra_gas_percentage: u64,
 }

@@ -1,3 +1,4 @@
+pub mod batch;
 pub mod batch_builder;
 
 use crate::{

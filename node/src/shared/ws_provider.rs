@@ -1,7 +1,9 @@
+use super::web3signer::Web3Signer;
 use alloy::providers::{
     Identity, RootProvider,
     fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
 };
+use std::sync::Arc;
 
 pub type WsProvider = FillProvider<
     JoinFill<
@@ -11,8 +13,7 @@ pub type WsProvider = FillProvider<
     RootProvider,
 >;
 
-#[derive(Clone)]
 pub enum Signer {
-    Web3signer(String),
+    Web3signer(Arc<Web3Signer>),
     PrivateKey(String),
 }

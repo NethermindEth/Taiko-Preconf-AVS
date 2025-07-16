@@ -3,15 +3,14 @@ pub enum TransactionError {
     EstimationFailed,
     EstimationTooEarly,
     TransactionReverted,
-    Web3SignerFailed,
     NotConfirmed,
     UnsupportedTransactionType,
     GetBlockNumberFailed,
     TimestampTooLarge,
     InsufficientFunds,
     ReanchorRequired,
-    BuildTransactionFailed,
     OldestForcedInclusionDue,
+    NotTheOperatorInCurrentEpoch,
 }
 
 impl std::fmt::Display for TransactionError {
