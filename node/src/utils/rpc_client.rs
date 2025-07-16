@@ -33,6 +33,7 @@ fn create_jwt_token(secret: &[u8]) -> Result<String, Box<dyn std::error::Error>>
     )?)
 }
 
+#[derive(Debug)]
 pub struct JSONRPCClient {
     url: String,
     timeout: Duration,

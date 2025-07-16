@@ -58,7 +58,7 @@ async fn main() -> Result<(), Error> {
     let (transaction_error_sender, transaction_error_receiver) = mpsc::channel(100);
 
     let signer = Arc::new(if let Some(web3signer_l1_url) = &config.web3signer_l1_url {
-        Signer::Web3signer(
+        Signer::Web3signer(Arc::new(
             shared::web3signer::Web3Signer::new(
                 web3signer_l1_url,
                 SIGNER_TIMEOUT,
@@ -68,7 +68,7 @@ async fn main() -> Result<(), Error> {
                     .expect("preconfer address is required for web3signer usage"),
             )
             .await?,
-        )
+        ))
     } else if let Some(avs_node_ecdsa_private_key) = config.avs_node_ecdsa_private_key.clone() {
         Signer::PrivateKey(avs_node_ecdsa_private_key)
     } else {
@@ -89,7 +89,10 @@ async fn main() -> Result<(), Error> {
             max_attempts_to_wait_tx: config.max_attempts_to_wait_tx,
             delay_between_tx_attempts_sec: config.delay_between_tx_attempts_sec,
             signer: signer.clone(),
-            preconfer_address: config.preconfer_address,
+            preconfer_address: config.preconfer_address.clone().map(|s| {
+                s.parse()
+                    .expect("Preconfer address is not a valid Ethereum address")
+            }),
             extra_gas_percentage: config.extra_gas_percentage,
         },
         transaction_error_sender,

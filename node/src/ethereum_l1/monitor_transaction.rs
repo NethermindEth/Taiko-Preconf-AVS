@@ -1,12 +1,9 @@
 use super::{config::EthereumL1Config, tools, transaction_error::TransactionError};
-use crate::{
-    metrics::Metrics,
-    shared::{web3signer::Web3Signer, ws_provider::Signer},
-};
+use crate::metrics::Metrics;
 use alloy::{
-    consensus::{SignableTransaction, TxEnvelope, TxType, transaction::SignerRecoverable},
+    consensus::TxType,
     network::{Network, ReceiptResponse, TransactionBuilder, TransactionBuilder4844},
-    primitives::{Address, B256},
+    primitives::B256,
     providers::{
         DynProvider, PendingTransactionBuilder, PendingTransactionError, Provider, RootProvider,
         WatchTxError,
@@ -45,7 +42,6 @@ pub struct TransactionMonitorThread {
     nonce: u64,
     error_notification_channel: Sender<TransactionError>,
     metrics: Arc<Metrics>,
-    signer: Arc<Signer>,
     chain_id: u64,
 }
 
@@ -56,7 +52,6 @@ pub struct TransactionMonitor {
     join_handle: Mutex<Option<JoinHandle<()>>>,
     error_notification_channel: Sender<TransactionError>,
     metrics: Arc<Metrics>,
-    signer: Arc<Signer>,
     chain_id: u64,
 }
 
@@ -83,7 +78,6 @@ impl TransactionMonitor {
             join_handle: Mutex::new(None),
             error_notification_channel,
             metrics,
-            signer: config.signer.clone(),
             chain_id,
         })
     }
@@ -112,7 +106,6 @@ impl TransactionMonitor {
             nonce,
             self.error_notification_channel.clone(),
             self.metrics.clone(),
-            self.signer.clone(),
             self.chain_id,
         );
         let join_handle = monitor_thread.spawn_monitoring_task(tx);
@@ -136,7 +129,6 @@ impl TransactionMonitorThread {
         nonce: u64,
         error_notification_channel: Sender<TransactionError>,
         metrics: Arc<Metrics>,
-        signer: Arc<Signer>,
         chain_id: u64,
     ) -> Self {
         Self {
@@ -145,7 +137,6 @@ impl TransactionMonitorThread {
             nonce,
             error_notification_channel,
             metrics,
-            signer,
             chain_id,
         }
     }
@@ -388,95 +379,7 @@ impl TransactionMonitorThread {
         previous_tx_hashes: &Vec<B256>,
         sending_attempt: u64,
     ) -> Option<PendingTransactionBuilder<alloy::network::Ethereum>> {
-        // TODO: alloy provides TxSigner trait, we can use it to implement new signer with web3signer
-        // so it would be enough to add new wallet to the provider
-        match self.signer.as_ref() {
-            Signer::Web3signer(web3signer) => {
-                self.send_transaction_with_web3signer(
-                    tx,
-                    previous_tx_hashes,
-                    sending_attempt,
-                    web3signer,
-                )
-                .await
-            }
-            Signer::PrivateKey(_) => {
-                self.send_transaction_with_private_key_signer(
-                    tx,
-                    previous_tx_hashes,
-                    sending_attempt,
-                )
-                .await
-            }
-        }
-    }
-
-    async fn send_transaction_with_private_key_signer(
-        &self,
-        tx: TransactionRequest,
-        previous_tx_hashes: &Vec<B256>,
-        sending_attempt: u64,
-    ) -> Option<PendingTransactionBuilder<alloy::network::Ethereum>> {
         match self.provider.send_transaction(tx).await {
-            Ok(tx) => Some(tx),
-            Err(e) => {
-                self.handle_rpc_error(e, previous_tx_hashes, sending_attempt)
-                    .await;
-                None
-            }
-        }
-    }
-
-    async fn send_transaction_with_web3signer(
-        &self,
-        tx: TransactionRequest,
-        previous_tx_hashes: &Vec<B256>,
-        sending_attempt: u64,
-        web3signer: &Web3Signer,
-    ) -> Option<PendingTransactionBuilder<alloy::network::Ethereum>> {
-        let unsigned_tx = match tx.clone().build_unsigned() {
-            Ok(unsigned_tx) => unsigned_tx,
-            Err(e) => {
-                error!("Failed to build unsigned transaction: {}", e);
-                self.send_error_signal(TransactionError::BuildTransactionFailed)
-                    .await;
-                return None;
-            }
-        };
-        let from = tx.from;
-        let web3singer_signed_tx = match web3signer.sign_transaction(tx).await {
-            Ok(web3singer_signed_tx) => web3singer_signed_tx,
-            Err(e) => {
-                error!("Failed to sign transaction: {}", e);
-                self.send_error_signal(TransactionError::Web3SignerFailed)
-                    .await;
-                return None;
-            }
-        };
-
-        let tx_envelope: TxEnvelope =
-            match alloy_rlp::Decodable::decode(&mut web3singer_signed_tx.as_slice()) {
-                Ok(tx_envelope) => tx_envelope,
-                Err(err) => {
-                    error!("Failed to decode RLP transaction: {}", err);
-                    self.send_error_signal(TransactionError::Web3SignerFailed)
-                        .await;
-                    return None;
-                }
-            };
-
-        if let Some(from) = from {
-            if !self.check_signer_correctness(&tx_envelope, from).await {
-                return None;
-            }
-        }
-
-        let signature = tx_envelope.signature();
-        let signed_tx = unsigned_tx.into_signed(*signature);
-        let mut encoded_tx = Vec::new();
-        signed_tx.eip2718_encode(&mut encoded_tx);
-
-        match self.provider.send_raw_transaction(&encoded_tx).await {
             Ok(tx) => Some(tx),
             Err(e) => {
                 self.handle_rpc_error(e, previous_tx_hashes, sending_attempt)
@@ -519,28 +422,6 @@ impl TransactionMonitorThread {
         error!("Failed to send transaction: {}", e);
         self.send_error_signal(TransactionError::TransactionReverted)
             .await;
-    }
-
-    async fn check_signer_correctness(&self, tx_envelope: &TxEnvelope, from: Address) -> bool {
-        let signer = match tx_envelope.recover_signer() {
-            Ok(signer) => signer,
-            Err(e) => {
-                error!("Failed to recover signer from transaction: {}", e);
-                self.send_error_signal(TransactionError::Web3SignerFailed)
-                    .await;
-                return false;
-            }
-        };
-        debug!("Web3signer signed tx From: {}", signer);
-
-        if signer != from {
-            error!("Signer mismatch: expected {} but got {}", from, signer);
-            self.send_error_signal(TransactionError::Web3SignerFailed)
-                .await;
-            return false;
-        }
-
-        true
     }
 
     async fn send_error_signal(&self, error: TransactionError) {

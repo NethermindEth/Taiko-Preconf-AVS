@@ -1,9 +1,14 @@
+use super::ws_provider::Signer;
 use alloy::{
     network::Ethereum,
-    primitives::B256,
-    providers::{Provider, ext::DebugApi},
+    primitives::{Address, B256},
+    providers::{DynProvider, Provider, ProviderBuilder, WsConnect, ext::DebugApi},
     rpc::types::{Transaction, TransactionRequest, trace::geth::GethDebugTracingOptions},
+    signers::local::PrivateKeySigner,
 };
+use anyhow::Error;
+use std::str::FromStr;
+use tracing::debug;
 
 pub async fn check_for_revert_reason<P: Provider<Ethereum>>(
     provider: &P,
@@ -65,5 +70,66 @@ fn find_errors_from_trace(trace_str: &str) -> Option<String> {
         Some(format!(", errors from debug trace: {error_message}"))
     } else {
         None
+    }
+}
+
+pub async fn construct_alloy_provider(
+    signer: &Signer,
+    execution_ws_rpc_url: &str,
+    preconfer_address: Option<Address>,
+) -> Result<(DynProvider, Address), Error> {
+    match signer {
+        Signer::PrivateKey(private_key) => {
+            debug!(
+                "Creating alloy provider with WS URL: {} and private key signer.",
+                execution_ws_rpc_url
+            );
+            let signer = PrivateKeySigner::from_str(private_key.as_str())?;
+            let preconfer_address: Address = signer.address();
+
+            let ws = WsConnect::new(execution_ws_rpc_url);
+            Ok((
+                ProviderBuilder::new()
+                    .wallet(signer)
+                    .connect_ws(ws.clone())
+                    .await
+                    .map_err(|e| {
+                        Error::msg(format!("Execution layer: Failed to connect to WS: {}", e))
+                    })?
+                    .erased(),
+                preconfer_address,
+            ))
+        }
+        Signer::Web3signer(web3signer) => {
+            debug!(
+                "Creating alloy provider with WS URL: {} and web3signer signer.",
+                execution_ws_rpc_url
+            );
+            let preconfer_address = if let Some(preconfer_address) = preconfer_address {
+                preconfer_address
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Preconfer address is not provided for web3signer signer"
+                ));
+            };
+
+            let wallet = crate::shared::web3signer::Web3SignerWallet::new(
+                web3signer.clone(),
+                preconfer_address,
+            )?;
+
+            let ws = WsConnect::new(execution_ws_rpc_url);
+            Ok((
+                ProviderBuilder::new()
+                    .wallet(wallet)
+                    .connect_ws(ws.clone())
+                    .await
+                    .map_err(|e| {
+                        Error::msg(format!("Execution layer: Failed to connect to WS: {}", e))
+                    })?
+                    .erased(),
+                preconfer_address,
+            ))
+        }
     }
 }
