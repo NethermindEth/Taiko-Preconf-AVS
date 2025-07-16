@@ -59,7 +59,7 @@ async fn main() -> Result<(), Error> {
 
     let signer = Arc::new(if let Some(web3signer_l1_url) = &config.web3signer_l1_url {
         Signer::Web3signer(
-            shared::web3signer::Web3Signer::new(
+            Arc::new(shared::web3signer::Web3Signer::new(
                 web3signer_l1_url,
                 SIGNER_TIMEOUT,
                 config
@@ -67,7 +67,7 @@ async fn main() -> Result<(), Error> {
                     .as_ref()
                     .expect("preconfer address is required for web3signer usage"),
             )
-            .await?,
+            .await?),
         )
     } else if let Some(avs_node_ecdsa_private_key) = config.avs_node_ecdsa_private_key.clone() {
         Signer::PrivateKey(avs_node_ecdsa_private_key)

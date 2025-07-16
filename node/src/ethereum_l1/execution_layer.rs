@@ -120,7 +120,7 @@ impl ExecutionLayer {
                     preconfer_address,
                 ))
             }
-            Signer::Web3signer(_) => {
+            Signer::Web3signer(web3signer) => {
                 debug!(
                     "Creating ExecutionLayer with WS URL: {} and web3signer signer.",
                     config.execution_ws_rpc_url
@@ -132,9 +132,15 @@ impl ExecutionLayer {
                         panic!("Preconfer address is not provided");
                     };
 
+                let wallet = crate::shared::web3signer::Web3SignerWallet::new(
+                    web3signer.clone(),
+                    &preconfer_address,
+                )?;
+
                 let ws = WsConnect::new(config.execution_ws_rpc_url.clone());
                 Ok((
                     ProviderBuilder::new()
+                        .wallet(wallet)
                         .connect_ws(ws.clone())
                         .await
                         .map_err(|e| {

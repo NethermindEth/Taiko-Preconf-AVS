@@ -3,6 +3,7 @@ use alloy::providers::{
     Identity, RootProvider,
     fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
 };
+use std::sync::Arc;
 
 pub type WsProvider = FillProvider<
     JoinFill<
@@ -13,6 +14,6 @@ pub type WsProvider = FillProvider<
 >;
 
 pub enum Signer {
-    Web3signer(Web3Signer),
+    Web3signer(Arc<Web3Signer>),
     PrivateKey(String),
 }

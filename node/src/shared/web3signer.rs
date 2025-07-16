@@ -1,14 +1,29 @@
 use crate::utils::rpc_client::JSONRPCClient;
-use alloy::consensus::TxType;
-use alloy::{primitives::TxKind, rpc::types::TransactionRequest};
+use alloy::consensus::{
+    EthereumTypedTransaction, Transaction, TxEip4844Variant, TxEnvelope, TxType, TypedTransaction,
+    transaction::SignerRecoverable,
+};
+use alloy::eips::Typed2718;
+use alloy::primitives::TxKind;
+use alloy::{
+    network::{Ethereum, NetworkWallet},
+    primitives::{Address, B256, Bytes},
+    rpc::types::TransactionRequest,
+    signers::{Error as SignerError, Result as SignerResult, Signature, Signer, SignerSync},
+    transports::Transport,
+};
 use anyhow::Error;
 use hex;
+use serde::Serialize;
 use serde_json::{Map, Value};
+use std::sync::Arc;
 use std::time::Duration;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
+#[derive(Debug)]
 pub struct Web3Signer {
     client: JSONRPCClient,
+    signer_address: Address,
 }
 
 impl Web3Signer {
@@ -25,7 +40,12 @@ impl Web3Signer {
                 signer_address
             ));
         }
-        Ok(Self { client })
+        Ok(Self {
+            client,
+            signer_address: signer_address
+                .parse()
+                .map_err(|e| anyhow::anyhow!("Web3Signer: Invalid address: {}", e))?,
+        })
     }
 
     async fn check_web3signer_version(client: &JSONRPCClient) -> Result<(), Error> {
@@ -182,6 +202,182 @@ impl Web3Signer {
             response
         ))
     }
+
+    pub async fn sign_transaction_from_wallet(
+        &self,
+        tx: TypedTransaction,
+    ) -> Result<Vec<u8>, Error> {
+        tracing::debug!(
+            "Web3Signer signing transaction from wallet, source_address: {:?}",
+            self.signer_address,
+        );
+
+        if !tx.is_eip4844() && !tx.is_eip1559() {
+            return Err(anyhow::anyhow!(
+                "Web3Signer: Transaction is not any of the supported types (EIP-1559, EIP-4844)"
+            ));
+        }
+
+        // Construct transaction object similar to the provided JSON structure
+        let mut tx_obj = Map::new();
+        tx_obj.insert(
+            "from".to_string(),
+            Value::String(self.signer_address.to_string()),
+        );
+
+        let to = tx
+            .to()
+            .ok_or(anyhow::anyhow!("Web3Signer: Transaction to is not set"))?;
+        tx_obj.insert("to".to_string(), Value::String(to.to_string()));
+        tx_obj.insert("gas".to_string(), Value::String(tx.gas_limit().to_string()));
+        tx_obj.insert("nonce".to_string(), Value::String(tx.nonce().to_string()));
+        if let Some(chain_id) = tx.chain_id() {
+            tx_obj.insert("chainId".to_string(), Value::String(chain_id.to_string()));
+        }
+        tx_obj.insert("data".to_string(), Value::String(hex::encode(tx.input())));
+        tx_obj.insert("value".to_string(), Value::String(tx.value().to_string()));
+
+        let max_priority_fee_per_gas = tx.max_priority_fee_per_gas().ok_or(anyhow::anyhow!(
+            "Web3Signer: Transaction max_priority_fee_per_gas is not set"
+        ))?;
+        tx_obj.insert(
+            "maxPriorityFeePerGas".to_string(),
+            Value::String(max_priority_fee_per_gas.to_string()),
+        );
+        tx_obj.insert(
+            "maxFeePerGas".to_string(),
+            Value::String(tx.max_fee_per_gas().to_string()),
+        );
+
+        if tx.is_eip4844() {
+            let max_fee_per_blob_gas = tx.max_fee_per_blob_gas().ok_or(anyhow::anyhow!(
+                "Web3Signer: Transaction max_fee_per_blob_gas is not set"
+            ))?;
+            tx_obj.insert(
+                "maxFeePerBlobGas".to_string(),
+                Value::String(max_fee_per_blob_gas.to_string()),
+            );
+
+            if let Some(blob_versioned_hashes) = tx.blob_versioned_hashes() {
+                let commitments = blob_versioned_hashes
+                    .iter()
+                    .map(|h| Value::String(hex::encode(h)))
+                    .collect::<Vec<_>>();
+                tx_obj.insert("blobVersionedHashes".to_string(), Value::Array(commitments));
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Web3Signer: Transaction sidecar is not set for EIP-4844 transaction"
+                ));
+            }
+        }
+
+        let response = self
+            .client
+            .call_method_with_retry("eth_signTransaction", vec![Value::Object(tx_obj)])
+            .await
+            .map_err(|e| anyhow::anyhow!("Web3Signer: Failed to sign transaction: {}", e))?;
+
+        if let Some(signature) = response.as_str().map(|s| s.strip_prefix("0x").unwrap_or(s)) {
+            return hex::decode(signature)
+                .map_err(|e| anyhow::anyhow!("Web3Signer: Failed to decode signature: {}", e));
+        }
+
+        Err(anyhow::anyhow!(
+            "Web3Signer: Failed to sign transaction: {}",
+            response
+        ))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Web3SignerWallet {
+    inner: Arc<Web3Signer>,
+    address: Address,
+    chain_id: Option<u64>,
+}
+
+impl Web3SignerWallet {
+    pub fn new(signer: Arc<Web3Signer>, address: &str) -> Result<Self, Error> {
+        let address = address
+            .parse()
+            .map_err(|e| anyhow::anyhow!("Invalid address: {}", e))?;
+        Ok(Self {
+            inner: signer,
+            address,
+            chain_id: None,
+        })
+    }
+
+    pub fn address(&self) -> Address {
+        self.address
+    }
+}
+
+impl NetworkWallet<Ethereum> for Web3SignerWallet {
+    fn default_signer_address(&self) -> Address {
+        self.address
+    }
+
+    fn has_signer_for(&self, address: &Address) -> bool {
+        self.address == *address
+    }
+
+    fn signer_addresses(&self) -> impl Iterator<Item = Address> {
+        vec![self.address].into_iter()
+    }
+
+    async fn sign_transaction_from(
+        &self,
+        sender: Address,
+        tx: TypedTransaction,
+    ) -> SignerResult<TxEnvelope> {
+        let web3singer_signed_tx = match self.inner.sign_transaction_from_wallet(tx).await {
+            Ok(web3singer_signed_tx) => web3singer_signed_tx,
+            Err(err) => {
+                error!("Failed to sign transaction: {}", err);
+                return Err(SignerError::Other(err.into()));
+            }
+        };
+
+        let tx_envelope: TxEnvelope =
+            match alloy_rlp::Decodable::decode(&mut web3singer_signed_tx.as_slice()) {
+                Ok(tx_envelope) => tx_envelope,
+                Err(err) => {
+                    error!("Failed to decode RLP transaction: {}", err);
+                    return Err(SignerError::Other(err.into()));
+                }
+            };
+
+        if let Some(from) = self.signer_addresses().next() {
+            if !check_signer_correctness(&tx_envelope, from).await {
+                return Err(SignerError::Other(
+                    anyhow::anyhow!("Wrong signer received from Web3Signer").into(),
+                ));
+            }
+        }
+
+        debug!("Web3Signer signed tx: {}", tx_envelope.tx_hash());
+
+        Ok(tx_envelope)
+    }
+}
+
+async fn check_signer_correctness(tx_envelope: &TxEnvelope, from: Address) -> bool {
+    let signer = match tx_envelope.recover_signer() {
+        Ok(signer) => signer,
+        Err(e) => {
+            error!("Failed to recover signer from transaction: {}", e);
+            return false;
+        }
+    };
+    debug!("Web3signer signed tx From: {}", signer);
+
+    if signer != from {
+        error!("Signer mismatch: expected {} but got {}", from, signer);
+        return false;
+    }
+
+    true
 }
 
 #[cfg(test)]
@@ -229,4 +425,5 @@ mod tests {
                 .unwrap()
         );
     }
+
 }

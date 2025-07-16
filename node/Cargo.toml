@@ -19,6 +19,7 @@ alloy = { workspace = true }
 alloy-json-rpc = { workspace = true }
 alloy-rlp = { workspace = true }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 c-kzg = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, optional = true }

@@ -6517,6 +6517,7 @@ dependencies = [
  "alloy-json-rpc",
  "alloy-rlp",
  "anyhow",
+ "async-trait",
  "c-kzg",
  "chrono",
  "clap",
