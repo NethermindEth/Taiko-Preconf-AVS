@@ -501,21 +501,24 @@ impl TransactionMonitorThread {
                     self.send_error_signal(TransactionError::TransactionReverted)
                         .await;
                 }
+                return;
             } else if tools::check_for_insufficient_funds(&err.message) {
                 error!("Failed to send transaction: {}", e);
                 self.send_error_signal(TransactionError::InsufficientFunds)
                     .await;
+                return;
             } else if tools::check_for_reanchor_required(&err.message) {
                 warn!("Reanchor required: {}", err.message);
                 self.send_error_signal(TransactionError::ReanchorRequired)
                     .await;
+                return;
             }
-        } else {
-            // TODO if it is not revert then rebuild rpc client and retry on rpc error
-            error!("Failed to send transaction: {}", e);
-            self.send_error_signal(TransactionError::TransactionReverted)
-                .await;
         }
+
+        // TODO if it is not revert then rebuild rpc client and retry on rpc error
+        error!("Failed to send transaction: {}", e);
+        self.send_error_signal(TransactionError::TransactionReverted)
+            .await;
     }
 
     async fn check_signer_correctness(&self, tx_envelope: &TxEnvelope, from: Address) -> bool {
