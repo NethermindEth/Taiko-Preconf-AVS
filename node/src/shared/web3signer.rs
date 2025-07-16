@@ -77,10 +77,7 @@ impl Web3Signer {
         tx: &TypedTransaction,
         from: Address,
     ) -> Result<Vec<u8>, Error> {
-        tracing::debug!(
-            "Web3Signer signing transaction from wallet, source_address: {:?}",
-            from,
-        );
+        tracing::debug!("Web3Signer signing transaction, source_address: {:?}", from,);
 
         if !tx.is_eip4844() && !tx.is_eip1559() {
             return Err(anyhow::anyhow!(
@@ -226,7 +223,6 @@ impl NetworkWallet<Ethereum> for Web3SignerWallet {
                 }
                 TxEip4844Variant::TxEip4844WithSidecar(tx) => {
                     let sidecar = tx.into_sidecar();
-                    // Convert to EthereumTxEnvelope<TxEip4844> first, then add sidecar
                     let eip4844_envelope: EthereumTxEnvelope<TxEip4844> = tx_envelope.into();
                     tx_envelope = eip4844_envelope
                         .try_into_pooled_eip4844(sidecar)
