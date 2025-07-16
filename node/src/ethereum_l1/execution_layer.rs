@@ -52,7 +52,7 @@ impl ExecutionLayer {
         let (provider_ws, preconfer_address) = alloy_tools::construct_alloy_provider(
             &config.signer,
             &config.execution_ws_rpc_url,
-            config.preconfer_address.clone(),
+            config.preconfer_address,
         )
         .await?;
         info!("AVS node address: {}", preconfer_address);

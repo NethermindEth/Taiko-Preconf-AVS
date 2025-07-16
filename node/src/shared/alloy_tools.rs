@@ -105,7 +105,7 @@ pub async fn construct_alloy_provider(
                 "Creating alloy provider with WS URL: {} and web3signer signer.",
                 execution_ws_rpc_url
             );
-            let preconfer_address = if let Some(preconfer_address) = preconfer_address.clone() {
+            let preconfer_address = if let Some(preconfer_address) = preconfer_address {
                 preconfer_address
             } else {
                 return Err(anyhow::anyhow!(

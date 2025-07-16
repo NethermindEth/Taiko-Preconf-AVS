@@ -213,7 +213,11 @@ impl NetworkWallet<Ethereum> for Web3SignerWallet {
         }
 
         if tx.is_eip4844() {
-            let eip4844_tx = tx.try_into_eip4844().unwrap();
+            let eip4844_tx = tx.try_into_eip4844().map_err(|e| {
+                SignerError::Other(
+                    anyhow::anyhow!("Failed to convert transaction to EIP-4844: {}", e).into(),
+                )
+            })?;
             match eip4844_tx {
                 TxEip4844Variant::TxEip4844(_tx) => {
                     return Err(SignerError::Other(
