@@ -48,6 +48,6 @@ pub struct EthereumL1Config {
     pub max_attempts_to_wait_tx: u64,
     pub delay_between_tx_attempts_sec: u64,
     pub signer: Arc<Signer>,
-    pub preconfer_address: Option<String>,
+    pub preconfer_address: Option<Address>,
     pub extra_gas_percentage: u64,
 }

@@ -89,7 +89,10 @@ async fn main() -> Result<(), Error> {
             max_attempts_to_wait_tx: config.max_attempts_to_wait_tx,
             delay_between_tx_attempts_sec: config.delay_between_tx_attempts_sec,
             signer: signer.clone(),
-            preconfer_address: config.preconfer_address,
+            preconfer_address: config.preconfer_address.clone().map(|s| {
+                s.parse()
+                    .expect("Preconfer address is not a valid Ethereum address")
+            }),
             extra_gas_percentage: config.extra_gas_percentage,
         },
         transaction_error_sender,

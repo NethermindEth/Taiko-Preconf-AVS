@@ -13,18 +13,16 @@ use crate::{
     },
     forced_inclusion::ForcedInclusionInfo,
     metrics,
-    shared::{l2_block::L2Block, l2_tx_lists::encode_and_compress, ws_provider::Signer},
+    shared::{alloy_tools, l2_block::L2Block, l2_tx_lists::encode_and_compress},
     utils::types::*,
 };
 use alloy::{
     eips::BlockNumberOrTag,
     primitives::{Address, B256, U256},
-    providers::{DynProvider, Provider, ProviderBuilder, WsConnect},
-    signers::local::PrivateKeySigner,
+    providers::{DynProvider, Provider},
 };
 use anyhow::{Error, anyhow};
 use std::{
-    str::FromStr,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -51,7 +49,12 @@ impl ExecutionLayer {
         transaction_error_channel: Sender<TransactionError>,
         metrics: Arc<metrics::Metrics>,
     ) -> Result<Self, Error> {
-        let (provider_ws, preconfer_address) = Self::construct_alloy_provider(&config).await?;
+        let (provider_ws, preconfer_address) = alloy_tools::construct_alloy_provider(
+            &config.signer,
+            &config.execution_ws_rpc_url,
+            config.preconfer_address.clone(),
+        )
+        .await?;
         info!("AVS node address: {}", preconfer_address);
 
         let extra_gas_percentage = config.extra_gas_percentage;
@@ -93,64 +96,6 @@ impl ExecutionLayer {
             taiko_wrapper_contract,
             chain_id,
         })
-    }
-
-    async fn construct_alloy_provider(
-        config: &EthereumL1Config,
-    ) -> Result<(DynProvider, Address), Error> {
-        match config.signer.as_ref() {
-            Signer::PrivateKey(private_key) => {
-                debug!(
-                    "Creating ExecutionLayer with WS URL: {} and private key signer.",
-                    config.execution_ws_rpc_url
-                );
-                let signer = PrivateKeySigner::from_str(private_key)?;
-                let preconfer_address: Address = signer.address();
-
-                let ws = WsConnect::new(config.execution_ws_rpc_url.clone());
-                Ok((
-                    ProviderBuilder::new()
-                        .wallet(signer)
-                        .connect_ws(ws.clone())
-                        .await
-                        .map_err(|e| {
-                            Error::msg(format!("Execution layer: Failed to connect to WS: {}", e))
-                        })?
-                        .erased(),
-                    preconfer_address,
-                ))
-            }
-            Signer::Web3signer(web3signer) => {
-                debug!(
-                    "Creating ExecutionLayer with WS URL: {} and web3signer signer.",
-                    config.execution_ws_rpc_url
-                );
-                let preconfer_address =
-                    if let Some(preconfer_address) = config.preconfer_address.clone() {
-                        preconfer_address
-                    } else {
-                        panic!("Preconfer address is not provided");
-                    };
-
-                let wallet = crate::shared::web3signer::Web3SignerWallet::new(
-                    web3signer.clone(),
-                    &preconfer_address,
-                )?;
-
-                let ws = WsConnect::new(config.execution_ws_rpc_url.clone());
-                Ok((
-                    ProviderBuilder::new()
-                        .wallet(wallet)
-                        .connect_ws(ws.clone())
-                        .await
-                        .map_err(|e| {
-                            Error::msg(format!("Execution layer: Failed to connect to WS: {}", e))
-                        })?
-                        .erased(),
-                    preconfer_address.parse()?,
-                ))
-            }
-        }
     }
 
     pub fn chain_id(&self) -> u64 {

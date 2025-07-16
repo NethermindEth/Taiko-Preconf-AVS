@@ -3,18 +3,18 @@ use super::{
     fixed_k_signer_chainbound,
     l2_contracts_bindings::{Bridge, LibSharedData, TaikoAnchor},
 };
-use crate::shared::ws_provider::{Signer, WsProvider};
+use crate::shared::{alloy_tools, ws_provider::WsProvider};
 use alloy::{
     consensus::{
         SignableTransaction, Transaction as AnchorTransaction, TxEnvelope, transaction::Recovered,
     },
     contract::Error as ContractError,
     eips::BlockNumberOrTag,
-    network::{Ethereum, ReceiptResponse},
+    network::ReceiptResponse,
     primitives::{Address, B256, Bytes, U256, Uint},
-    providers::{Provider, ProviderBuilder, WsConnect},
+    providers::{DynProvider, Provider, ProviderBuilder, WsConnect},
     rpc::types::{Block as RpcBlock, Transaction},
-    signers::{Signature, local::PrivateKeySigner},
+    signers::Signature,
     transports::TransportErrorKind,
 };
 use alloy_json_rpc::RpcError;
@@ -283,54 +283,32 @@ impl L2ExecutionLayer {
         dest_chain_id: u64,
         preconfer_address: Address,
     ) -> Result<(), Error> {
-        let ws = WsConnect::new(self.config.taiko_geth_ws_url.clone());
-
         info!(
             "Transfer ETH from L2 to L1: srcChainId: {}, dstChainId: {}",
             self.chain_id, dest_chain_id
         );
 
-        match self.config.signer.as_ref() {
-            Signer::Web3signer(_) => {
-                let provider = ProviderBuilder::new()
-                    .connect_ws(ws.clone())
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to create WebSocket provider: {e}"))?;
-                self.transfer_eth_from_l2_to_l1_with_provider(
-                    provider,
-                    amount,
-                    dest_chain_id,
-                    preconfer_address,
-                )
-                .await?;
-            }
-            Signer::PrivateKey(private_key) => {
-                let signer: PrivateKeySigner = private_key.parse()?;
-                let provider = ProviderBuilder::new()
-                    .wallet(signer)
-                    .connect_ws(ws.clone())
-                    .await
-                    .map_err(|e| {
-                        anyhow::anyhow!(
-                            "Failed to create WebSocket provider with private key signer: {e}"
-                        )
-                    })?;
-                self.transfer_eth_from_l2_to_l1_with_provider(
-                    provider,
-                    amount,
-                    dest_chain_id,
-                    preconfer_address,
-                )
-                .await?;
-            }
-        }
+        let (provider, _) = alloy_tools::construct_alloy_provider(
+            &self.config.signer,
+            &self.config.taiko_geth_ws_url,
+            Some(preconfer_address),
+        )
+        .await?;
+
+        self.transfer_eth_from_l2_to_l1_with_provider(
+            provider,
+            amount,
+            dest_chain_id,
+            preconfer_address,
+        )
+        .await?;
 
         Ok(())
     }
 
-    async fn transfer_eth_from_l2_to_l1_with_provider<P: Provider<Ethereum> + Clone>(
+    async fn transfer_eth_from_l2_to_l1_with_provider(
         &self,
-        provider_ws: P,
+        provider_ws: DynProvider,
         amount: u128,
         dest_chain_id: u64,
         preconfer_address: Address,
@@ -378,12 +356,7 @@ impl L2ExecutionLayer {
         let tx_request = tx_send_message.into_transaction_request();
         const GAS_LIMIT: u64 = 500000;
         let tx_request = tx_request.gas_limit(GAS_LIMIT);
-        let pending_tx = if let Signer::Web3signer(web3signer) = self.config.signer.as_ref() {
-            let signed_tx = web3signer.sign_transaction(tx_request).await?;
-            provider_ws.send_raw_transaction(&signed_tx).await?
-        } else {
-            provider_ws.send_transaction(tx_request).await?
-        };
+        let pending_tx = provider_ws.send_transaction(tx_request).await?;
 
         let tx_hash = *pending_tx.tx_hash();
         info!("Bridge sendMessage tx hash: {}", tx_hash);
