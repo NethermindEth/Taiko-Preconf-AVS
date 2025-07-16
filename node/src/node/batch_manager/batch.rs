@@ -2,7 +2,7 @@ use crate::shared::l2_block::L2Block;
 use crate::shared::l2_tx_lists::encode_and_compress;
 use alloy::primitives::Address;
 use std::time::Instant;
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 #[derive(Default)]
 pub struct Batch {
@@ -32,7 +32,7 @@ impl Batch {
         }
 
         let duration = start.elapsed();
-        info!("Batch compression completed in {} ms", duration.as_millis());
+        debug!("Batch compression completed in {} ms", duration.as_millis());
     }
 }
 
