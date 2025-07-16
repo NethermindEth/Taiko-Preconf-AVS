@@ -196,6 +196,12 @@ impl Taiko {
             .await
     }
 
+    pub async fn get_forced_inclusion_form_l1origin(&self, block_id: u64) -> Result<bool, Error> {
+        self.l2_execution_layer
+            .get_forced_inclusion_form_l1origin(block_id)
+            .await
+    }
+
     pub async fn get_l2_slot_info_by_parent_block(
         &self,
         block: BlockNumberOrTag,
