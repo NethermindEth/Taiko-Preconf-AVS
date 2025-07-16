@@ -189,15 +189,15 @@ impl NetworkWallet<Ethereum> for Web3SignerWallet {
         sender: Address,
         tx: TypedTransaction,
     ) -> SignerResult<TxEnvelope> {
-        let web3singer_signed_tx = match self.inner.sign_transaction(&tx, sender).await {
-            Ok(web3singer_signed_tx) => web3singer_signed_tx,
+        let web3signer_signed_tx = match self.inner.sign_transaction(&tx, sender).await {
+            Ok(web3signer_signed_tx) => web3signer_signed_tx,
             Err(err) => {
                 return Err(SignerError::Other(err.into()));
             }
         };
 
         let mut tx_envelope: TxEnvelope =
-            match alloy_rlp::Decodable::decode(&mut web3singer_signed_tx.as_slice()) {
+            match alloy_rlp::Decodable::decode(&mut web3signer_signed_tx.as_slice()) {
                 Ok(tx_envelope) => tx_envelope,
                 Err(err) => {
                     return Err(SignerError::Other(err.into()));
@@ -253,7 +253,7 @@ async fn check_signer_correctness(tx_envelope: &TxEnvelope, from: Address) -> bo
             return false;
         }
     };
-    debug!("Web3signer signed tx From: {}", signer);
+    debug!("Web3Signer signed tx From: {}", signer);
 
     if signer != from {
         error!("Signer mismatch: expected {} but got {}", from, signer);
