@@ -5,6 +5,7 @@ use crate::{
         EthereumL1, l1_contracts_bindings::BatchParams, slot_clock::SlotClock,
         transaction_error::TransactionError,
     },
+    node::batch_manager::batch::Batch,
     shared::l2_block::L2Block,
 };
 use alloy::primitives::Address;
@@ -13,22 +14,14 @@ use tracing::{debug, error, trace, warn};
 
 use super::BatchBuilderConfig;
 
-#[derive(Default)]
-pub struct Batch {
-    pub l2_blocks: Vec<L2Block>,
-    pub total_bytes: u64,
-    pub coinbase: Address,
-    pub anchor_block_id: u64,
-    pub anchor_block_timestamp_sec: u64,
-}
-
-pub type BatchesToSend = VecDeque<(Option<BatchParams>, Batch)>;
+type ForcedInclusionBatch = Option<BatchParams>;
+pub type BatchesToSend = VecDeque<(ForcedInclusionBatch, Batch)>;
 
 pub struct BatchBuilder {
     config: BatchBuilderConfig,
     batches_to_send: BatchesToSend,
     current_batch: Option<Batch>,
-    current_forced_inclusion: Option<BatchParams>,
+    current_forced_inclusion: ForcedInclusionBatch,
     slot_clock: Arc<SlotClock>,
 }
 
@@ -60,22 +53,25 @@ impl BatchBuilder {
         &self.config
     }
 
-    pub fn can_consume_l2_block(&self, l2_block: &L2Block) -> bool {
-        self.current_batch
-            .as_ref()
-            .is_some_and(|batch| {
-                let number_of_blocks = if let Ok(n) = u16::try_from(batch.l2_blocks.len() + 1) {n} else {
-                    return false;
-                };
-                // Check if the total bytes of the current batch after adding the new L2 block
-                // is less than or equal to the max bytes size of the batch
-                self.config.is_within_bytes_limit(batch.total_bytes + l2_block.prebuilt_tx_list.bytes_length)
-                    // Check if the number of L2 blocks in the current batch after adding the new L2 block
-                    // is less than or equal to the max blocks per batch
-                    && self.config.is_within_block_limit(number_of_blocks)
-                    // check that time shift between blocks is not expired
-                    && !self.is_time_shift_expired(l2_block.timestamp_sec)
-            })
+    pub fn can_consume_l2_block(&mut self, l2_block: &L2Block) -> bool {
+        let is_time_shift_expired = self.is_time_shift_expired(l2_block.timestamp_sec);
+        self.current_batch.as_mut().is_some_and(|batch| {
+            let new_block_count = match u16::try_from(batch.l2_blocks.len() + 1) {
+                Ok(n) => n,
+                Err(_) => return false,
+            };
+
+            let mut new_total_bytes = batch.total_bytes + l2_block.prebuilt_tx_list.bytes_length;
+
+            if !self.config.is_within_bytes_limit(new_total_bytes) {
+                batch.compress();
+                new_total_bytes = batch.total_bytes + l2_block.prebuilt_tx_list.bytes_length;
+            }
+
+            self.config.is_within_bytes_limit(new_total_bytes)
+                && self.config.is_within_block_limit(new_block_count)
+                && !is_time_shift_expired
+        })
     }
 
     pub fn finalize_current_batch(&mut self) {
@@ -115,7 +111,7 @@ impl BatchBuilder {
         Ok(())
     }
 
-    pub fn set_forced_inclusion(&mut self, forced_inclusion_batch: Option<BatchParams>) -> bool {
+    pub fn set_forced_inclusion(&mut self, forced_inclusion_batch: ForcedInclusionBatch) -> bool {
         if self.current_forced_inclusion.is_some() {
             return false;
         }
@@ -408,6 +404,7 @@ impl BatchBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shared;
 
     #[test]
     fn test_is_the_last_l1_slot_to_add_an_empty_l2_block() {
@@ -427,5 +424,139 @@ mod tests {
         assert!(!batch_builder.is_the_last_l1_slot_to_add_an_empty_l2_block(242, 0));
         assert!(batch_builder.is_the_last_l1_slot_to_add_an_empty_l2_block(243, 0));
         assert!(batch_builder.is_the_last_l1_slot_to_add_an_empty_l2_block(255, 0));
+    }
+
+    fn build_tx_1() -> alloy::rpc::types::Transaction {
+        let json_data = r#"
+        {
+            "blockHash":"0x347bf1fbeab30fb516012c512222e229dfded991a2f1ba469f31c4273eb18921",
+            "blockNumber":"0x5",
+            "from":"0x0000777735367b36bc9b61c50022d9d0700db4ec",
+            "gas":"0xf4240",
+            "gasPrice":"0x86ff51",
+            "maxFeePerGas":"0x86ff51",
+            "maxPriorityFeePerGas":"0x0",
+            "hash":"0xc921473ec8d6e93a9e499f4a5c7619fa9cc6ea8f24c89ad338f6c4095347af5c",
+            "input":"0x48080a450000000000000000000000000000000000000000000000000000000000000146ef85e2f713b8212f4ff858962a5a5a0a1193b4033d702301cf5b68e29c7bffe6000000000000000000000000000000000000000000000000000000000001d28e0000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000004b00000000000000000000000000000000000000000000000000000000004c4b40000000000000000000000000000000000000000000000000000000004fdec7000000000000000000000000000000000000000000000000000000000023c3460000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000000",
+            "nonce":"0x4",
+            "to":"0x1670010000000000000000000000000000010001",
+            "transactionIndex":"0x0",
+            "value":"0x0",
+            "type":"0x2",
+            "accessList":[],
+            "chainId":"0x28c59",
+            "v":"0x0",
+            "r":"0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "s":"0xa8c3e2979dec89d4c055ffc1c900d33731cb43f027e427dff52a6ddf1247ec5",
+            "yParity":"0x0"
+        }"#;
+
+        let tx: alloy::rpc::types::Transaction = serde_json::from_str(json_data).unwrap();
+        tx
+    }
+
+    fn build_tx_2() -> alloy::rpc::types::Transaction {
+        let json_data = r#"
+        {
+            "blockHash":"0x347bf1fbeab30fb516012c512222e229dfded991a2f1ba469f31c4273eb18921",
+            "blockNumber":"0x5",
+            "from":"0x8943545177806ed17b9f23f0a21ee5948ecaa776",
+            "gas":"0x33450",
+            "gasPrice":"0x77bc9351",
+            "maxFeePerGas":"0x6fc23ac00",
+            "maxPriorityFeePerGas":"0x77359400",
+            "hash":"0x71e6a604469d2dd04175e195500b0811b3ecb6b005f19e724cbfd27050ac8e69",
+            "input":"0x",
+            "nonce":"0x4",
+            "to":"0x5291a539174785fadc93effe9c9ceb7a54719ae4",
+            "transactionIndex":"0x1",
+            "value":"0x1550f7dca70000",
+            "type":"0x2",
+            "accessList":[],
+            "chainId":"0x28c59",
+            "v":"0x1",
+            "r":"0x6c31bcf74110a61e6c82aa18aaca29bdd7c33807c2eee18d81c7f73617cc1728",
+            "s":"0x31d38525206dc1926590d0ccae89ec3427ff9ef7851e58ef619111c9fbece8c",
+            "yParity":"0x1"
+        }"#;
+
+        let tx: alloy::rpc::types::Transaction = serde_json::from_str(json_data).unwrap();
+        tx
+    }
+
+    fn test_can_consume_l2_block(max_bytes_size_of_batch: u64) -> (bool, u64) {
+        let config = BatchBuilderConfig {
+            max_bytes_size_of_batch,
+            max_blocks_per_batch: 10,
+            l1_slot_duration_sec: 12,
+            max_time_shift_between_blocks_sec: 255,
+            max_anchor_height_offset: 10,
+            default_coinbase: Address::ZERO,
+        };
+
+        let mut batch = Batch {
+            l2_blocks: vec![], //Vec<L2Block>,
+            total_bytes: 228 * 2,
+            coinbase: Address::ZERO,
+            anchor_block_id: 0,
+            anchor_block_timestamp_sec: 0,
+        };
+
+        let tx1 = build_tx_1();
+
+        let l2_block = L2Block {
+            prebuilt_tx_list: shared::l2_tx_lists::PreBuiltTxList {
+                tx_list: vec![tx1.clone(), tx1],
+                estimated_gas_used: 0,
+                bytes_length: 228 * 2,
+            },
+            timestamp_sec: 0,
+        };
+        batch.l2_blocks.push(l2_block);
+
+        let mut batch_builder = BatchBuilder {
+            config,
+            current_batch: Some(batch),
+            batches_to_send: VecDeque::new(),
+            current_forced_inclusion: None,
+            slot_clock: Arc::new(SlotClock::new(0, 5, 12, 32, 3000)),
+        };
+
+        let tx2 = build_tx_2();
+
+        let l2_block = L2Block {
+            prebuilt_tx_list: shared::l2_tx_lists::PreBuiltTxList {
+                tx_list: vec![tx2],
+                estimated_gas_used: 0,
+                bytes_length: 136,
+            },
+            timestamp_sec: 0,
+        };
+
+        let res = batch_builder.can_consume_l2_block(&l2_block);
+
+        let total_bytes = batch_builder.current_batch.as_ref().unwrap().total_bytes;
+        (res, total_bytes)
+    }
+
+    #[test]
+    fn test_can_not_consume_l2_block_with_compression() {
+        let (res, total_bytes) = test_can_consume_l2_block(377);
+        assert_eq!(res, false);
+        assert_eq!(total_bytes, 242);
+    }
+
+    #[test]
+    fn test_can_consume_l2_block_with_compression() {
+        let (res, total_bytes) = test_can_consume_l2_block(378);
+        assert_eq!(res, true);
+        assert_eq!(total_bytes, 242);
+    }
+
+    #[test]
+    fn test_can_consume_l2_block_no_compression() {
+        let (res, total_bytes) = test_can_consume_l2_block(1000);
+        assert_eq!(res, true);
+        assert_eq!(total_bytes, 228 * 2);
     }
 }
