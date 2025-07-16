@@ -483,7 +483,10 @@ impl ExecutionLayer {
         private_key: elliptic_curve::SecretKey<k256::Secp256k1>,
     ) -> Result<Self, Error> {
         use super::l1_contracts_bindings::taiko_inbox::ITaikoInbox::ForkHeights;
+        use crate::Signer;
         use crate::metrics::Metrics;
+        use alloy::providers::ProviderBuilder;
+        use alloy::providers::WsConnect;
         use alloy::{network::EthereumWallet, signers::local::PrivateKeySigner};
         use tokio::sync::OnceCell;
 
@@ -520,7 +523,7 @@ impl ExecutionLayer {
             slots_per_epoch: 32,
             preconf_heartbeat_ms: 1000,
             signer: Arc::new(Signer::PrivateKey(hex::encode(private_key.to_bytes()))),
-            preconfer_address: Some(preconfer_address.to_string()),
+            preconfer_address: Some(preconfer_address.parse()?),
             min_priority_fee_per_gas_wei: 1000000000000000000,
             tx_fees_increase_percentage: 5,
             max_attempts_to_send_tx: 4,
