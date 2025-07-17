@@ -79,7 +79,7 @@ impl FundsMonitor {
             .execution_layer
             .get_preconfer_total_bonds()
             .await
-            .map_err(|e| Error::msg(format!("Failed to fetch bond balance: {}", e)))?;
+            .map_err(|e| Error::msg(format!("Failed to fetch bond balance: {e}")))?;
 
         if total_balance < self.thresholds.taiko {
             anyhow::bail!(
@@ -97,7 +97,7 @@ impl FundsMonitor {
             .execution_layer
             .get_preconfer_wallet_eth()
             .await
-            .map_err(|e| Error::msg(format!("Failed to fetch ETH balance: {}", e)))?;
+            .map_err(|e| Error::msg(format!("Failed to fetch ETH balance: {e}")))?;
 
         if balance < self.thresholds.eth {
             anyhow::bail!(
@@ -136,7 +136,7 @@ impl FundsMonitor {
         {
             Ok(balance) => {
                 self.metrics.set_preconfer_taiko_balance(balance);
-                format!("{}", balance)
+                format!("{balance}")
             }
             Err(e) => {
                 warn!("Failed to get preconfer taiko balance: {}", e);
@@ -153,7 +153,7 @@ impl FundsMonitor {
         let l2_eth_balance_str = match l2_eth_balance.as_ref() {
             Ok(balance) => {
                 self.metrics.set_preconfer_l2_eth_balance(*balance);
-                format!("{}", balance)
+                format!("{balance}")
             }
             Err(e) => {
                 warn!("Failed to get preconfer l2 eth balance: {}", e);
@@ -166,28 +166,27 @@ impl FundsMonitor {
             eth_balance_str, l2_eth_balance_str, taiko_balance_str
         );
 
-        if let Ok(eth_balance) = eth_balance {
-            if let Ok(l2_eth_balance) = l2_eth_balance {
-                if eth_balance < self.thresholds.eth {
-                    if l2_eth_balance > U256::from(self.amount_to_bridge_from_l2_to_l1) {
-                        match self
-                            .taiko
-                            .transfer_eth_from_l2_to_l1(self.amount_to_bridge_from_l2_to_l1)
-                            .await
-                        {
-                            Ok(_) => info!(
-                                "Transferred {} ETH from L2 to L1",
-                                self.amount_to_bridge_from_l2_to_l1
-                            ),
-                            Err(e) => warn!("Failed to transfer ETH from L2 to L1: {}", e),
-                        }
-                    } else {
-                        warn!(
-                            "Can't transfer ETH from L2 to L1, L2 ETH balance is below the amount to bridge: {} < {}",
-                            l2_eth_balance_str, self.amount_to_bridge_from_l2_to_l1
-                        );
-                    }
+        if let Ok(eth_balance) = eth_balance
+            && let Ok(l2_eth_balance) = l2_eth_balance
+            && eth_balance < self.thresholds.eth
+        {
+            if l2_eth_balance > U256::from(self.amount_to_bridge_from_l2_to_l1) {
+                match self
+                    .taiko
+                    .transfer_eth_from_l2_to_l1(self.amount_to_bridge_from_l2_to_l1)
+                    .await
+                {
+                    Ok(_) => info!(
+                        "Transferred {} ETH from L2 to L1",
+                        self.amount_to_bridge_from_l2_to_l1
+                    ),
+                    Err(e) => warn!("Failed to transfer ETH from L2 to L1: {}", e),
                 }
+            } else {
+                warn!(
+                    "Can't transfer ETH from L2 to L1, L2 ETH balance is below the amount to bridge: {} < {}",
+                    l2_eth_balance_str, self.amount_to_bridge_from_l2_to_l1
+                );
             }
         }
     }

@@ -80,7 +80,7 @@ impl JSONRPCClient {
         let mut headers = HeaderMap::new();
         headers.insert(
             "authorization",
-            HeaderValue::from_str(&format!("Bearer {}", jwt_token)).map_err(|e| {
+            HeaderValue::from_str(&format!("Bearer {jwt_token}")).map_err(|e| {
                 anyhow::anyhow!("Failed to create header value from jwt token: {e}")
             })?,
         );
@@ -213,7 +213,7 @@ impl HttpRPCClient {
                 let mut headers = HeaderMap::new();
                 headers.insert(
                     "authorization",
-                    HeaderValue::from_str(&format!("Bearer {}", jwt_token)).map_err(|e| {
+                    HeaderValue::from_str(&format!("Bearer {jwt_token}")).map_err(|e| {
                         anyhow::anyhow!("Failed to create header value from jwt token: {e}")
                     })?,
                 );

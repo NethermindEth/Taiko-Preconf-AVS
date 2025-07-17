@@ -542,21 +542,21 @@ mod tests {
     #[test]
     fn test_can_not_consume_l2_block_with_compression() {
         let (res, total_bytes) = test_can_consume_l2_block(377);
-        assert_eq!(res, false);
+        assert!(!res);
         assert_eq!(total_bytes, 242);
     }
 
     #[test]
     fn test_can_consume_l2_block_with_compression() {
         let (res, total_bytes) = test_can_consume_l2_block(378);
-        assert_eq!(res, true);
+        assert!(res);
         assert_eq!(total_bytes, 242);
     }
 
     #[test]
     fn test_can_consume_l2_block_no_compression() {
         let (res, total_bytes) = test_can_consume_l2_block(1000);
-        assert_eq!(res, true);
+        assert!(res);
         assert_eq!(total_bytes, 228 * 2);
     }
 }

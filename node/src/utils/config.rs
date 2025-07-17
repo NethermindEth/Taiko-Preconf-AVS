@@ -443,7 +443,7 @@ simulate not submitting at the end of epoch: {}
 propose_forced_inclusion: {}
 "#,
             if let Some(preconfer_address) = &config.preconfer_address {
-                format!("\npreconfer address: {}", preconfer_address)
+                format!("\npreconfer address: {preconfer_address}")
             } else {
                 "".to_string()
             },

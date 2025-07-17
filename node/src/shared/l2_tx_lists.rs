@@ -131,11 +131,11 @@ where
         .map(|tx| {
             let tx_envelope = serde_json::from_value::<alloy::consensus::TxEnvelope>(tx.clone())
                 .map_err(|e| {
-                    serde::de::Error::custom(format!("Failed to parse transaction: {}", e))
+                    serde::de::Error::custom(format!("Failed to parse transaction: {e}"))
                 })?;
-            let signer = tx_envelope.recover_signer().map_err(|e| {
-                serde::de::Error::custom(format!("Failed to recover signer: {}", e))
-            })?;
+            let signer = tx_envelope
+                .recover_signer()
+                .map_err(|e| serde::de::Error::custom(format!("Failed to recover signer: {e}")))?;
             Ok(Transaction {
                 inner: Recovered::new_unchecked(tx_envelope, signer),
                 block_hash: None,
@@ -164,7 +164,7 @@ mod tests {
         ))
         .unwrap();
 
-        println!("{:?}", pending_tx_lists);
+        println!("{pending_tx_lists:?}");
 
         assert_eq!(pending_tx_lists.len(), 1);
         assert_eq!(pending_tx_lists[0].tx_list.len(), 2);
