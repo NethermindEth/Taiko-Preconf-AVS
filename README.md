@@ -35,6 +35,13 @@ docker pull nethswitchboard/preconf-avs-node:latest
 docker build -t node .
 ```
 
+## Git hooks
+
+Hooks require additional dependencies:
+```sh
+ cargo install typos-cli cargo-sort cargo-deny
+```
+
 ## License
 
 MIT. The license is also applied to all commits made before the license introduced.
