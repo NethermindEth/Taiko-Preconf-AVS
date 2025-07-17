@@ -405,15 +405,9 @@ impl TransactionMonitorThread {
                         .await;
                 }
                 return;
-            } else if tools::check_for_insufficient_funds(&err.message) {
-                error!("Failed to send transaction: {}", e);
-                self.send_error_signal(TransactionError::InsufficientFunds)
-                    .await;
-                return;
-            } else if tools::check_for_reanchor_required(&err.message) {
-                warn!("Reanchor required: {}", err.message);
-                self.send_error_signal(TransactionError::ReanchorRequired)
-                    .await;
+            } else if let Some(error) = tools::convert_error_payload(&err.message) {
+                error!("Failed to send transaction: {}", error);
+                self.send_error_signal(error).await;
                 return;
             }
         }
