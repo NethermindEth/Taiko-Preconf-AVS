@@ -1,15 +1,15 @@
 use crate::utils::rpc_client::JSONRPCClient;
 use alloy::{
     consensus::{
-        EthereumTxEnvelope, Transaction, TxEip4844, TxEip4844Variant, TxEnvelope, TypedTransaction,
-        transaction::SignerRecoverable,
+        Transaction, TxEnvelope,
+        transaction::{SignableTransaction, SignerRecoverable},
     },
-    eips::Typed2718,
-    network::{Ethereum, NetworkWallet},
-    primitives::Address,
+    network::TxSigner,
+    primitives::{Address, Signature as EcdsaSignature},
     signers::{Error as SignerError, Result as SignerResult},
 };
 use anyhow::Error;
+use async_trait::async_trait;
 use hex;
 use serde_json::{Map, Value};
 use std::sync::Arc;
@@ -74,7 +74,7 @@ impl Web3Signer {
 
     pub async fn sign_transaction(
         &self,
-        tx: &TypedTransaction,
+        tx: &dyn Transaction,
         from: Address,
     ) -> Result<Vec<u8>, Error> {
         tracing::debug!("Web3Signer signing transaction, source_address: {:?}", from,);
@@ -154,12 +154,12 @@ impl Web3Signer {
 }
 
 #[derive(Debug, Clone)]
-pub struct Web3SignerWallet {
+pub struct Web3TxSigner {
     inner: Arc<Web3Signer>,
     address: Address,
 }
 
-impl Web3SignerWallet {
+impl Web3TxSigner {
     pub fn new(signer: Arc<Web3Signer>, address: Address) -> Result<Self, Error> {
         Ok(Self {
             inner: signer,
@@ -168,32 +168,24 @@ impl Web3SignerWallet {
     }
 }
 
-impl NetworkWallet<Ethereum> for Web3SignerWallet {
-    fn default_signer_address(&self) -> Address {
+#[async_trait]
+impl TxSigner<EcdsaSignature> for Web3TxSigner {
+    fn address(&self) -> Address {
         self.address
     }
 
-    fn has_signer_for(&self, address: &Address) -> bool {
-        self.address == *address
-    }
-
-    fn signer_addresses(&self) -> impl Iterator<Item = Address> {
-        vec![self.address].into_iter()
-    }
-
-    async fn sign_transaction_from(
+    async fn sign_transaction(
         &self,
-        sender: Address,
-        tx: TypedTransaction,
-    ) -> SignerResult<TxEnvelope> {
-        let web3signer_signed_tx = match self.inner.sign_transaction(&tx, sender).await {
+        tx: &mut dyn SignableTransaction<EcdsaSignature>,
+    ) -> SignerResult<EcdsaSignature> {
+        let web3signer_signed_tx = match self.inner.sign_transaction(tx, self.address).await {
             Ok(web3signer_signed_tx) => web3signer_signed_tx,
             Err(err) => {
                 return Err(SignerError::Other(err.into()));
             }
         };
 
-        let mut tx_envelope: TxEnvelope =
+        let tx_envelope: TxEnvelope =
             match alloy_rlp::Decodable::decode(&mut web3signer_signed_tx.as_slice()) {
                 Ok(tx_envelope) => tx_envelope,
                 Err(err) => {
@@ -201,43 +193,13 @@ impl NetworkWallet<Ethereum> for Web3SignerWallet {
                 }
             };
 
-        if let Some(from) = self.signer_addresses().next() {
-            if !check_signer_correctness(&tx_envelope, from).await {
-                return Err(SignerError::Other(
-                    anyhow::anyhow!("Wrong signer received from Web3Signer").into(),
-                ));
-            }
+        if !check_signer_correctness(&tx_envelope, self.address).await {
+            return Err(SignerError::Other(
+                anyhow::anyhow!("Wrong signer received from Web3Signer").into(),
+            ));
         }
 
-        if tx.is_eip4844() {
-            let eip4844_tx = tx.try_into_eip4844().map_err(|e| {
-                SignerError::Other(
-                    anyhow::anyhow!("Failed to convert transaction to EIP-4844: {}", e).into(),
-                )
-            })?;
-            match eip4844_tx {
-                TxEip4844Variant::TxEip4844(_tx) => {
-                    return Err(SignerError::Other(
-                        anyhow::anyhow!("No sidecar available for typed transaction, which is required for creating pooled transaction").into(),
-                    ));
-                }
-                TxEip4844Variant::TxEip4844WithSidecar(tx) => {
-                    let sidecar = tx.into_sidecar();
-                    let eip4844_envelope: EthereumTxEnvelope<TxEip4844> = tx_envelope.into();
-                    tx_envelope = eip4844_envelope
-                        .try_into_pooled_eip4844(sidecar)
-                        .map_err(|e| {
-                            SignerError::Other(
-                                anyhow::anyhow!("Failed to create pooled transaction: {}", e)
-                                    .into(),
-                            )
-                        })?
-                        .into();
-                }
-            }
-        }
-
-        Ok(tx_envelope)
+        Ok(*tx_envelope.signature())
     }
 }
 

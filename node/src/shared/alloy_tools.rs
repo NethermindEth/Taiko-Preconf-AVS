@@ -1,6 +1,6 @@
 use super::ws_provider::Signer;
 use alloy::{
-    network::Ethereum,
+    network::{Ethereum, EthereumWallet},
     primitives::{Address, B256},
     providers::{DynProvider, Provider, ProviderBuilder, WsConnect, ext::DebugApi},
     rpc::types::{Transaction, TransactionRequest, trace::geth::GethDebugTracingOptions},
@@ -113,10 +113,11 @@ pub async fn construct_alloy_provider(
                 ));
             };
 
-            let wallet = crate::shared::web3signer::Web3SignerWallet::new(
+            let tx_signer = crate::shared::web3signer::Web3TxSigner::new(
                 web3signer.clone(),
                 preconfer_address,
             )?;
+            let wallet = EthereumWallet::new(tx_signer);
 
             let ws = WsConnect::new(execution_ws_rpc_url);
             Ok((
