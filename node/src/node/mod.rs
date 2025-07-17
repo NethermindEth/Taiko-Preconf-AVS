@@ -805,13 +805,37 @@ impl Node {
 
         let blocks_reanchored = blocks.len() as u64;
 
-        for block in blocks {
+        let mut forced_inclusion_flags: Vec<bool> = Vec::with_capacity(blocks.len());
+        for block in &blocks {
+            let (_, txs) = match block.transactions.as_transactions() {
+                Some(txs) => txs.split_first().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Cannot get anchor transaction from block {}",
+                        block.header.number
+                    )
+                })?,
+                None => {
+                    return Err(anyhow::anyhow!(
+                        "No transactions in block {}",
+                        block.header.number
+                    ));
+                }
+            };
+            forced_inclusion_flags.push(
+                self.batch_manager
+                    .is_forced_inclusion(block.header.number, txs)
+                    .await?,
+            );
+        }
+
+        for (block, is_forced_inclusion) in blocks.iter().zip(forced_inclusion_flags) {
             debug!(
-                "Reanchoring block {} with {} transactions, parent_id {}, parent_hash {}",
+                "Reanchoring block {} with {} transactions, parent_id {}, parent_hash {}, is_forced_inclusion: {}",
                 block.header.number,
                 block.transactions.len(),
                 l2_slot_info.parent_id(),
                 l2_slot_info.parent_hash(),
+                is_forced_inclusion,
             );
 
             let (_, txs) = match block.transactions.as_transactions() {
@@ -840,7 +864,12 @@ impl Node {
 
             let block = self
                 .batch_manager
-                .reanchor_block(pending_tx_list, l2_slot_info, allow_forced_inclusion)
+                .reanchor_block(
+                    pending_tx_list,
+                    l2_slot_info,
+                    is_forced_inclusion,
+                    allow_forced_inclusion,
+                )
                 .await;
             // if reanchor_block fails restart the node
             if let Ok(Some(block)) = block {

@@ -196,6 +196,12 @@ impl Taiko {
             .await
     }
 
+    pub async fn get_forced_inclusion_form_l1origin(&self, block_id: u64) -> Result<bool, Error> {
+        self.l2_execution_layer
+            .get_forced_inclusion_form_l1origin(block_id)
+            .await
+    }
+
     pub async fn get_l2_slot_info_by_parent_block(
         &self,
         block: BlockNumberOrTag,
@@ -243,6 +249,7 @@ impl Taiko {
         anchor_origin_height: u64,
         l2_slot_info: &L2SlotInfo,
         end_of_sequencing: bool,
+        is_forced_inclusion: bool,
         operation_type: OperationType,
     ) -> Result<Option<preconf_blocks::BuildPreconfBlockResponse>, Error> {
         tracing::debug!(
@@ -294,6 +301,7 @@ impl Taiko {
         let request_body = preconf_blocks::BuildPreconfBlockRequestBody {
             executable_data,
             end_of_sequencing,
+            is_forced_inclusion,
         };
 
         const API_ENDPOINT: &str = "preconfBlocks";
