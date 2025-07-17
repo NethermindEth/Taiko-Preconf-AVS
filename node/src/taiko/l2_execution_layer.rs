@@ -19,6 +19,7 @@ use alloy::{
 };
 use alloy_json_rpc::RpcError;
 use anyhow::Error;
+use serde_json::Value;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
@@ -100,6 +101,27 @@ impl L2ExecutionLayer {
         let balance = self.provider_ws.read().await.get_balance(address).await;
         self.check_for_ws_provider_failure(balance, "Failed to get L2 balance")
             .await
+    }
+
+    pub async fn get_forced_inclusion_form_l1origin(&self, block_id: u64) -> Result<bool, Error> {
+        let result = self
+            .provider_ws
+            .read()
+            .await
+            .raw_request(
+                std::borrow::Cow::Borrowed("taiko_l1OriginByID"),
+                vec![Value::String(block_id.to_string())],
+            )
+            .await;
+
+        let is_forced_inclusion: bool = self
+            .check_for_ws_provider_failure::<Value>(result, "Failed to get forced inclusion")
+            .await?
+            .get("isForcedInclusion")
+            .and_then(Value::as_bool)
+            .ok_or_else(|| anyhow::anyhow!("Failed to parse isForcedInclusion"))?;
+
+        Ok(is_forced_inclusion)
     }
 
     pub async fn get_latest_l2_block_id(&self) -> Result<u64, Error> {

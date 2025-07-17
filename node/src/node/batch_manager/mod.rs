@@ -87,37 +87,55 @@ impl BatchManager {
                 .all(|(a, b)| a.inner.hash() == b.inner.hash())
     }
 
-    pub async fn is_forced_inclusion(&mut self, txs: &[GethTransaction]) -> Result<bool, Error> {
-        match &self.cached_forced_inclusion_txs {
-            CachedForcedInclusion::NoData => Ok(false),
-            CachedForcedInclusion::Empty => {
-                if let Some(fi) = self
-                    .forced_inclusion
-                    .decode_current_forced_inclusion()
-                    .await?
-                {
-                    let res = BatchManager::compare_transactions_list(&fi.txs, txs);
-                    self.cached_forced_inclusion_txs = CachedForcedInclusion::Txs(fi.txs);
-                    Ok(res)
-                } else {
-                    self.cached_forced_inclusion_txs = CachedForcedInclusion::NoData;
-                    Ok(false)
+    pub async fn is_forced_inclusion(
+        &mut self,
+        block_id: u64,
+        txs: &[GethTransaction],
+    ) -> Result<bool, Error> {
+        let is_forced_inclusion = match self
+            .taiko
+            .get_forced_inclusion_form_l1origin(block_id)
+            .await
+        {
+            Ok(fi) => fi,
+            Err(e) => {
+                warn!("Failed to get forced inclusion from Taiko Geth: {}", e);
+                // TODO remove it once geth updated on all networks
+                match &self.cached_forced_inclusion_txs {
+                    CachedForcedInclusion::NoData => false,
+                    CachedForcedInclusion::Empty => {
+                        if let Some(fi) = self
+                            .forced_inclusion
+                            .decode_current_forced_inclusion()
+                            .await?
+                        {
+                            let res = BatchManager::compare_transactions_list(&fi.txs, txs);
+                            self.cached_forced_inclusion_txs = CachedForcedInclusion::Txs(fi.txs);
+                            res
+                        } else {
+                            self.cached_forced_inclusion_txs = CachedForcedInclusion::NoData;
+                            false
+                        }
+                    }
+                    CachedForcedInclusion::Txs(cached_txs) => {
+                        BatchManager::compare_transactions_list(cached_txs, txs)
+                    }
                 }
             }
-            CachedForcedInclusion::Txs(cached_txs) => {
-                Ok(BatchManager::compare_transactions_list(cached_txs, txs))
-            }
-        }
+        };
+
+        Ok(is_forced_inclusion)
     }
 
     pub async fn check_and_handle_forced_inclusion(
         &mut self,
+        block_id: u64,
         txs: &[GethTransaction],
         coinbase: Address,
         anchor_block_id: u64,
         timestamp: u64,
     ) -> Result<bool, Error> {
-        let forced_inclusion = self.is_forced_inclusion(txs).await?;
+        let forced_inclusion = self.is_forced_inclusion(block_id, txs).await?;
         debug!(
             "Handle forced inclusion: is forced inclusion: {}",
             forced_inclusion
@@ -189,6 +207,7 @@ impl BatchManager {
         let txs = txs.to_vec();
         let forced_inclusion_handled = self
             .check_and_handle_forced_inclusion(
+                block_height,
                 &txs,
                 coinbase,
                 anchor_block_id,
@@ -256,19 +275,17 @@ impl BatchManager {
         &mut self,
         pending_tx_list: PreBuiltTxList,
         l2_slot_info: L2SlotInfo,
+        is_forced_inclusion: bool,
         allow_forced_inclusion: bool,
     ) -> Result<Option<BuildPreconfBlockResponse>, Error> {
-        let forced_inclusion = self.is_forced_inclusion(&pending_tx_list.tx_list).await?;
-        debug!("Reanchor block: is forced inclusion: {}", forced_inclusion);
-
         let l2_block = L2Block::new_from(pending_tx_list, l2_slot_info.slot_timestamp());
 
-        if forced_inclusion && allow_forced_inclusion {
+        if is_forced_inclusion && allow_forced_inclusion {
             // skip forced inclusion block because we had OldestForcedInclusionDue
             return Ok(None);
         }
 
-        let block = if forced_inclusion {
+        let block = if is_forced_inclusion {
             self.preconfirm_forced_inclusion_block(l2_slot_info, OperationType::Reanchor)
                 .await?
         } else {
@@ -397,6 +414,7 @@ impl BatchManager {
                     anchor_block_id,
                     &l2_slot_info,
                     false,
+                    true,
                     operation_type.clone(),
                 )
                 .await
@@ -456,6 +474,7 @@ impl BatchManager {
                 anchor_block_id,
                 &l2_slot_info,
                 end_of_sequencing,
+                false,
                 operation_type,
             )
             .await
@@ -538,6 +557,7 @@ impl BatchManager {
                         anchor_block_id,
                         &l2_slot_info,
                         false,
+                        true,
                         operation_type.clone(),
                     )
                     .await
@@ -614,6 +634,7 @@ impl BatchManager {
                 anchor_block_id,
                 &l2_slot_info,
                 end_of_sequencing,
+                false,
                 operation_type,
             )
             .await
