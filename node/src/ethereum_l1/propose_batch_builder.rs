@@ -7,7 +7,7 @@ use alloy::{
     rpc::types::TransactionRequest,
     sol_types::SolValue,
 };
-use alloy_json_rpc::{ErrorPayload, RpcError};
+use alloy_json_rpc::RpcError;
 use anyhow::{Error, anyhow};
 use tracing::warn;
 
@@ -79,7 +79,10 @@ impl ProposeBatchBuilder {
                 );
                 match e {
                     RpcError::ErrorResp(err) => {
-                        return Err(anyhow!(Self::convert_error_payload(err)));
+                        return Err(anyhow!(
+                            tools::convert_error_payload(&err.to_string())
+                                .unwrap_or(TransactionError::EstimationFailed)
+                        ));
                     }
                     _ => return Ok(tx_blob),
                 }
