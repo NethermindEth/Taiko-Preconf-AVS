@@ -21,7 +21,7 @@ pub async fn check_for_revert_reason<P: Provider<Ethereum>>(
         .await;
 
     let trace_errors = if let Ok(trace) = trace {
-        find_errors_from_trace(&format!("{:?}", trace))
+        find_errors_from_trace(&format!("{trace:?}"))
     } else {
         None
     };
@@ -29,7 +29,7 @@ pub async fn check_for_revert_reason<P: Provider<Ethereum>>(
     let tx_details = match provider.get_transaction_by_hash(tx_hash).await {
         Ok(Some(tx)) => tx,
         _ => {
-            return format!("Transaction {} failed", tx_hash);
+            return format!("Transaction {tx_hash} failed");
         }
     };
 
@@ -94,7 +94,7 @@ pub async fn construct_alloy_provider(
                     .connect_ws(ws.clone())
                     .await
                     .map_err(|e| {
-                        Error::msg(format!("Execution layer: Failed to connect to WS: {}", e))
+                        Error::msg(format!("Execution layer: Failed to connect to WS: {e}"))
                     })?
                     .erased(),
                 preconfer_address,
@@ -126,7 +126,7 @@ pub async fn construct_alloy_provider(
                     .connect_ws(ws.clone())
                     .await
                     .map_err(|e| {
-                        Error::msg(format!("Execution layer: Failed to connect to WS: {}", e))
+                        Error::msg(format!("Execution layer: Failed to connect to WS: {e}"))
                     })?
                     .erased(),
                 preconfer_address,

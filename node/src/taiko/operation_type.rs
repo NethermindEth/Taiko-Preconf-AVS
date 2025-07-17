@@ -15,6 +15,6 @@ impl fmt::Display for OperationType {
             OperationType::Reanchor => "Reanchor",
             OperationType::Status => "Status",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }

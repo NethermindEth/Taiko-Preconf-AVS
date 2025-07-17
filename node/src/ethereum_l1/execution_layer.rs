@@ -67,7 +67,7 @@ impl ExecutionLayer {
         let chain_id = provider_ws
             .get_chain_id()
             .await
-            .map_err(|e| Error::msg(format!("Failed to get chain ID: {}", e)))?;
+            .map_err(|e| Error::msg(format!("Failed to get chain ID: {e}")))?;
         info!("L1 Chain ID: {}", chain_id);
 
         let transaction_monitor = TransactionMonitor::new(
@@ -78,12 +78,12 @@ impl ExecutionLayer {
             chain_id,
         )
         .await
-        .map_err(|e| Error::msg(format!("Failed to create TransactionMonitor: {}", e)))?;
+        .map_err(|e| Error::msg(format!("Failed to create TransactionMonitor: {e}")))?;
 
         let pacaya_config =
             Self::fetch_pacaya_config(&config.contract_addresses.taiko_inbox, &provider_ws)
                 .await
-                .map_err(|e| Error::msg(format!("Failed to fetch pacaya config: {}", e)))?;
+                .map_err(|e| Error::msg(format!("Failed to fetch pacaya config: {e}")))?;
 
         Ok(Self {
             provider_ws,
@@ -178,7 +178,7 @@ impl ExecutionLayer {
             } else {
                 (l2_block.timestamp_sec - l2_blocks[i - 1].timestamp_sec)
                     .try_into()
-                    .map_err(|e| Error::msg(format!("Failed to convert time shift to u8: {}", e)))?
+                    .map_err(|e| Error::msg(format!("Failed to convert time shift to u8: {e}")))?
             };
             blocks.push(BlockParams {
                 numTransactions: count,
@@ -226,7 +226,7 @@ impl ExecutionLayer {
         self.transaction_monitor
             .monitor_new_transaction(tx, pending_nonce)
             .await
-            .map_err(|e| Error::msg(format!("Sending batch to L1 failed: {}", e)))?;
+            .map_err(|e| Error::msg(format!("Sending batch to L1 failed: {e}")))?;
 
         Ok(())
     }
@@ -260,7 +260,7 @@ impl ExecutionLayer {
             .bondBalanceOf(self.preconfer_address)
             .call()
             .await
-            .map_err(|e| Error::msg(format!("Failed to get bonds balance: {}", e)))?;
+            .map_err(|e| Error::msg(format!("Failed to get bonds balance: {e}")))?;
         Ok(bonds_balance)
     }
 
@@ -277,7 +277,7 @@ impl ExecutionLayer {
                     .bondToken()
                     .call()
                     .await
-                    .map_err(|e| Error::msg(format!("Failed to get bond token: {}", e)))?;
+                    .map_err(|e| Error::msg(format!("Failed to get bond token: {e}")))?;
                 info!("Taiko token address: {}", taiko_token);
                 Ok::<Address, Error>(taiko_token)
             })
@@ -288,13 +288,13 @@ impl ExecutionLayer {
             .allowance(self.preconfer_address, self.contract_addresses.taiko_inbox)
             .call()
             .await
-            .map_err(|e| Error::msg(format!("Failed to get allowance: {}", e)))?;
+            .map_err(|e| Error::msg(format!("Failed to get allowance: {e}")))?;
 
         let balance = contract
             .balanceOf(self.preconfer_address)
             .call()
             .await
-            .map_err(|e| Error::msg(format!("Failed to get preconfer balance: {}", e)))?;
+            .map_err(|e| Error::msg(format!("Failed to get preconfer balance: {e}")))?;
 
         Ok(balance.min(allowance))
     }
@@ -304,12 +304,12 @@ impl ExecutionLayer {
         let bond_balance = self
             .get_preconfer_inbox_bonds()
             .await
-            .map_err(|e| Error::msg(format!("Failed to fetch bond balance: {}", e)))?;
+            .map_err(|e| Error::msg(format!("Failed to fetch bond balance: {e}")))?;
 
         let wallet_balance = self
             .get_preconfer_wallet_bonds()
             .await
-            .map_err(|e| Error::msg(format!("Failed to fetch bond balance: {}", e)))?;
+            .map_err(|e| Error::msg(format!("Failed to fetch bond balance: {e}")))?;
 
         Ok(bond_balance + wallet_balance)
     }
@@ -343,7 +343,7 @@ impl ExecutionLayer {
         self.provider_ws
             .get_block_number()
             .await
-            .map_err(|e| Error::msg(format!("Failed to get L1 height: {}", e)))
+            .map_err(|e| Error::msg(format!("Failed to get L1 height: {e}")))
     }
 
     pub async fn get_block_state_root_by_number(&self, number: u64) -> Result<B256, Error> {
@@ -351,7 +351,7 @@ impl ExecutionLayer {
             .provider_ws
             .get_block_by_number(BlockNumberOrTag::Number(number))
             .await
-            .map_err(|e| Error::msg(format!("Failed to get block by number ({number}): {}", e)))?
+            .map_err(|e| Error::msg(format!("Failed to get block by number ({number}): {e}")))?
             .ok_or(anyhow::anyhow!("Failed to get block by number ({number})"))?;
         Ok(block.header.state_root)
     }
@@ -377,10 +377,10 @@ impl ExecutionLayer {
                 (self.preconfer_address, "latest"),
             )
             .await
-            .map_err(|e| Error::msg(format!("Failed to get nonce: {}", e)))?;
+            .map_err(|e| Error::msg(format!("Failed to get nonce: {e}")))?;
 
         u64::from_str_radix(nonce_str.trim_start_matches("0x"), 16)
-            .map_err(|e| Error::msg(format!("Failed to convert nonce: {}", e)))
+            .map_err(|e| Error::msg(format!("Failed to convert nonce: {e}")))
     }
 
     pub async fn get_preconfer_nonce_pending(&self) -> Result<u64, Error> {
@@ -392,10 +392,10 @@ impl ExecutionLayer {
                 (self.preconfer_address, "pending"),
             )
             .await
-            .map_err(|e| Error::msg(format!("Failed to get nonce: {}", e)))?;
+            .map_err(|e| Error::msg(format!("Failed to get nonce: {e}")))?;
 
         u64::from_str_radix(nonce_str.trim_start_matches("0x"), 16)
-            .map_err(|e| Error::msg(format!("Failed to convert nonce: {}", e)))
+            .map_err(|e| Error::msg(format!("Failed to convert nonce: {e}")))
     }
 
     pub async fn get_block_timestamp_by_number(&self, block: u64) -> Result<u64, Error> {
@@ -453,8 +453,7 @@ impl ExecutionLayer {
             .await
             .map_err(|e| {
                 Error::msg(format!(
-                    "Failed to get forced inclusion at index {}: {}",
-                    index, e
+                    "Failed to get forced inclusion at index {index}: {e}"
                 ))
             })
     }

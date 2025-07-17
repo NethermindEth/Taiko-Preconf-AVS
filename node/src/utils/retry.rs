@@ -33,12 +33,9 @@ where
         }) >= timeout
         {
             let error_msg = if let Some(ref err) = last_error {
-                format!(
-                    "Operation timed out after {:?}, last error: {}",
-                    timeout, err
-                )
+                format!("Operation timed out after {timeout:?}, last error: {err}")
             } else {
-                format!("Operation timed out after {:?}", timeout)
+                format!("Operation timed out after {timeout:?}")
             };
             return Err(anyhow::anyhow!(error_msg));
         }

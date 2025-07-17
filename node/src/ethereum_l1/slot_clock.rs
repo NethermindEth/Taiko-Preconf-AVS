@@ -347,7 +347,7 @@ mod tests {
         );
 
         let current_slot = slot_clock.get_current_slot().unwrap();
-        println!("current_slot: {}", current_slot);
+        println!("current_slot: {current_slot}");
         assert!(current_slot > genesis_slot);
     }
 

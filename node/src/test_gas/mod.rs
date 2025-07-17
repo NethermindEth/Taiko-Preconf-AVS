@@ -101,7 +101,7 @@ pub async fn test_gas_params(
 
     match transaction_error_receiver.try_recv() {
         Ok(error) => {
-            panic!("Received transaction error: {:#?}", error);
+            panic!("Received transaction error: {error:#?}");
         }
         Err(err) => match err {
             tokio::sync::mpsc::error::TryRecvError::Empty => {

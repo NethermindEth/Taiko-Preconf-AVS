@@ -120,7 +120,7 @@ impl Verifier {
                             .await?;
                         Ok(VerificationResult::ReanchorNeeded(
                             taiko_inbox_height,
-                            format!("Verifier return an error: {}", err),
+                            format!("Verifier return an error: {err}"),
                         ))
                     }
                 }

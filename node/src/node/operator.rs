@@ -144,15 +144,15 @@ impl<T: PreconfOperator, U: Clock, V: PreconfDriver> Operator<T, U, V> {
         // it's because of the delay that L1 updates the current operator after the epoch has changed.
         let current_operator = if l1_slot < self.operator_transition_slots {
             let curr = match self.execution_layer.is_operator_for_current_epoch().await {
-                Ok(val) => format!("{}", val),
+                Ok(val) => format!("{val}"),
                 Err(e) => {
-                    format!("Failed to check current epoch operator: {}", e)
+                    format!("Failed to check current epoch operator: {e}")
                 }
             };
             let next = match self.execution_layer.is_operator_for_next_epoch().await {
-                Ok(val) => format!("{}", val),
+                Ok(val) => format!("{val}"),
                 Err(e) => {
-                    format!("Failed to check next epoch operator: {}", e)
+                    format!("Failed to check next epoch operator: {e}")
                 }
             };
             tracing::debug!(

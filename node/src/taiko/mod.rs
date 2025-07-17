@@ -384,7 +384,7 @@ impl Taiko {
             }
             Err(e) => {
                 self.metrics.inc_rpc_driver_call_error(&metric_label);
-                let metric_label_error = format!("{}-error", metric_label);
+                let metric_label_error = format!("{metric_label}-error");
                 self.metrics.observe_rpc_driver_call_duration(
                     &metric_label_error,
                     start_time.elapsed().as_secs_f64(),
