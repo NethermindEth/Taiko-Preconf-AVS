@@ -92,12 +92,12 @@ impl TransactionMonitor {
         nonce: u64,
     ) -> Result<(), Error> {
         let mut guard = self.join_handle.lock().await;
-        if let Some(join_handle) = guard.as_ref() {
-            if !join_handle.is_finished() {
-                return Err(Error::msg(
-                    "Cannot monitor new transaction, previous transaction is in progress",
-                ));
-            }
+        if let Some(join_handle) = guard.as_ref()
+            && !join_handle.is_finished()
+        {
+            return Err(Error::msg(
+                "Cannot monitor new transaction, previous transaction is in progress",
+            ));
         }
 
         let monitor_thread = TransactionMonitorThread::new(
@@ -433,16 +433,16 @@ impl TransactionMonitorThread {
     async fn verify_tx_included(&self, tx_hashes: &Vec<B256>, sending_attempt: u64) -> bool {
         for tx_hash in tx_hashes {
             let tx = self.provider.get_transaction_by_hash(*tx_hash).await;
-            if let Ok(Some(tx)) = tx {
-                if let Some(block_number) = tx.block_number {
-                    info!(
-                        "✅ Transaction {} confirmed in block {} while trying to replace it",
-                        tx_hash, block_number
-                    );
-                    self.metrics.observe_batch_propose_tries(sending_attempt);
-                    self.metrics.inc_batch_confirmed();
-                    return true;
-                }
+            if let Ok(Some(tx)) = tx
+                && let Some(block_number) = tx.block_number
+            {
+                info!(
+                    "✅ Transaction {} confirmed in block {} while trying to replace it",
+                    tx_hash, block_number
+                );
+                self.metrics.observe_batch_propose_tries(sending_attempt);
+                self.metrics.inc_batch_confirmed();
+                return true;
             }
         }
 
