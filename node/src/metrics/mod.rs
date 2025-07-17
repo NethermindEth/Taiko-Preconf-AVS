@@ -108,7 +108,7 @@ impl Metrics {
             .buckets(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
         let batch_propose_tries = match Histogram::with_opts(opts) {
             Ok(histogram) => histogram,
-            Err(err) => panic!("Failed to create batch_propose_tries histogram: {}", err),
+            Err(err) => panic!("Failed to create batch_propose_tries histogram: {err}"),
         };
 
         if let Err(err) = registry.register(Box::new(batch_propose_tries.clone())) {
@@ -121,7 +121,7 @@ impl Metrics {
             ]);
         let batch_block_count = match Histogram::with_opts(opts) {
             Ok(histogram) => histogram,
-            Err(err) => panic!("Failed to create batch_block_count histogram: {}", err),
+            Err(err) => panic!("Failed to create batch_block_count histogram: {err}"),
         };
 
         if let Err(err) = registry.register(Box::new(batch_block_count.clone())) {
@@ -135,7 +135,7 @@ impl Metrics {
             ]);
         let batch_blob_size = match Histogram::with_opts(opts) {
             Ok(histogram) => histogram,
-            Err(err) => panic!("Failed to create batch_blob_size histogram: {}", err),
+            Err(err) => panic!("Failed to create batch_blob_size histogram: {err}"),
         };
 
         if let Err(err) = registry.register(Box::new(batch_blob_size.clone())) {
@@ -153,10 +153,7 @@ impl Metrics {
 
         let rpc_driver_call_duration = match HistogramVec::new(opts, &["method"]) {
             Ok(histogram) => histogram,
-            Err(err) => panic!(
-                "Failed to create rpc_driver_call_duration histogram: {}",
-                err
-            ),
+            Err(err) => panic!("Failed to create rpc_driver_call_duration histogram: {err}"),
         };
 
         if let Err(err) = registry.register(Box::new(rpc_driver_call_duration.clone())) {
@@ -171,7 +168,7 @@ impl Metrics {
             &["method"],
         ) {
             Ok(counter) => counter,
-            Err(err) => panic!("Failed to create rpc_driver_call_counter counter: {}", err),
+            Err(err) => panic!("Failed to create rpc_driver_call_counter counter: {err}"),
         };
 
         if let Err(err) = registry.register(Box::new(rpc_driver_call.clone())) {
@@ -186,10 +183,7 @@ impl Metrics {
             &["method"],
         ) {
             Ok(counter) => counter,
-            Err(err) => panic!(
-                "Failed to create rpc_driver_call_error_counter counter: {}",
-                err
-            ),
+            Err(err) => panic!("Failed to create rpc_driver_call_error_counter counter: {err}"),
         };
 
         if let Err(err) = registry.register(Box::new(rpc_driver_call_error.clone())) {
@@ -361,7 +355,7 @@ mod tests {
         metrics.observe_batch_info(5, 1000);
 
         let output = metrics.gather();
-        println!("{}", output);
+        println!("{output}");
 
         // Verify the output contains our metrics
         assert!(output.contains("preconfer_eth_balance 1"));
@@ -414,6 +408,6 @@ mod tests {
 
         // Test number with more than 18 decimals
         let large = alloy::primitives::U256::from(123456789012345678901234567890u128);
-        assert_eq!(Metrics::u256_to_f64(large), 123456789012.34567890);
+        assert_eq!(Metrics::u256_to_f64(large), 123_456_789_012.345_67);
     }
 }

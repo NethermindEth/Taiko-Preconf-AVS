@@ -79,7 +79,7 @@ impl FundsMonitor {
             .execution_layer
             .get_preconfer_total_bonds()
             .await
-            .map_err(|e| Error::msg(format!("Failed to fetch bond balance: {}", e)))?;
+            .map_err(|e| Error::msg(format!("Failed to fetch bond balance: {e}")))?;
 
         if total_balance < self.thresholds.taiko {
             anyhow::bail!(
@@ -97,7 +97,7 @@ impl FundsMonitor {
             .execution_layer
             .get_preconfer_wallet_eth()
             .await
-            .map_err(|e| Error::msg(format!("Failed to fetch ETH balance: {}", e)))?;
+            .map_err(|e| Error::msg(format!("Failed to fetch ETH balance: {e}")))?;
 
         if balance < self.thresholds.eth {
             anyhow::bail!(
@@ -136,7 +136,7 @@ impl FundsMonitor {
         {
             Ok(balance) => {
                 self.metrics.set_preconfer_taiko_balance(balance);
-                format!("{}", balance)
+                format!("{balance}")
             }
             Err(e) => {
                 warn!("Failed to get preconfer taiko balance: {}", e);
@@ -153,7 +153,7 @@ impl FundsMonitor {
         let l2_eth_balance_str = match l2_eth_balance.as_ref() {
             Ok(balance) => {
                 self.metrics.set_preconfer_l2_eth_balance(*balance);
-                format!("{}", balance)
+                format!("{balance}")
             }
             Err(e) => {
                 warn!("Failed to get preconfer l2 eth balance: {}", e);

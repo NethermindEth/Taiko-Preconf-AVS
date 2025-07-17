@@ -877,7 +877,7 @@ impl Node {
             } else {
                 let err_msg = match block {
                     Ok(None) => "Failed to reanchor block: None returned".to_string(),
-                    Err(err) => format!("Failed to reanchor block: {}", err),
+                    Err(err) => format!("Failed to reanchor block: {err}"),
                     Ok(Some(_)) => "Unreachable".to_string(),
                 };
                 error!("{}", err_msg);
