@@ -4906,7 +4906,7 @@ dependencies = [
 
 [[package]]
 name = "p2p-boot-node"
-version = "0.2.113"
+version = "0.2.114"
 dependencies = [
  "anyhow",
  "discv5",
@@ -4918,7 +4918,7 @@ dependencies = [
 
 [[package]]
 name = "p2p-network"
-version = "0.2.113"
+version = "0.2.114"
 dependencies = [
  "discv5",
  "futures",
@@ -4933,7 +4933,7 @@ dependencies = [
 
 [[package]]
 name = "p2p-node"
-version = "0.2.113"
+version = "0.2.114"
 dependencies = [
  "anyhow",
  "jsonrpsee",
@@ -6511,7 +6511,7 @@ checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 
 [[package]]
 name = "taiko_preconf_avs_node"
-version = "0.2.113"
+version = "0.2.114"
 dependencies = [
  "alloy",
  "alloy-json-rpc",
