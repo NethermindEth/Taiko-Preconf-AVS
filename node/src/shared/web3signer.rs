@@ -28,7 +28,6 @@ impl Web3Signer {
         signer_address: &str,
     ) -> Result<Self, Error> {
         let client = JSONRPCClient::new_with_timeout(rpc_url, timeout)?;
-        Self::check_web3signer_version(&client).await?;
         if !Self::is_signer_key_available(&client, signer_address).await? {
             return Err(anyhow::anyhow!(
                 "Web3Signer: Signer key is not available for address {}",
@@ -36,22 +35,6 @@ impl Web3Signer {
             ));
         }
         Ok(Self { client })
-    }
-
-    async fn check_web3signer_version(client: &JSONRPCClient) -> Result<(), Error> {
-        let response = client
-            .call_method_with_retry("health_status", vec![])
-            .await
-            .map_err(|e| anyhow::anyhow!("Web3Signer: Failed to get health status: {}", e))?;
-        let version = response.as_str().ok_or(anyhow::anyhow!(
-            "Web3Signer: Failed to decode health status"
-        ))?;
-        info!(
-            "Web3Signer available at {} with version {}",
-            client.url(),
-            version
-        );
-        Ok(())
     }
 
     async fn is_signer_key_available(
@@ -65,7 +48,7 @@ impl Web3Signer {
         let accounts = response.as_array().ok_or(anyhow::anyhow!(
             "Web3Signer: Failed to decode available accounts"
         ))?;
-        debug!("Web3Signer: Available accounts: {:?}", accounts);
+        info!("Web3Signer: Available accounts: {:?}", accounts);
         Ok(accounts
             .iter()
             .map(|account| account.as_str().unwrap_or("").to_lowercase())
