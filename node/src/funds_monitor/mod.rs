@@ -13,6 +13,7 @@ pub struct FundsMonitor {
     metrics: Arc<Metrics>,
     thresholds: Thresholds,
     amount_to_bridge_from_l2_to_l1: u128,
+    disable_bridging: bool,
     cancel_token: CancellationToken,
 }
 
@@ -24,6 +25,7 @@ pub struct Thresholds {
 }
 
 impl FundsMonitor {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         ethereum_l1: Arc<ethereum_l1::EthereumL1>,
         taiko: Arc<Taiko>,
@@ -31,6 +33,7 @@ impl FundsMonitor {
         eth_threshold: u128,
         taiko_threshold: u128,
         amount_to_bridge_from_l2_to_l1: u128,
+        disable_bridging: bool,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
@@ -42,6 +45,7 @@ impl FundsMonitor {
                 taiko: U256::from(taiko_threshold),
             },
             amount_to_bridge_from_l2_to_l1,
+            disable_bridging,
             cancel_token,
         }
     }
@@ -166,7 +170,8 @@ impl FundsMonitor {
             eth_balance_str, l2_eth_balance_str, taiko_balance_str
         );
 
-        if let Ok(eth_balance) = eth_balance
+        if !self.disable_bridging
+            && let Ok(eth_balance) = eth_balance
             && let Ok(l2_eth_balance) = l2_eth_balance
             && eth_balance < self.thresholds.eth
         {
