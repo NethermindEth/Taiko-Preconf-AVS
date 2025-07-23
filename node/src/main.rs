@@ -227,6 +227,7 @@ async fn main() -> Result<(), Error> {
         config.threshold_eth,
         config.threshold_taiko,
         config.amount_to_bridge_from_l2_to_l1,
+        config.disable_bridging,
         cancel_token.clone(),
     );
     funds_monitor.run();

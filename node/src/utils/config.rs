@@ -40,6 +40,7 @@ pub struct Config {
     pub threshold_eth: u128,
     pub threshold_taiko: u128,
     pub amount_to_bridge_from_l2_to_l1: u128,
+    pub disable_bridging: bool,
     pub simulate_not_submitting_at_the_end_of_epoch: bool,
     pub max_bytes_per_tx_list: u64,
     pub throttling_factor: u64,
@@ -322,6 +323,11 @@ impl Config {
             .parse::<u128>()
             .expect("AMOUNT_TO_BRIDGE_FROM_L2_TO_L1 must be a number");
 
+        let disable_bridging = std::env::var("DISABLE_BRIDGING")
+            .unwrap_or("true".to_string())
+            .parse::<bool>()
+            .expect("DISABLE_BRIDGING must be a boolean");
+
         let simulate_not_submitting_at_the_end_of_epoch =
             std::env::var("SIMULATE_NOT_SUBMITTING_AT_THE_END_OF_EPOCH")
                 .unwrap_or("false".to_string())
@@ -391,6 +397,7 @@ impl Config {
             threshold_eth,
             threshold_taiko,
             amount_to_bridge_from_l2_to_l1,
+            disable_bridging,
             simulate_not_submitting_at_the_end_of_epoch,
             max_bytes_per_tx_list,
             throttling_factor,
@@ -439,6 +446,7 @@ delay between tx attempts: {}s
 threshold_eth: {}
 threshold_taiko: {}
 amount to bridge from l2 to l1: {}
+disable bridging: {}
 simulate not submitting at the end of epoch: {}
 propose_forced_inclusion: {}
 "#,
@@ -484,6 +492,7 @@ propose_forced_inclusion: {}
             threshold_eth,
             threshold_taiko,
             config.amount_to_bridge_from_l2_to_l1,
+            config.disable_bridging,
             config.simulate_not_submitting_at_the_end_of_epoch,
             config.propose_forced_inclusion,
         );
