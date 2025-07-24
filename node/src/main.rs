@@ -93,6 +93,10 @@ async fn main() -> Result<(), Error> {
                 s.parse()
                     .expect("Preconfer address is not a valid Ethereum address")
             }),
+            batch_proposer_address: config.batch_proposer_address.clone().map(|s| {
+                s.parse()
+                    .expect("Batch proposer address is not a valid Ethereum address")
+            }),
             extra_gas_percentage: config.extra_gas_percentage,
         },
         transaction_error_sender,

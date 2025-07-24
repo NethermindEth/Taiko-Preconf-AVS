@@ -50,6 +50,7 @@ impl ProposeBatchBuilder {
         &self,
         from: Address,
         to: Address,
+        batch_proposer: Address,
         tx_list: Vec<u8>,
         blocks: Vec<BlockParams>,
         last_anchor_origin_height: u64,
@@ -62,6 +63,7 @@ impl ProposeBatchBuilder {
             .build_propose_batch_blob(
                 from,
                 to,
+                batch_proposer,
                 &tx_list,
                 blocks.clone(),
                 last_anchor_origin_height,
@@ -119,6 +121,7 @@ impl ProposeBatchBuilder {
             .build_propose_batch_calldata(
                 from,
                 to,
+                batch_proposer,
                 tx_list,
                 blocks.clone(),
                 last_anchor_origin_height,
@@ -260,6 +263,7 @@ impl ProposeBatchBuilder {
         &self,
         from: Address,
         to: Address,
+        batch_proposer: Address,
         tx_list: Vec<u8>,
         blocks: Vec<BlockParams>,
         last_anchor_origin_height: u64,
@@ -277,7 +281,7 @@ impl ProposeBatchBuilder {
         };
 
         let batch_params = BatchParams {
-            proposer: from,
+            proposer: batch_proposer,
             coinbase,
             parentMetaHash: FixedBytes::from(&[0u8; 32]),
             anchorBlockId: last_anchor_origin_height,
@@ -321,6 +325,7 @@ impl ProposeBatchBuilder {
         &self,
         from: Address,
         to: Address,
+        batch_proposer: Address,
         tx_list: &[u8],
         blocks: Vec<BlockParams>,
         last_anchor_origin_height: u64,
@@ -341,7 +346,7 @@ impl ProposeBatchBuilder {
         let num_blobs = u8::try_from(sidecar.blobs.len())?;
 
         let batch_params = BatchParams {
-            proposer: from,
+            proposer: batch_proposer,
             coinbase,
             parentMetaHash: FixedBytes::from(&[0u8; 32]),
             anchorBlockId: last_anchor_origin_height,
@@ -382,14 +387,14 @@ impl ProposeBatchBuilder {
     }
 
     pub fn build_forced_inclusion_batch(
-        proposer: Address,
+        batch_proposer: Address,
         coinbase: Address,
         last_anchor_origin_height: u64,
         last_l2_block_timestamp: u64,
         info: &ForcedInclusionInfo,
     ) -> BatchParams {
         BatchParams {
-            proposer,
+            proposer: batch_proposer,
             coinbase,
             parentMetaHash: FixedBytes::from(&[0u8; 32]),
             anchorBlockId: last_anchor_origin_height,

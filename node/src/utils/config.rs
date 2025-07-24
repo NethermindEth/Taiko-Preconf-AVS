@@ -5,6 +5,7 @@ use crate::utils::blob::constants::MAX_BLOB_DATA_SIZE;
 
 pub struct Config {
     pub preconfer_address: Option<String>,
+    pub batch_proposer_address: Option<String>,
     pub taiko_geth_ws_rpc_url: String,
     pub taiko_geth_auth_rpc_url: String,
     pub taiko_driver_url: String,
@@ -91,6 +92,9 @@ impl Config {
                 "When {AVS_NODE_ECDSA_PRIVATE_KEY} is set, {WEB3SIGNER_L1_URL}, {WEB3SIGNER_L2_URL} and {PRECONFER_ADDRESS} must not be set"
             );
         }
+
+        const BATCH_PROPOSER_ADDRESS: &str = "BATCH_PROPOSER_ADDRESS";
+        let batch_proposer_address = std::env::var(BATCH_PROPOSER_ADDRESS).ok();
 
         const TAIKO_INBOX_ADDRESS: &str = "TAIKO_INBOX_ADDRESS";
         let taiko_inbox = std::env::var(TAIKO_INBOX_ADDRESS).unwrap_or_else(|_| {
@@ -357,6 +361,7 @@ impl Config {
 
         let config = Self {
             preconfer_address,
+            batch_proposer_address,
             taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
                 .unwrap_or("ws://127.0.0.1:1234".to_string()),
             taiko_geth_auth_rpc_url: std::env::var("TAIKO_GETH_AUTH_RPC_URL")
@@ -449,6 +454,7 @@ amount to bridge from l2 to l1: {}
 disable bridging: {}
 simulate not submitting at the end of epoch: {}
 propose_forced_inclusion: {}
+batch_proposer_address: {}
 "#,
             if let Some(preconfer_address) = &config.preconfer_address {
                 format!("\npreconfer address: {preconfer_address}")
@@ -495,6 +501,10 @@ propose_forced_inclusion: {}
             config.disable_bridging,
             config.simulate_not_submitting_at_the_end_of_epoch,
             config.propose_forced_inclusion,
+            config
+                .batch_proposer_address
+                .as_ref()
+                .unwrap_or(&"not set".to_string()),
         );
 
         config
