@@ -49,5 +49,6 @@ pub struct EthereumL1Config {
     pub delay_between_tx_attempts_sec: u64,
     pub signer: Arc<Signer>,
     pub preconfer_address: Option<Address>,
+    pub batch_proposer_address: Option<Address>,
     pub extra_gas_percentage: u64,
 }

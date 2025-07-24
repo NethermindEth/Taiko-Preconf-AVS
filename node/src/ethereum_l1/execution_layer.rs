@@ -34,6 +34,7 @@ const DELAYED_L1_PROPOSAL_BUFFER: u64 = 4;
 pub struct ExecutionLayer {
     provider_ws: DynProvider,
     preconfer_address: Address,
+    batch_proposer_address: Address,
     contract_addresses: ContractAddresses,
     pacaya_config: taiko_inbox::ITaikoInbox::Config,
     extra_gas_percentage: u64,
@@ -55,7 +56,10 @@ impl ExecutionLayer {
             config.preconfer_address,
         )
         .await?;
-        info!("AVS node address: {}", preconfer_address);
+        info!("AVS preconfer address: {}", preconfer_address);
+
+        let batch_proposer_address = config.batch_proposer_address.unwrap_or(preconfer_address);
+        info!("AVS proposer address: {}", batch_proposer_address);
 
         let extra_gas_percentage = config.extra_gas_percentage;
 
@@ -88,6 +92,7 @@ impl ExecutionLayer {
         Ok(Self {
             provider_ws,
             preconfer_address,
+            batch_proposer_address,
             contract_addresses: config.contract_addresses,
             pacaya_config,
             extra_gas_percentage,
@@ -212,6 +217,7 @@ impl ExecutionLayer {
             .build_propose_batch_tx(
                 self.preconfer_address,
                 self.contract_addresses.preconf_router,
+                self.batch_proposer_address,
                 tx_lists_bytes,
                 blocks.clone(),
                 last_anchor_origin_height,
@@ -466,7 +472,7 @@ impl ExecutionLayer {
         info: &ForcedInclusionInfo,
     ) -> BatchParams {
         ProposeBatchBuilder::build_forced_inclusion_batch(
-            self.preconfer_address,
+            self.batch_proposer_address,
             coinbase,
             last_anchor_origin_height,
             last_l2_block_timestamp,
@@ -523,6 +529,7 @@ impl ExecutionLayer {
             preconf_heartbeat_ms: 1000,
             signer: Arc::new(Signer::PrivateKey(hex::encode(private_key.to_bytes()))),
             preconfer_address: Some(preconfer_address.parse()?),
+            batch_proposer_address: Some(preconfer_address.parse()?),
             min_priority_fee_per_gas_wei: 1000000000000000000,
             tx_fees_increase_percentage: 5,
             max_attempts_to_send_tx: 4,
@@ -536,6 +543,7 @@ impl ExecutionLayer {
         Ok(Self {
             provider_ws: provider_ws.clone(),
             preconfer_address: preconfer_address.parse()?,
+            batch_proposer_address: preconfer_address.parse()?,
             contract_addresses: ethereum_l1_config.contract_addresses.clone(),
             pacaya_config: taiko_inbox::ITaikoInbox::Config {
                 chainId: 1,
