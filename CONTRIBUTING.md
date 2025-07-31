@@ -52,5 +52,5 @@ See [README](node/README.md)
 
 ## Use PR templates for contributions
 
-* https://github.com/NethermindEth/Taiko-Preconf-AVS/compare/master...{your-feature-branch}?template=feature.md
-* https://github.com/NethermindEth/Taiko-Preconf-AVS/compare/master...{your-bugfix-branch}?template=bugfix.md
+* https://github.com/NethermindEth/Catalyst/compare/master...{your-feature-branch}?template=feature.md
+* https://github.com/NethermindEth/Catalyst/compare/master...{your-bugfix-branch}?template=bugfix.md

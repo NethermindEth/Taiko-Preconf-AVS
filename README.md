@@ -1,7 +1,7 @@
 ![GitHub License](https://img.shields.io/github/license/NethermindEth/Catalyst)
-![Docker Stars](https://img.shields.io/docker/stars/nethswitchboard/preconf-avs-node)
-![Docker Pulls](https://img.shields.io/docker/pulls/nethswitchboard/preconf-avs-node)
-![Docker Image Size (tag)](https://img.shields.io/docker/image-size/nethswitchboard/preconf-avs-node/latest)
+![Docker Stars](https://img.shields.io/docker/stars/nethswitchboard/catalyst-node)
+![Docker Pulls](https://img.shields.io/docker/pulls/nethswitchboard/catalyst-node)
+![Docker Image Size (tag)](https://img.shields.io/docker/image-size/nethswitchboard/catalyst-node/latest)
 
 
 
@@ -26,10 +26,10 @@ Engineered with ❤️ at [Nethermind](https://www.nethermind.io/)
 ### Use the pre-built image
 
 ```sh
-docker pull nethswitchboard/preconf-avs-node:latest
+docker pull nethswitchboard/catalyst-node:latest
 ```
 
-[The image](https://hub.docker.com/r/nethswitchboard/preconf-avs-node) is built with [this Github Action](https://github.com/NethermindEth/Taiko-Preconf-AVS/blob/master/.github/workflows/avs_docker_build.yml).
+[The image](https://hub.docker.com/r/nethswitchboard/catalyst-node) is built with [this Github Action](https://github.com/NethermindEth/Catalyst/blob/master/.github/workflows/catalyst_docker_build.yml).
 
 ### Build the image locally
 

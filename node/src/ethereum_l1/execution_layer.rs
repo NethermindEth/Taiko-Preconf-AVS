@@ -55,7 +55,7 @@ impl ExecutionLayer {
             config.preconfer_address,
         )
         .await?;
-        info!("AVS node address: {}", preconfer_address);
+        info!("Catalyst node address: {}", preconfer_address);
 
         let extra_gas_percentage = config.extra_gas_percentage;
 

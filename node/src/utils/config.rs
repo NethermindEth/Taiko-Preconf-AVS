@@ -8,7 +8,7 @@ pub struct Config {
     pub taiko_geth_ws_rpc_url: String,
     pub taiko_geth_auth_rpc_url: String,
     pub taiko_driver_url: String,
-    pub avs_node_ecdsa_private_key: Option<String>,
+    pub catalyst_node_ecdsa_private_key: Option<String>,
     pub mev_boost_url: String,
     pub l1_ws_rpc_url: String,
     pub l1_beacon_url: String,
@@ -65,8 +65,8 @@ impl Config {
 
         let default_empty_address = "0x0000000000000000000000000000000000000000".to_string();
 
-        const AVS_NODE_ECDSA_PRIVATE_KEY: &str = "AVS_NODE_ECDSA_PRIVATE_KEY";
-        let avs_node_ecdsa_private_key = std::env::var(AVS_NODE_ECDSA_PRIVATE_KEY).ok();
+        const CATALYST_NODE_ECDSA_PRIVATE_KEY: &str = "CATALYST_NODE_ECDSA_PRIVATE_KEY";
+        let catalyst_node_ecdsa_private_key = std::env::var(CATALYST_NODE_ECDSA_PRIVATE_KEY).ok();
         const PRECONFER_ADDRESS: &str = "PRECONFER_ADDRESS";
         let preconfer_address = std::env::var(PRECONFER_ADDRESS).ok();
         const WEB3SIGNER_L1_URL: &str = "WEB3SIGNER_L1_URL";
@@ -74,13 +74,13 @@ impl Config {
         const WEB3SIGNER_L2_URL: &str = "WEB3SIGNER_L2_URL";
         let web3signer_l2_url = std::env::var(WEB3SIGNER_L2_URL).ok();
 
-        if avs_node_ecdsa_private_key.is_none() {
+        if catalyst_node_ecdsa_private_key.is_none() {
             if web3signer_l1_url.is_none()
                 || web3signer_l2_url.is_none()
                 || preconfer_address.is_none()
             {
                 panic!(
-                    "When {AVS_NODE_ECDSA_PRIVATE_KEY} is not set, {WEB3SIGNER_L1_URL}, {WEB3SIGNER_L2_URL} and {PRECONFER_ADDRESS} must be set"
+                    "When {CATALYST_NODE_ECDSA_PRIVATE_KEY} is not set, {WEB3SIGNER_L1_URL}, {WEB3SIGNER_L2_URL} and {PRECONFER_ADDRESS} must be set"
                 );
             }
         } else if web3signer_l1_url.is_some()
@@ -88,7 +88,7 @@ impl Config {
             || preconfer_address.is_some()
         {
             panic!(
-                "When {AVS_NODE_ECDSA_PRIVATE_KEY} is set, {WEB3SIGNER_L1_URL}, {WEB3SIGNER_L2_URL} and {PRECONFER_ADDRESS} must not be set"
+                "When {CATALYST_NODE_ECDSA_PRIVATE_KEY} is set, {WEB3SIGNER_L1_URL}, {WEB3SIGNER_L2_URL} and {PRECONFER_ADDRESS} must not be set"
             );
         }
 
@@ -363,7 +363,7 @@ impl Config {
                 .unwrap_or("http://127.0.0.1:1235".to_string()),
             taiko_driver_url: std::env::var("TAIKO_DRIVER_URL")
                 .unwrap_or("http://127.0.0.1:1236".to_string()),
-            avs_node_ecdsa_private_key,
+            catalyst_node_ecdsa_private_key,
             mev_boost_url: std::env::var("MEV_BOOST_URL")
                 .unwrap_or("http://127.0.0.1:8080".to_string()),
             l1_ws_rpc_url: std::env::var("L1_WS_RPC_URL").unwrap_or("wss://127.0.0.1".to_string()),

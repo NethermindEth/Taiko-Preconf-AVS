@@ -12,7 +12,7 @@ default-members = ["node"]
 [workspace.package]
 version = "0.2.115"
 edition = "2024"
-repository = "https://github.com/NethermindEth/Taiko-Preconf-AVS"
+repository = "https://github.com/NethermindEth/Catalyst"
 license = "MIT"
 
 [workspace.dependencies]
