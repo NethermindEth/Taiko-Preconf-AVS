@@ -1,24 +1,25 @@
-name: "[Nethermind] Taiko Preconf AVS Pytest - Docker build and push"
+name: "[Nethermind] Catalyst Node - Docker build and push"
 
 on:
   workflow_dispatch:
   push:
     branches: [master]
     tags:
-      - "taiko-preconf-avs-v*"
+      - "catalyst-v*"
     paths:
-      - "e2e_tests/**"
+      - "node/**"
+      - "tools/p2p_node/p2p_network/**"
 
 env:
   DOCKER_REGISTRY: docker.io
-  DOCKER_IMAGE_NAME: preconf-pytest
+  DOCKER_IMAGE_NAME: catalyst-node
   DOCKER_REPOSITORY: nethermind
 
 jobs:
   build:
     name: Build and push temporary docker image
     runs-on: ${{ matrix.os }}
-    if: github.repository == 'NethermindEth/Taiko-Preconf-AVS'
+    if: github.repository == 'NethermindEth/Catalyst'
     strategy:
       matrix:
         include:
@@ -53,9 +54,9 @@ jobs:
         id: build
         uses: docker/build-push-action@v5
         with:
-          platforms: linux/amd64,linux/arm64
-          context: ./e2e_tests
-          file: ./e2e_tests/Dockerfile
+          platforms: ${{ matrix.platform }}
+          context: .
+          file: Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -92,7 +93,7 @@ jobs:
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}/${{ env.DOCKER_IMAGE_NAME }}:temp-ubuntu-latest \
             ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}/${{ env.DOCKER_IMAGE_NAME }}:temp-ubuntu-24.04-arm
-      
+
       - name: Summary
         run: |
           echo "## Docker build completed :green_circle:" >> $GITHUB_STEP_SUMMARY

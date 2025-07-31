@@ -1,4 +1,4 @@
-name: "[Nethermind] Taiko Preconf AVS Stack - Pytest"
+name: "[Nethermind] Catalyst Stack - Pytest"
 
 on:
     workflow_dispatch:
@@ -22,8 +22,8 @@ jobs:
       - name: SSH into target machine
         run: |
           ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -o ServerAliveCountMax=30 root@${{ env.TARGET_MACHINE_IP }} << 'EOF'
-            docker pull nethswitchboard/preconf-avs-node:latest
-            docker pull nethswitchboard/preconf-pytest:latest
+            docker pull nethswitchboard/catalyst-node:latest
+            docker pull nethswitchboard/catalyst-pytest:latest
             docker pull nethswitchboard/preconf-taiko-client:latest
             docker pull nethswitchboard/preconf-taiko-protocol:latest
 

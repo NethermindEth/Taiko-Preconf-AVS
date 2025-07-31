@@ -1,6 +1,6 @@
 # Preconfer node
 
-[Design Document](https://github.com/NethermindEth/Taiko-Preconf-AVS/blob/master/docs/design-doc.md)
+[Design Document](https://github.com/NethermindEth/Catalyst/blob/master/docs/whitelist-launch-specs.md)
 
 ## Related repositories
 

@@ -69,8 +69,10 @@ async fn main() -> Result<(), Error> {
             )
             .await?,
         ))
-    } else if let Some(avs_node_ecdsa_private_key) = config.avs_node_ecdsa_private_key.clone() {
-        Signer::PrivateKey(avs_node_ecdsa_private_key)
+    } else if let Some(catalyst_node_ecdsa_private_key) =
+        config.catalyst_node_ecdsa_private_key.clone()
+    {
+        Signer::PrivateKey(catalyst_node_ecdsa_private_key)
     } else {
         panic!("No signer provided");
     });
@@ -256,7 +258,7 @@ async fn wait_for_the_termination(cancel_token: CancellationToken, shutdown_dela
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
         _ = cancel_token.cancelled() => {
-            info!("Shutdown signal received, exiting avs node...");
+            info!("Shutdown signal received, exiting Catalyst node...");
         }
     }
 }

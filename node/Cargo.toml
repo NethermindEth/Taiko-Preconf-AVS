@@ -1,5 +1,5 @@
 [package]
-name = "taiko_preconf_avs_node"
+name = "catalyst_node"
 version.workspace = true
 edition.workspace = true
 repository.workspace = true

@@ -87,7 +87,7 @@ impl P2PNetwork {
                 .expect("Correct configuration");
 
         // Create a Gossipsub topic
-        let topic_name = "taiko-avs".to_string();
+        let topic_name = "catalyst-topic".to_string();
         let topic = gossipsub::IdentTopic::new(topic_name.clone());
 
         // subscribes to our topic
