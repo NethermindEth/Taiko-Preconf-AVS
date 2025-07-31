@@ -1,9 +1,11 @@
-![GitHub License](https://img.shields.io/github/license/NethermindEth/Taiko-Preconf-AVS)
+![GitHub License](https://img.shields.io/github/license/NethermindEth/Catalyst)
 ![Docker Stars](https://img.shields.io/docker/stars/nethswitchboard/preconf-avs-node)
 ![Docker Pulls](https://img.shields.io/docker/pulls/nethswitchboard/preconf-avs-node)
 ![Docker Image Size (tag)](https://img.shields.io/docker/image-size/nethswitchboard/preconf-avs-node/latest)
 
-# Taiko preconfer sidecar
+
+
+# Catalyst: A Taiko Stack preconfer sidecar
 
 Engineered with ❤️ at [Nethermind](https://www.nethermind.io/)
 
