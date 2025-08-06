@@ -171,27 +171,20 @@ impl FundsMonitor {
         );
 
         if !self.disable_bridging
-            && let Ok(eth_balance) = eth_balance
             && let Ok(l2_eth_balance) = l2_eth_balance
-            && eth_balance < self.thresholds.eth
+            && l2_eth_balance
+                > U256::from(self.amount_to_bridge_from_l2_to_l1 + self.taiko.get_bridging_fee())
         {
-            if l2_eth_balance > U256::from(self.amount_to_bridge_from_l2_to_l1) {
-                match self
-                    .taiko
-                    .transfer_eth_from_l2_to_l1(self.amount_to_bridge_from_l2_to_l1)
-                    .await
-                {
-                    Ok(_) => info!(
-                        "Transferred {} ETH from L2 to L1",
-                        self.amount_to_bridge_from_l2_to_l1
-                    ),
-                    Err(e) => warn!("Failed to transfer ETH from L2 to L1: {}", e),
-                }
-            } else {
-                warn!(
-                    "Can't transfer ETH from L2 to L1, L2 ETH balance is below the amount to bridge: {} < {}",
-                    l2_eth_balance_str, self.amount_to_bridge_from_l2_to_l1
-                );
+            match self
+                .taiko
+                .transfer_eth_from_l2_to_l1(self.amount_to_bridge_from_l2_to_l1)
+                .await
+            {
+                Ok(_) => info!(
+                    "Transferred {} ETH from L2 to L1",
+                    self.amount_to_bridge_from_l2_to_l1
+                ),
+                Err(e) => warn!("Failed to transfer ETH from L2 to L1: {}", e),
             }
         }
     }

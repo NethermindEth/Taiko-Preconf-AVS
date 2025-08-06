@@ -319,7 +319,7 @@ impl Config {
 
         // 0.1 ETH
         let amount_to_bridge_from_l2_to_l1 = std::env::var("AMOUNT_TO_BRIDGE_FROM_L2_TO_L1")
-            .unwrap_or("100000000000000000".to_string())
+            .unwrap_or("1000000000000000000".to_string()) // 1 ETH
             .parse::<u128>()
             .expect("AMOUNT_TO_BRIDGE_FROM_L2_TO_L1 must be a number");
 

@@ -445,6 +445,11 @@ impl Taiko {
             )
             .await
     }
+
+    pub fn get_bridging_fee(&self) -> u128 {
+        l2_execution_layer::L2_TO_L1_BRIDGING_FEE as u128
+            + l2_execution_layer::ESTIMATED_L2_BRIDGING_TRANSACTION_FEE
+    }
 }
 
 pub trait PreconfDriver {
