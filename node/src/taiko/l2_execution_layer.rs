@@ -23,6 +23,9 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
+pub const L2_TO_L1_BRIDGING_FEE: u64 = 10000;
+pub const ESTIMATED_L2_BRIDGING_TRANSACTION_FEE: u128 = 1000000000000;
+
 pub struct L2ExecutionLayer {
     provider_ws: RwLock<WsProvider>,
     taiko_anchor: RwLock<TaikoAnchor::TaikoAnchorInstance<WsProvider>>,
@@ -342,10 +345,9 @@ impl L2ExecutionLayer {
             .await?;
         debug!("Bridge message gas limit: {}", gas_limit);
 
-        const FEE: u64 = 10000;
         let message = Bridge::Message {
             id: 0,
-            fee: FEE,
+            fee: L2_TO_L1_BRIDGING_FEE,
             gasLimit: gas_limit + 1,
             from: preconfer_address,
             srcChainId: self.chain_id,
@@ -368,7 +370,9 @@ impl L2ExecutionLayer {
 
         let tx_send_message = contract
             .sendMessage(message)
-            .value(Uint::<256, 4>::from(amount + u128::from(FEE)))
+            .value(Uint::<256, 4>::from(
+                amount + u128::from(L2_TO_L1_BRIDGING_FEE),
+            ))
             .from(preconfer_address)
             .nonce(nonce)
             .chain_id(self.chain_id)
