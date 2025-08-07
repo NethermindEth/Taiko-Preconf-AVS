@@ -1,4 +1,4 @@
-use crate::shared::ws_provider::Signer;
+use crate::shared::signer::Signer;
 use alloy::primitives::{Address, B256};
 use anyhow::Error;
 use std::str::FromStr;
@@ -17,7 +17,7 @@ pub const GOLDEN_TOUCH_ADDRESS: Address = Address::new([
 
 #[derive(Clone)]
 pub struct TaikoConfig {
-    pub taiko_geth_ws_url: String,
+    pub taiko_geth_url: String,
     pub taiko_geth_auth_url: String,
     pub driver_url: String,
     pub jwt_secret_bytes: [u8; 32],
@@ -50,7 +50,7 @@ impl TaikoConfig {
         singer: Arc<Signer>,
     ) -> Result<Self, Error> {
         Ok(Self {
-            taiko_geth_ws_url,
+            taiko_geth_url: taiko_geth_ws_url,
             taiko_geth_auth_url,
             driver_url,
             jwt_secret_bytes,

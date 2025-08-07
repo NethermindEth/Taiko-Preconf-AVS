@@ -5,12 +5,12 @@ use crate::utils::blob::constants::MAX_BLOB_DATA_SIZE;
 
 pub struct Config {
     pub preconfer_address: Option<String>,
-    pub taiko_geth_ws_rpc_url: String,
+    pub taiko_geth_rpc_url: String,
     pub taiko_geth_auth_rpc_url: String,
     pub taiko_driver_url: String,
     pub catalyst_node_ecdsa_private_key: Option<String>,
     pub mev_boost_url: String,
-    pub l1_ws_rpc_url: String,
+    pub l1_rpc_url: String,
     pub l1_beacon_url: String,
     pub web3signer_l1_url: Option<String>,
     pub web3signer_l2_url: Option<String>,
@@ -357,7 +357,7 @@ impl Config {
 
         let config = Self {
             preconfer_address,
-            taiko_geth_ws_rpc_url: std::env::var("TAIKO_GETH_WS_RPC_URL")
+            taiko_geth_rpc_url: std::env::var("TAIKO_GETH_RPC_URL")
                 .unwrap_or("ws://127.0.0.1:1234".to_string()),
             taiko_geth_auth_rpc_url: std::env::var("TAIKO_GETH_AUTH_RPC_URL")
                 .unwrap_or("http://127.0.0.1:1235".to_string()),
@@ -366,7 +366,7 @@ impl Config {
             catalyst_node_ecdsa_private_key,
             mev_boost_url: std::env::var("MEV_BOOST_URL")
                 .unwrap_or("http://127.0.0.1:8080".to_string()),
-            l1_ws_rpc_url: std::env::var("L1_WS_RPC_URL").unwrap_or("wss://127.0.0.1".to_string()),
+            l1_rpc_url: std::env::var("L1_RPC_URL").unwrap_or("wss://127.0.0.1".to_string()),
             l1_beacon_url: std::env::var("L1_BEACON_URL")
                 .unwrap_or("http://127.0.0.1:4000".to_string()),
             web3signer_l1_url,
@@ -455,11 +455,11 @@ propose_forced_inclusion: {}
             } else {
                 "".to_string()
             },
-            config.taiko_geth_ws_rpc_url,
+            config.taiko_geth_rpc_url,
             config.taiko_geth_auth_rpc_url,
             config.taiko_driver_url,
             config.mev_boost_url,
-            config.l1_ws_rpc_url,
+            config.l1_rpc_url,
             config.l1_beacon_url,
             config.web3signer_l1_url.as_deref().unwrap_or("not set"),
             config.web3signer_l2_url.as_deref().unwrap_or("not set"),

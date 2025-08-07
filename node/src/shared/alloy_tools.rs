@@ -1,4 +1,4 @@
-use super::ws_provider::Signer;
+use super::signer::Signer;
 use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::{Address, B256},
@@ -81,28 +81,20 @@ pub async fn construct_alloy_provider(
     match signer {
         Signer::PrivateKey(private_key) => {
             debug!(
-                "Creating alloy provider with WS URL: {} and private key signer.",
+                "Creating alloy provider with URL: {} and private key signer.",
                 execution_ws_rpc_url
             );
             let signer = PrivateKeySigner::from_str(private_key.as_str())?;
             let preconfer_address: Address = signer.address();
 
-            let ws = WsConnect::new(execution_ws_rpc_url);
             Ok((
-                ProviderBuilder::new()
-                    .wallet(signer)
-                    .connect_ws(ws.clone())
-                    .await
-                    .map_err(|e| {
-                        Error::msg(format!("Execution layer: Failed to connect to WS: {e}"))
-                    })?
-                    .erased(),
+                create_alloy_provider_with_wallet(signer.into(), execution_ws_rpc_url).await?,
                 preconfer_address,
             ))
         }
         Signer::Web3signer(web3signer) => {
             debug!(
-                "Creating alloy provider with WS URL: {} and web3signer signer.",
+                "Creating alloy provider with URL: {} and web3signer signer.",
                 execution_ws_rpc_url
             );
             let preconfer_address = if let Some(preconfer_address) = preconfer_address {
@@ -119,18 +111,55 @@ pub async fn construct_alloy_provider(
             )?;
             let wallet = EthereumWallet::new(tx_signer);
 
-            let ws = WsConnect::new(execution_ws_rpc_url);
             Ok((
-                ProviderBuilder::new()
-                    .wallet(wallet)
-                    .connect_ws(ws.clone())
-                    .await
-                    .map_err(|e| {
-                        Error::msg(format!("Execution layer: Failed to connect to WS: {e}"))
-                    })?
-                    .erased(),
+                create_alloy_provider_with_wallet(wallet, execution_ws_rpc_url).await?,
                 preconfer_address,
             ))
         }
+    }
+}
+
+async fn create_alloy_provider_with_wallet(
+    wallet: EthereumWallet,
+    url: &str,
+) -> Result<DynProvider, Error> {
+    if url.contains("ws://") || url.contains("wss://") {
+        let ws = WsConnect::new(url);
+        Ok(ProviderBuilder::new()
+            .wallet(wallet)
+            .connect_ws(ws.clone())
+            .await
+            .map_err(|e| Error::msg(format!("Execution layer: Failed to connect to WS: {e}")))?
+            .erased())
+    } else if url.contains("http://") || url.contains("https://") {
+        Ok(ProviderBuilder::new()
+            .wallet(wallet)
+            .connect_http(url.parse::<reqwest::Url>()?)
+            .erased())
+    } else {
+        Err(anyhow::anyhow!(
+            "Invalid URL, only websocket and http are supported: {}",
+            url
+        ))
+    }
+}
+
+pub async fn create_alloy_provider_without_wallet(url: &str) -> Result<DynProvider, Error> {
+    if url.contains("ws://") || url.contains("wss://") {
+        let ws = WsConnect::new(url);
+        Ok(ProviderBuilder::new()
+            .connect_ws(ws.clone())
+            .await
+            .map_err(|e| Error::msg(format!("Execution layer: Failed to connect to WS: {e}")))?
+            .erased())
+    } else if url.contains("http://") || url.contains("https://") {
+        Ok(ProviderBuilder::new()
+            .connect_http(url.parse::<reqwest::Url>()?)
+            .erased())
+    } else {
+        Err(anyhow::anyhow!(
+            "Invalid URL, only websocket and http are supported: {}",
+            url
+        ))
     }
 }

@@ -3,7 +3,7 @@ use super::{
     fixed_k_signer_chainbound,
     l2_contracts_bindings::{Bridge, LibSharedData, TaikoAnchor},
 };
-use crate::shared::{alloy_tools, ws_provider::WsProvider};
+use crate::shared::alloy_tools;
 use alloy::{
     consensus::{
         SignableTransaction, Transaction as AnchorTransaction, TxEnvelope, transaction::Recovered,
@@ -12,7 +12,7 @@ use alloy::{
     eips::BlockNumberOrTag,
     network::ReceiptResponse,
     primitives::{Address, B256, Bytes, U256, Uint},
-    providers::{DynProvider, Provider, ProviderBuilder, WsConnect},
+    providers::{DynProvider, Provider},
     rpc::types::{Block as RpcBlock, Transaction},
     signers::Signature,
     transports::TransportErrorKind,
@@ -28,25 +28,19 @@ pub const L2_TO_L1_BRIDGING_FEE: u64 = 10000;
 pub const ESTIMATED_L2_BRIDGING_TRANSACTION_FEE: u128 = 1000000000000;
 
 pub struct L2ExecutionLayer {
-    provider_ws: RwLock<WsProvider>,
-    taiko_anchor: RwLock<TaikoAnchor::TaikoAnchorInstance<WsProvider>>,
+    provider: RwLock<DynProvider>,
+    taiko_anchor: RwLock<TaikoAnchor::TaikoAnchorInstance<DynProvider>>,
     chain_id: u64,
     config: TaikoConfig,
 }
 
 impl L2ExecutionLayer {
     pub async fn new(taiko_config: TaikoConfig) -> Result<Self, Error> {
-        let ws = WsConnect::new(taiko_config.taiko_geth_ws_url.to_string());
-        let provider_ws = RwLock::new(
-            ProviderBuilder::new()
-                .connect_ws(ws.clone())
-                .await
-                .map_err(|e| {
-                    anyhow::anyhow!("Taiko::new: Failed to create WebSocket provider: {e}")
-                })?,
+        let provider = RwLock::new(
+            alloy_tools::create_alloy_provider_without_wallet(&taiko_config.taiko_geth_url).await?,
         );
 
-        let chain_id = provider_ws
+        let chain_id = provider
             .read()
             .await
             .get_chain_id()
@@ -56,11 +50,11 @@ impl L2ExecutionLayer {
 
         let taiko_anchor = RwLock::new(TaikoAnchor::new(
             taiko_config.taiko_anchor_address,
-            provider_ws.read().await.clone(),
+            provider.read().await.clone(),
         ));
 
         Ok(Self {
-            provider_ws,
+            provider,
             taiko_anchor,
             chain_id,
             config: taiko_config,
@@ -75,41 +69,36 @@ impl L2ExecutionLayer {
     }
 
     pub async fn get_l2_block_header(&self, block: BlockNumberOrTag) -> Result<RpcBlock, Error> {
-        let block_by_number = self
-            .provider_ws
-            .read()
-            .await
-            .get_block_by_number(block)
-            .await;
+        let block_by_number = self.provider.read().await.get_block_by_number(block).await;
 
-        self.check_for_ws_provider_failure(block_by_number, "Failed to get latest L2 block")
+        self.check_for_provider_failure(block_by_number, "Failed to get latest L2 block")
             .await?
             .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))
     }
 
     async fn get_latest_l2_block_with_txs(&self) -> Result<RpcBlock, Error> {
         let block_by_number = self
-            .provider_ws
+            .provider
             .read()
             .await
             .get_block_by_number(BlockNumberOrTag::Latest)
             .full()
             .await;
 
-        self.check_for_ws_provider_failure(block_by_number, "Failed to get latest L2 block")
+        self.check_for_provider_failure(block_by_number, "Failed to get latest L2 block")
             .await?
             .ok_or(anyhow::anyhow!("Failed to get latest L2 block"))
     }
 
     pub async fn get_balance(&self, address: Address) -> Result<U256, Error> {
-        let balance = self.provider_ws.read().await.get_balance(address).await;
-        self.check_for_ws_provider_failure(balance, "Failed to get L2 balance")
+        let balance = self.provider.read().await.get_balance(address).await;
+        self.check_for_provider_failure(balance, "Failed to get L2 balance")
             .await
     }
 
     pub async fn get_forced_inclusion_form_l1origin(&self, block_id: u64) -> Result<bool, Error> {
         let result = self
-            .provider_ws
+            .provider
             .read()
             .await
             .raw_request(
@@ -119,7 +108,7 @@ impl L2ExecutionLayer {
             .await;
 
         let is_forced_inclusion: bool = self
-            .check_for_ws_provider_failure::<Value>(result, "Failed to get forced inclusion")
+            .check_for_provider_failure::<Value>(result, "Failed to get forced inclusion")
             .await?
             .get("isForcedInclusion")
             .and_then(Value::as_bool)
@@ -129,9 +118,9 @@ impl L2ExecutionLayer {
     }
 
     pub async fn get_latest_l2_block_id(&self) -> Result<u64, Error> {
-        let block_number = self.provider_ws.read().await.get_block_number().await;
+        let block_number = self.provider.read().await.get_block_number().await;
 
-        self.check_for_ws_provider_failure(block_number, "Failed to get latest L2 block number")
+        self.check_for_provider_failure(block_number, "Failed to get latest L2 block number")
             .await
     }
 
@@ -141,7 +130,7 @@ impl L2ExecutionLayer {
         full_txs: bool,
     ) -> Result<alloy::rpc::types::Block, Error> {
         let mut block_by_number = self
-            .provider_ws
+            .provider
             .read()
             .await
             .get_block_by_number(BlockNumberOrTag::Number(number));
@@ -151,10 +140,7 @@ impl L2ExecutionLayer {
         }
 
         let block = self
-            .check_for_ws_provider_failure(
-                block_by_number.await,
-                "Failed to get L2 block by number",
-            )
+            .check_for_provider_failure(block_by_number.await, "Failed to get L2 block by number")
             .await?
             .ok_or_else(|| anyhow::anyhow!("Failed to get L2 block {}: value was None", number))?;
         Ok(block)
@@ -172,14 +158,14 @@ impl L2ExecutionLayer {
         // Create the contract call
         let taiko_anchor = self.taiko_anchor.read().await;
         let tx_count_result = self
-            .provider_ws
+            .provider
             .read()
             .await
             .get_transaction_count(GOLDEN_TOUCH_ADDRESS)
             .block_id(parent_hash.into())
             .await;
         let nonce = self
-            .check_for_ws_provider_failure(tx_count_result, "Failed to get nonce")
+            .check_for_provider_failure(tx_count_result, "Failed to get nonce")
             .await?;
         let call_builder = taiko_anchor
             .anchorV3(
@@ -230,17 +216,14 @@ impl L2ExecutionLayer {
         hash: B256,
     ) -> Result<alloy::rpc::types::Transaction, Error> {
         let transaction_by_hash = self
-            .provider_ws
+            .provider
             .read()
             .await
             .get_transaction_by_hash(hash)
             .await;
 
         let transaction = self
-            .check_for_ws_provider_failure(
-                transaction_by_hash,
-                "Failed to get L2 transaction by hash",
-            )
+            .check_for_provider_failure(transaction_by_hash, "Failed to get L2 transaction by hash")
             .await?
             .ok_or(anyhow::anyhow!(
                 "Failed to get L2 transaction: value is None"
@@ -316,7 +299,7 @@ impl L2ExecutionLayer {
 
         let (provider, _) = alloy_tools::construct_alloy_provider(
             &self.config.signer,
-            &self.config.taiko_geth_ws_url,
+            &self.config.taiko_geth_url,
             Some(preconfer_address),
         )
         .await?;
@@ -334,12 +317,12 @@ impl L2ExecutionLayer {
 
     async fn transfer_eth_from_l2_to_l1_with_provider(
         &self,
-        provider_ws: DynProvider,
+        provider: DynProvider,
         amount: u128,
         dest_chain_id: u64,
         preconfer_address: Address,
     ) -> Result<(), Error> {
-        let contract = Bridge::new(self.config.taiko_bridge_address, provider_ws.clone());
+        let contract = Bridge::new(self.config.taiko_bridge_address, provider.clone());
         let gas_limit = contract
             .getMessageMinGasLimit(Uint::<256, 4>::from(0))
             .call()
@@ -360,14 +343,14 @@ impl L2ExecutionLayer {
             data: Bytes::new(),
         };
 
-        let mut fees = provider_ws.estimate_eip1559_fees().await?;
+        let mut fees = provider.estimate_eip1559_fees().await?;
         const ONE_GWEI: u128 = 1000000000;
         if fees.max_priority_fee_per_gas < ONE_GWEI {
             fees.max_priority_fee_per_gas = ONE_GWEI;
             fees.max_fee_per_gas += ONE_GWEI;
         }
         debug!("Fees: {:?}", fees);
-        let nonce = provider_ws.get_transaction_count(preconfer_address).await?;
+        let nonce = provider.get_transaction_count(preconfer_address).await?;
 
         let tx_send_message = contract
             .sendMessage(message)
@@ -383,7 +366,7 @@ impl L2ExecutionLayer {
         let tx_request = tx_send_message.into_transaction_request();
         const GAS_LIMIT: u64 = 500000;
         let tx_request = tx_request.gas_limit(GAS_LIMIT);
-        let pending_tx = provider_ws.send_transaction(tx_request).await?;
+        let pending_tx = provider.send_transaction(tx_request).await?;
 
         let tx_hash = *pending_tx.tx_hash();
         info!("Bridge sendMessage tx hash: {}", tx_hash);
@@ -409,7 +392,7 @@ impl L2ExecutionLayer {
         } else if let Some(block_number) = receipt.block_number() {
             return Err(anyhow::anyhow!(
                 crate::shared::alloy_tools::check_for_revert_reason(
-                    &provider_ws,
+                    &provider,
                     tx_hash,
                     block_number
                 )
@@ -426,7 +409,7 @@ impl L2ExecutionLayer {
 
     /// Warning: be sure not to `read` from the rwlock
     /// while passing parameters to this function
-    async fn check_for_ws_provider_failure<T>(
+    async fn check_for_provider_failure<T>(
         &self,
         result: Result<T, RpcError<TransportErrorKind>>,
         error_message: &str,
@@ -434,7 +417,7 @@ impl L2ExecutionLayer {
         match result {
             Ok(result) => Ok(result),
             Err(e) => {
-                self.recreate_ws_provider().await?;
+                self.recreate_provider().await?;
                 Err(anyhow::anyhow!(
                     "{}. Recreating WebSocket provider. Transport error: {}",
                     error_message,
@@ -454,7 +437,7 @@ impl L2ExecutionLayer {
         match result {
             Ok(result) => Ok(result),
             Err(ContractError::TransportError(e)) => {
-                self.recreate_ws_provider().await?;
+                self.recreate_provider().await?;
                 Err(anyhow::anyhow!(
                     "{}. Recreating WebSocket provider. Transport error: {}",
                     error_message,
@@ -465,19 +448,16 @@ impl L2ExecutionLayer {
         }
     }
 
-    async fn recreate_ws_provider(&self) -> Result<(), Error> {
-        let ws = WsConnect::new(self.config.taiko_geth_ws_url.clone());
-        let provider = ProviderBuilder::new()
-            .connect_ws(ws.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("Taiko::new: Failed to create WebSocket provider: {e}"))?;
+    async fn recreate_provider(&self) -> Result<(), Error> {
+        let provider =
+            alloy_tools::create_alloy_provider_without_wallet(&self.config.taiko_geth_url).await?;
 
         *self.taiko_anchor.write().await =
             TaikoAnchor::new(self.config.taiko_anchor_address, provider.clone());
-        *self.provider_ws.write().await = provider;
+        *self.provider.write().await = provider;
         debug!(
             "Created new WebSocket provider for {}",
-            self.config.taiko_geth_ws_url
+            self.config.taiko_geth_url
         );
         Ok(())
     }
