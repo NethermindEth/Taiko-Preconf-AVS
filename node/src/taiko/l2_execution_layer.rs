@@ -20,6 +20,7 @@ use alloy::{
 use alloy_json_rpc::RpcError;
 use anyhow::Error;
 use serde_json::Value;
+use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
@@ -387,7 +388,11 @@ impl L2ExecutionLayer {
         let tx_hash = *pending_tx.tx_hash();
         info!("Bridge sendMessage tx hash: {}", tx_hash);
 
-        let receipt = pending_tx.get_receipt().await?;
+        const RECEIPT_TIMEOUT: Duration = Duration::from_secs(100);
+        let receipt = pending_tx
+            .with_timeout(Some(RECEIPT_TIMEOUT))
+            .get_receipt()
+            .await?;
 
         if receipt.status() {
             let block_number = if let Some(block_number) = receipt.block_number() {
