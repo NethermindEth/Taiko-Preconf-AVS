@@ -1,4 +1,4 @@
-use crate::{shared::ws_provider::Signer, utils::config::L1ContractAddresses};
+use crate::{shared::signer::Signer, utils::config::L1ContractAddresses};
 use alloy::primitives::Address;
 use std::sync::Arc;
 use tokio::sync::OnceCell;
@@ -36,7 +36,7 @@ impl TryFrom<L1ContractAddresses> for ContractAddresses {
 }
 
 pub struct EthereumL1Config {
-    pub execution_ws_rpc_url: String,
+    pub execution_rpc_url: String,
     pub contract_addresses: ContractAddresses,
     pub consensus_rpc_url: String,
     pub min_priority_fee_per_gas_wei: u64,

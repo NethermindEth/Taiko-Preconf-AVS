@@ -32,7 +32,7 @@ use tracing::{debug, info, warn};
 const DELAYED_L1_PROPOSAL_BUFFER: u64 = 4;
 
 pub struct ExecutionLayer {
-    provider_ws: DynProvider,
+    provider: DynProvider,
     preconfer_address: Address,
     contract_addresses: ContractAddresses,
     pacaya_config: taiko_inbox::ITaikoInbox::Config,
@@ -49,9 +49,9 @@ impl ExecutionLayer {
         transaction_error_channel: Sender<TransactionError>,
         metrics: Arc<metrics::Metrics>,
     ) -> Result<Self, Error> {
-        let (provider_ws, preconfer_address) = alloy_tools::construct_alloy_provider(
+        let (provider, preconfer_address) = alloy_tools::construct_alloy_provider(
             &config.signer,
-            &config.execution_ws_rpc_url,
+            &config.execution_rpc_url,
             config.preconfer_address,
         )
         .await?;
@@ -61,17 +61,17 @@ impl ExecutionLayer {
 
         let taiko_wrapper_contract = taiko_wrapper::TaikoWrapper::new(
             config.contract_addresses.taiko_wrapper,
-            provider_ws.clone(),
+            provider.clone(),
         );
 
-        let chain_id = provider_ws
+        let chain_id = provider
             .get_chain_id()
             .await
             .map_err(|e| Error::msg(format!("Failed to get chain ID: {e}")))?;
         info!("L1 Chain ID: {}", chain_id);
 
         let transaction_monitor = TransactionMonitor::new(
-            provider_ws.clone(),
+            provider.clone(),
             &config,
             transaction_error_channel,
             metrics.clone(),
@@ -81,12 +81,12 @@ impl ExecutionLayer {
         .map_err(|e| Error::msg(format!("Failed to create TransactionMonitor: {e}")))?;
 
         let pacaya_config =
-            Self::fetch_pacaya_config(&config.contract_addresses.taiko_inbox, &provider_ws)
+            Self::fetch_pacaya_config(&config.contract_addresses.taiko_inbox, &provider)
                 .await
                 .map_err(|e| Error::msg(format!("Failed to fetch pacaya config: {e}")))?;
 
         Ok(Self {
-            provider_ws,
+            provider,
             preconfer_address,
             contract_addresses: config.contract_addresses,
             pacaya_config,
@@ -104,7 +104,7 @@ impl ExecutionLayer {
 
     async fn get_operator_for_current_epoch(&self) -> Result<Address, Error> {
         let contract =
-            PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider_ws);
+            PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider);
         let operator = contract
             .getOperatorForCurrentEpoch()
             .block(alloy::eips::BlockId::pending())
@@ -121,7 +121,7 @@ impl ExecutionLayer {
 
     async fn get_operator_for_next_epoch(&self) -> Result<Address, Error> {
         let contract =
-            PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider_ws);
+            PreconfWhitelist::new(self.contract_addresses.preconf_whitelist, &self.provider);
         let operator = contract
             .getOperatorForNextEpoch()
             .block(alloy::eips::BlockId::pending())
@@ -207,7 +207,7 @@ impl ExecutionLayer {
         );
 
         // Build proposeBatch transaction
-        let builder = ProposeBatchBuilder::new(self.provider_ws.clone(), self.extra_gas_percentage);
+        let builder = ProposeBatchBuilder::new(self.provider.clone(), self.extra_gas_percentage);
         let tx = builder
             .build_propose_batch_tx(
                 self.preconfer_address,
@@ -233,9 +233,9 @@ impl ExecutionLayer {
 
     async fn fetch_pacaya_config(
         taiko_inbox_address: &Address,
-        ws_provider: &DynProvider,
+        provider: &DynProvider,
     ) -> Result<taiko_inbox::ITaikoInbox::Config, Error> {
-        let contract = taiko_inbox::ITaikoInbox::new(*taiko_inbox_address, ws_provider);
+        let contract = taiko_inbox::ITaikoInbox::new(*taiko_inbox_address, provider);
         let pacaya_config = contract.pacayaConfig().call().await?;
 
         info!(
@@ -255,7 +255,7 @@ impl ExecutionLayer {
 
     pub async fn get_preconfer_inbox_bonds(&self) -> Result<alloy::primitives::U256, Error> {
         let contract =
-            taiko_inbox::ITaikoInbox::new(self.contract_addresses.taiko_inbox, &self.provider_ws);
+            taiko_inbox::ITaikoInbox::new(self.contract_addresses.taiko_inbox, &self.provider);
         let bonds_balance = contract
             .bondBalanceOf(self.preconfer_address)
             .call()
@@ -271,7 +271,7 @@ impl ExecutionLayer {
             .get_or_try_init(|| async {
                 let contract = taiko_inbox::ITaikoInbox::new(
                     self.contract_addresses.taiko_inbox,
-                    self.provider_ws.clone(),
+                    self.provider.clone(),
                 );
                 let taiko_token = contract
                     .bondToken()
@@ -283,7 +283,7 @@ impl ExecutionLayer {
             })
             .await?;
 
-        let contract = IERC20::new(*taiko_token, &self.provider_ws);
+        let contract = IERC20::new(*taiko_token, &self.provider);
         let allowance = contract
             .allowance(self.preconfer_address, self.contract_addresses.taiko_inbox)
             .call()
@@ -315,7 +315,7 @@ impl ExecutionLayer {
     }
 
     pub async fn get_preconfer_wallet_eth(&self) -> Result<alloy::primitives::U256, Error> {
-        let balance = self.provider_ws.get_balance(self.preconfer_address).await?;
+        let balance = self.provider.get_balance(self.preconfer_address).await?;
         Ok(balance)
     }
 
@@ -340,7 +340,7 @@ impl ExecutionLayer {
     }
 
     pub async fn get_l1_height(&self) -> Result<u64, Error> {
-        self.provider_ws
+        self.provider
             .get_block_number()
             .await
             .map_err(|e| Error::msg(format!("Failed to get L1 height: {e}")))
@@ -348,7 +348,7 @@ impl ExecutionLayer {
 
     pub async fn get_block_state_root_by_number(&self, number: u64) -> Result<B256, Error> {
         let block = self
-            .provider_ws
+            .provider
             .get_block_by_number(BlockNumberOrTag::Number(number))
             .await
             .map_err(|e| Error::msg(format!("Failed to get block by number ({number}): {e}")))?
@@ -359,7 +359,7 @@ impl ExecutionLayer {
     pub async fn get_l2_height_from_taiko_inbox(&self) -> Result<u64, Error> {
         let contract = taiko_inbox::ITaikoInbox::new(
             self.contract_addresses.taiko_inbox,
-            self.provider_ws.clone(),
+            self.provider.clone(),
         );
         let num_batches = contract.getStats2().call().await?.numBatches;
         // It is safe because num_batches initial value is 1
@@ -370,7 +370,7 @@ impl ExecutionLayer {
 
     pub async fn get_preconfer_nonce_latest(&self) -> Result<u64, Error> {
         let nonce_str: String = self
-            .provider_ws
+            .provider
             .client()
             .request(
                 "eth_getTransactionCount",
@@ -385,7 +385,7 @@ impl ExecutionLayer {
 
     pub async fn get_preconfer_nonce_pending(&self) -> Result<u64, Error> {
         let nonce_str: String = self
-            .provider_ws
+            .provider
             .client()
             .request(
                 "eth_getTransactionCount",
@@ -408,7 +408,7 @@ impl ExecutionLayer {
         block_number_or_tag: BlockNumberOrTag,
     ) -> Result<u64, Error> {
         let block = self
-            .provider_ws
+            .provider
             .get_block_by_number(block_number_or_tag)
             .await?
             .ok_or(anyhow::anyhow!(
@@ -421,7 +421,7 @@ impl ExecutionLayer {
     pub async fn get_forced_inclusion_head(&self) -> Result<u64, Error> {
         let contract = IForcedInclusionStore::new(
             self.contract_addresses.forced_inclusion_store,
-            self.provider_ws.clone(),
+            self.provider.clone(),
         );
         contract
             .head()
@@ -433,7 +433,7 @@ impl ExecutionLayer {
     pub async fn get_forced_inclusion_tail(&self) -> Result<u64, Error> {
         let contract = IForcedInclusionStore::new(
             self.contract_addresses.forced_inclusion_store,
-            self.provider_ws.clone(),
+            self.provider.clone(),
         );
         contract
             .tail()
@@ -445,7 +445,7 @@ impl ExecutionLayer {
     pub async fn get_forced_inclusion(&self, index: u64) -> Result<ForcedInclusion, Error> {
         let contract = IForcedInclusionStore::new(
             self.contract_addresses.forced_inclusion_store,
-            self.provider_ws.clone(),
+            self.provider.clone(),
         );
         contract
             .getForcedInclusion(U256::from(index))
@@ -508,7 +508,7 @@ impl ExecutionLayer {
         let metrics = Arc::new(Metrics::new());
 
         let ethereum_l1_config = EthereumL1Config {
-            execution_ws_rpc_url: ws_rpc_url,
+            execution_rpc_url: ws_rpc_url,
             contract_addresses: ContractAddresses {
                 taiko_inbox: Address::ZERO,
                 taiko_token: OnceCell::new(),
@@ -534,7 +534,7 @@ impl ExecutionLayer {
         // Self::new(ethereum_l1_config, tx_error_sender, metrics.clone()).await
 
         Ok(Self {
-            provider_ws: provider_ws.clone(),
+            provider: provider_ws.clone(),
             preconfer_address: preconfer_address.parse()?,
             contract_addresses: ethereum_l1_config.contract_addresses.clone(),
             pacaya_config: taiko_inbox::ITaikoInbox::Config {
@@ -602,7 +602,7 @@ impl ExecutionLayer {
             }
         }
 
-        let contract = Counter::deploy(&self.provider_ws).await?;
+        let contract = Counter::deploy(&self.provider).await?;
 
         let builder = contract.setNumber(alloy::primitives::U256::from(42));
         let tx_hash = builder.send().await?.watch().await?;

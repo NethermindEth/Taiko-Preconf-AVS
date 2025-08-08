@@ -11,7 +11,7 @@ mod utils;
 
 use anyhow::Error;
 use metrics::Metrics;
-use shared::ws_provider::Signer;
+use shared::signer::Signer;
 use std::{sync::Arc, time::Duration};
 use tokio::{
     signal::unix::{SignalKind, signal},
@@ -79,7 +79,7 @@ async fn main() -> Result<(), Error> {
 
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
         ethereum_l1::config::EthereumL1Config {
-            execution_ws_rpc_url: config.l1_ws_rpc_url.clone(),
+            execution_rpc_url: config.l1_rpc_url.clone(),
             contract_addresses: config.contract_addresses.clone().try_into()?,
             consensus_rpc_url: config.l1_beacon_url,
             slot_duration_sec: config.l1_slot_duration_sec,
@@ -131,7 +131,7 @@ async fn main() -> Result<(), Error> {
             ethereum_l1.clone(),
             metrics.clone(),
             taiko::config::TaikoConfig::new(
-                config.taiko_geth_ws_rpc_url.clone(),
+                config.taiko_geth_rpc_url.clone(),
                 config.taiko_geth_auth_rpc_url,
                 config.taiko_driver_url,
                 jwt_secret_bytes,
@@ -179,8 +179,8 @@ async fn main() -> Result<(), Error> {
 
     let chain_monitor = Arc::new(
         chain_monitor::ChainMonitor::new(
-            config.l1_ws_rpc_url,
-            config.taiko_geth_ws_rpc_url,
+            config.l1_rpc_url,
+            config.taiko_geth_rpc_url,
             config.contract_addresses.taiko_inbox,
             cancel_token.clone(),
         )
