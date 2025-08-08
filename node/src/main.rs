@@ -57,25 +57,18 @@ async fn main() -> Result<(), Error> {
 
     let (transaction_error_sender, transaction_error_receiver) = mpsc::channel(100);
 
-    let signer = Arc::new(if let Some(web3signer_l1_url) = &config.web3signer_l1_url {
-        Signer::Web3signer(Arc::new(
-            shared::web3signer::Web3Signer::new(
-                web3signer_l1_url,
-                SIGNER_TIMEOUT,
-                config
-                    .preconfer_address
-                    .as_ref()
-                    .expect("preconfer address is required for web3signer usage"),
-            )
-            .await?,
-        ))
-    } else if let Some(catalyst_node_ecdsa_private_key) =
-        config.catalyst_node_ecdsa_private_key.clone()
-    {
-        Signer::PrivateKey(catalyst_node_ecdsa_private_key)
-    } else {
-        panic!("No signer provided");
-    });
+    let l1_signer = create_signer(
+        config.web3signer_l1_url.clone(),
+        config.catalyst_node_ecdsa_private_key.clone(),
+        config.preconfer_address.clone(),
+    )
+    .await?;
+    let l2_signer = create_signer(
+        config.web3signer_l2_url.clone(),
+        config.catalyst_node_ecdsa_private_key.clone(),
+        config.preconfer_address.clone(),
+    )
+    .await?;
 
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
         ethereum_l1::config::EthereumL1Config {
@@ -90,7 +83,7 @@ async fn main() -> Result<(), Error> {
             max_attempts_to_send_tx: config.max_attempts_to_send_tx,
             max_attempts_to_wait_tx: config.max_attempts_to_wait_tx,
             delay_between_tx_attempts_sec: config.delay_between_tx_attempts_sec,
-            signer: signer.clone(),
+            signer: l1_signer,
             preconfer_address: config.preconfer_address.clone().map(|s| {
                 s.parse()
                     .expect("Preconfer address is not a valid Ethereum address")
@@ -143,7 +136,7 @@ async fn main() -> Result<(), Error> {
                 config.rpc_l2_execution_layer_timeout,
                 config.rpc_driver_preconf_timeout,
                 config.rpc_driver_status_timeout,
-                signer,
+                l2_signer,
             )?,
         )
         .await
@@ -239,6 +232,29 @@ async fn main() -> Result<(), Error> {
     wait_for_the_termination(cancel_token, config.l1_slot_duration_sec).await;
 
     Ok(())
+}
+
+async fn create_signer(
+    web3signer_url: Option<String>,
+    catalyst_node_ecdsa_private_key: Option<String>,
+    preconfer_address: Option<String>,
+) -> Result<Arc<Signer>, Error> {
+    Ok(Arc::new(if let Some(web3signer_url) = web3signer_url {
+        Signer::Web3signer(Arc::new(
+            shared::web3signer::Web3Signer::new(
+                &web3signer_url,
+                SIGNER_TIMEOUT,
+                preconfer_address
+                    .as_ref()
+                    .expect("preconfer address is required for web3signer usage"),
+            )
+            .await?,
+        ))
+    } else if let Some(catalyst_node_ecdsa_private_key) = catalyst_node_ecdsa_private_key {
+        Signer::PrivateKey(catalyst_node_ecdsa_private_key)
+    } else {
+        panic!("No signer provided");
+    }))
 }
 
 async fn wait_for_the_termination(cancel_token: CancellationToken, shutdown_delay_secs: u64) {

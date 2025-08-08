@@ -409,11 +409,11 @@ impl Config {
         info!(
             r#"
 Configuration:{}
-Taiko geth WS RPC URL: {},
+Taiko geth L2 RPC URL: {},
 Taiko geth auth RPC URL: {},
 Taiko driver URL: {},
 MEV Boost URL: {},
-L1 WS URL: {},
+L1 RPC URL: {},
 Consensus layer URL: {},
 Web3signer L1 URL: {},
 Web3signer L2 URL: {},
