@@ -27,6 +27,7 @@ impl Web3Signer {
         timeout: Duration,
         signer_address: &str,
     ) -> Result<Self, Error> {
+        info!("Web3Signer: Creating new Web3Signer with URL: {}", rpc_url);
         let client = JSONRPCClient::new_with_timeout(rpc_url, timeout)?;
         if !Self::is_signer_key_available(&client, signer_address).await? {
             return Err(anyhow::anyhow!(
