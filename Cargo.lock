@@ -1627,7 +1627,7 @@ dependencies = [
 
 [[package]]
 name = "catalyst_node"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "alloy",
  "alloy-json-rpc",
@@ -4941,7 +4941,7 @@ dependencies = [
 
 [[package]]
 name = "p2p-boot-node"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "discv5",
@@ -4953,7 +4953,7 @@ dependencies = [
 
 [[package]]
 name = "p2p-network"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "discv5",
  "futures",
@@ -4968,7 +4968,7 @@ dependencies = [
 
 [[package]]
 name = "p2p-node"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "jsonrpsee",
