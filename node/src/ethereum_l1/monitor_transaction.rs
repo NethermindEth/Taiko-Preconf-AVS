@@ -238,7 +238,7 @@ impl TransactionMonitorThread {
                 root_provider = Some(pending_tx.provider().clone());
             }
 
-            debug!(
+            info!(
                 "{} tx nonce: {}, attempt: {}, l1_block: {}, hash: {},  max_fee_per_gas: {}, max_priority_fee_per_gas: {}, max_fee_per_blob_gas: {:?}",
                 if sending_attempt == 0 {
                     "🟢 Send"
@@ -415,11 +415,19 @@ impl TransactionMonitorThread {
                 Ok(provider) => {
                     let tx = provider.0.send_transaction(tx.clone()).await;
                     if let Err(e) = tx {
-                        error!("Failed to send transaction to backup node {}: {}", url, e);
+                        if e.to_string().contains("AlreadyKnown")
+                            || e.to_string().to_lowercase().contains("already known")
+                        {
+                            debug!("Transaction already known to backup node {}", url);
+                        } else {
+                            warn!("Failed to send transaction to backup node {}: {}", url, e);
+                        }
+                    } else {
+                        info!("Transaction sent to backup node {}", url);
                     }
                 }
                 Err(e) => {
-                    error!(
+                    warn!(
                         "Failed to construct alloy provider for backup node {}: {}",
                         url, e
                     );
