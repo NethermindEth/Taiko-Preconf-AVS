@@ -1627,7 +1627,7 @@ dependencies = [
 
 [[package]]
 name = "catalyst_node"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "alloy",
  "alloy-json-rpc",
@@ -4941,7 +4941,7 @@ dependencies = [
 
 [[package]]
 name = "p2p-boot-node"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "discv5",
@@ -4953,7 +4953,7 @@ dependencies = [
 
 [[package]]
 name = "p2p-network"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "discv5",
  "futures",
@@ -4968,7 +4968,7 @@ dependencies = [
 
 [[package]]
 name = "p2p-node"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "jsonrpsee",
@@ -6320,9 +6320,9 @@ checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
 
 [[package]]
 name = "slab"
-version = "0.4.10"
+version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04dc19736151f35336d325007ac991178d504a119863a2fcb3758cdb5e52c50d"
+checksum = "7a2ae44ef20feb57a68b23d846850f861394c2e02dc425a50098ae8c90267589"
 
 [[package]]
 name = "smallvec"
