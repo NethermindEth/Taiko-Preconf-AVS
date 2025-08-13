@@ -366,7 +366,7 @@ impl Config {
             catalyst_node_ecdsa_private_key,
             mev_boost_url: std::env::var("MEV_BOOST_URL")
                 .unwrap_or("http://127.0.0.1:8080".to_string()),
-            l1_rpc_urls: std::env::var("L1_RPC_URL")
+            l1_rpc_urls: std::env::var("L1_RPC_URLS")
                 .unwrap_or("wss://127.0.0.1".to_string())
                 .split(",")
                 .map(|s| s.to_string())
