@@ -51,7 +51,10 @@ impl ExecutionLayer {
     ) -> Result<Self, Error> {
         let (provider, preconfer_address) = alloy_tools::construct_alloy_provider(
             &config.signer,
-            &config.execution_rpc_url,
+            config
+                .execution_rpc_urls
+                .first()
+                .ok_or_else(|| anyhow!("L1 RPC URL is required"))?,
             config.preconfer_address,
         )
         .await?;

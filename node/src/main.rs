@@ -72,7 +72,7 @@ async fn main() -> Result<(), Error> {
 
     let ethereum_l1 = ethereum_l1::EthereumL1::new(
         ethereum_l1::config::EthereumL1Config {
-            execution_rpc_url: config.l1_rpc_url.clone(),
+            execution_rpc_urls: config.l1_rpc_urls.clone(),
             contract_addresses: config.contract_addresses.clone().try_into()?,
             consensus_rpc_url: config.l1_beacon_url,
             slot_duration_sec: config.l1_slot_duration_sec,
@@ -172,7 +172,11 @@ async fn main() -> Result<(), Error> {
 
     let chain_monitor = Arc::new(
         chain_monitor::ChainMonitor::new(
-            config.l1_rpc_url,
+            config
+                .l1_rpc_urls
+                .first()
+                .expect("L1 RPC URL is required")
+                .clone(),
             config.taiko_geth_rpc_url,
             config.contract_addresses.taiko_inbox,
             cancel_token.clone(),
