@@ -51,7 +51,10 @@ impl ExecutionLayer {
     ) -> Result<Self, Error> {
         let (provider, preconfer_address) = alloy_tools::construct_alloy_provider(
             &config.signer,
-            &config.execution_rpc_url,
+            config
+                .execution_rpc_urls
+                .first()
+                .ok_or_else(|| anyhow!("L1 RPC URL is required"))?,
             config.preconfer_address,
         )
         .await?;
@@ -508,7 +511,7 @@ impl ExecutionLayer {
         let metrics = Arc::new(Metrics::new());
 
         let ethereum_l1_config = EthereumL1Config {
-            execution_rpc_url: ws_rpc_url,
+            execution_rpc_urls: vec![ws_rpc_url],
             contract_addresses: ContractAddresses {
                 taiko_inbox: Address::ZERO,
                 taiko_token: OnceCell::new(),
