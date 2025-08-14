@@ -555,7 +555,6 @@ mod tests {
     #[test]
     fn test_can_not_consume_l2_block_with_compression() {
         let (res, total_bytes) = test_can_consume_l2_block(366);
-        println!("res: {res}, total_bytes: {total_bytes}");
         assert!(!res);
         assert_eq!(total_bytes, 242);
     }
