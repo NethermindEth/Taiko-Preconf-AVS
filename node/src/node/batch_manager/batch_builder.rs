@@ -69,11 +69,15 @@ impl BatchBuilder {
                 new_total_bytes = batch.total_bytes + l2_block.prebuilt_tx_list.bytes_length;
                 if !self.config.is_within_bytes_limit(new_total_bytes) {
                     // second compression, compressing the batch with the new L2 block
-                    // we can tolerate calculation overhead as it's very rare case
+                    // we can tolerate the processing overhead as it's a very rare case
                     let mut batch_clone = batch.clone();
                     batch_clone.l2_blocks.push(l2_block.clone());
                     batch_clone.compress();
                     new_total_bytes = batch_clone.total_bytes;
+                    debug!(
+                        "can_consume_l2_block: Second compression, new total bytes: {}",
+                        new_total_bytes
+                    );
                 }
             }
 
