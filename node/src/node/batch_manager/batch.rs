@@ -4,7 +4,7 @@ use alloy::primitives::Address;
 use std::time::Instant;
 use tracing::{debug, warn};
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Batch {
     pub l2_blocks: Vec<L2Block>,
     pub total_bytes: u64,
