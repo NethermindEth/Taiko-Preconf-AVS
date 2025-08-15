@@ -5,6 +5,7 @@ mod forced_inclusion;
 mod funds_monitor;
 mod metrics;
 mod node;
+mod registration;
 mod shared;
 mod taiko;
 mod utils;
