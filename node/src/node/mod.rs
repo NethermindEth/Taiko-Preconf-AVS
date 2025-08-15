@@ -40,6 +40,7 @@ pub struct Node {
     watchdog: u64,
     head_verifier: L2HeadVerifier,
     propose_forced_inclusion: bool,
+    p2p_sync_period_sec: u64,
 }
 
 impl Node {
@@ -59,6 +60,7 @@ impl Node {
         metrics: Arc<Metrics>,
         forced_inclusion: Arc<ForcedInclusion>,
         propose_forced_inclusion: bool,
+        p2p_sync_period_sec: u64,
     ) -> Result<Self, Error> {
         info!(
             "Batch builder config:\n\
@@ -104,6 +106,7 @@ impl Node {
             watchdog: 0,
             head_verifier,
             propose_forced_inclusion,
+            p2p_sync_period_sec,
         })
     }
 
@@ -354,17 +357,8 @@ impl Node {
                 return Ok(());
             }
 
-            if !self
-                .head_verifier
-                .verify(l2_slot_info.parent_id(), l2_slot_info.parent_hash())
-                .await
-            {
-                self.head_verifier.log_error().await;
-                self.cancel_token.cancel();
-                return Err(anyhow::anyhow!(
-                    "Unexpected L2 head detected. Restarting node..."
-                ));
-            }
+            self.verify_expected_l2_head_with_driver_status(&l2_slot_info)
+                .await?;
             let (forced_inclusion_block, block) = self
                 .preconfirm_block(
                     pending_tx_list,
@@ -414,6 +408,45 @@ impl Node {
         }
 
         Ok(())
+    }
+
+    async fn verify_expected_l2_head_with_driver_status(
+        &self,
+        l2_slot_info: &L2SlotInfo,
+    ) -> Result<(), Error> {
+        if self
+            .head_verifier
+            .verify(l2_slot_info.parent_id(), l2_slot_info.parent_hash())
+            .await
+        {
+            return Ok(());
+        }
+
+        // possibly there was no reorg, geth hasn't synced yet
+        // check second time after sleep
+        warn!(
+            "Unexpected L2 head detected. Checking again after {} seconds",
+            self.p2p_sync_period_sec
+        );
+        sleep(Duration::from_secs(self.p2p_sync_period_sec)).await;
+        if self
+            .head_verifier
+            .verify(l2_slot_info.parent_id(), l2_slot_info.parent_hash())
+            .await
+        {
+            info!(
+                "L2 head verified after waiting for {} seconds, the head is: {}",
+                self.p2p_sync_period_sec,
+                l2_slot_info.parent_id()
+            );
+            Ok(())
+        } else {
+            self.head_verifier.log_error().await;
+            self.cancel_token.cancel();
+            Err(anyhow::anyhow!(
+                "Unexpected L2 head detected. Restarting node..."
+            ))
+        }
     }
 
     async fn verify_preconfed_block(

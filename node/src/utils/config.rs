@@ -47,6 +47,7 @@ pub struct Config {
     pub min_bytes_per_tx_list: u64,
     pub propose_forced_inclusion: bool,
     pub extra_gas_percentage: u64,
+    pub p2p_sync_period_sec: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -355,6 +356,12 @@ impl Config {
             .parse::<u64>()
             .expect("MIN_BYTES_PER_TX_LIST must be a number");
 
+        // time we wait before assuming no new blocks will come through P2P
+        let p2p_sync_period_sec = std::env::var("P2P_SYNC_PERIOD_SEC")
+            .unwrap_or((l1_slot_duration_sec * 2).to_string())
+            .parse::<u64>()
+            .expect("P2P_SYNC_PERIOD_SEC must be a number");
+
         let config = Self {
             preconfer_address,
             taiko_geth_rpc_url: std::env::var("TAIKO_GETH_RPC_URL")
@@ -408,6 +415,7 @@ impl Config {
             min_bytes_per_tx_list,
             propose_forced_inclusion,
             extra_gas_percentage,
+            p2p_sync_period_sec,
         };
 
         info!(
@@ -453,6 +461,7 @@ amount to bridge from l2 to l1: {}
 disable bridging: {}
 simulate not submitting at the end of epoch: {}
 propose_forced_inclusion: {}
+p2p sync period: {}s
 "#,
             if let Some(preconfer_address) = &config.preconfer_address {
                 format!("\npreconfer address: {preconfer_address}")
@@ -506,6 +515,7 @@ propose_forced_inclusion: {}
             config.disable_bridging,
             config.simulate_not_submitting_at_the_end_of_epoch,
             config.propose_forced_inclusion,
+            config.p2p_sync_period_sec,
         );
 
         config

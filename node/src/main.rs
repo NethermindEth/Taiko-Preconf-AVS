@@ -211,6 +211,7 @@ async fn main() -> Result<(), Error> {
         metrics.clone(),
         forced_inclusion,
         config.propose_forced_inclusion,
+        config.p2p_sync_period_sec,
     )
     .await
     .map_err(|e| anyhow::anyhow!("Failed to create Node: {}", e))?;
