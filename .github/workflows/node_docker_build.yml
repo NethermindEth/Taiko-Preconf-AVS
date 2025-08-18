@@ -5,7 +5,7 @@ on:
   push:
     branches: [master]
     tags:
-      - "catalyst-v*"
+      - "v*"
     paths:
       - "node/**"
       - "tools/p2p_node/p2p_network/**"
@@ -17,7 +17,7 @@ env:
 
 jobs:
   build:
-    name: Build and push temporary docker image
+    name: Build per-arch image
     runs-on: ${{ matrix.os }}
     if: github.repository == 'NethermindEth/Catalyst'
     strategy:
@@ -25,8 +25,15 @@ jobs:
         include:
           - os: ubuntu-latest
             platform: linux/amd64
+            short: amd64
           - os: ubuntu-24.04-arm
             platform: linux/arm64
+            short: arm64
+
+    outputs:
+      digest-amd64: ${{ steps.digest.outputs.amd64 }}
+      digest-arm64: ${{ steps.digest.outputs.arm64 }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,29 +50,30 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}/${{ env.DOCKER_IMAGE_NAME }}
-          tags: type=raw,value=temp-${{ matrix.os }}
-
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v5
         with:
-          platforms: ${{ matrix.platform }}
           context: .
           file: Dockerfile
+          platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}/${{ env.DOCKER_IMAGE_NAME }},push-by-digest=true,name-canonical=true
+
+      - name: Set digest output
+        id: digest
+        run: |
+          if [ "${{ matrix.short }}" = "amd64" ]; then
+            echo "amd64=${{ steps.build.outputs.digest }}" >> $GITHUB_OUTPUT
+          fi
+          if [ "${{ matrix.short }}" = "arm64" ]; then
+            echo "arm64=${{ steps.build.outputs.digest }}" >> $GITHUB_OUTPUT
+          fi
 
   merge:
-    name: Merge and push docker image
+    name: Merge and push multi-arch manifest
     runs-on: ubuntu-latest
-    needs:
-      - build
+    needs: build
     steps:
       - uses: docker/login-action@v3
         with:
@@ -83,20 +91,18 @@ jobs:
           images: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}/${{ env.DOCKER_IMAGE_NAME }}
           tags: |
             type=raw,value=latest
-            type=ref,event=branch
-            type=ref,event=pr
             type=ref,event=tag
-            type=sha
 
       - name: Create manifest list and push
         run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}/${{ env.DOCKER_IMAGE_NAME }}:temp-ubuntu-latest \
-            ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}/${{ env.DOCKER_IMAGE_NAME }}:temp-ubuntu-24.04-arm
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            ${{ needs.build.outputs.digest-amd64 }} \
+            ${{ needs.build.outputs.digest-arm64 }}
 
       - name: Summary
         run: |
-          echo "## Docker build completed :green_circle:" >> $GITHUB_STEP_SUMMARY
+          echo "## Docker build completed ✅" >> $GITHUB_STEP_SUMMARY
           echo "### Tags" >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.meta.outputs.tags }}" | while IFS= read -r TAG; do
             echo "- $TAG" >> $GITHUB_STEP_SUMMARY
