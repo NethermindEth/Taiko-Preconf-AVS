@@ -199,12 +199,10 @@ async fn main() -> Result<(), Error> {
             handover_start_buffer_ms: config.handover_start_buffer_ms,
             l1_height_lag: config.l1_height_lag,
             propose_forced_inclusion: config.propose_forced_inclusion,
-            preconf_min_txs: config.preconf_min_txs,
-            preconf_max_skipped_slots: config.preconf_max_skipped_slots,
             simulate_not_submitting_at_the_end_of_epoch: config
                 .simulate_not_submitting_at_the_end_of_epoch,
         },
-        node::batch_manager::BatchBuilderConfig {
+        node::batch_manager::config::BatchBuilderConfig {
             max_bytes_size_of_batch: config.max_bytes_size_of_batch,
             max_blocks_per_batch,
             l1_slot_duration_sec: config.l1_slot_duration_sec,
@@ -212,6 +210,8 @@ async fn main() -> Result<(), Error> {
             max_anchor_height_offset: max_anchor_height_offset
                 - config.max_anchor_height_offset_reduction,
             default_coinbase: ethereum_l1.execution_layer.get_preconfer_alloy_address(),
+            preconf_min_txs: config.preconf_min_txs,
+            preconf_max_skipped_slots: config.preconf_max_skipped_slots,
         },
     )
     .await

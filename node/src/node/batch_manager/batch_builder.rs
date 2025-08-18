@@ -1,21 +1,14 @@
 use std::{collections::VecDeque, sync::Arc};
 
+use super::config::{BatchesToSend, ForcedInclusionBatch};
 use crate::{
-    ethereum_l1::{
-        EthereumL1, l1_contracts_bindings::BatchParams, slot_clock::SlotClock,
-        transaction_error::TransactionError,
-    },
-    node::batch_manager::batch::Batch,
+    ethereum_l1::{EthereumL1, slot_clock::SlotClock, transaction_error::TransactionError},
+    node::batch_manager::{batch::Batch, config::BatchBuilderConfig},
     shared::l2_block::L2Block,
 };
 use alloy::primitives::Address;
 use anyhow::Error;
 use tracing::{debug, error, trace, warn};
-
-use super::BatchBuilderConfig;
-
-type ForcedInclusionBatch = Option<BatchParams>;
-pub type BatchesToSend = VecDeque<(ForcedInclusionBatch, Batch)>;
 
 pub struct BatchBuilder {
     config: BatchBuilderConfig,
@@ -386,6 +379,26 @@ impl BatchBuilder {
         Ok(false)
     }
 
+    pub fn should_new_block_be_created(
+        &self,
+        number_of_pending_txs: u64,
+        current_l2_slot_timestamp: u64,
+    ) -> bool {
+        if number_of_pending_txs >= self.config.preconf_min_txs {
+            return true;
+        }
+
+        if let Some(current_batch) = self.current_batch.as_ref()
+            && let Some(last_block) = current_batch.l2_blocks.last()
+        {
+            let number_of_l2_slots = (current_l2_slot_timestamp - last_block.timestamp_sec) * 1000
+                / self.slot_clock.get_preconf_heartbeat_ms();
+            return number_of_l2_slots > self.config.preconf_max_skipped_slots;
+        }
+
+        false
+    }
+
     pub fn clone_without_batches(&self) -> Self {
         Self {
             config: self.config.clone(),
@@ -429,6 +442,8 @@ mod tests {
                 max_time_shift_between_blocks_sec: 255,
                 max_anchor_height_offset: 10,
                 default_coinbase: Address::ZERO,
+                preconf_min_txs: 5,
+                preconf_max_skipped_slots: 3,
             },
             Arc::new(SlotClock::new(0, 5, 12, 32, 3000)),
         );
@@ -505,6 +520,8 @@ mod tests {
             max_time_shift_between_blocks_sec: 255,
             max_anchor_height_offset: 10,
             default_coinbase: Address::ZERO,
+            preconf_min_txs: 5,
+            preconf_max_skipped_slots: 3,
         };
 
         let mut batch = Batch {
@@ -578,5 +595,62 @@ mod tests {
         let (res, total_bytes) = test_can_consume_l2_block(1000);
         assert!(res);
         assert_eq!(total_bytes, 228 * 2);
+    }
+
+    #[test]
+    fn test_should_new_block_be_created() {
+        let config = BatchBuilderConfig {
+            max_bytes_size_of_batch: 1000,
+            max_blocks_per_batch: 10,
+            l1_slot_duration_sec: 12,
+            max_time_shift_between_blocks_sec: 255,
+            max_anchor_height_offset: 10,
+            default_coinbase: Address::ZERO,
+            preconf_min_txs: 5,
+            preconf_max_skipped_slots: 3,
+        };
+
+        let slot_clock = Arc::new(SlotClock::new(0, 5, 12, 32, 2000));
+        let mut batch_builder = BatchBuilder::new(config, slot_clock);
+
+        // Test case 1: Should create new block when pending transactions >= preconf_min_txs
+        assert!(batch_builder.should_new_block_be_created(5, 1000));
+        assert!(batch_builder.should_new_block_be_created(10, 1000));
+
+        // Test case 2: Should not create new block when pending transactions < preconf_min_txs and no current batch
+        assert!(!batch_builder.should_new_block_be_created(3, 1000));
+
+        // Test case 3: Should not create new block when pending transactions < preconf_min_txs and current batch exists but no blocks
+        let empty_batch = Batch {
+            l2_blocks: vec![],
+            total_bytes: 0,
+            coinbase: Address::ZERO,
+            anchor_block_id: 0,
+            anchor_block_timestamp_sec: 0,
+        };
+        batch_builder.current_batch = Some(empty_batch);
+        assert!(!batch_builder.should_new_block_be_created(3, 1000));
+
+        // Test case 4: Should create new block when skipped slots > preconf_max_skipped_slots
+        let batch_with_blocks = Batch {
+            l2_blocks: vec![L2Block {
+                prebuilt_tx_list: shared::l2_tx_lists::PreBuiltTxList {
+                    tx_list: vec![],
+                    estimated_gas_used: 0,
+                    bytes_length: 0,
+                },
+                timestamp_sec: 1000,
+            }],
+            total_bytes: 0,
+            coinbase: Address::ZERO,
+            anchor_block_id: 0,
+            anchor_block_timestamp_sec: 0,
+        };
+        batch_builder.current_batch = Some(batch_with_blocks);
+
+        assert!(batch_builder.should_new_block_be_created(3, 1008));
+
+        // Test case 5: Should not create new block when skipped slots <= preconf_max_skipped_slots
+        assert!(!batch_builder.should_new_block_be_created(3, 1006));
     }
 }

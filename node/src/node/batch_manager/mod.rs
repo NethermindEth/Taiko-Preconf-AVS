@@ -1,10 +1,11 @@
 pub mod batch;
-pub mod batch_builder;
+mod batch_builder;
+pub mod config;
 
 use crate::{
     ethereum_l1::EthereumL1,
     forced_inclusion::ForcedInclusion,
-    node::batch_manager::batch_builder::BatchesToSend,
+    node::batch_manager::config::BatchesToSend,
     shared::{l2_block::L2Block, l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
     taiko::{
         self, Taiko, operation_type::OperationType, preconf_blocks::BuildPreconfBlockResponse,
@@ -14,35 +15,9 @@ use alloy::rpc::types::Transaction as GethTransaction;
 use alloy::{consensus::BlockHeader, consensus::Transaction, primitives::Address};
 use anyhow::Error;
 use batch_builder::BatchBuilder;
+use config::BatchBuilderConfig;
 use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
-
-/// Configuration for batching L2 transactions
-#[derive(Clone)]
-pub struct BatchBuilderConfig {
-    /// Maximum size of the batch in bytes before sending
-    pub max_bytes_size_of_batch: u64,
-    /// Maximum number of blocks in a batch
-    pub max_blocks_per_batch: u16,
-    /// L1 slot duration in seconds
-    pub l1_slot_duration_sec: u64,
-    /// Maximum time shift between blocks in seconds
-    pub max_time_shift_between_blocks_sec: u64,
-    /// The max differences of the anchor height and the current block number
-    pub max_anchor_height_offset: u64,
-    /// Default coinbase
-    pub default_coinbase: Address,
-}
-
-impl BatchBuilderConfig {
-    pub fn is_within_block_limit(&self, num_blocks: u16) -> bool {
-        num_blocks <= self.max_blocks_per_batch
-    }
-
-    pub fn is_within_bytes_limit(&self, total_bytes: u64) -> bool {
-        total_bytes <= self.max_bytes_size_of_batch
-    }
-}
 
 // Temporary struct while we don't have forced inclusion flag in extra data
 #[derive(PartialEq)]
@@ -365,17 +340,25 @@ impl BatchManager {
         end_of_sequencing: bool,
     ) -> Option<L2Block> {
         if let Some(pending_tx_list) = pending_tx_list {
-            // Handle the pending tx list from taiko geth
-            debug!(
-                "Received pending tx list length: {}, bytes length: {}",
-                pending_tx_list.tx_list.len(),
-                pending_tx_list.bytes_length
-            );
-            Some(L2Block::new_from(
-                pending_tx_list,
+            if self.batch_builder.should_new_block_be_created(
+                pending_tx_list.tx_list.len() as u64,
                 l2_slot_info.slot_timestamp(),
-            ))
-        } else if self.is_empty_block_required(l2_slot_info.slot_timestamp()) {
+            ) {
+                // Handle the pending tx list from taiko geth
+                debug!(
+                    "Received pending tx list length: {}, bytes length: {}",
+                    pending_tx_list.tx_list.len(),
+                    pending_tx_list.bytes_length
+                );
+                return Some(L2Block::new_from(
+                    pending_tx_list,
+                    l2_slot_info.slot_timestamp(),
+                ));
+            }
+            debug!("Pending tx list length is less than min number of txs in block");
+        }
+
+        if self.is_empty_block_required(l2_slot_info.slot_timestamp()) {
             // Handle time shift between blocks exceeded
             debug!("No pending txs, proposing empty block");
             Some(L2Block::new_empty(l2_slot_info.slot_timestamp()))
@@ -643,7 +626,7 @@ impl BatchManager {
                 .advance_head_to_new_l2_block(
                     forced_inclusion_block,
                     anchor_block_id,
-                    &l2_slot_info,
+                    l2_slot_info,
                     false,
                     true,
                     operation_type,

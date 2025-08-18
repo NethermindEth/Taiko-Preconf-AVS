@@ -13,7 +13,7 @@ use crate::{
     taiko::{Taiko, preconf_blocks::BuildPreconfBlockResponse},
 };
 use anyhow::Error;
-use batch_manager::{BatchBuilderConfig, BatchManager};
+use batch_manager::{BatchManager, config::BatchBuilderConfig};
 use chain_monitor::ChainMonitor;
 use operator::{Operator, Status as OperatorStatus};
 use std::sync::Arc;
@@ -31,8 +31,6 @@ pub struct NodeConfig {
     pub handover_start_buffer_ms: u64,
     pub l1_height_lag: u64,
     pub propose_forced_inclusion: bool,
-    pub preconf_min_txs: u64,
-    pub preconf_max_skipped_slots: u64,
     pub simulate_not_submitting_at_the_end_of_epoch: bool,
 }
 
@@ -49,7 +47,6 @@ pub struct Node {
     watchdog: u64,
     head_verifier: L2HeadVerifier,
     config: NodeConfig,
-    skipped_l1_slots: u64,
 }
 
 impl Node {
@@ -93,7 +90,6 @@ impl Node {
             watchdog: 0,
             head_verifier,
             config,
-            skipped_l1_slots: 0,
         })
     }
 
@@ -286,7 +282,6 @@ impl Node {
             .await?;
 
         if current_status.is_preconfirmation_start_slot() {
-            self.skipped_l1_slots = 0;
             self.head_verifier
                 .set(l2_slot_info.parent_id(), *l2_slot_info.parent_hash())
                 .await;
@@ -717,7 +712,6 @@ impl Node {
                 allow_forced_inclusion,
             )
             .await?;
-        self.skipped_l1_slots = 0;
         Ok(result)
     }
 
