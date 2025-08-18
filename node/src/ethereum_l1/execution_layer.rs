@@ -175,7 +175,7 @@ impl ExecutionLayer {
             tx_vec.extend(l2_block.prebuilt_tx_list.tx_list.clone());
 
             // Emit metrics for transaction count in this block
-            self.metrics.observe_block_tx_count(count as u64);
+            self.metrics.observe_block_tx_count(u64::from(count));
 
             /* times_shift is the difference in seconds between the current L2 block and the L2 previous block. */
             let time_shift: u8 = if i == 0 {
