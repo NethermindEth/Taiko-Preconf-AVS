@@ -18,6 +18,7 @@ pub struct Metrics {
     batch_propose_tries: Histogram,
     batch_block_count: Histogram,
     batch_blob_size: Histogram,
+    block_tx_count: Histogram,
     rpc_driver_call_duration: HistogramVec,
     rpc_driver_call: CounterVec,
     rpc_driver_call_error: CounterVec,
@@ -142,6 +143,20 @@ impl Metrics {
             error!("Error: Failed to register batch_blob_size: {}", err);
         }
 
+        let opts = HistogramOpts::new("block_tx_count", "Number of transactions in each block")
+            .buckets(vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                16.0, 17.0, 18.0, 19.0, 20.0, 25.0, 30.0, 40.0, 50.0, 100.0, 200.0, 500.0, 1000.0,
+            ]);
+        let block_tx_count = match Histogram::with_opts(opts) {
+            Ok(histogram) => histogram,
+            Err(err) => panic!("Failed to create block_tx_count histogram: {err}"),
+        };
+
+        if let Err(err) = registry.register(Box::new(block_tx_count.clone())) {
+            error!("Error: Failed to register block_tx_count: {}", err);
+        }
+
         let opts = HistogramOpts::new(
             "rpc_driver_call_duration_seconds",
             "Duration of RPC calls to driver in seconds",
@@ -205,6 +220,7 @@ impl Metrics {
             batch_propose_tries,
             batch_block_count,
             batch_blob_size,
+            block_tx_count,
             rpc_driver_call_duration,
             rpc_driver_call,
             rpc_driver_call_error,
@@ -258,6 +274,11 @@ impl Metrics {
     pub fn observe_batch_info(&self, block_count: u64, blob_size: u64) {
         self.batch_block_count.observe(block_count as f64);
         self.batch_blob_size.observe(blob_size as f64);
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    pub fn observe_block_tx_count(&self, tx_count: u64) {
+        self.block_tx_count.observe(tx_count as f64);
     }
 
     pub fn observe_rpc_driver_call_duration(&self, method: &str, duration: f64) {
@@ -353,6 +374,7 @@ mod tests {
         metrics.inc_batch_confirmed();
         metrics.observe_batch_propose_tries(1);
         metrics.observe_batch_info(5, 1000);
+        metrics.observe_block_tx_count(3);
 
         let output = metrics.gather();
         println!("{output}");
@@ -368,6 +390,8 @@ mod tests {
         assert!(output.contains("batch_propose_tries_count 1"));
         assert!(output.contains("batch_block_count_sum 5"));
         assert!(output.contains("batch_blob_size_sum 1000"));
+        assert!(output.contains("block_tx_count_count 1"));
+        assert!(output.contains("block_tx_count_sum 3"));
     }
 
     #[test]
