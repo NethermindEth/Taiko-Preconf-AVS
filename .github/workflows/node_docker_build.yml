@@ -19,7 +19,7 @@ jobs:
   build:
     name: Build per-arch image
     runs-on: ${{ matrix.os }}
-    if: github.repository == 'gehlotanish/catalyst-temp'
+    if: github.repository == 'NethermindEth/Catalyst'
     strategy:
       matrix:
         include:
