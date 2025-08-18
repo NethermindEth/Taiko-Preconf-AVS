@@ -98,8 +98,6 @@ async fn main() -> Result<(), Error> {
 
     let ethereum_l1 = Arc::new(ethereum_l1);
 
-    let forced_inclusion = Arc::new(forced_inclusion::ForcedInclusion::new(ethereum_l1.clone()));
-
     #[cfg(feature = "test-gas")]
     let args = Args::parse();
     #[cfg(feature = "test-gas")]
@@ -195,7 +193,6 @@ async fn main() -> Result<(), Error> {
         chain_monitor.clone(),
         transaction_error_receiver,
         metrics.clone(),
-        forced_inclusion,
         node::NodeConfig {
             preconf_heartbeat_ms: config.preconf_heartbeat_ms,
             handover_window_slots: config.handover_window_slots,

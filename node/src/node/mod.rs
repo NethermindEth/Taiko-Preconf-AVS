@@ -5,7 +5,6 @@ mod operator;
 mod verifier;
 
 use crate::chain_monitor;
-use crate::forced_inclusion::ForcedInclusion;
 use crate::{
     ethereum_l1::{EthereumL1, transaction_error::TransactionError},
     metrics::Metrics,
@@ -50,6 +49,7 @@ pub struct Node {
     watchdog: u64,
     head_verifier: L2HeadVerifier,
     config: NodeConfig,
+    skipped_l1_slots: u64,
 }
 
 impl Node {
@@ -61,7 +61,6 @@ impl Node {
         chain_monitor: Arc<ChainMonitor>,
         transaction_error_channel: Receiver<TransactionError>,
         metrics: Arc<Metrics>,
-        forced_inclusion: Arc<ForcedInclusion>,
         config: NodeConfig,
         batch_builder_config: BatchBuilderConfig,
     ) -> Result<Self, Error> {
@@ -79,7 +78,6 @@ impl Node {
             batch_builder_config,
             ethereum_l1.clone(),
             taiko.clone(),
-            forced_inclusion,
         );
         let head_verifier = L2HeadVerifier::new();
         Ok(Self {
@@ -95,6 +93,7 @@ impl Node {
             watchdog: 0,
             head_verifier,
             config,
+            skipped_l1_slots: 0,
         })
     }
 
@@ -287,6 +286,7 @@ impl Node {
             .await?;
 
         if current_status.is_preconfirmation_start_slot() {
+            self.skipped_l1_slots = 0;
             self.head_verifier
                 .set(l2_slot_info.parent_id(), *l2_slot_info.parent_hash())
                 .await;
@@ -708,14 +708,17 @@ impl Node {
         ),
         Error,
     > {
-        self.batch_manager
+        let result = self
+            .batch_manager
             .preconfirm_block(
                 pending_tx_list,
                 l2_slot_info,
                 end_of_sequencing,
                 allow_forced_inclusion,
             )
-            .await
+            .await?;
+        self.skipped_l1_slots = 0;
+        Ok(result)
     }
 
     fn print_current_slots_info(
