@@ -5,7 +5,7 @@ on:
   push:
     branches: [master]
     tags:
-      - "catalyst-v*"
+      - "v*"
     paths:
       - "node/**"
       - "tools/p2p_node/p2p_network/**"
@@ -84,9 +84,7 @@ jobs:
           tags: |
             type=raw,value=latest
             type=ref,event=branch
-            type=ref,event=pr
             type=ref,event=tag
-            type=sha
 
       - name: Create manifest list and push
         run: |
