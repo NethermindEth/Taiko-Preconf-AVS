@@ -69,6 +69,19 @@ impl BatchManager {
         taiko: Arc<Taiko>,
         forced_inclusion: Arc<ForcedInclusion>,
     ) -> Self {
+        info!(
+            "Batch builder config:\n\
+             max_bytes_size_of_batch: {}\n\
+             max_blocks_per_batch: {}\n\
+             l1_slot_duration_sec: {}\n\
+             max_time_shift_between_blocks_sec: {}\n\
+             max_anchor_height_offset: {}",
+            config.max_bytes_size_of_batch,
+            config.max_blocks_per_batch,
+            config.l1_slot_duration_sec,
+            config.max_time_shift_between_blocks_sec,
+            config.max_anchor_height_offset,
+        );
         Self {
             batch_builder: BatchBuilder::new(config, ethereum_l1.slot_clock.clone()),
             ethereum_l1,

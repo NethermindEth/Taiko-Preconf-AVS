@@ -26,11 +26,21 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 use verifier::VerificationResult;
 
+pub struct NodeConfig {
+    pub preconf_heartbeat_ms: u64,
+    pub handover_window_slots: u64,
+    pub handover_start_buffer_ms: u64,
+    pub l1_height_lag: u64,
+    pub propose_forced_inclusion: bool,
+    pub preconf_min_txs: u64,
+    pub preconf_max_skipped_slots: u64,
+    pub simulate_not_submitting_at_the_end_of_epoch: bool,
+}
+
 pub struct Node {
     cancel_token: CancellationToken,
     ethereum_l1: Arc<EthereumL1>,
     chain_monitor: Arc<ChainMonitor>,
-    preconf_heartbeat_ms: u64,
     operator: Operator,
     batch_manager: BatchManager,
     verifier: Option<verifier::Verifier>,
@@ -39,7 +49,7 @@ pub struct Node {
     metrics: Arc<Metrics>,
     watchdog: u64,
     head_verifier: L2HeadVerifier,
-    propose_forced_inclusion: bool,
+    config: NodeConfig,
 }
 
 impl Node {
@@ -49,41 +59,23 @@ impl Node {
         taiko: Arc<Taiko>,
         ethereum_l1: Arc<EthereumL1>,
         chain_monitor: Arc<ChainMonitor>,
-        preconf_heartbeat_ms: u64,
-        handover_window_slots: u64,
-        handover_start_buffer_ms: u64,
-        l1_height_lag: u64,
-        batch_builder_config: BatchBuilderConfig,
-        simulate_not_submitting_at_the_end_of_epoch: bool,
         transaction_error_channel: Receiver<TransactionError>,
         metrics: Arc<Metrics>,
         forced_inclusion: Arc<ForcedInclusion>,
-        propose_forced_inclusion: bool,
+        config: NodeConfig,
+        batch_builder_config: BatchBuilderConfig,
     ) -> Result<Self, Error> {
-        info!(
-            "Batch builder config:\n\
-             max_bytes_size_of_batch: {}\n\
-             max_blocks_per_batch: {}\n\
-             l1_slot_duration_sec: {}\n\
-             max_time_shift_between_blocks_sec: {}\n\
-             max_anchor_height_offset: {}",
-            batch_builder_config.max_bytes_size_of_batch,
-            batch_builder_config.max_blocks_per_batch,
-            batch_builder_config.l1_slot_duration_sec,
-            batch_builder_config.max_time_shift_between_blocks_sec,
-            batch_builder_config.max_anchor_height_offset,
-        );
         let operator = Operator::new(
             &ethereum_l1,
             taiko.clone(),
-            handover_window_slots,
-            handover_start_buffer_ms,
-            simulate_not_submitting_at_the_end_of_epoch,
+            config.handover_window_slots,
+            config.handover_start_buffer_ms,
+            config.simulate_not_submitting_at_the_end_of_epoch,
             cancel_token.clone(),
         )
         .map_err(|e| anyhow::anyhow!("Failed to create Operator: {}", e))?;
         let batch_manager = BatchManager::new(
-            l1_height_lag,
+            config.l1_height_lag,
             batch_builder_config,
             ethereum_l1.clone(),
             taiko.clone(),
@@ -95,7 +87,6 @@ impl Node {
             batch_manager,
             ethereum_l1,
             chain_monitor,
-            preconf_heartbeat_ms,
             operator,
             verifier: None,
             taiko,
@@ -103,7 +94,7 @@ impl Node {
             metrics,
             watchdog: 0,
             head_verifier,
-            propose_forced_inclusion,
+            config,
         })
     }
 
@@ -205,7 +196,8 @@ impl Node {
         }
 
         // start preconfirmation loop
-        let mut interval = tokio::time::interval(Duration::from_millis(self.preconf_heartbeat_ms));
+        let mut interval =
+            tokio::time::interval(Duration::from_millis(self.config.preconf_heartbeat_ms));
         // fix for handover buffer longer than l2 heart beat, keeps the loop synced
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
@@ -370,7 +362,7 @@ impl Node {
                     pending_tx_list,
                     l2_slot_info,
                     current_status.is_end_of_sequencing(),
-                    self.propose_forced_inclusion
+                    self.config.propose_forced_inclusion
                         && current_status.is_submitter()
                         && self.verifier.is_none(),
                 )

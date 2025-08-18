@@ -193,10 +193,20 @@ async fn main() -> Result<(), Error> {
         taiko.clone(),
         ethereum_l1.clone(),
         chain_monitor.clone(),
-        config.preconf_heartbeat_ms,
-        config.handover_window_slots,
-        config.handover_start_buffer_ms,
-        config.l1_height_lag,
+        transaction_error_receiver,
+        metrics.clone(),
+        forced_inclusion,
+        node::NodeConfig {
+            preconf_heartbeat_ms: config.preconf_heartbeat_ms,
+            handover_window_slots: config.handover_window_slots,
+            handover_start_buffer_ms: config.handover_start_buffer_ms,
+            l1_height_lag: config.l1_height_lag,
+            propose_forced_inclusion: config.propose_forced_inclusion,
+            preconf_min_txs: config.preconf_min_txs,
+            preconf_max_skipped_slots: config.preconf_max_skipped_slots,
+            simulate_not_submitting_at_the_end_of_epoch: config
+                .simulate_not_submitting_at_the_end_of_epoch,
+        },
         node::batch_manager::BatchBuilderConfig {
             max_bytes_size_of_batch: config.max_bytes_size_of_batch,
             max_blocks_per_batch,
@@ -206,11 +216,6 @@ async fn main() -> Result<(), Error> {
                 - config.max_anchor_height_offset_reduction,
             default_coinbase: ethereum_l1.execution_layer.get_preconfer_alloy_address(),
         },
-        config.simulate_not_submitting_at_the_end_of_epoch,
-        transaction_error_receiver,
-        metrics.clone(),
-        forced_inclusion,
-        config.propose_forced_inclusion,
     )
     .await
     .map_err(|e| anyhow::anyhow!("Failed to create Node: {}", e))?;
