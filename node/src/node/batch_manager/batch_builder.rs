@@ -442,7 +442,7 @@ impl BatchBuilder {
         {
             let number_of_l2_slots = (current_l2_slot_timestamp - last_block.timestamp_sec) * 1000
                 / self.slot_clock.get_preconf_heartbeat_ms();
-            return number_of_l2_slots > self.config.preconf_max_skipped_slots;
+            return number_of_l2_slots > self.config.preconf_max_skipped_l2_slots;
         }
 
         false
@@ -497,7 +497,7 @@ mod tests {
                 max_anchor_height_offset: 10,
                 default_coinbase: Address::ZERO,
                 preconf_min_txs: 5,
-                preconf_max_skipped_slots: 3,
+                preconf_max_skipped_l2_slots: 3,
             },
             Arc::new(SlotClock::new(0, 5, 12, 32, 3000)),
             Arc::new(Metrics::new()),
@@ -576,7 +576,7 @@ mod tests {
             max_anchor_height_offset: 10,
             default_coinbase: Address::ZERO,
             preconf_min_txs: 5,
-            preconf_max_skipped_slots: 3,
+            preconf_max_skipped_l2_slots: 3,
         };
 
         let mut batch = Batch {
@@ -663,7 +663,7 @@ mod tests {
             max_anchor_height_offset: 10,
             default_coinbase: Address::ZERO,
             preconf_min_txs: 5,
-            preconf_max_skipped_slots: 3,
+            preconf_max_skipped_l2_slots: 3,
         };
 
         let slot_clock = Arc::new(SlotClock::new(0, 5, 12, 32, 2000));
@@ -703,10 +703,10 @@ mod tests {
         };
         batch_builder.current_batch = Some(batch_with_blocks);
 
-        // Test case 4: Should create new block when skipped slots > preconf_max_skipped_slots
+        // Test case 4: Should create new block when skipped slots > preconf_max_skipped_l2_slots
         assert!(batch_builder.should_new_block_be_created(3, 1008, false));
 
-        // Test case 5: Should not create new block when skipped slots <= preconf_max_skipped_slots
+        // Test case 5: Should not create new block when skipped slots <= preconf_max_skipped_l2_slots
         assert!(!batch_builder.should_new_block_be_created(3, 1006, false));
 
         // Test case 6: Should create new block when end_of_sequencing is true

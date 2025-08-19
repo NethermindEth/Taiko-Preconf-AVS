@@ -48,7 +48,7 @@ pub struct Config {
     pub propose_forced_inclusion: bool,
     pub extra_gas_percentage: u64,
     pub preconf_min_txs: u64,
-    pub preconf_max_skipped_slots: u64,
+    pub preconf_max_skipped_l2_slots: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -362,10 +362,10 @@ impl Config {
             .parse::<u64>()
             .expect("PRECONF_MIN_TXS must be a number");
 
-        let preconf_max_skipped_slots = std::env::var("PRECONF_MAX_SKIPPED_SLOTS")
+        let preconf_max_skipped_l2_slots = std::env::var("PRECONF_MAX_SKIPPED_L2_SLOTS")
             .unwrap_or("2".to_string())
             .parse::<u64>()
-            .expect("PRECONF_MAX_SKIPPED_SLOTS must be a number");
+            .expect("PRECONF_MAX_SKIPPED_L2_SLOTS must be a number");
 
         let config = Self {
             preconfer_address,
@@ -421,7 +421,7 @@ impl Config {
             propose_forced_inclusion,
             extra_gas_percentage,
             preconf_min_txs,
-            preconf_max_skipped_slots,
+            preconf_max_skipped_l2_slots,
         };
 
         info!(
@@ -468,7 +468,7 @@ disable bridging: {}
 simulate not submitting at the end of epoch: {}
 propose_forced_inclusion: {}
 min number of transaction to create a L2 block: {}
-max number of skipped L1 slots while creating a L2 block: {}
+max number of skipped L2 slots while creating a L2 block: {}
 "#,
             if let Some(preconfer_address) = &config.preconfer_address {
                 format!("\npreconfer address: {preconfer_address}")
@@ -523,7 +523,7 @@ max number of skipped L1 slots while creating a L2 block: {}
             config.simulate_not_submitting_at_the_end_of_epoch,
             config.propose_forced_inclusion,
             config.preconf_min_txs,
-            config.preconf_max_skipped_slots,
+            config.preconf_max_skipped_l2_slots,
         );
 
         config

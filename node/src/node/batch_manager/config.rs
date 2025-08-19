@@ -24,7 +24,7 @@ pub struct BatchBuilderConfig {
     /// Minimum number of transactions in a preconfirmed block
     pub preconf_min_txs: u64,
     /// Maximum number of skipped slots in a preconfirmed block
-    pub preconf_max_skipped_slots: u64,
+    pub preconf_max_skipped_l2_slots: u64,
 }
 
 impl BatchBuilderConfig {
