@@ -3,8 +3,9 @@ use std::{collections::VecDeque, sync::Arc};
 use super::config::{BatchesToSend, ForcedInclusionBatch};
 use crate::{
     ethereum_l1::{EthereumL1, slot_clock::SlotClock, transaction_error::TransactionError},
+    metrics::Metrics,
     node::batch_manager::{batch::Batch, config::BatchBuilderConfig},
-    shared::l2_block::L2Block,
+    shared::{l2_block::L2Block, l2_tx_lists::PreBuiltTxList},
 };
 use alloy::primitives::Address;
 use anyhow::Error;
@@ -16,6 +17,7 @@ pub struct BatchBuilder {
     current_batch: Option<Batch>,
     current_forced_inclusion: ForcedInclusionBatch,
     slot_clock: Arc<SlotClock>,
+    metrics: Arc<Metrics>,
 }
 
 impl Drop for BatchBuilder {
@@ -29,13 +31,18 @@ impl Drop for BatchBuilder {
 }
 
 impl BatchBuilder {
-    pub fn new(config: BatchBuilderConfig, slot_clock: Arc<SlotClock>) -> Self {
+    pub fn new(
+        config: BatchBuilderConfig,
+        slot_clock: Arc<SlotClock>,
+        metrics: Arc<Metrics>,
+    ) -> Self {
         Self {
             config,
             batches_to_send: VecDeque::new(),
             current_batch: None,
             current_forced_inclusion: None,
             slot_clock,
+            metrics,
         }
     }
 
@@ -379,11 +386,53 @@ impl BatchBuilder {
         Ok(false)
     }
 
-    pub fn should_new_block_be_created(
+    pub fn create_l2_block(
+        &mut self,
+        pending_tx_list: Option<PreBuiltTxList>,
+        l2_slot_timestamp: u64,
+        end_of_sequencing: bool,
+    ) -> Option<L2Block> {
+        let tx_list_len = pending_tx_list
+            .as_ref()
+            .map(|tx_list| tx_list.tx_list.len())
+            .unwrap_or(0);
+        if self.should_new_block_be_created(
+            tx_list_len as u64,
+            l2_slot_timestamp,
+            end_of_sequencing,
+        ) {
+            if let Some(pending_tx_list) = pending_tx_list {
+                debug!(
+                    "Creating new block with pending tx list length: {}, bytes length: {}",
+                    pending_tx_list.tx_list.len(),
+                    pending_tx_list.bytes_length
+                );
+
+                Some(L2Block::new_from(pending_tx_list, l2_slot_timestamp))
+            } else {
+                Some(L2Block::new_empty(l2_slot_timestamp))
+            }
+        } else {
+            debug!("Skipping preconfirmation for the current L2 slot");
+            self.metrics.inc_skipped_l2_slots_by_low_txs_count();
+            None
+        }
+    }
+
+    fn should_new_block_be_created(
         &self,
         number_of_pending_txs: u64,
         current_l2_slot_timestamp: u64,
+        end_of_sequencing: bool,
     ) -> bool {
+        if self.is_empty_block_required(current_l2_slot_timestamp) || end_of_sequencing {
+            return true;
+        }
+
+        if number_of_pending_txs == 0 {
+            return false;
+        }
+
         if number_of_pending_txs >= self.config.preconf_min_txs {
             return true;
         }
@@ -399,6 +448,10 @@ impl BatchBuilder {
         false
     }
 
+    fn is_empty_block_required(&self, preconfirmation_timestamp: u64) -> bool {
+        self.is_time_shift_between_blocks_expiring(preconfirmation_timestamp)
+    }
+
     pub fn clone_without_batches(&self) -> Self {
         Self {
             config: self.config.clone(),
@@ -406,6 +459,7 @@ impl BatchBuilder {
             current_batch: None,
             current_forced_inclusion: None,
             slot_clock: self.slot_clock.clone(),
+            metrics: self.metrics.clone(),
         }
     }
 
@@ -446,6 +500,7 @@ mod tests {
                 preconf_max_skipped_slots: 3,
             },
             Arc::new(SlotClock::new(0, 5, 12, 32, 3000)),
+            Arc::new(Metrics::new()),
         );
 
         assert!(!batch_builder.is_the_last_l1_slot_to_add_an_empty_l2_block(100, 0));
@@ -550,6 +605,7 @@ mod tests {
             batches_to_send: VecDeque::new(),
             current_forced_inclusion: None,
             slot_clock: Arc::new(SlotClock::new(0, 5, 12, 32, 3000)),
+            metrics: Arc::new(Metrics::new()),
         };
 
         let tx2 = build_tx_2();
@@ -611,14 +667,14 @@ mod tests {
         };
 
         let slot_clock = Arc::new(SlotClock::new(0, 5, 12, 32, 2000));
-        let mut batch_builder = BatchBuilder::new(config, slot_clock);
+        let mut batch_builder = BatchBuilder::new(config, slot_clock, Arc::new(Metrics::new()));
 
         // Test case 1: Should create new block when pending transactions >= preconf_min_txs
-        assert!(batch_builder.should_new_block_be_created(5, 1000));
-        assert!(batch_builder.should_new_block_be_created(10, 1000));
+        assert!(batch_builder.should_new_block_be_created(5, 1000, false));
+        assert!(batch_builder.should_new_block_be_created(10, 1000, false));
 
         // Test case 2: Should not create new block when pending transactions < preconf_min_txs and no current batch
-        assert!(!batch_builder.should_new_block_be_created(3, 1000));
+        assert!(!batch_builder.should_new_block_be_created(3, 1000, false));
 
         // Test case 3: Should not create new block when pending transactions < preconf_min_txs and current batch exists but no blocks
         let empty_batch = Batch {
@@ -629,7 +685,7 @@ mod tests {
             anchor_block_timestamp_sec: 0,
         };
         batch_builder.current_batch = Some(empty_batch);
-        assert!(!batch_builder.should_new_block_be_created(3, 1000));
+        assert!(!batch_builder.should_new_block_be_created(3, 1000, false));
 
         // Test case 4: Should create new block when skipped slots > preconf_max_skipped_slots
         let batch_with_blocks = Batch {
@@ -648,9 +704,9 @@ mod tests {
         };
         batch_builder.current_batch = Some(batch_with_blocks);
 
-        assert!(batch_builder.should_new_block_be_created(3, 1008));
+        assert!(batch_builder.should_new_block_be_created(3, 1008, false));
 
         // Test case 5: Should not create new block when skipped slots <= preconf_max_skipped_slots
-        assert!(!batch_builder.should_new_block_be_created(3, 1006));
+        assert!(!batch_builder.should_new_block_be_created(3, 1006, false));
     }
 }

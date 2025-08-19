@@ -5,6 +5,7 @@ pub mod config;
 use crate::{
     ethereum_l1::EthereumL1,
     forced_inclusion::ForcedInclusion,
+    metrics::Metrics,
     node::batch_manager::config::BatchesToSend,
     shared::{l2_block::L2Block, l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
     taiko::{
@@ -17,7 +18,7 @@ use anyhow::Error;
 use batch_builder::BatchBuilder;
 use config::BatchBuilderConfig;
 use std::sync::Arc;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 
 // Temporary struct while we don't have forced inclusion flag in extra data
 #[derive(PartialEq)]
@@ -34,6 +35,7 @@ pub struct BatchManager {
     l1_height_lag: u64,
     forced_inclusion: Arc<ForcedInclusion>,
     cached_forced_inclusion_txs: CachedForcedInclusion,
+    metrics: Arc<Metrics>,
 }
 
 impl BatchManager {
@@ -42,6 +44,7 @@ impl BatchManager {
         config: BatchBuilderConfig,
         ethereum_l1: Arc<EthereumL1>,
         taiko: Arc<Taiko>,
+        metrics: Arc<Metrics>,
     ) -> Self {
         info!(
             "Batch builder config:\n\
@@ -58,12 +61,17 @@ impl BatchManager {
         );
         let forced_inclusion = Arc::new(ForcedInclusion::new(ethereum_l1.clone()));
         Self {
-            batch_builder: BatchBuilder::new(config, ethereum_l1.slot_clock.clone()),
+            batch_builder: BatchBuilder::new(
+                config,
+                ethereum_l1.slot_clock.clone(),
+                metrics.clone(),
+            ),
             ethereum_l1,
             taiko,
             l1_height_lag,
             forced_inclusion,
             cached_forced_inclusion_txs: CachedForcedInclusion::Empty,
+            metrics,
         }
     }
 
@@ -305,10 +313,11 @@ impl BatchManager {
         ),
         Error,
     > {
-        let result = if let Some(l2_block) = self
-            .create_l2_block(pending_tx_list, &l2_slot_info, end_of_sequencing)
-            .await
-        {
+        let result = if let Some(l2_block) = self.batch_builder.create_l2_block(
+            pending_tx_list,
+            l2_slot_info.slot_timestamp(),
+            end_of_sequencing,
+        ) {
             self.add_new_l2_block(
                 l2_block,
                 l2_slot_info,
@@ -331,44 +340,6 @@ impl BatchManager {
         }
 
         Ok(result)
-    }
-
-    async fn create_l2_block(
-        &mut self,
-        pending_tx_list: Option<PreBuiltTxList>,
-        l2_slot_info: &L2SlotInfo,
-        end_of_sequencing: bool,
-    ) -> Option<L2Block> {
-        if let Some(pending_tx_list) = pending_tx_list {
-            if self.batch_builder.should_new_block_be_created(
-                pending_tx_list.tx_list.len() as u64,
-                l2_slot_info.slot_timestamp(),
-            ) {
-                // Handle the pending tx list from taiko geth
-                debug!(
-                    "Received pending tx list length: {}, bytes length: {}",
-                    pending_tx_list.tx_list.len(),
-                    pending_tx_list.bytes_length
-                );
-                return Some(L2Block::new_from(
-                    pending_tx_list,
-                    l2_slot_info.slot_timestamp(),
-                ));
-            }
-            debug!("Pending tx list length is less than min number of txs in block");
-        }
-
-        if self.is_empty_block_required(l2_slot_info.slot_timestamp()) {
-            // Handle time shift between blocks exceeded
-            debug!("No pending txs, proposing empty block");
-            Some(L2Block::new_empty(l2_slot_info.slot_timestamp()))
-        } else if end_of_sequencing {
-            debug!("No pending txs, but reached end of sequencing, proposing empty block.");
-            Some(L2Block::new_empty(l2_slot_info.slot_timestamp()))
-        } else {
-            trace!("No pending txs, skipping preconfirmation");
-            None
-        }
     }
 
     async fn preconfirm_forced_inclusion_block(
@@ -799,11 +770,6 @@ impl BatchManager {
             .await
     }
 
-    pub fn is_empty_block_required(&self, preconfirmation_timestamp: u64) -> bool {
-        self.batch_builder
-            .is_time_shift_between_blocks_expiring(preconfirmation_timestamp)
-    }
-
     pub fn has_batches(&self) -> bool {
         !self.batch_builder.is_empty()
     }
@@ -828,6 +794,7 @@ impl BatchManager {
         self.batch_builder = batch_builder::BatchBuilder::new(
             self.batch_builder.get_config().clone(),
             self.ethereum_l1.slot_clock.clone(),
+            self.metrics.clone(),
         );
 
         Ok(())
@@ -841,6 +808,7 @@ impl BatchManager {
             l1_height_lag: self.l1_height_lag,
             forced_inclusion: self.forced_inclusion.clone(),
             cached_forced_inclusion_txs: CachedForcedInclusion::Empty,
+            metrics: self.metrics.clone(),
         }
     }
 

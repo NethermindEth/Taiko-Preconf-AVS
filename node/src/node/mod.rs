@@ -75,6 +75,7 @@ impl Node {
             batch_builder_config,
             ethereum_l1.clone(),
             taiko.clone(),
+            metrics.clone(),
         );
         let head_verifier = L2HeadVerifier::new();
         Ok(Self {
