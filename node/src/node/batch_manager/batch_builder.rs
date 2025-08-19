@@ -687,7 +687,6 @@ mod tests {
         batch_builder.current_batch = Some(empty_batch);
         assert!(!batch_builder.should_new_block_be_created(3, 1000, false));
 
-        // Test case 4: Should create new block when skipped slots > preconf_max_skipped_slots
         let batch_with_blocks = Batch {
             l2_blocks: vec![L2Block {
                 prebuilt_tx_list: shared::l2_tx_lists::PreBuiltTxList {
@@ -704,9 +703,22 @@ mod tests {
         };
         batch_builder.current_batch = Some(batch_with_blocks);
 
+        // Test case 4: Should create new block when skipped slots > preconf_max_skipped_slots
         assert!(batch_builder.should_new_block_be_created(3, 1008, false));
 
         // Test case 5: Should not create new block when skipped slots <= preconf_max_skipped_slots
         assert!(!batch_builder.should_new_block_be_created(3, 1006, false));
+
+        // Test case 6: Should create new block when end_of_sequencing is true
+        assert!(batch_builder.should_new_block_be_created(3, 1006, true));
+
+        // Test case 7: Should not create new block when is_empty_block_required is false
+        assert!(!batch_builder.should_new_block_be_created(0, 1008, false));
+
+        // Test case 8: Should create new block when is_empty_block_required is true
+        assert!(batch_builder.should_new_block_be_created(0, 1260, false));
+
+        // Test case 9: Should create new block when is_empty_block_required is true and end_of_sequencing is true
+        assert!(batch_builder.should_new_block_be_created(0, 1260, true));
     }
 }
