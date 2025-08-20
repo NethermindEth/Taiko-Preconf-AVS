@@ -358,7 +358,7 @@ impl Config {
             .expect("MIN_BYTES_PER_TX_LIST must be a number");
 
         let preconf_min_txs = std::env::var("PRECONF_MIN_TXS")
-            .unwrap_or("5".to_string())
+            .unwrap_or("3".to_string())
             .parse::<u64>()
             .expect("PRECONF_MIN_TXS must be a number");
 
