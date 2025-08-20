@@ -99,8 +99,6 @@ async fn main() -> Result<(), Error> {
 
     let ethereum_l1 = Arc::new(ethereum_l1);
 
-    let forced_inclusion = Arc::new(forced_inclusion::ForcedInclusion::new(ethereum_l1.clone()));
-
     #[cfg(feature = "test-gas")]
     let args = Args::parse();
     #[cfg(feature = "test-gas")]
@@ -194,11 +192,18 @@ async fn main() -> Result<(), Error> {
         taiko.clone(),
         ethereum_l1.clone(),
         chain_monitor.clone(),
-        config.preconf_heartbeat_ms,
-        config.handover_window_slots,
-        config.handover_start_buffer_ms,
-        config.l1_height_lag,
-        node::batch_manager::BatchBuilderConfig {
+        transaction_error_receiver,
+        metrics.clone(),
+        node::NodeConfig {
+            preconf_heartbeat_ms: config.preconf_heartbeat_ms,
+            handover_window_slots: config.handover_window_slots,
+            handover_start_buffer_ms: config.handover_start_buffer_ms,
+            l1_height_lag: config.l1_height_lag,
+            propose_forced_inclusion: config.propose_forced_inclusion,
+            simulate_not_submitting_at_the_end_of_epoch: config
+                .simulate_not_submitting_at_the_end_of_epoch,
+        },
+        node::batch_manager::config::BatchBuilderConfig {
             max_bytes_size_of_batch: config.max_bytes_size_of_batch,
             max_blocks_per_batch,
             l1_slot_duration_sec: config.l1_slot_duration_sec,
@@ -206,12 +211,9 @@ async fn main() -> Result<(), Error> {
             max_anchor_height_offset: max_anchor_height_offset
                 - config.max_anchor_height_offset_reduction,
             default_coinbase: ethereum_l1.execution_layer.get_preconfer_alloy_address(),
+            preconf_min_txs: config.preconf_min_txs,
+            preconf_max_skipped_l2_slots: config.preconf_max_skipped_l2_slots,
         },
-        config.simulate_not_submitting_at_the_end_of_epoch,
-        transaction_error_receiver,
-        metrics.clone(),
-        forced_inclusion,
-        config.propose_forced_inclusion,
     )
     .await
     .map_err(|e| anyhow::anyhow!("Failed to create Node: {}", e))?;

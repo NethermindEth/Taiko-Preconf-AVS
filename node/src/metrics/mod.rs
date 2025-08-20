@@ -22,6 +22,7 @@ pub struct Metrics {
     rpc_driver_call_duration: HistogramVec,
     rpc_driver_call: CounterVec,
     rpc_driver_call_error: CounterVec,
+    skipped_l2_slots_by_low_txs_count: Counter,
     registry: Registry,
 }
 
@@ -208,6 +209,12 @@ impl Metrics {
             );
         }
 
+        let skipped_l2_slots_by_low_txs_count = Counter::new(
+            "skipped_l2_slots_by_low_txs_count",
+            "Number of skipped L2 slots by low txs count",
+        )
+        .expect("Failed to create skipped_l2_slots_by_low_txs_count counter");
+
         Self {
             preconfer_eth_balance,
             preconfer_taiko_balance,
@@ -224,6 +231,7 @@ impl Metrics {
             rpc_driver_call_duration,
             rpc_driver_call,
             rpc_driver_call_error,
+            skipped_l2_slots_by_low_txs_count,
             registry,
         }
     }
@@ -318,6 +326,10 @@ impl Metrics {
                 method
             );
         }
+    }
+
+    pub fn inc_skipped_l2_slots_by_low_txs_count(&self) {
+        self.skipped_l2_slots_by_low_txs_count.inc();
     }
 
     fn u256_to_f64(balance: alloy::primitives::U256) -> f64 {
