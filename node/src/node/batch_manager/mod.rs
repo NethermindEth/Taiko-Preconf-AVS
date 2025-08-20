@@ -313,7 +313,7 @@ impl BatchManager {
         ),
         Error,
     > {
-        let result = if let Some(l2_block) = self.batch_builder.create_l2_block(
+        let result = if let Some(l2_block) = self.batch_builder.try_creating_l2_block(
             pending_tx_list,
             l2_slot_info.slot_timestamp(),
             end_of_sequencing,

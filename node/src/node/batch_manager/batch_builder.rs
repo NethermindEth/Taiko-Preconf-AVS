@@ -386,7 +386,7 @@ impl BatchBuilder {
         Ok(false)
     }
 
-    pub fn create_l2_block(
+    pub fn try_creating_l2_block(
         &mut self,
         pending_tx_list: Option<PreBuiltTxList>,
         l2_slot_timestamp: u64,
@@ -445,7 +445,7 @@ impl BatchBuilder {
             return number_of_l2_slots > self.config.preconf_max_skipped_l2_slots;
         }
 
-        false
+        true
     }
 
     fn is_empty_block_required(&self, preconfirmation_timestamp: u64) -> bool {
@@ -673,10 +673,10 @@ mod tests {
         assert!(batch_builder.should_new_block_be_created(5, 1000, false));
         assert!(batch_builder.should_new_block_be_created(10, 1000, false));
 
-        // Test case 2: Should not create new block when pending transactions < preconf_min_txs and no current batch
-        assert!(!batch_builder.should_new_block_be_created(3, 1000, false));
+        // Test case 2: Should create new block when pending transactions < preconf_min_txs and no current batch
+        assert!(batch_builder.should_new_block_be_created(3, 1000, false));
 
-        // Test case 3: Should not create new block when pending transactions < preconf_min_txs and current batch exists but no blocks
+        // Test case 3: Should create new block when pending transactions < preconf_min_txs and current batch exists but no blocks
         let empty_batch = Batch {
             l2_blocks: vec![],
             total_bytes: 0,
@@ -685,7 +685,7 @@ mod tests {
             anchor_block_timestamp_sec: 0,
         };
         batch_builder.current_batch = Some(empty_batch);
-        assert!(!batch_builder.should_new_block_be_created(3, 1000, false));
+        assert!(batch_builder.should_new_block_be_created(3, 1000, false));
 
         let batch_with_blocks = Batch {
             l2_blocks: vec![L2Block {
