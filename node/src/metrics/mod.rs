@@ -215,6 +215,13 @@ impl Metrics {
         )
         .expect("Failed to create skipped_l2_slots_by_low_txs_count counter");
 
+        if let Err(err) = registry.register(Box::new(skipped_l2_slots_by_low_txs_count.clone())) {
+            error!(
+                "Error: Failed to register skipped_l2_slots_by_low_txs_count: {}",
+                err
+            );
+        }
+
         Self {
             preconfer_eth_balance,
             preconfer_taiko_balance,
@@ -387,6 +394,7 @@ mod tests {
         metrics.observe_batch_propose_tries(1);
         metrics.observe_batch_info(5, 1000);
         metrics.observe_block_tx_count(3);
+        metrics.inc_skipped_l2_slots_by_low_txs_count();
 
         let output = metrics.gather();
         println!("{output}");
@@ -404,6 +412,7 @@ mod tests {
         assert!(output.contains("batch_blob_size_sum 1000"));
         assert!(output.contains("block_tx_count_count 1"));
         assert!(output.contains("block_tx_count_sum 3"));
+        assert!(output.contains("skipped_l2_slots_by_low_txs_count 1"));
     }
 
     #[test]
