@@ -28,10 +28,11 @@ pub fn check_oldest_forced_inclusion_due(err_str: &str) -> bool {
 
 // 0x47fac6c1 -> NotTheOperator()
 // 0x795e2f19 -> NotPreconfer()
+// 0xc0ec4b50 -> NotPreconferOrFallback()
 pub fn check_for_not_the_operator_in_current_epoch(err_str: &str) -> bool {
     // TODO: for new contracts version we should remove NotTheOperator
     // as it was renamed to NotPreconfer
-    err_str.contains("0x47fac6c1") || err_str.contains("0x795e2f19")
+    err_str.contains("0x47fac6c1") || err_str.contains("0x795e2f19") || err_str.contains("0xc0ec4b50")
 }
 
 pub fn convert_error_payload(err: &str) -> Option<TransactionError> {
