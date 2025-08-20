@@ -20,6 +20,7 @@ use alloy::{
     eips::BlockNumberOrTag,
     primitives::{Address, B256, U256},
     providers::{DynProvider, Provider},
+    rpc::types::{Filter, Log},
 };
 use anyhow::{Error, anyhow};
 use std::{
@@ -478,6 +479,13 @@ impl ExecutionLayer {
             last_l2_block_timestamp,
             info,
         )
+    }
+
+    pub async fn get_logs(&self, filter: Filter) -> Result<Vec<Log>, Error> {
+        self.provider
+            .get_logs(&filter)
+            .await
+            .map_err(|e| Error::msg(format!("Failed to get logs: {e}")))
     }
 }
 
