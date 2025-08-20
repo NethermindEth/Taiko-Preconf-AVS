@@ -1,7 +1,6 @@
 use std::fmt;
 
-// TODO try to remove clone
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub enum OperationType {
     Preconfirm,
     Reanchor,

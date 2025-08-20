@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::{
-    ethereum_l1::EthereumL1, node::batch_manager::batch_builder::BatchesToSend, taiko::Taiko,
+    ethereum_l1::EthereumL1, node::batch_manager::config::BatchesToSend, taiko::Taiko,
     utils::types::Slot,
 };
 
