@@ -6,7 +6,7 @@
 - **`HANDOVER_WINDOW_SLOTS`** (in slots)**:** The timeframe during which the current preconfer transfers preconf responsibilities to the next preconfer. This window ensures that preconfed blocks are properly included before the transition.
 - **`HANDOVER_START_BUFFER_MS`** (in ms)**:** The maximum wait time at the beginning of the `HANDOVER_WINDOW_SLOTS` for the previous preconfer's final preconfed L2 block.
 - **`DEFAULT_ANCHOR_ID_LAG`** (in slots): The default number of L1 blocks to lag behind the current L1 when setting the anchor ID.
-- **`PRECONF_MIN_TXS`** (in txs): Minimum transaction count below which you don’t have to preconfirm.
+- **`PRECONF_MIN_TXS`** (in txs): Minimum transaction count, excluding the anchor transaction, below which you don’t have to preconfirm.
 - **`PRECONF_MAX_SKIPPED_L2_SLOTS`** (in L2 slots): Maximum number of consecutive L2 blocks you can skip before you must preconfirm regardless of transaction count.
 
 ### Current Values
@@ -45,7 +45,7 @@ As `Preconfer X`, who is assigned the epoch containing slots `N` through `N+31`:
     3. After the above checks, `Preconfer X` will start preconfing based on its latest-seen preconfed block from the previous preconfer.
     4. There is a further edge case where the previous preconfer does not propagate the preconfed L2 block on time but still includes them into the L1, reorging the preconfs by `Preconfer X`—more on handling this in the “Edge Case” section.
 3. For slots `N - HANDOFF_WINDOW_SLOTS` to `N + 32 - HANDOFF_WINDOW_SLOTS`, for every `L2_BLOCK_TIME_MS` interval (see [Preconfing Timestamps](## Preconfing Timestamps) section for more details on the interval) `Preconfer X` should produce valid L2 blocks, subject to the following conditions:
-    - If the transaction count in the mempool is strictly below `PRECONF_MIN_TXS`, the preconfer may skip producing a block for that interval.
+    - If the transaction count in the mempool (which excludes the anchor transaction) is strictly below `PRECONF_MIN_TXS`, the preconfer may skip producing a block for that interval.
     - However, if the preconfer has skipped `PRECONF_MAX_SKIPPED_L2_SLOTS` consecutive L2 blocks before the current interval, they must produce a block regardless of transaction count.
     
     The exact process is up to the implementation, but the process expected by Taiko client is:
