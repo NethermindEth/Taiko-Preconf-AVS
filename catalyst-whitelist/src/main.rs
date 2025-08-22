@@ -87,6 +87,7 @@ async fn main() -> Result<(), Error> {
             }),
             extra_gas_percentage: config.extra_gas_percentage,
         },
+        l1::execution_layer::EthereumL1Config {},
         transaction_error_sender,
         metrics.clone(),
     )

@@ -49,25 +49,26 @@ pub struct ExecutionLayer<T: ELExtension> {
 
 impl<T: ELExtension> ExecutionLayer<T> {
     pub async fn new(
-        config: EthereumL1Config,
+        config_common: EthereumL1Config,
+        specific_config: T::Config,
         transaction_error_channel: Sender<TransactionError>,
         metrics: Arc<metrics::Metrics>,
     ) -> Result<Self, Error> {
         let (provider, preconfer_address) = alloy_tools::construct_alloy_provider(
-            &config.signer,
-            config
+            &config_common.signer,
+            config_common
                 .execution_rpc_urls
                 .first()
                 .ok_or_else(|| anyhow!("L1 RPC URL is required"))?,
-            config.preconfer_address,
+            config_common.preconfer_address,
         )
         .await?;
         info!("Catalyst node address: {}", preconfer_address);
 
-        let extra_gas_percentage = config.extra_gas_percentage;
+        let extra_gas_percentage = config_common.extra_gas_percentage;
 
         let taiko_wrapper_contract = taiko_wrapper::TaikoWrapper::new(
-            config.contract_addresses.taiko_wrapper,
+            config_common.contract_addresses.taiko_wrapper,
             provider.clone(),
         );
 
@@ -79,7 +80,7 @@ impl<T: ELExtension> ExecutionLayer<T> {
 
         let transaction_monitor = TransactionMonitor::new(
             provider.clone(),
-            &config,
+            &config_common,
             transaction_error_channel,
             metrics.clone(),
             chain_id,
@@ -88,17 +89,17 @@ impl<T: ELExtension> ExecutionLayer<T> {
         .map_err(|e| Error::msg(format!("Failed to create TransactionMonitor: {e}")))?;
 
         let pacaya_config =
-            Self::fetch_pacaya_config(&config.contract_addresses.taiko_inbox, &provider)
+            Self::fetch_pacaya_config(&config_common.contract_addresses.taiko_inbox, &provider)
                 .await
                 .map_err(|e| Error::msg(format!("Failed to fetch pacaya config: {e}")))?;
 
         let inner = Arc::new(ExecutionLayerInner::new(chain_id));
-        let extension = T::new(inner.clone(), provider.clone());
+        let extension = T::new(inner.clone(), provider.clone(), specific_config);
 
         Ok(Self {
             provider,
             preconfer_address,
-            contract_addresses: config.contract_addresses,
+            contract_addresses: config_common.contract_addresses,
             pacaya_config,
             extra_gas_percentage,
             transaction_monitor,

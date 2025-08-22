@@ -4,14 +4,26 @@ use catalyst_common::ethereum_l1::{
 };
 use std::sync::Arc;
 
+pub struct EthereumL1Config {}
+
 pub struct ExecutionLayer {
     inner: Arc<ExecutionLayerInner>,
     provider: DynProvider,
+    config: EthereumL1Config,
 }
 
 impl ELExtension for ExecutionLayer {
-    fn new(inner: Arc<ExecutionLayerInner>, provider: DynProvider) -> Self {
-        Self { inner, provider }
+    type Config = EthereumL1Config;
+    fn new(
+        inner: Arc<ExecutionLayerInner>,
+        provider: DynProvider,
+        config: EthereumL1Config,
+    ) -> Self {
+        Self {
+            inner,
+            provider,
+            config,
+        }
     }
 }
 

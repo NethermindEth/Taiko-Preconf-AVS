@@ -32,6 +32,7 @@ impl<T: ELExtension> EthereumL1<T> {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         config: EthereumL1Config,
+        specific_config: T::Config,
         transaction_error_channel: Sender<TransactionError>,
         metrics: Arc<Metrics>,
     ) -> Result<Self, Error> {
@@ -50,7 +51,8 @@ impl<T: ELExtension> EthereumL1<T> {
         ));
 
         let execution_layer =
-            ExecutionLayer::new(config, transaction_error_channel, metrics).await?;
+            ExecutionLayer::new(config, specific_config, transaction_error_channel, metrics)
+                .await?;
 
         Ok(Self {
             slot_clock,

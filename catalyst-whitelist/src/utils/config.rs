@@ -1,4 +1,4 @@
-use catalyst_common::ethereum_l1::config::{ContractAddresses, ContractAddressesTrait};
+use catalyst_common::ethereum_l1::config::ContractAddresses;
 use catalyst_common::utils::config_trait::ConfigTrait;
 use tokio::sync::OnceCell;
 use tracing::warn;
@@ -78,8 +78,6 @@ impl ConfigTrait for Config {
         }
     }
 }
-
-impl ContractAddressesTrait for L1ContractAddresses {}
 
 impl TryFrom<L1ContractAddresses> for ContractAddresses {
     type Error = anyhow::Error;

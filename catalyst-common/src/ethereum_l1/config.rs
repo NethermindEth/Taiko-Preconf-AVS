@@ -3,9 +3,6 @@ use alloy::primitives::Address;
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 
-pub trait ContractAddressesTrait {
-    // fn convert(self) -> ContractAddresses;
-}
 
 #[derive(Clone)]
 pub struct ContractAddresses {
