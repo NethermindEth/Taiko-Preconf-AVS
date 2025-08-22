@@ -1626,7 +1626,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "catalyst_node"
+name = "catalyst-common"
 version = "1.5.0"
 dependencies = [
  "alloy",
@@ -1636,7 +1636,6 @@ dependencies = [
  "async-trait",
  "c-kzg",
  "chrono",
- "clap",
  "dotenvy",
  "ecdsa",
  "elliptic-curve",
@@ -1658,6 +1657,31 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "warp",
+]
+
+[[package]]
+name = "catalyst-urc"
+version = "1.5.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "catalyst-common",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "catalyst-whitelist"
+version = "1.5.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "catalyst-common",
+ "clap",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]

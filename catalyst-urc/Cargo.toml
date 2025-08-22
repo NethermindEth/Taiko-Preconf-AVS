@@ -1,0 +1,21 @@
+[package]
+name = "catalyst-urc"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "catalyst-urc"
+path = "src/main.rs"
+
+[dependencies]
+catalyst-common = { path = "../catalyst-common" }
+alloy = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true
