@@ -1,6 +1,7 @@
 pub mod config;
 pub mod consensus_layer;
 pub mod execution_layer;
+pub mod execution_layer_inner;
 pub mod extension;
 pub mod l1_contracts_bindings;
 mod monitor_transaction;

@@ -1,13 +1,17 @@
 use alloy::providers::DynProvider;
-use catalyst_common::ethereum_l1::extension::ELExtension;
+use catalyst_common::ethereum_l1::{
+    execution_layer_inner::ExecutionLayerInner, extension::ELExtension,
+};
+use std::sync::Arc;
 
 pub struct ExecutionLayer {
+    inner: Arc<ExecutionLayerInner>,
     provider: DynProvider,
 }
 
 impl ELExtension for ExecutionLayer {
-    fn new(provider: DynProvider) -> Self {
-        Self { provider }
+    fn new(inner: Arc<ExecutionLayerInner>, provider: DynProvider) -> Self {
+        Self { inner, provider }
     }
 }
 

@@ -12,7 +12,12 @@ pub struct L1ContractAddresses {
     pub forced_inclusion_store: String,
 }
 
-impl ConfigTrait for L1ContractAddresses {
+#[derive(Debug, Clone)]
+pub struct Config {
+    pub contract_addresses: L1ContractAddresses,
+}
+
+impl ConfigTrait for Config {
     fn read_env_variables() -> Self {
         let default_empty_address = "0x0000000000000000000000000000000000000000".to_string();
 
@@ -62,12 +67,14 @@ impl ConfigTrait for L1ContractAddresses {
                 default_empty_address.clone()
             });
 
-        L1ContractAddresses {
-            taiko_inbox,
-            preconf_whitelist,
-            preconf_router,
-            taiko_wrapper,
-            forced_inclusion_store,
+        Config {
+            contract_addresses: L1ContractAddresses {
+                taiko_inbox,
+                preconf_whitelist,
+                preconf_router,
+                taiko_wrapper,
+                forced_inclusion_store,
+            },
         }
     }
 }

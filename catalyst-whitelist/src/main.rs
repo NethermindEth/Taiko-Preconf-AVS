@@ -35,8 +35,7 @@ async fn main() -> Result<(), Error> {
 
     info!("🚀 Starting Whitelist Node v{}", env!("CARGO_PKG_VERSION"));
 
-    let config =
-        common_utils::config::Config::<utils::config::L1ContractAddresses>::read_env_variables();
+    let config = common_utils::config::Config::<utils::config::Config>::read_env_variables();
     let cancel_token = CancellationToken::new();
 
     let metrics = Arc::new(Metrics::new());
@@ -67,7 +66,11 @@ async fn main() -> Result<(), Error> {
     let ethereum_l1 = ethereum_l1::EthereumL1::<l1::execution_layer::ExecutionLayer>::new(
         ethereum_l1::config::EthereumL1Config {
             execution_rpc_urls: config.l1_rpc_urls.clone(),
-            contract_addresses: config.specific_config.clone().try_into()?,
+            contract_addresses: config
+                .specific_config
+                .contract_addresses
+                .clone()
+                .try_into()?,
             consensus_rpc_url: config.l1_beacon_url,
             slot_duration_sec: config.l1_slot_duration_sec,
             slots_per_epoch: config.l1_slots_per_epoch,
@@ -171,7 +174,7 @@ async fn main() -> Result<(), Error> {
                 .expect("L1 RPC URL is required")
                 .clone(),
             config.taiko_geth_rpc_url,
-            config.specific_config.taiko_inbox,
+            config.specific_config.contract_addresses.taiko_inbox,
             cancel_token.clone(),
         )
         .map_err(|e| anyhow::anyhow!("Failed to create ChainMonitor: {}", e))?,

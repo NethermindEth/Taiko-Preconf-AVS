@@ -1,5 +1,6 @@
 use super::{
     config::{ContractAddresses, EthereumL1Config},
+    execution_layer_inner::ExecutionLayerInner,
     extension::ELExtension,
     transaction_error::TransactionError,
 };
@@ -43,6 +44,7 @@ pub struct ExecutionLayer<T: ELExtension> {
     metrics: Arc<metrics::Metrics>,
     taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::TaikoWrapperInstance<DynProvider>,
     chain_id: u64,
+    inner: Arc<ExecutionLayerInner>,
     extension: T,
 }
 
@@ -91,7 +93,8 @@ impl<T: ELExtension> ExecutionLayer<T> {
                 .await
                 .map_err(|e| Error::msg(format!("Failed to fetch pacaya config: {e}")))?;
 
-        let extension = T::new(provider.clone());
+        let inner = Arc::new(ExecutionLayerInner::new(chain_id));
+        let extension = T::new(inner.clone(), provider.clone());
 
         Ok(Self {
             provider,
@@ -103,6 +106,7 @@ impl<T: ELExtension> ExecutionLayer<T> {
             metrics,
             taiko_wrapper_contract,
             chain_id,
+            inner,
             extension,
         })
     }

@@ -12,5 +12,7 @@ async fn main() -> Result<(), Error> {
 
     info!("🚀 Starting URC Node v{}", env!("CARGO_PKG_VERSION"));
 
+    let config = common_utils::config::Config::<utils::config::Config>::read_env_variables();
+
     Ok(())
 }
