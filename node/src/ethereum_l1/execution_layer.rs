@@ -641,9 +641,15 @@ impl ExecutionLayer {
 }
 
 pub trait PreconfOperator {
-    async fn is_operator_for_current_epoch(&self) -> Result<bool, Error>;
-    async fn is_operator_for_next_epoch(&self) -> Result<bool, Error>;
-    async fn is_preconf_router_specified_in_taiko_wrapper(&self) -> Result<bool, Error>;
+    fn is_operator_for_current_epoch(
+        &self,
+    ) -> impl std::future::Future<Output = Result<bool, Error>> + Send;
+    fn is_operator_for_next_epoch(
+        &self,
+    ) -> impl std::future::Future<Output = Result<bool, Error>> + Send;
+    fn is_preconf_router_specified_in_taiko_wrapper(
+        &self,
+    ) -> impl std::future::Future<Output = Result<bool, Error>> + Send;
 }
 
 impl<ELE: ELExtension> PreconfOperator for ExecutionLayer<ELE> {

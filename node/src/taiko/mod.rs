@@ -453,7 +453,9 @@ impl<ELE: ELExtension> Taiko<ELE> {
 }
 
 pub trait PreconfDriver {
-    async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error>;
+    fn get_status(
+        &self,
+    ) -> impl std::future::Future<Output = Result<preconf_blocks::TaikoStatus, Error>> + Send;
 }
 
 impl<ELE: ELExtension> PreconfDriver for Taiko<ELE> {
