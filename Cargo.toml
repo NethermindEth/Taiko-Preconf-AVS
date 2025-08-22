@@ -12,7 +12,7 @@ resolver = "2"
 default-members = ["catalyst-whitelist"]
 
 [workspace.package]
-version = "1.4.1"
+version = "1.5.0"
 edition = "2024"
 repository = "https://github.com/NethermindEth/Catalyst"
 license = "MIT"

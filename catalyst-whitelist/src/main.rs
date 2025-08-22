@@ -225,6 +225,8 @@ async fn main() -> Result<(), Error> {
         config.amount_to_bridge_from_l2_to_l1,
         config.disable_bridging,
         cancel_token.clone(),
+        config.bridge_relayer_fee,
+        config.bridge_transaction_fee,
     );
     funds_monitor.run();
 

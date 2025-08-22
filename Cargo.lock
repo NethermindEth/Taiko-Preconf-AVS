@@ -1627,7 +1627,7 @@ dependencies = [
 
 [[package]]
 name = "catalyst-common"
-version = "1.4.1"
+version = "1.5.0"
 dependencies = [
  "alloy",
  "alloy-json-rpc",
@@ -1661,7 +1661,7 @@ dependencies = [
 
 [[package]]
 name = "catalyst-urc"
-version = "1.4.1"
+version = "1.5.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -1673,7 +1673,7 @@ dependencies = [
 
 [[package]]
 name = "catalyst-whitelist"
-version = "1.4.1"
+version = "1.5.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -4965,7 +4965,7 @@ dependencies = [
 
 [[package]]
 name = "p2p-boot-node"
-version = "1.4.1"
+version = "1.5.0"
 dependencies = [
  "anyhow",
  "discv5",
@@ -4977,7 +4977,7 @@ dependencies = [
 
 [[package]]
 name = "p2p-network"
-version = "1.4.1"
+version = "1.5.0"
 dependencies = [
  "discv5",
  "futures",
@@ -4992,7 +4992,7 @@ dependencies = [
 
 [[package]]
 name = "p2p-node"
-version = "1.4.1"
+version = "1.5.0"
 dependencies = [
  "anyhow",
  "jsonrpsee",
