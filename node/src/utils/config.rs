@@ -49,6 +49,8 @@ pub struct Config {
     pub extra_gas_percentage: u64,
     pub preconf_min_txs: u64,
     pub preconf_max_skipped_l2_slots: u64,
+    pub bridge_relayer_fee: u64,
+    pub bridge_transaction_fee: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -367,6 +369,18 @@ impl Config {
             .parse::<u64>()
             .expect("PRECONF_MAX_SKIPPED_L2_SLOTS must be a number");
 
+        // 0.003 eth
+        let bridge_relayer_fee = std::env::var("BRIDGE_RELAYER_FEE")
+            .unwrap_or("3047459064000000".to_string())
+            .parse::<u64>()
+            .expect("BRIDGE_RELAYER_FEE must be a number");
+
+        // 0.0001 eth
+        let bridge_transaction_fee = std::env::var("BRIDGE_TRANSACTION_FEE")
+            .unwrap_or("100000000000000".to_string())
+            .parse::<u64>()
+            .expect("BRIDGE_TRANSACTION_FEE must be a number");
+
         let config = Self {
             preconfer_address,
             taiko_geth_rpc_url: std::env::var("TAIKO_GETH_RPC_URL")
@@ -422,6 +436,8 @@ impl Config {
             extra_gas_percentage,
             preconf_min_txs,
             preconf_max_skipped_l2_slots,
+            bridge_relayer_fee,
+            bridge_transaction_fee,
         };
 
         info!(
@@ -456,7 +472,7 @@ max bytes size of batch: {}
 max blocks per batch value: {}
 max time shift between blocks: {}s
 max anchor height offset reduction value: {}
-min priority fee per gas wei: {}
+min priority fee per gas: {}wei
 tx fees increase percentage: {}
 max attempts to send tx: {}
 max attempts to wait tx: {}
@@ -469,6 +485,8 @@ simulate not submitting at the end of epoch: {}
 propose_forced_inclusion: {}
 min number of transaction to create a L2 block: {}
 max number of skipped L2 slots while creating a L2 block: {}
+bridge relayer fee: {}wei
+bridge transaction fee: {}wei
 "#,
             if let Some(preconfer_address) = &config.preconfer_address {
                 format!("\npreconfer address: {preconfer_address}")
@@ -524,6 +542,8 @@ max number of skipped L2 slots while creating a L2 block: {}
             config.propose_forced_inclusion,
             config.preconf_min_txs,
             config.preconf_max_skipped_l2_slots,
+            config.bridge_relayer_fee,
+            config.bridge_transaction_fee,
         );
 
         config
