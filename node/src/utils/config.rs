@@ -1,9 +1,9 @@
 use std::time::Duration;
 use tracing::{info, warn};
 
-use crate::utils::blob::constants::MAX_BLOB_DATA_SIZE;
+use super::{blob::constants::MAX_BLOB_DATA_SIZE, config_trait::ConfigTrait};
 
-pub struct Config {
+pub struct Config<T: ConfigTrait> {
     pub preconfer_address: Option<String>,
     pub taiko_geth_rpc_url: String,
     pub taiko_geth_auth_rpc_url: String,
@@ -18,7 +18,7 @@ pub struct Config {
     pub l1_slots_per_epoch: u64,
     pub preconf_heartbeat_ms: u64,
     pub msg_expiry_sec: u64,
-    pub contract_addresses: L1ContractAddresses,
+    // pub contract_addresses: T,
     pub jwt_secret_file_path: String,
     pub rpc_l2_execution_layer_timeout: Duration,
     pub rpc_driver_preconf_timeout: Duration,
@@ -49,18 +49,10 @@ pub struct Config {
     pub extra_gas_percentage: u64,
     pub preconf_min_txs: u64,
     pub preconf_max_skipped_l2_slots: u64,
+    pub specific_config: T,
 }
 
-#[derive(Debug, Clone)]
-pub struct L1ContractAddresses {
-    pub taiko_inbox: String,
-    pub preconf_whitelist: String,
-    pub preconf_router: String,
-    pub taiko_wrapper: String,
-    pub forced_inclusion_store: String,
-}
-
-impl Config {
+impl<T: ConfigTrait> Config<T> {
     pub fn read_env_variables() -> Self {
         // Load environment variables from .env file
         dotenvy::dotenv().ok();
@@ -94,64 +86,10 @@ impl Config {
             );
         }
 
-        const TAIKO_INBOX_ADDRESS: &str = "TAIKO_INBOX_ADDRESS";
-        let taiko_inbox = std::env::var(TAIKO_INBOX_ADDRESS).unwrap_or_else(|_| {
-            warn!(
-                "No TaikoL1 contract address found in {} env var, using default",
-                TAIKO_INBOX_ADDRESS
-            );
-            default_empty_address.clone()
-        });
-
-        const PRECONF_WHITELIST_ADDRESS: &str = "PRECONF_WHITELIST_ADDRESS";
-        let preconf_whitelist = std::env::var(PRECONF_WHITELIST_ADDRESS).unwrap_or_else(|_| {
-            warn!(
-                "No PreconfWhitelist contract address found in {} env var, using default",
-                PRECONF_WHITELIST_ADDRESS
-            );
-            default_empty_address.clone()
-        });
-
-        const PRECONF_ROUTER_ADDRESS: &str = "PRECONF_ROUTER_ADDRESS";
-        let preconf_router = std::env::var(PRECONF_ROUTER_ADDRESS).unwrap_or_else(|_| {
-            warn!(
-                "No PreconfRouter contract address found in {} env var, using default",
-                PRECONF_ROUTER_ADDRESS
-            );
-            default_empty_address.clone()
-        });
-
-        const TAIKO_WRAPPER_ADDRESS: &str = "TAIKO_WRAPPER_ADDRESS";
-        let taiko_wrapper = std::env::var(TAIKO_WRAPPER_ADDRESS).unwrap_or_else(|_| {
-            warn!(
-                "No TaikoWrapper contract address found in {} env var, using default",
-                TAIKO_WRAPPER_ADDRESS
-            );
-            default_empty_address.clone()
-        });
-
-        const FORCED_INCLUSION_STORE_ADDRESS: &str = "FORCED_INCLUSION_STORE_ADDRESS";
-        let forced_inclusion_store =
-            std::env::var(FORCED_INCLUSION_STORE_ADDRESS).unwrap_or_else(|_| {
-                warn!(
-                    "No ForcedInclusionStore contract address found in {} env var, using default",
-                    FORCED_INCLUSION_STORE_ADDRESS
-                );
-                default_empty_address.clone()
-            });
-
         let extra_gas_percentage = std::env::var("EXTRA_GAS_PERCENTAGE")
             .unwrap_or("100".to_string())
             .parse::<u64>()
             .expect("EXTRA_GAS_PERCENTAGE must be a number");
-
-        let contract_addresses = L1ContractAddresses {
-            taiko_inbox,
-            preconf_whitelist,
-            preconf_router,
-            taiko_wrapper,
-            forced_inclusion_store,
-        };
 
         let l1_slot_duration_sec = std::env::var("L1_SLOT_DURATION_SEC")
             .unwrap_or("12".to_string())
@@ -367,6 +305,8 @@ impl Config {
             .parse::<u64>()
             .expect("PRECONF_MAX_SKIPPED_L2_SLOTS must be a number");
 
+        let specific_config = T::read_env_variables();
+
         let config = Self {
             preconfer_address,
             taiko_geth_rpc_url: std::env::var("TAIKO_GETH_RPC_URL")
@@ -391,7 +331,7 @@ impl Config {
             l1_slots_per_epoch,
             preconf_heartbeat_ms,
             msg_expiry_sec,
-            contract_addresses,
+            // contract_addresses,
             jwt_secret_file_path,
             rpc_l2_execution_layer_timeout,
             rpc_driver_preconf_timeout,
@@ -422,8 +362,10 @@ impl Config {
             extra_gas_percentage,
             preconf_min_txs,
             preconf_max_skipped_l2_slots,
+            specific_config,
         };
 
+        // Contract addresses: {:#?}
         info!(
             r#"
 Configuration:{}
@@ -439,7 +381,6 @@ L1 slot duration: {}s
 L1 slots per epoch: {}
 L2 slot duration (heart beat): {}
 Preconf registry expiry: {}s
-Contract addresses: {:#?}
 jwt secret file path: {}
 rpc L2 EL timeout: {}ms
 rpc driver preconf timeout: {}ms
@@ -494,7 +435,7 @@ max number of skipped L2 slots while creating a L2 block: {}
             config.l1_slots_per_epoch,
             config.preconf_heartbeat_ms,
             config.msg_expiry_sec,
-            config.contract_addresses,
+            // config.contract_addresses,
             config.jwt_secret_file_path,
             config.rpc_l2_execution_layer_timeout.as_millis(),
             config.rpc_driver_preconf_timeout.as_millis(),

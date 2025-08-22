@@ -1,7 +1,9 @@
 pub mod blob;
 pub mod config;
+pub mod config_trait;
 pub mod event_listener;
 pub mod file_operations;
+pub mod logging;
 mod retry;
 pub mod rpc_client;
 pub mod rpc_server;

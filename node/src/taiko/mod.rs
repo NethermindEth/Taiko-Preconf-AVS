@@ -6,7 +6,7 @@ pub mod operation_type;
 pub mod preconf_blocks;
 
 use crate::{
-    ethereum_l1::EthereumL1,
+    ethereum_l1::{EthereumL1, extension::ELExtension},
     metrics::Metrics,
     shared::{
         l2_block::L2Block,
@@ -33,20 +33,20 @@ use std::{
 };
 use tracing::{debug, trace};
 
-pub struct Taiko {
+pub struct Taiko<ELE: ELExtension> {
     l2_execution_layer: L2ExecutionLayer,
     taiko_geth_auth_rpc: JSONRPCClient,
     driver_preconf_rpc: HttpRPCClient,
     driver_status_rpc: HttpRPCClient,
-    ethereum_l1: Arc<EthereumL1>,
+    ethereum_l1: Arc<EthereumL1<ELE>>,
     metrics: Arc<Metrics>,
     config: TaikoConfig,
 }
 
-impl Taiko {
+impl<ELE: ELExtension> Taiko<ELE> {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
-        ethereum_l1: Arc<EthereumL1>,
+        ethereum_l1: Arc<EthereumL1<ELE>>,
         metrics: Arc<Metrics>,
         taiko_config: TaikoConfig,
     ) -> Result<Self, Error> {
@@ -456,7 +456,7 @@ pub trait PreconfDriver {
     async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error>;
 }
 
-impl PreconfDriver for Taiko {
+impl<ELE: ELExtension> PreconfDriver for Taiko<ELE> {
     async fn get_status(&self) -> Result<preconf_blocks::TaikoStatus, Error> {
         Taiko::get_status(self).await
     }

@@ -2,7 +2,10 @@ use std::{collections::VecDeque, sync::Arc};
 
 use super::config::{BatchesToSend, ForcedInclusionBatch};
 use crate::{
-    ethereum_l1::{EthereumL1, slot_clock::SlotClock, transaction_error::TransactionError},
+    ethereum_l1::{
+        EthereumL1, extension::ELExtension, slot_clock::SlotClock,
+        transaction_error::TransactionError,
+    },
     metrics::Metrics,
     node::batch_manager::{batch::Batch, config::BatchBuilderConfig},
     shared::{l2_block::L2Block, l2_tx_lists::PreBuiltTxList},
@@ -270,9 +273,9 @@ impl BatchBuilder {
         self.current_batch.is_none() && self.batches_to_send.is_empty()
     }
 
-    pub async fn try_submit_oldest_batch(
+    pub async fn try_submit_oldest_batch<T: ELExtension>(
         &mut self,
-        ethereum_l1: Arc<EthereumL1>,
+        ethereum_l1: Arc<EthereumL1<T>>,
         submit_only_full_batches: bool,
     ) -> Result<(), Error> {
         if self.current_batch.is_some()

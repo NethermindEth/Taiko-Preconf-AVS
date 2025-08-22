@@ -1,4 +1,4 @@
-pub(crate) mod batch_manager;
+pub mod batch_manager;
 pub mod blob_parser;
 mod l2_head_verifier;
 mod operator;
@@ -6,7 +6,7 @@ mod verifier;
 
 use crate::chain_monitor;
 use crate::{
-    ethereum_l1::{EthereumL1, transaction_error::TransactionError},
+    ethereum_l1::{EthereumL1, extension::ELExtension, transaction_error::TransactionError},
     metrics::Metrics,
     node::l2_head_verifier::L2HeadVerifier,
     shared::{l2_slot_info::L2SlotInfo, l2_tx_lists::PreBuiltTxList},
@@ -34,14 +34,14 @@ pub struct NodeConfig {
     pub simulate_not_submitting_at_the_end_of_epoch: bool,
 }
 
-pub struct Node {
+pub struct Node<T: ELExtension> {
     cancel_token: CancellationToken,
-    ethereum_l1: Arc<EthereumL1>,
+    ethereum_l1: Arc<EthereumL1<T>>,
     chain_monitor: Arc<ChainMonitor>,
-    operator: Operator,
-    batch_manager: BatchManager,
-    verifier: Option<verifier::Verifier>,
-    taiko: Arc<Taiko>,
+    operator: Operator<T>,
+    batch_manager: BatchManager<T>,
+    verifier: Option<verifier::Verifier<T>>,
+    taiko: Arc<Taiko<T>>,
     transaction_error_channel: Receiver<TransactionError>,
     metrics: Arc<Metrics>,
     watchdog: u64,
@@ -49,12 +49,12 @@ pub struct Node {
     config: NodeConfig,
 }
 
-impl Node {
+impl<T: ELExtension + 'static> Node<T> {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         cancel_token: CancellationToken,
-        taiko: Arc<Taiko>,
-        ethereum_l1: Arc<EthereumL1>,
+        taiko: Arc<Taiko<T>>,
+        ethereum_l1: Arc<EthereumL1<T>>,
         chain_monitor: Arc<ChainMonitor>,
         transaction_error_channel: Receiver<TransactionError>,
         metrics: Arc<Metrics>,

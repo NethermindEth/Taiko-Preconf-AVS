@@ -1,4 +1,4 @@
-use crate::ethereum_l1;
+use crate::ethereum_l1::{EthereumL1, extension::ELExtension};
 use crate::shared::l2_block::L2Block;
 use crate::shared::l2_tx_lists::PreBuiltTxList;
 use anyhow::Error;
@@ -7,8 +7,8 @@ use std::sync::Arc;
 use tokio::time::{Duration, sleep};
 use tracing::info;
 
-pub async fn test_gas_params(
-    ethereum_l1: Arc<ethereum_l1::EthereumL1>,
+pub async fn test_gas_params<T: ELExtension>(
+    ethereum_l1: Arc<ethereum_l1::EthereumL1<T>>,
     blocks: u32,
     anchor_height_lag: u64,
     max_bytes_size_of_batch: u64,

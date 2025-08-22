@@ -1,6 +1,7 @@
 pub mod config;
 pub mod consensus_layer;
 pub mod execution_layer;
+pub mod extension;
 pub mod l1_contracts_bindings;
 mod monitor_transaction;
 mod propose_batch_builder;
@@ -12,6 +13,7 @@ use anyhow::Error;
 use config::EthereumL1Config;
 use consensus_layer::ConsensusLayer;
 use execution_layer::ExecutionLayer;
+use extension::ELExtension;
 use slot_clock::SlotClock;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc::Sender;
@@ -19,13 +21,13 @@ use transaction_error::TransactionError;
 
 use crate::metrics::Metrics;
 
-pub struct EthereumL1 {
+pub struct EthereumL1<T: ELExtension> {
     pub slot_clock: Arc<SlotClock>,
     pub consensus_layer: ConsensusLayer,
-    pub execution_layer: Arc<ExecutionLayer>,
+    pub execution_layer: Arc<ExecutionLayer<T>>,
 }
 
-impl EthereumL1 {
+impl<T: ELExtension> EthereumL1<T> {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         config: EthereumL1Config,

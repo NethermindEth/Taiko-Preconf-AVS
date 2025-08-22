@@ -1,5 +1,6 @@
 use super::{
     config::{ContractAddresses, EthereumL1Config},
+    extension::ELExtension,
     transaction_error::TransactionError,
 };
 use crate::{
@@ -32,7 +33,7 @@ use tracing::{debug, info, warn};
 
 const DELAYED_L1_PROPOSAL_BUFFER: u64 = 4;
 
-pub struct ExecutionLayer {
+pub struct ExecutionLayer<T: ELExtension> {
     provider: DynProvider,
     preconfer_address: Address,
     contract_addresses: ContractAddresses,
@@ -42,9 +43,10 @@ pub struct ExecutionLayer {
     metrics: Arc<metrics::Metrics>,
     taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::TaikoWrapperInstance<DynProvider>,
     chain_id: u64,
+    extension: T,
 }
 
-impl ExecutionLayer {
+impl<T: ELExtension> ExecutionLayer<T> {
     pub async fn new(
         config: EthereumL1Config,
         transaction_error_channel: Sender<TransactionError>,
@@ -89,6 +91,8 @@ impl ExecutionLayer {
                 .await
                 .map_err(|e| Error::msg(format!("Failed to fetch pacaya config: {e}")))?;
 
+        let extension = T::new(provider.clone());
+
         Ok(Self {
             provider,
             preconfer_address,
@@ -99,6 +103,7 @@ impl ExecutionLayer {
             metrics,
             taiko_wrapper_contract,
             chain_id,
+            extension,
         })
     }
 
@@ -641,7 +646,7 @@ pub trait PreconfOperator {
     async fn is_preconf_router_specified_in_taiko_wrapper(&self) -> Result<bool, Error>;
 }
 
-impl PreconfOperator for ExecutionLayer {
+impl<ELE: ELExtension> PreconfOperator for ExecutionLayer<ELE> {
     async fn is_operator_for_current_epoch(&self) -> Result<bool, Error> {
         let operator = self.get_operator_for_current_epoch().await?;
         Ok(operator == self.preconfer_address)

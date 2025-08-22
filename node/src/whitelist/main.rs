@@ -1,16 +1,7 @@
-mod chain_monitor;
-mod crypto;
-mod ethereum_l1;
-mod forced_inclusion;
-mod funds_monitor;
-mod metrics;
-mod node;
-mod registration;
-mod shared;
-mod taiko;
-mod utils;
-
 use anyhow::Error;
+use catalyst_node::{
+    chain_monitor, ethereum_l1, funds_monitor, metrics, node, shared, taiko, utils as common_utils,
+};
 use metrics::Metrics;
 use shared::signer::Signer;
 use std::{sync::Arc, time::Duration};
@@ -21,12 +12,13 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
+mod l1;
+mod utils;
+
 #[cfg(feature = "test-gas")]
-mod test_gas;
+use catalyst_node::test_gas::test_gas_params;
 #[cfg(feature = "test-gas")]
 use clap::Parser;
-#[cfg(feature = "test-gas")]
-use test_gas::test_gas_params;
 
 #[cfg(feature = "test-gas")]
 #[derive(Parser, Debug)]
@@ -39,11 +31,12 @@ const SIGNER_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    init_logging();
+    common_utils::logging::init_logging();
 
     info!("🚀 Starting Whitelist Node v{}", env!("CARGO_PKG_VERSION"));
 
-    let config = utils::config::Config::read_env_variables();
+    let config =
+        common_utils::config::Config::<utils::config::L1ContractAddresses>::read_env_variables();
     let cancel_token = CancellationToken::new();
 
     let metrics = Arc::new(Metrics::new());
@@ -71,10 +64,10 @@ async fn main() -> Result<(), Error> {
     )
     .await?;
 
-    let ethereum_l1 = ethereum_l1::EthereumL1::new(
+    let ethereum_l1 = ethereum_l1::EthereumL1::<l1::execution_layer::ExecutionLayer>::new(
         ethereum_l1::config::EthereumL1Config {
             execution_rpc_urls: config.l1_rpc_urls.clone(),
-            contract_addresses: config.contract_addresses.clone().try_into()?,
+            contract_addresses: config.specific_config.clone().try_into()?,
             consensus_rpc_url: config.l1_beacon_url,
             slot_duration_sec: config.l1_slot_duration_sec,
             slots_per_epoch: config.l1_slots_per_epoch,
@@ -117,7 +110,8 @@ async fn main() -> Result<(), Error> {
         tracing::error!("No test gas block count provided.");
     }
 
-    let jwt_secret_bytes = utils::file_operations::read_jwt_secret(&config.jwt_secret_file_path)?;
+    let jwt_secret_bytes =
+        common_utils::file_operations::read_jwt_secret(&config.jwt_secret_file_path)?;
     let taiko = Arc::new(
         taiko::Taiko::new(
             ethereum_l1.clone(),
@@ -177,7 +171,7 @@ async fn main() -> Result<(), Error> {
                 .expect("L1 RPC URL is required")
                 .clone(),
             config.taiko_geth_rpc_url,
-            config.contract_addresses.taiko_inbox,
+            config.specific_config.taiko_inbox,
             cancel_token.clone(),
         )
         .map_err(|e| anyhow::anyhow!("Failed to create ChainMonitor: {}", e))?,
@@ -284,94 +278,4 @@ async fn wait_for_the_termination(cancel_token: CancellationToken, shutdown_dela
             info!("Shutdown signal received, exiting Catalyst node...");
         }
     }
-}
-
-fn init_logging() {
-    use tracing_subscriber::{EnvFilter, filter::FilterFn, fmt, prelude::*};
-
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new("debug")
-            .add_directive(
-                "reqwest=info"
-                    .parse()
-                    .expect("assert: can parse env filter directive"),
-            )
-            .add_directive(
-                "hyper=info"
-                    .parse()
-                    .expect("assert: can parse env filter directive"),
-            )
-            .add_directive(
-                "alloy_transport=info"
-                    .parse()
-                    .expect("assert: can parse env filter directive"),
-            )
-            .add_directive(
-                "alloy_rpc_client=info"
-                    .parse()
-                    .expect("assert: can parse env filter directive"),
-            )
-            .add_directive(
-                "p2p_network=info"
-                    .parse()
-                    .expect("assert: can parse env filter directive"),
-            )
-            .add_directive(
-                "libp2p_gossipsub=info"
-                    .parse()
-                    .expect("assert: can parse env filter directive"),
-            )
-            .add_directive(
-                "discv5=info"
-                    .parse()
-                    .expect("assert: can parse env filter directive"),
-            )
-            .add_directive(
-                "netlink_proto=info"
-                    .parse()
-                    .expect("assert: can parse env filter directive"),
-            )
-    });
-
-    // Create a custom formatter for heartbeat logs
-    let heartbeat_format = fmt::format()
-        .with_timer(fmt::time::time())
-        .with_target(false)
-        .with_level(false)
-        .with_thread_ids(false)
-        .with_thread_names(false)
-        .with_file(false)
-        .with_line_number(false);
-
-    // Create a standard formatter for all other logs
-    let standard_format = fmt::format()
-        .with_timer(fmt::time::time())
-        .with_target(true)
-        .with_level(true)
-        .with_thread_ids(false)
-        .with_thread_names(false)
-        .with_file(false)
-        .with_line_number(false);
-
-    // Create a layered subscriber that uses different formatters based on the target
-    let subscriber = tracing_subscriber::registry()
-        .with(filter)
-        .with(
-            fmt::Layer::default()
-                .with_writer(std::io::stdout)
-                .event_format(standard_format)
-                .with_filter(FilterFn::new(|metadata: &tracing::Metadata<'_>| {
-                    !metadata.target().contains("heartbeat")
-                })),
-        )
-        .with(
-            fmt::Layer::default()
-                .with_writer(std::io::stdout)
-                .event_format(heartbeat_format)
-                .with_filter(FilterFn::new(|metadata: &tracing::Metadata<'_>| {
-                    metadata.target().contains("heartbeat")
-                })),
-        );
-
-    subscriber.init();
 }

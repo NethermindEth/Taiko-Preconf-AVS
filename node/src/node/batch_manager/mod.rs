@@ -3,7 +3,7 @@ mod batch_builder;
 pub mod config;
 
 use crate::{
-    ethereum_l1::EthereumL1,
+    ethereum_l1::{EthereumL1, extension::ELExtension},
     forced_inclusion::ForcedInclusion,
     metrics::Metrics,
     node::batch_manager::config::BatchesToSend,
@@ -28,22 +28,22 @@ enum CachedForcedInclusion {
     Txs(Vec<GethTransaction>),
 }
 
-pub struct BatchManager {
+pub struct BatchManager<T: ELExtension> {
     batch_builder: BatchBuilder,
-    ethereum_l1: Arc<EthereumL1>,
-    pub taiko: Arc<Taiko>,
+    ethereum_l1: Arc<EthereumL1<T>>,
+    pub taiko: Arc<Taiko<T>>,
     l1_height_lag: u64,
-    forced_inclusion: Arc<ForcedInclusion>,
+    forced_inclusion: Arc<ForcedInclusion<T>>,
     cached_forced_inclusion_txs: CachedForcedInclusion,
     metrics: Arc<Metrics>,
 }
 
-impl BatchManager {
+impl<T: ELExtension> BatchManager<T> {
     pub fn new(
         l1_height_lag: u64,
         config: BatchBuilderConfig,
-        ethereum_l1: Arc<EthereumL1>,
-        taiko: Arc<Taiko>,
+        ethereum_l1: Arc<EthereumL1<T>>,
+        taiko: Arc<Taiko<T>>,
         metrics: Arc<Metrics>,
     ) -> Self {
         info!(
@@ -59,7 +59,7 @@ impl BatchManager {
             config.max_time_shift_between_blocks_sec,
             config.max_anchor_height_offset,
         );
-        let forced_inclusion = Arc::new(ForcedInclusion::new(ethereum_l1.clone()));
+        let forced_inclusion = Arc::new(ForcedInclusion::<T>::new(ethereum_l1.clone()));
         Self {
             batch_builder: BatchBuilder::new(
                 config,
@@ -105,7 +105,7 @@ impl BatchManager {
                             .decode_current_forced_inclusion()
                             .await?
                         {
-                            let res = BatchManager::compare_transactions_list(&fi.txs, txs);
+                            let res = BatchManager::<T>::compare_transactions_list(&fi.txs, txs);
                             self.cached_forced_inclusion_txs = CachedForcedInclusion::Txs(fi.txs);
                             res
                         } else {
@@ -114,7 +114,7 @@ impl BatchManager {
                         }
                     }
                     CachedForcedInclusion::Txs(cached_txs) => {
-                        BatchManager::compare_transactions_list(cached_txs, txs)
+                        BatchManager::<T>::compare_transactions_list(cached_txs, txs)
                     }
                 }
             }

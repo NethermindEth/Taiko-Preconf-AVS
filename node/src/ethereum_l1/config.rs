@@ -1,10 +1,13 @@
-use crate::{shared::signer::Signer, utils::config::L1ContractAddresses};
+use crate::shared::signer::Signer;
 use alloy::primitives::Address;
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 
-#[derive(Clone)]
+pub trait ContractAddressesTrait {
+    // fn convert(self) -> ContractAddresses;
+}
 
+#[derive(Clone)]
 pub struct ContractAddresses {
     pub taiko_inbox: Address,
     pub taiko_token: OnceCell<Address>,
@@ -12,27 +15,6 @@ pub struct ContractAddresses {
     pub preconf_router: Address,
     pub taiko_wrapper: Address,
     pub forced_inclusion_store: Address,
-}
-
-impl TryFrom<L1ContractAddresses> for ContractAddresses {
-    type Error = anyhow::Error;
-
-    fn try_from(l1_contract_addresses: L1ContractAddresses) -> Result<Self, Self::Error> {
-        let taiko_inbox = l1_contract_addresses.taiko_inbox.parse()?;
-        let preconf_whitelist = l1_contract_addresses.preconf_whitelist.parse()?;
-        let preconf_router = l1_contract_addresses.preconf_router.parse()?;
-        let taiko_wrapper = l1_contract_addresses.taiko_wrapper.parse()?;
-        let forced_inclusion_store = l1_contract_addresses.forced_inclusion_store.parse()?;
-
-        Ok(ContractAddresses {
-            taiko_inbox,
-            taiko_token: OnceCell::new(),
-            preconf_whitelist,
-            preconf_router,
-            taiko_wrapper,
-            forced_inclusion_store,
-        })
-    }
 }
 
 pub struct EthereumL1Config {

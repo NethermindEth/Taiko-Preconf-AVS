@@ -3,7 +3,7 @@ use anyhow::Error;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, atomic::AtomicU64};
 
-use crate::ethereum_l1::EthereumL1;
+use crate::ethereum_l1::{EthereumL1, extension::ELExtension};
 
 use crate::node::blob_parser::extract_transactions_from_blob;
 
@@ -15,13 +15,13 @@ pub struct ForcedInclusionInfo {
     pub txs: Vec<Transaction>,
 }
 
-pub struct ForcedInclusion {
-    ethereum_l1: Arc<EthereumL1>,
+pub struct ForcedInclusion<T: ELExtension> {
+    ethereum_l1: Arc<EthereumL1<T>>,
     index: AtomicU64,
 }
 
-impl ForcedInclusion {
-    pub fn new(ethereum_l1: Arc<EthereumL1>) -> Self {
+impl<T: ELExtension> ForcedInclusion<T> {
+    pub fn new(ethereum_l1: Arc<EthereumL1<T>>) -> Self {
         Self {
             ethereum_l1,
             index: AtomicU64::new(0),

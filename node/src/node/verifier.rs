@@ -6,13 +6,14 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::{
-    ethereum_l1::EthereumL1, node::batch_manager::config::BatchesToSend, taiko::Taiko,
+    ethereum_l1::{EthereumL1, extension::ELExtension},
+    metrics::Metrics,
+    node::batch_manager::config::BatchesToSend,
+    taiko::Taiko,
     utils::types::Slot,
 };
 
 use super::batch_manager::BatchManager;
-
-use crate::Metrics;
 
 pub enum VerificationResult {
     SuccessNoBatches,
@@ -28,24 +29,24 @@ struct PreconfirmationRootBlock {
     hash: B256,
 }
 
-pub struct Verifier {
+pub struct Verifier<ELE: ELExtension> {
     verification_slot: Slot,
-    verifier_thread: Option<VerifierThread>,
+    verifier_thread: Option<VerifierThread<ELE>>,
     verifier_thread_handle: Option<JoinHandle<Result<BatchesToSend, Error>>>,
 }
 
-struct VerifierThread {
-    taiko: Arc<Taiko>,
+struct VerifierThread<ELE: ELExtension> {
+    taiko: Arc<Taiko<ELE>>,
     preconfirmation_root: PreconfirmationRootBlock,
-    batch_manager: BatchManager,
+    batch_manager: BatchManager<ELE>,
     cancel_token: CancellationToken,
 }
 
-impl Verifier {
+impl<ELE: ELExtension + 'static> Verifier<ELE> {
     pub async fn new_with_taiko_height(
         taiko_geth_height: u64,
-        taiko: Arc<Taiko>,
-        batch_manager: BatchManager,
+        taiko: Arc<Taiko<ELE>>,
+        batch_manager: BatchManager<ELE>,
         verification_slot: Slot,
         cancel_token: CancellationToken,
     ) -> Result<Self, Error> {
@@ -96,9 +97,9 @@ impl Verifier {
     }
 
     /// Returns true if the operation succeeds
-    pub async fn verify(
+    pub async fn verify<T: ELExtension>(
         &mut self,
-        ethereum_l1: Arc<EthereumL1>,
+        ethereum_l1: Arc<EthereumL1<T>>,
         metrics: Arc<Metrics>,
     ) -> Result<VerificationResult, Error> {
         if let Some(handle) = self.verifier_thread_handle.as_mut() {
@@ -151,7 +152,7 @@ impl Verifier {
     }
 }
 
-impl VerifierThread {
+impl<ELE: ELExtension> VerifierThread<ELE> {
     async fn verify_submitted_blocks(
         &mut self,
         taiko_inbox_height: u64,

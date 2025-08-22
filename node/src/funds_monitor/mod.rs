@@ -5,11 +5,15 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
-use crate::{ethereum_l1, metrics::Metrics, taiko::Taiko};
+use crate::{
+    ethereum_l1::{EthereumL1, extension::ELExtension},
+    metrics::Metrics,
+    taiko::Taiko,
+};
 
-pub struct FundsMonitor {
-    ethereum_l1: Arc<ethereum_l1::EthereumL1>,
-    taiko: Arc<Taiko>,
+pub struct FundsMonitor<T: ELExtension> {
+    ethereum_l1: Arc<EthereumL1<T>>,
+    taiko: Arc<Taiko<T>>,
     metrics: Arc<Metrics>,
     thresholds: Thresholds,
     amount_to_bridge_from_l2_to_l1: u128,
@@ -24,11 +28,11 @@ pub struct Thresholds {
     pub taiko: U256,
 }
 
-impl FundsMonitor {
+impl<T: ELExtension + 'static> FundsMonitor<T> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        ethereum_l1: Arc<ethereum_l1::EthereumL1>,
-        taiko: Arc<Taiko>,
+        ethereum_l1: Arc<EthereumL1<T>>,
+        taiko: Arc<Taiko<T>>,
         metrics: Arc<Metrics>,
         eth_threshold: u128,
         taiko_threshold: u128,

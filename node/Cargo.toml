@@ -5,6 +5,14 @@ edition.workspace = true
 repository.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "catalyst-urc"
+path = "src/urc/main.rs"
+
+[[bin]]
+name = "catalyst-whitelist"
+path = "src/whitelist/main.rs"
+
 [features]
 # A testing feature that allows the node to send only
 # a proposeBatch transaction and then stop.

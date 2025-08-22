@@ -4,10 +4,13 @@ use alloy::{eips::eip4844::kzg_to_versioned_hash, primitives::B256, rpc::types::
 use anyhow::Error;
 
 use crate::shared::l2_tx_lists::uncompress_and_decode;
-use crate::{ethereum_l1::EthereumL1, utils::blob::decode_blob};
+use crate::{
+    ethereum_l1::{EthereumL1, extension::ELExtension},
+    utils::blob::decode_blob,
+};
 
-pub async fn extract_transactions_from_blob(
-    ethereum_l1: Arc<EthereumL1>,
+pub async fn extract_transactions_from_blob<T: ELExtension>(
+    ethereum_l1: Arc<EthereumL1<T>>,
     block: u64,
     blob_hash: Vec<B256>,
     tx_list_offset: u32,
@@ -27,8 +30,8 @@ pub async fn extract_transactions_from_blob(
     Ok(txs)
 }
 
-async fn blob_to_vec(
-    ethereum_l1: Arc<EthereumL1>,
+async fn blob_to_vec<T: ELExtension>(
+    ethereum_l1: Arc<EthereumL1<T>>,
     block: u64,
     blob_hash: Vec<B256>,
     tx_list_offset: u32,
