@@ -375,9 +375,9 @@ impl Config {
             .parse::<u64>()
             .expect("BRIDGE_RELAYER_FEE must be a number");
 
-        // 0.0001 eth
+        // 0.001 eth
         let bridge_transaction_fee = std::env::var("BRIDGE_TRANSACTION_FEE")
-            .unwrap_or("100000000000000".to_string())
+            .unwrap_or("1000000000000000".to_string())
             .parse::<u64>()
             .expect("BRIDGE_TRANSACTION_FEE must be a number");
 
