@@ -1,5 +1,5 @@
-use catalyst_node::ethereum_l1::config::{ContractAddresses, ContractAddressesTrait};
-use catalyst_node::utils::config_trait::ConfigTrait;
+use catalyst_common::ethereum_l1::config::{ContractAddresses, ContractAddressesTrait};
+use catalyst_common::utils::config_trait::ConfigTrait;
 use tokio::sync::OnceCell;
 use tracing::warn;
 

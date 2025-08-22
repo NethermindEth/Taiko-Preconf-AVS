@@ -1,5 +1,5 @@
 use anyhow::Error;
-use catalyst_node::{
+use catalyst_common::{
     chain_monitor, ethereum_l1, funds_monitor, metrics, node, shared, taiko, utils as common_utils,
 };
 use metrics::Metrics;
@@ -16,7 +16,7 @@ mod l1;
 mod utils;
 
 #[cfg(feature = "test-gas")]
-use catalyst_node::test_gas::test_gas_params;
+use catalyst_common::test_gas::test_gas_params;
 #[cfg(feature = "test-gas")]
 use clap::Parser;
 

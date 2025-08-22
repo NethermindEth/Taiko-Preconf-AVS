@@ -1,8 +1,8 @@
 use alloy::rpc::types::Filter;
 use std::sync::Arc;
 
-use super::super::l1::execution_layer::ExecutionLayer;
-use catalyst_node::ethereum_l1::EthereumL1;
+use crate::l1::execution_layer::ExecutionLayer;
+use catalyst_common::ethereum_l1::EthereumL1;
 
 pub struct Registry {
     ethereum_l1: Arc<EthereumL1<ExecutionLayer>>,

@@ -1,5 +1,5 @@
 use alloy::providers::DynProvider;
-use catalyst_node::ethereum_l1::extension::ELExtension;
+use catalyst_common::ethereum_l1::extension::ELExtension;
 
 pub struct ExecutionLayer {
     provider: DynProvider,

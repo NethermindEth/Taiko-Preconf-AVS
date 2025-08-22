@@ -1,0 +1,29 @@
+[package]
+name = "catalyst-whitelist"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "catalyst-whitelist"
+path = "src/main.rs"
+
+[features]
+# A testing feature that allows the node to send only
+# a proposeBatch transaction and then stop.
+# Useful for validating transaction sending logic
+# without running the full flow
+test-gas = ["clap"]
+
+[dependencies]
+catalyst-common = { path = "../catalyst-common" }
+clap = { workspace = true, optional = true }
+alloy = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

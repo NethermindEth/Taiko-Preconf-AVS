@@ -1,5 +1,5 @@
 use anyhow::Error;
-use catalyst_node::utils as common_utils;
+use catalyst_common::utils as common_utils;
 use tracing::info;
 
 mod l1;

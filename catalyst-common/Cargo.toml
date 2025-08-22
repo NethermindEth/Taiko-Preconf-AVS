@@ -1,26 +1,12 @@
 [package]
-name = "catalyst_node"
+name = "catalyst-common"
 version.workspace = true
 edition.workspace = true
 repository.workspace = true
 license.workspace = true
 
-[[bin]]
-name = "catalyst-urc"
-path = "src/urc/main.rs"
-
-[[bin]]
-name = "catalyst-whitelist"
-path = "src/whitelist/main.rs"
-
 [features]
-# A testing feature that allows the node to send only
-# a proposeBatch transaction and then stop.
-# Useful for validating transaction sending logic
-# without running the full flow
-test-gas = ["clap"]
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+test-gas = []
 
 [dependencies]
 alloy = { workspace = true }
@@ -30,7 +16,6 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 c-kzg = { workspace = true }
 chrono = { workspace = true }
-clap = { workspace = true, optional = true }
 dotenvy = { workspace = true }
 ecdsa = { workspace = true }
 elliptic-curve = { workspace = true }
