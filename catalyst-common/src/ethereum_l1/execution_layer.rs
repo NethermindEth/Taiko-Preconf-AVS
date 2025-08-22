@@ -43,7 +43,6 @@ pub struct ExecutionLayer<T: ELExtension> {
     transaction_monitor: TransactionMonitor,
     metrics: Arc<metrics::Metrics>,
     taiko_wrapper_contract: taiko_wrapper::TaikoWrapper::TaikoWrapperInstance<DynProvider>,
-    chain_id: u64,
     inner: Arc<ExecutionLayerInner>,
     extension: T,
 }
@@ -105,14 +104,13 @@ impl<T: ELExtension> ExecutionLayer<T> {
             transaction_monitor,
             metrics,
             taiko_wrapper_contract,
-            chain_id,
             inner,
             extension,
         })
     }
 
     pub fn chain_id(&self) -> u64 {
-        self.chain_id
+        self.inner.chain_id()
     }
 
     async fn get_operator_for_current_epoch(&self) -> Result<Address, Error> {
