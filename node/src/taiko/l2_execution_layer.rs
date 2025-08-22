@@ -24,9 +24,6 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-pub const L2_TO_L1_BRIDGING_FEE: u64 = 10000;
-pub const ESTIMATED_L2_BRIDGING_TRANSACTION_FEE: u128 = 1000000000000;
-
 pub struct L2ExecutionLayer {
     provider: RwLock<DynProvider>,
     taiko_anchor: RwLock<TaikoAnchor::TaikoAnchorInstance<DynProvider>>,
@@ -291,6 +288,7 @@ impl L2ExecutionLayer {
         amount: u128,
         dest_chain_id: u64,
         preconfer_address: Address,
+        bridge_relayer_fee: u64,
     ) -> Result<(), Error> {
         info!(
             "Transfer ETH from L2 to L1: srcChainId: {}, dstChainId: {}",
@@ -309,6 +307,7 @@ impl L2ExecutionLayer {
             amount,
             dest_chain_id,
             preconfer_address,
+            bridge_relayer_fee,
         )
         .await?;
 
@@ -321,6 +320,7 @@ impl L2ExecutionLayer {
         amount: u128,
         dest_chain_id: u64,
         preconfer_address: Address,
+        bridge_relayer_fee: u64,
     ) -> Result<(), Error> {
         let contract = Bridge::new(self.config.taiko_bridge_address, provider.clone());
         let gas_limit = contract
@@ -331,7 +331,7 @@ impl L2ExecutionLayer {
 
         let message = Bridge::Message {
             id: 0,
-            fee: L2_TO_L1_BRIDGING_FEE,
+            fee: bridge_relayer_fee,
             gasLimit: gas_limit + 1,
             from: preconfer_address,
             srcChainId: self.chain_id,
@@ -355,7 +355,7 @@ impl L2ExecutionLayer {
         let tx_send_message = contract
             .sendMessage(message)
             .value(Uint::<256, 4>::from(
-                amount + u128::from(L2_TO_L1_BRIDGING_FEE),
+                amount + u128::from(bridge_relayer_fee),
             ))
             .from(preconfer_address)
             .nonce(nonce)

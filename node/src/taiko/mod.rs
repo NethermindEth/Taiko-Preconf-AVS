@@ -434,7 +434,11 @@ impl Taiko {
             .await
     }
 
-    pub async fn transfer_eth_from_l2_to_l1(&self, amount: u128) -> Result<(), Error> {
+    pub async fn transfer_eth_from_l2_to_l1(
+        &self,
+        amount: u128,
+        bridge_relayer_fee: u64,
+    ) -> Result<(), Error> {
         self.l2_execution_layer
             .transfer_eth_from_l2_to_l1(
                 amount,
@@ -442,13 +446,9 @@ impl Taiko {
                 self.ethereum_l1
                     .execution_layer
                     .get_preconfer_alloy_address(),
+                bridge_relayer_fee,
             )
             .await
-    }
-
-    pub fn get_bridging_fee(&self) -> u128 {
-        u128::from(l2_execution_layer::L2_TO_L1_BRIDGING_FEE)
-            + l2_execution_layer::ESTIMATED_L2_BRIDGING_TRANSACTION_FEE
     }
 }
 

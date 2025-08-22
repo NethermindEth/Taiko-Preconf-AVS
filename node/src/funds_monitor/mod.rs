@@ -15,6 +15,8 @@ pub struct FundsMonitor {
     amount_to_bridge_from_l2_to_l1: u128,
     disable_bridging: bool,
     cancel_token: CancellationToken,
+    bridge_relayer_fee: u64,
+    bridge_transaction_fee: u64,
 }
 
 const MONITOR_INTERVAL_SEC: u64 = 60;
@@ -35,6 +37,8 @@ impl FundsMonitor {
         amount_to_bridge_from_l2_to_l1: u128,
         disable_bridging: bool,
         cancel_token: CancellationToken,
+        bridge_relayer_fee: u64,
+        bridge_transaction_fee: u64,
     ) -> Self {
         Self {
             ethereum_l1,
@@ -47,6 +51,8 @@ impl FundsMonitor {
             amount_to_bridge_from_l2_to_l1,
             disable_bridging,
             cancel_token,
+            bridge_relayer_fee,
+            bridge_transaction_fee,
         }
     }
 
@@ -173,11 +179,18 @@ impl FundsMonitor {
         if !self.disable_bridging
             && let Ok(l2_eth_balance) = l2_eth_balance
             && l2_eth_balance
-                > U256::from(self.amount_to_bridge_from_l2_to_l1 + self.taiko.get_bridging_fee())
+                > U256::from(
+                    self.amount_to_bridge_from_l2_to_l1
+                        + u128::from(self.bridge_relayer_fee)
+                        + u128::from(self.bridge_transaction_fee), // estimated transaction fee
+                )
         {
             match self
                 .taiko
-                .transfer_eth_from_l2_to_l1(self.amount_to_bridge_from_l2_to_l1)
+                .transfer_eth_from_l2_to_l1(
+                    self.amount_to_bridge_from_l2_to_l1,
+                    self.bridge_relayer_fee,
+                )
                 .await
             {
                 Ok(_) => info!(
