@@ -1,7 +1,7 @@
 use alloy::{
-    primitives::{Address, Log},
-    providers::DynProvider,
-    rpc::types::Filter,
+    primitives::Address,
+    providers::{DynProvider, Provider},
+    rpc::types::{Filter, Log},
 };
 use catalyst_common::ethereum_l1::{
     execution_layer_inner::ExecutionLayerInner, extension::ELExtension,
@@ -35,22 +35,17 @@ impl ELExtension for ExecutionLayer {
     }
 }
 
-// potrzebuje address registrya
-// chyba sobie tego traita from zaimplementuje, bo  jak inaczej to zrobić?
-
 impl ExecutionLayer {
     async fn get_logs_for_register_method(&self) -> Vec<Log> {
         // let chain_id = self.inner.chain_id();
-        // let registry_address = self.inner.registry_address();
+        let registry_address = self.config.contract_addresses.registry_address;
 
-        // let filter = Filter::new()
-        //     .address(registry_address)
-        //     .event_signature(registry_address);
+        let filter = Filter::new()
+            .address(registry_address)
+            .event_signature(registry_address);
 
-        // let logs = self.provider.get_logs(&filter).await.unwrap();
+        let logs = self.provider.get_logs(&filter).await.unwrap();
 
-        // logs
-
-        vec![]
+        logs
     }
 }
