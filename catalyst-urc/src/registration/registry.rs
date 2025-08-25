@@ -1,4 +1,3 @@
-use alloy::rpc::types::Filter;
 use std::sync::Arc;
 
 use crate::l1::execution_layer::ExecutionLayer;

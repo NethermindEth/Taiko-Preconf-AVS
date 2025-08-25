@@ -1,8 +1,11 @@
+use super::bindings;
 use alloy::{
     primitives::Address,
     providers::{DynProvider, Provider},
     rpc::types::{Filter, Log},
+    sol_types::{SolCall, SolEvent},
 };
+use anyhow::Error;
 use catalyst_common::ethereum_l1::{
     execution_layer_inner::ExecutionLayerInner, extension::ELExtension,
 };
@@ -36,16 +39,16 @@ impl ELExtension for ExecutionLayer {
 }
 
 impl ExecutionLayer {
-    async fn get_logs_for_register_method(&self) -> Vec<Log> {
+    async fn get_logs_for_register_method(&self) -> Result<Vec<Log>, Error> {
         // let chain_id = self.inner.chain_id();
         let registry_address = self.config.contract_addresses.registry_address;
 
         let filter = Filter::new()
             .address(registry_address)
-            .event_signature(registry_address);
+            .event_signature(bindings::IRegistry::OperatorRegistered::SIGNATURE_HASH);
 
-        let logs = self.provider.get_logs(&filter).await.unwrap();
+        let logs = self.provider.get_logs(&filter).await?;
 
-        logs
+        Ok(logs)
     }
 }
