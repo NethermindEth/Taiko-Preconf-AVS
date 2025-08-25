@@ -631,6 +631,7 @@ pub trait PreconfOperator {
     async fn is_operator_for_current_epoch(&self) -> Result<bool, Error>;
     async fn is_operator_for_next_epoch(&self) -> Result<bool, Error>;
     async fn is_preconf_router_specified_in_taiko_wrapper(&self) -> Result<bool, Error>;
+    async fn get_l2_height_from_taiko_inbox(&self) -> Result<u64, Error>;
 }
 
 impl PreconfOperator for ExecutionLayer {
@@ -647,6 +648,10 @@ impl PreconfOperator for ExecutionLayer {
     async fn is_preconf_router_specified_in_taiko_wrapper(&self) -> Result<bool, Error> {
         let preconf_router = self.taiko_wrapper_contract.preconfRouter().call().await?;
         Ok(preconf_router != Address::ZERO)
+    }
+
+    async fn get_l2_height_from_taiko_inbox(&self) -> Result<u64, Error> {
+        self.get_l2_height_from_taiko_inbox().await
     }
 }
 
