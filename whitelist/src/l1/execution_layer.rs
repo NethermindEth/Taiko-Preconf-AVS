@@ -1,7 +1,5 @@
 use alloy::providers::DynProvider;
-use catalyst_common::ethereum_l1::{
-    execution_layer_inner::ExecutionLayerInner, extension::ELExtension,
-};
+use common::ethereum_l1::{execution_layer_inner::ExecutionLayerInner, extension::ELExtension};
 use std::sync::Arc;
 
 pub struct EthereumL1Config {}

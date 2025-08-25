@@ -1,4 +1,4 @@
-use catalyst_common::utils::config_trait::ConfigTrait;
+use common::utils::config_trait::ConfigTrait;
 use tracing::warn;
 
 #[derive(Debug, Clone)]

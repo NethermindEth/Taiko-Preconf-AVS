@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::l1::execution_layer::ExecutionLayer;
-use catalyst_common::ethereum_l1::EthereumL1;
+use common::ethereum_l1::EthereumL1;
 
 pub struct Registry {
     ethereum_l1: Arc<EthereumL1<ExecutionLayer>>,

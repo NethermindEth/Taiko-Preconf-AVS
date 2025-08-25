@@ -1,12 +1,12 @@
 [package]
-name = "catalyst-whitelist"
+name = "whitelist"
 version.workspace = true
 edition.workspace = true
 repository.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "catalyst-whitelist"
+name = "whitelist"
 path = "src/main.rs"
 
 [features]
@@ -17,7 +17,7 @@ path = "src/main.rs"
 test-gas = ["clap"]
 
 [dependencies]
-catalyst-common = { path = "../catalyst-common" }
+common = { path = "../common" }
 clap = { workspace = true, optional = true }
 alloy = { workspace = true }
 anyhow = { workspace = true }
